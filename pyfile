@@ -1,0 +1,130 @@
+import streamlit as st
+from openai import OpenAI
+import random
+
+# --- Secure API key ---
+api_key = st.secrets.get("general", {}).get("OPENAI_API_KEY")
+if not api_key:
+    st.error("❌ API key not found. Add it to .streamlit/secrets.toml under [general]")
+    st.stop()
+client = OpenAI(api_key=api_key)
+
+# --- Page setup ---
+st.set_page_config(
+    page_title="Falowen – Your AI Conversation Partner",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# --- Hide Streamlit branding ---
+st.markdown(
+    """
+    <style>
+      #MainMenu {visibility: hidden;}
+      footer    {visibility: hidden;}
+      header    {visibility: hidden;}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# --- Session State Initialization ---
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
+
+# --- App Header ---
+st.markdown(
+    """
+    <h1 style='font-size:2.4em; margin-bottom: 0.2em;'>🌟 Falowen – Your AI Conversation Partner</h1>
+    <div style='font-size:1.1em; margin-bottom: 1em; color:#446;'>Practice and improve your language skills with Sir Felix!</div>
+    """,
+    unsafe_allow_html=True
+)
+
+# --- Practice Mode (no access codes) ---
+language = st.selectbox(
+    "Select Language",
+    ["German", "French", "English", "Spanish", "Italian", "Portuguese", "Chinese", "Arabic"]
+)
+
+# Language-specific tip
+tips = {
+    "German": [
+        "💡 In German, all nouns are capitalized. Example: _Das Haus_.",
+        "💡 'Bitte' in German means 'please', 'you're welcome', and sometimes 'pardon?'."
+    ],
+    # … other languages …
+}
+st.info(random.choice(tips.get(language, ["💡 Practice makes perfect!"])))
+
+# Fun fact
+facts = [
+    "Sir Felix speaks German, French, English, and more!",
+    "Sir Felix believes every mistake is a step to mastery."
+]
+st.info(f"🧑‍🏫 Did you know? {random.choice(facts)}")
+
+# Daily challenge
+challenges = [
+    "Ask three questions using 'where' or 'when'.",
+    "Write a short greeting in your selected language.",
+    "Describe your favorite food in your language."
+]
+st.warning(f"🔥 **Daily Challenge:** {random.choice(challenges)}")
+
+# --- Chat Interface ---
+for msg in st.session_state["messages"]:
+    role = msg["role"]
+    avatar = "🧑‍🏫" if role == "assistant" else None
+    with st.chat_message(role, avatar=avatar):
+        st.markdown(msg["content"])
+
+user_input = st.chat_input("💬 Type your message here...")
+if user_input:
+    # send user message
+    st.session_state["messages"].append({"role": "user", "content": user_input})
+    st.chat_message("user").markdown(user_input)
+
+    # AI response
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": f"You are Sir Felix, a friendly {language} tutor."},
+                *st.session_state["messages"]
+            ]
+        )
+        ai_reply = response.choices[0].message.content
+    except Exception as e:
+        ai_reply = "Sorry, there was a problem generating a response."
+        st.error(str(e))
+
+    st.session_state["messages"].append({"role": "assistant", "content": ai_reply})
+    with st.chat_message("assistant", avatar="🧑‍🏫"):
+        st.markdown(f"**Sir Felix:** {ai_reply}")
+
+    # grammar check
+    grammar_prompt = (
+        f"You are Sir Felix, a helpful {language} teacher. "
+        f"Check this sentence for errors and give a correction and short explanation:\n\n{user_input}"
+    )
+    try:
+        grammar_resp = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "system", "content": grammar_prompt}],
+            max_tokens=120
+        )
+        st.info(f"📝 **Correction:**\n{grammar_resp.choices[0].message.content.strip()}")
+    except:
+        st.warning("Grammar check failed. Please try again.")
+
+# --- Share on WhatsApp ---
+share_text = "I just practiced my language skills with Sir Felix on Falowen!"
+share_url = f"https://wa.me/?text={share_text.replace(' ', '%20')}"
+st.markdown(
+    f'<a href="{share_url}" target="_blank">'
+    '<button style="background:#25D366;color:white;padding:7px 14px;'
+    'border:none;border-radius:6px;margin-top:10px;font-size:1em;">'
+    'Share on WhatsApp 🚀</button></a>',
+    unsafe_allow_html=True
+)
