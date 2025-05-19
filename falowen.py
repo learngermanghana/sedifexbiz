@@ -85,14 +85,14 @@ if "user_email" not in st.session_state:
                 st.sidebar.error("Incorrect password.")
             else:
                 st.session_state["user_email"] = email
-                st.experimental_rerun()
+                st.stop()
     st.stop()
 
 # --- Sidebar Profile & Settings ---
 st.sidebar.markdown(f"**Logged in as:** {st.session_state['user_email']}")
 if st.sidebar.button("🔓 Log out"):
     del st.session_state["user_email"]
-    st.experimental_rerun()
+    st.stop()
 
 # Load usage
 usage_df = load_usage()
