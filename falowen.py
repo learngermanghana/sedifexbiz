@@ -49,6 +49,7 @@ def load_usage():
     except FileNotFoundError:
         df = pd.DataFrame(columns=["user_email","date","count"])
     return df
+
 def save_usage(df):
     df.to_csv(USAGE_FILE, index=False)
 
@@ -182,8 +183,7 @@ if user_input:
             max_tokens=150
         )
         correction = gram_resp.choices[0].message.content.strip()
-        st.info(f"📝 **Correction by {tutor}:**
-{correction}")
+        st.info(f"📝 **Correction by {tutor}:**\n{correction}")
     except Exception as e:
         st.warning("Grammar check failed. Please try again later.")
 
