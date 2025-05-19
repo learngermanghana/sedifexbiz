@@ -16,14 +16,21 @@ if not api_key:
     st.stop()
 client = OpenAI(api_key=api_key)
 
-# --- Page config and branding removal ---
-st.set_page_config(page_title="Falowen – Your AI Conversation Partner", layout="wide")
+# --- Page config and theming ---
+st.set_page_config(
+    page_title="Falowen – Your AI Conversation Partner",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 st.markdown(
     """
     <style>
+      /* Hide default Streamlit branding */
       #MainMenu {visibility: hidden;}
       footer {visibility: hidden;}
       header {visibility: hidden;}
+      /* Scrollable chat container */
+      .chat-container {height: 60vh; overflow-y: auto;}
     </style>
     """,
     unsafe_allow_html=True
@@ -49,41 +56,46 @@ def load_usage():
     except FileNotFoundError:
         df = pd.DataFrame(columns=["user_email","date","count"])
     return df
-
 def save_usage(df):
     df.to_csv(USAGE_FILE, index=False)
 
 # --- Authentication: Sign Up / Log In ---
 if "user_email" not in st.session_state:
-    st.title("🔐 Sign Up or Log In")
-    mode = st.radio("", ["Sign Up", "Log In"])
+    st.sidebar.title("🔐 Sign Up or Log In")
+    mode = st.sidebar.radio("", ["Sign Up", "Log In"])
     users = load_users()
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
+    email = st.sidebar.text_input("Email")
+    password = st.sidebar.text_input("Password", type="password")
     if mode == "Sign Up":
-        confirm = st.text_input("Confirm Password", type="password")
-        if st.button("Create Account"):
+        confirm = st.sidebar.text_input("Confirm Password", type="password")
+        if st.sidebar.button("Create Account"):
             if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-                st.error("Enter a valid email address.")
+                st.sidebar.error("Enter a valid email address.")
             elif email in users:
-                st.error("Email already registered. Please log in.")
+                st.sidebar.error("Email already registered. Please log in.")
             elif password != confirm:
-                st.error("Passwords do not match.")
+                st.sidebar.error("Passwords do not match.")
             else:
                 users[email] = hashlib.sha256(password.encode()).hexdigest()
                 save_users(users)
-                st.success("Account created! You can now log in.")
+                st.sidebar.success("Account created! You can now log in.")
     else:
-        if st.button("Log In"):
+        if st.sidebar.button("Log In"):
             if email not in users:
-                st.error("No account found. Please sign up.")
+                st.sidebar.error("No account found. Please sign up.")
             elif users[email] != hashlib.sha256(password.encode()).hexdigest():
-                st.error("Incorrect password.")
+                st.sidebar.error("Incorrect password.")
             else:
                 st.session_state["user_email"] = email
-                st.success(f"Logged in as {email}")
-                st.stop()
+                st.sidebar.success(f"Logged in as {email}")
+                st.experimental_rerun()
     st.stop()
+
+# --- Sidebar: User Profile & Logout ---
+st.sidebar.markdown(f"**Logged in as:** {st.session_state['user_email']}")
+if st.sidebar.button("🔓 Log out"):
+    del st.session_state["user_email"]
+    st.experimental_rerun()
 
 # --- Load usage after login ---
 usage_df = load_usage()
@@ -117,43 +129,48 @@ roleplays = {
     "Booking Travel Tickets": {...}
 }
 
-# --- Initialize chat history ---
+# --- Initialize chat history & fact index ---
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
+if "fact_idx" not in st.session_state:
+    st.session_state["fact_idx"] = 0
 
-# --- Controls ---
-language = st.selectbox("Select Language", list(tutors.keys()))
+# --- Sidebar Settings ---
+st.sidebar.header("Settings")
+language = st.sidebar.selectbox("Language", list(tutors.keys()), index=list(tutors.keys()).index("English"))
+level = st.sidebar.selectbox("Level", ["A1","A2","B1","B2","C1"])
+mode = st.sidebar.selectbox("Mode", ["Free Talk"] + list(roleplays.keys()))
+
+# --- UI: Fact Carousel ---
 tutor = tutors[language]
-level = st.selectbox("Select Level", ["A1","A2","B1","B2","C1"])
-mode = st.selectbox("Conversation Mode", ["Free Talk"] + list(roleplays.keys()))
+facts = [
+    f"{tutor} speaks several languages!",
+    f"{tutor} thinks every mistake is progress.",
+    f"{tutor}’s favorite word is 'possibility'.",
+    f"{tutor} energizes on virtual coffee!",
+    f"{tutor} helped 100 students in one day.",
+    f"{tutor} loves language jokes. Ask away!"
+]
+if st.sidebar.button("🔃 Next Fact"):
+    st.session_state["fact_idx"] = (st.session_state["fact_idx"] + 1) % len(facts)
+st.sidebar.info(facts[st.session_state["fact_idx"]])
+
+tutor = tutors[language]
 scenario_prompt = "" if mode == "Free Talk" else roleplays[mode][language]
 
-# --- Header ---
-# App Name
-st.markdown(
-    "<h1 style='font-size:2.4em; margin-bottom:0.2em;'>🌟 Falowen – Your AI Conversation Partner</h1>",
-    unsafe_allow_html=True
-)
-hdr = f"Practice {language} ({level}) " + ("free conversation" if not scenario_prompt else f"role-play: {scenario_prompt}")
-st.markdown(f"<h1>{hdr}</h1>", unsafe_allow_html=True)
+# --- Main Header ---
+st.markdown("<h1 style='font-size:2.4em;'>🌟 Falowen – Your AI Conversation Partner</h1>", unsafe_allow_html=True)
+st.markdown(f"<h2>Practice {language} ({level}) {'free conversation' if not scenario_prompt else 'role-play: '+scenario_prompt}</h2>", unsafe_allow_html=True)
 
-# --- Fun Tutor Fact ---
-tutor_facts = [
-    f"{tutor} speaks German, French, English, and more!",
-    f"{tutor} believes that every mistake is a step to mastery.",
-    f"{tutor}’s favorite word is 'possibility'.",
-    f"{tutor} drinks a lot of virtual coffee to stay alert for your questions!",
-    f"{tutor} once helped 100 students in a single day.",
-    f"{tutor} loves puns and language jokes. Ask {tutor} one!"
-]
-st.info(f"🧑‍🏫 Did you know? {random.choice(tutor_facts)}")
-
-# --- Chat Interface ---
+# --- Chat Container ---
+st.markdown("<div class='chat-container'>", unsafe_allow_html=True)
 for msg in st.session_state["messages"]:
     avatar = "🧑‍🏫" if msg["role"] == 'assistant' else None
     with st.chat_message(msg["role"], avatar=avatar):
         st.markdown(msg["content"])
+st.markdown("</div>", unsafe_allow_html=True)
 
+# --- Chat Input & Spinner ---
 user_input = st.chat_input(f"💬 {scenario_prompt or 'Talk to your tutor'}")
 if user_input:
     increment_usage()
@@ -164,47 +181,35 @@ if user_input:
         ("Engage in free conversation." if not scenario_prompt else f"Role-play scenario: {scenario_prompt}.")
     )
     msgs = [{"role":"system","content":sys_prompt}] + st.session_state["messages"]
-    try:
-        res = client.chat.completions.create(model="gpt-3.5-turbo", messages=msgs)
-        reply = res.choices[0].message.content
-    except Exception:
-        reply = "Sorry, there was a problem generating a response."
+    with st.spinner("Sir Felix is thinking…"):
+        try:
+            res = client.chat.completions.create(model="gpt-3.5-turbo", messages=msgs)
+            reply = res.choices[0].message.content
+        except Exception:
+            reply = "Sorry, there was a problem generating a response."
     st.session_state["messages"].append({"role":"assistant","content":reply})
     st.chat_message("assistant", avatar="🧑‍🏫").markdown(f"**{tutor}:** {reply}")
     # Grammar check
-    grammar_system = (
-        f"You are {tutor}, a helpful {language} teacher at level {level}. "
-        f"Check the following user sentence for grammar, spelling, and phrasing errors. "
-        f"Provide the corrected sentence and a brief explanation."
-    )
     grammar_messages = [
-        {"role": "system", "content": grammar_system},
+        {"role": "system", "content":
+            f"You are {tutor}, a helpful {language} teacher at level {level}."
+            " Check and correct the following sentence, provide fix and brief explanation."},
         {"role": "user", "content": user_input}
     ]
     try:
-        gram_resp = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=grammar_messages,
-            max_tokens=150
-        )
-        correction = gram_resp.choices[0].message.content.strip()
-        st.info(f"📝 **Correction by {tutor}:**\n{correction}")
-    except Exception as e:
-        st.warning("Grammar check failed. Please try again later.")
+        g = client.chat.completions.create(model="gpt-3.5-turbo", messages=grammar_messages, max_tokens=150)
+        st.info(g.choices[0].message.content)
+    except:
+        st.error("Grammar check failed.")
 
-# --- Gamification ---
-# Use safe lookup for today's count
-today = pd.Timestamp(datetime.now().date())
-mask = (usage_df["user_email"] == st.session_state["user_email"]) & (usage_df["date"] == today)
-count_today = int(usage_df.loc[mask, "count"].iloc[0]) if mask.any() else 0
-msg = ""
-if count_today == 0:
-    msg = "🎉 Welcome back! Start practicing."
-elif count_today in [5, 10]:
-    msg = f"🌟 {count_today} messages today! Great work."
-if msg:
-    st.success(msg)
+# --- Gamification with Progress Bar & Confetti ---
+count_today = int(usage_df[(usage_df["user_email"]==st.session_state["user_email"])&(usage_df["date"]==pd.Timestamp(datetime.now().date()))]["count"].iloc[0]) if ((usage_df["user_email"]==st.session_state["user_email"])&(usage_df["date"]==pd.Timestamp(datetime.now().date()))).any() else 0
+progress = min(count_today/10,1.0)
+bar = st.progress(progress)
+st.caption(f"{count_today}/10 messages today")
+if count_today in [5,10]:
+    st.balloons()
 
-# --- Share on WhatsApp ---
+# --- Share on WhatsApp (full width) ---
 share = f"I just practiced {language} with {tutor}!"
-st.markdown(f'<a href="https://wa.me/?text={share.replace(" ","%20")}" target="_blank">Share on WhatsApp 🚀</a>', unsafe_allow_html=True)
+st.markdown(f'<a href="https://wa.me/?text={share.replace(" ","%20")}" target="_blank"><button style="width:100%;padding:10px;border:none;border-radius:8px;background:#25D366;color:white;font-size:16px;">Share on WhatsApp 🚀</button></a>', unsafe_allow_html=True)
