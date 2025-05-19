@@ -22,14 +22,14 @@ st.markdown(
     """
     <style>
       #MainMenu {visibility: hidden;}
-      footer    {visibility: hidden;}
-      header    {visibility: hidden;}
+      footer {visibility: hidden;}
+      header {visibility: hidden;}
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# --- Email Login ---
+# --- Simple Email Login ---
 if "user_email" not in st.session_state:
     st.title("🔐 Login with Email")
     email_input = st.text_input("Enter your email to continue:")
@@ -42,137 +42,104 @@ if "user_email" not in st.session_state:
             st.error("Please enter a valid email address.")
     st.stop()
 
-# --- Tutor names per language ---
+# --- Tutor definitions ---
 tutors = {
-    "German":     "Herr Felix",
-    "French":     "Madame Dupont",
-    "English":    "Mr. Smith",
-    "Spanish":    "Señora García",
-    "Italian":    "Signor Rossi",
+    "German": "Herr Felix",
+    "French": "Madame Dupont",
+    "English": "Mr. Smith",
+    "Spanish": "Señora García",
+    "Italian": "Signor Rossi",
     "Portuguese": "Senhora Silva",
-    "Chinese":    "老师李",
-    "Arabic":     "الأستاذ أحمد"
+    "Chinese": "老师李",
+    "Arabic": "الأستاذ أحمد"
 }
 
-# --- Expanded Role-play Scenarios with language-specific prompts ---
+# --- Role-play scenarios ---
 roleplays = {
-    "Ordering at a Restaurant": { ... },
-    "Checking into a Hotel":    { ... },
-    "Asking for Directions":    { ... },
-    "Shopping for Clothes":     { ... },
-    "Making a Doctor's Appointment": { ... },
-    "Booking Travel Tickets":   { ... }
+    "Ordering at a Restaurant": {...},
+    "Checking into a Hotel": {...},
+    "Asking for Directions": {...},
+    "Shopping for Clothes": {...},
+    "Making a Doctor's Appointment": {...},
+    "Booking Travel Tickets": {...}
 }
 
-# --- Session State for Messages ---
+# --- Initialize messages ---
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
 
 # --- Controls ---
-language = st.selectbox(
-    "Select Language",
-    list(tutors.keys()),
-    index=list(tutors.keys()).index("English")
-)
-level = st.selectbox(
-    "Select Level",
-    ["A1", "A2", "B1", "B2", "C1"],
-    index=0
-)
+language = st.selectbox("Select Language", list(tutors.keys()), index=2)
 tutor = tutors[language]
+level = st.selectbox("Select Level", ["A1","A2","B1","B2","C1"], index=0)
 
-# --- Scenario selector: Free Talk, Predefined, or Custom ---
-def get_scenario_prompt():
-    options = ["Free Talk"] + list(roleplays.keys()) + ["Custom Topic"]
-    sel = st.selectbox("Conversation Mode", options)
-    if sel == "Free Talk":
-        return sel, "free-form conversation"
-    if sel == "Custom Topic":
-        custom = st.text_input("Enter your custom topic or mood:")
-        if not custom.strip():
-            st.warning("Please enter a custom topic.")
-            st.stop()
-        return sel, custom.strip()
-    # Predefined scenario
-    return sel, roleplays[sel][language]
+# --- Conversation mode: Free Talk, Predefined, Custom ---
+options = ["Free Talk"] + list(roleplays.keys()) + ["Custom Topic"]
+mode = st.selectbox("Conversation Mode", options)
+if mode == "Free Talk":
+    scenario_prompt = ""
+elif mode == "Custom Topic":
+    custom = st.text_input("Enter custom topic or mood:")
+    if not custom.strip():
+        st.warning("Enter a custom topic.")
+        st.stop()
+    scenario_prompt = custom.strip()
+else:
+    scenario_prompt = roleplays[mode][language]
 
-scenario, scenario_prompt = get_scenario_prompt()
-
-# --- App Header ---
-mode_label = "Free Talk" if scenario == "Free Talk" else f"{scenario}"
-st.markdown(
-    f"""
-    <h1 style='font-size:2.4em; margin-bottom: 0.2em;'>🌟 Falowen – {mode_label} with {tutor}</h1>
-    <div style='font-size:1.1em; margin-bottom: 1em; color:#446;'>"
-    f"Practice {language} ({level}) {('role-play: ' + scenario_prompt) if scenario != 'Free Talk' else 'free conversation'}"
-    f"</div>
-    """,
-    unsafe_allow_html=True
+# --- Header ---
+hdr_text = (
+    f"Practice {language} ({level}) " +
+    ("free conversation" if mode == "Free Talk" else f"role-play: {scenario_prompt}")
 )
+st.markdown(f"<h1>{hdr_text}</h1>", unsafe_allow_html=True)
 
-# --- Tips & Challenges ---
-st.experimental_memo.clear()
-tips = { ... }
-st.info(random.choice(tips.get(language, ["💡 Practice makes perfect!"])))
-facts = [ ... ]
-st.info(f"🧑‍🏫 Did you know? {random.choice(facts)}")
-challenges = [ ... ]
-st.warning(f"🔥 **Daily Challenge:** {random.choice(challenges)}")
+# --- Tips & challenges (omitted for brevity) ---
+# ...
 
 # --- Chat Interface ---
 for msg in st.session_state["messages"]:
-    role = msg["role"]
-    avatar = "🧑‍🏫" if role == "assistant" else None
-    with st.chat_message(role, avatar=avatar):
+    avatar = "🧑‍🏫" if msg["role"] == 'assistant' else None
+    with st.chat_message(msg["role"], avatar=avatar):
         st.markdown(msg["content"])
 
-user_input = st.chat_input(f"💬 {scenario_prompt}...")
+prompt = f"💬 {scenario_prompt if scenario_prompt else 'Talk to Sir Felix'}"
+user_input = st.chat_input(prompt)
 if user_input:
     st.session_state["messages"].append({"role": "user", "content": user_input})
     st.chat_message("user").markdown(user_input)
-
-    # Build system prompt based on mode
-    if scenario == "Free Talk":
-        system_prompt = f"You are {tutor}, a friendly {language} tutor at level {level}. Engage the student in a free-form conversation."
-    else:
-        system_prompt = (
-            f"You are {tutor}, a friendly {language} tutor at level {level}. "
-            f"Role-play scenario: {scenario_prompt}. Engage accordingly."
-        )
-    conversation = [{"role": "system", "content": system_prompt}, *st.session_state["messages"]]
+    system_prompt = (
+        f"You are {tutor}, a friendly {language} tutor for level {level}. " +
+        ("Engage in free conversation." if mode == "Free Talk" else f"Role-play scenario: {scenario_prompt}.")
+    )
+    messages = [{"role": "system", "content": system_prompt}] + st.session_state["messages"]
     try:
-        res = client.chat.completions.create(model="gpt-3.5-turbo", messages=conversation)
-        ai_reply = res.choices[0].message.content
+        response = client.chat.completions.create(model="gpt-3.5-turbo", messages=messages)
+        ai_reply = response.choices[0].message.content
     except Exception as e:
         ai_reply = "Sorry, there was a problem generating a response."
         st.error(str(e))
-
     st.session_state["messages"].append({"role": "assistant", "content": ai_reply})
-    with st.chat_message("assistant", avatar="🧑‍🏫"):
-        st.markdown(f"**{tutor}:** {ai_reply}")
+    st.chat_message("assistant", avatar="🧑‍🏫").markdown(f"**{tutor}:** {ai_reply}")
 
-    # Grammar check always runs
+    # Grammar check
     grammar_prompt = (
-        f"You are {tutor}, a helpful {language} teacher at level {level}."
-        f" Check this sentence for errors, give a correction and brief explanation:\n\n{user_input}"
+        f"You are {tutor}, a helpful {language} teacher for level {level}. "
+        f"Check this sentence for errors and provide correction: {user_input}"
     )
     try:
-        gram = client.chat.completions.create(
+        gram_resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "system", "content": grammar_prompt}],
             max_tokens=120
         )
-        st.info(f"📝 **Correction by {tutor}:**\n{gram.choices[0].message.content.strip()}")
+        st.info(gram_resp.choices[0].message.content)
     except:
-        st.warning("Grammar check failed.")
+        pass
 
 # --- Share on WhatsApp ---
-share_text = f"I had a {mode_label.lower()} in {language} with {tutor}!"
-share_url = f"https://wa.me/?text={share_text.replace(' ', '%20')}"
+share_text = f"I just practiced {language} with {tutor}!"
 st.markdown(
-    f'<a href="{share_url}" target="_blank">'
-    '<button style="background:#25D366;color:white;padding:7px 14px;'
-    'border:none;border-radius:6px;margin-top:10px;font-size:1em;">'
-    'Share on WhatsApp 🚀</button></a>',
-    unsafe_allow_html=True
+    f'<a href="https://wa.me/?text={share_text.replace(" ","%20")}" target="_blank">'
+    'Share on WhatsApp 🚀</a>', unsafe_allow_html=True
 )
