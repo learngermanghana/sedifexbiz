@@ -10,9 +10,11 @@ from datetime import datetime, timedelta
 import uuid
 
 # --- Secure API key ---
-api_key = st.secrets.get("general", {}).get("OPENAI_API_KEY")
+# Try environment variable first, then Streamlit secrets
+import os
+api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("general", {}).get("OPENAI_API_KEY")
 if not api_key:
-    st.error("❌ API key not found. Add it to .streamlit/secrets.toml under [general]")
+    st.error("❌ API key not found. Set the OPENAI_API_KEY environment variable or add it to .streamlit/secrets.toml under [general].")
     st.stop()
 client = OpenAI(api_key=api_key)
 
