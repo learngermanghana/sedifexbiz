@@ -166,14 +166,26 @@ if user_input:
     st.session_state["messages"].append({"role":"assistant","content":reply})
     st.chat_message("assistant", avatar="🧑‍🏫").markdown(f"**{tutor}:** {reply}")
     # Grammar check
-    gram = (
-        f"You are {tutor}, a helpful {language} teacher at level {level}. Check and correct: {user_input}"
+    grammar_system = (
+        f"You are {tutor}, a helpful {language} teacher at level {level}. "
+        f"Check the following user sentence for grammar, spelling, and phrasing errors. "
+        f"Provide the corrected sentence and a brief explanation."
     )
+    grammar_messages = [
+        {"role": "system", "content": grammar_system},
+        {"role": "user", "content": user_input}
+    ]
     try:
-        g = client.chat.completions.create(model="gpt-3.5-turbo", messages=[{"role":"system","content":gram}], max_tokens=120)
-        st.info(g.choices[0].message.content)
-    except:
-        pass
+        gram_resp = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=grammar_messages,
+            max_tokens=150
+        )
+        correction = gram_resp.choices[0].message.content.strip()
+        st.info(f"📝 **Correction by {tutor}:**
+{correction}")
+    except Exception as e:
+        st.warning("Grammar check failed. Please try again later.")
 
 # --- Gamification ---
 # Use safe lookup for today's count
