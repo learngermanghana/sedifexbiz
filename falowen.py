@@ -29,8 +29,9 @@ st.markdown(
       #MainMenu {visibility: hidden;}
       footer {visibility: hidden;}
       header {visibility: hidden;}
-      /* Hide Streamlit watermark link */
+      /* Hide Streamlit watermark and hosting badge */
       a[href^="https://streamlit.io"] {display: none !important;}
+      [class*="viewerBadge"] {visibility: hidden !important;}
       /* Scrollable chat container */
       .chat-container {height: 60vh; overflow-y: auto;}
     </style>
