@@ -36,6 +36,7 @@ def load_users():
         with open(USER_DB, "r") as f:
             return json.load(f)
     return {}
+
 def save_users(u):
     with open(USER_DB, "w") as f:
         json.dump(u, f)
@@ -166,8 +167,7 @@ if user_input:
     st.chat_message("assistant", avatar="🧑‍🏫").markdown(f"**{tutor}:** {reply}")
     # Grammar check
     gram = (
-        f"You are {tutor}, a helpful {language} teacher at level {level}."  
-        f" Check and correct: {user_input}"
+        f"You are {tutor}, a helpful {language} teacher at level {level}. Check and correct: {user_input}"
     )
     try:
         g = client.chat.completions.create(model="gpt-3.5-turbo", messages=[{"role":"system","content":gram}], max_tokens=120)
@@ -176,7 +176,10 @@ if user_input:
         pass
 
 # --- Gamification ---
-count_today = usage_df[(usage_df["user_email"] == st.session_state["user_email"]) & (usage_df["date"] == pd.Timestamp(datetime.now().date()))]["count"].iloc[0]
+# Use safe lookup for today's count
+today = pd.Timestamp(datetime.now().date())
+mask = (usage_df["user_email"] == st.session_state["user_email"]) & (usage_df["date"] == today)
+count_today = int(usage_df.loc[mask, "count"].iloc[0]) if mask.any() else 0
 msg = ""
 if count_today == 0:
     msg = "🎉 Welcome back! Start practicing."
