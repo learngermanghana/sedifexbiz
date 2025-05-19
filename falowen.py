@@ -26,14 +26,18 @@ st.markdown(
     """
     <style>
       /* Hide default Streamlit branding */
-      #MainMenu {visibility: hidden;}
-      footer {visibility: hidden;}
-      header {visibility: hidden;}
-      /* Hide Streamlit watermark and hosting badge */
-      a[href^=\"https://streamlit.io\"] {display: none !important;}
-      [class*=\"viewerBadge\"] {visibility: hidden !important;}
+      #MainMenu { visibility: hidden; }
+      footer { visibility: hidden; }
+      header { visibility: hidden; }
+      /* Hide Streamlit watermarks and badges */
+      a[href="https://streamlit.io"] { display: none !important; }
+      a[href="https://streamlit.app"] { display: none !important; }
+      a[href="https://sharing.streamlit.io"] { display: none !important; }
+      /* Hide viewer badge elements */
+      [class*="viewerBadge"] { display: none !important; }
+      [class*="stDecoration"] { display: none !important; }
       /* Scrollable chat container */
-      .chat-container {height: 60vh; overflow-y: auto;}
+      .chat-container { height: 60vh; overflow-y: auto; }
     </style>
     """,
     unsafe_allow_html=True
