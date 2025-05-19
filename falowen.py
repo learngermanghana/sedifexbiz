@@ -36,7 +36,6 @@ def load_users():
         with open(USER_DB, "r") as f:
             return json.load(f)
     return {}
-
 def save_users(u):
     with open(USER_DB, "w") as f:
         json.dump(u, f)
@@ -49,7 +48,6 @@ def load_usage():
     except FileNotFoundError:
         df = pd.DataFrame(columns=["user_email","date","count"])
     return df
-
 def save_usage(df):
     df.to_csv(USAGE_FILE, index=False)
 
@@ -132,6 +130,17 @@ scenario_prompt = "" if mode == "Free Talk" else roleplays[mode][language]
 hdr = f"Practice {language} ({level}) " + ("free conversation" if not scenario_prompt else f"role-play: {scenario_prompt}")
 st.markdown(f"<h1>{hdr}</h1>", unsafe_allow_html=True)
 
+# --- Fun Tutor Fact ---
+tutor_facts = [
+    f"{tutor} speaks German, French, English, and more!",
+    f"{tutor} believes that every mistake is a step to mastery.",
+    f"{tutor}’s favorite word is 'possibility'.",
+    f"{tutor} drinks a lot of virtual coffee to stay alert for your questions!",
+    f"{tutor} once helped 100 students in a single day.",
+    f"{tutor} loves puns and language jokes. Ask {tutor} one!"
+]
+st.info(f"🧑‍🏫 Did you know? {random.choice(tutor_facts)}")
+
 # --- Chat Interface ---
 for msg in st.session_state["messages"]:
     avatar = "🧑‍🏫" if msg["role"] == 'assistant' else None
@@ -157,7 +166,7 @@ if user_input:
     st.chat_message("assistant", avatar="🧑‍🏫").markdown(f"**{tutor}:** {reply}")
     # Grammar check
     gram = (
-        f"You are {tutor}, a helpful {language} teacher at level {level}."
+        f"You are {tutor}, a helpful {language} teacher at level {level}."  
         f" Check and correct: {user_input}"
     )
     try:
@@ -166,25 +175,13 @@ if user_input:
     except:
         pass
 
-# --- Personal Progress Chart ---
-today = datetime.now().date()
-last7 = [today - timedelta(days=i) for i in reversed(range(7))]
-counts = []
-for d in last7:
-    row = usage_df[(usage_df["user_email"] == st.session_state["user_email"]) & (usage_df["date"] == pd.Timestamp(d))]
-    counts.append(int(row["count"].iloc[0]) if not row.empty else 0)
-st.bar_chart(counts, use_container_width=True)
-st.caption("Your daily message count (last 7 days)")
-
 # --- Gamification ---
-count_today = counts[-1]
+count_today = usage_df[(usage_df["user_email"] == st.session_state["user_email"]) & (usage_df["date"] == pd.Timestamp(datetime.now().date()))]["count"].iloc[0]
 msg = ""
 if count_today == 0:
     msg = "🎉 Welcome back! Start practicing."
-elif count_today == 5:
-    msg = "🔥 You've sent 5 messages today! Keep it up."
-elif count_today == 10:
-    msg = "🚀 10 messages today! Amazing dedication."
+elif count_today in [5, 10]:
+    msg = f"🌟 {count_today} messages today! Great work."
 if msg:
     st.success(msg)
 
