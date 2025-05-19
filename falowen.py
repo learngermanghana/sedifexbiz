@@ -38,7 +38,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-st.markdown(f"<h2>Practice {language} ({level}) {'free conversation' if not scenario_prompt else 'role-play: '+scenario_prompt}</h2>", unsafe_allow_html=True)
+
 
 # --- Chat Container ---
 st.markdown("<div class='chat-container'>", unsafe_allow_html=True)
