@@ -36,7 +36,8 @@ if "user_email" not in st.session_state:
     if st.button("Login"):
         if re.match(r"[^@]+@[^@]+\.[^@]+", email_input):
             st.session_state["user_email"] = email_input
-            st.experimental_rerun()
+            st.success(f"Logged in as {email_input}")
+            st.stop()
         else:
             st.error("Please enter a valid email address.")
     st.stop()
