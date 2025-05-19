@@ -129,6 +129,11 @@ mode = st.selectbox("Conversation Mode", ["Free Talk"] + list(roleplays.keys()))
 scenario_prompt = "" if mode == "Free Talk" else roleplays[mode][language]
 
 # --- Header ---
+# App Name
+st.markdown(
+    "<h1 style='font-size:2.4em; margin-bottom:0.2em;'>🌟 Falowen – Your AI Conversation Partner</h1>",
+    unsafe_allow_html=True
+)
 hdr = f"Practice {language} ({level}) " + ("free conversation" if not scenario_prompt else f"role-play: {scenario_prompt}")
 st.markdown(f"<h1>{hdr}</h1>", unsafe_allow_html=True)
 
