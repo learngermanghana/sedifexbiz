@@ -95,16 +95,16 @@ if st.sidebar.button("🔓 Log out"):
     st.stop()
 
 # Load usage
-usage_df = load_usage()
+df_usage = load_usage()
 
 def increment_usage():
     today = pd.Timestamp(datetime.now().date())
-    mask = (usage_df.user_email == st.session_state['user_email']) & (usage_df.date == today)
+    mask = (df_usage.user_email == st.session_state['user_email']) & (df_usage.date == today)
     if not mask.any():
-        usage_df.loc[len(usage_df)] = [st.session_state['user_email'], today, 0]
-    idx = usage_df.index[mask][0] if mask.any() else len(usage_df)-1
-    usage_df.at[idx, 'count'] += 1
-    save_usage(usage_df)
+        df_usage.loc[len(df_usage)] = [st.session_state['user_email'], today, 0]
+    idx = df_usage.index[mask][0] if mask.any() else len(df_usage)-1
+    df_usage.at[idx, 'count'] += 1
+    save_usage(df_usage)
 
 # Tutor definitions & scenarios
 tutors = {"German":"Herr Felix","French":"Madame Dupont","English":"Sir Felix","Spanish":"Señora García","Italian":"Signor Rossi","Portuguese":"Senhora Silva","Chinese":"老师李","Arabic":"الأستاذ أحمد"}
@@ -119,7 +119,6 @@ language = st.sidebar.selectbox("Language", list(tutors.keys()), index=2)
 level = st.sidebar.selectbox("Level", ["A1","A2","B1","B2","C1"], index=0)
 mode = st.sidebar.selectbox("Mode", ["Free Talk"] + list(roleplays.keys()))
 
-# Tutor, scenario prompt
 tutor = tutors[language]
 scenario_prompt = '' if mode=='Free Talk' else roleplays[mode][language]
 
@@ -150,24 +149,33 @@ if user_input:
     sys = f"You are {tutor}, a friendly {language} tutor at level {level}. " + ("Engage freely." if not scenario_prompt else f"Role-play: {scenario_prompt}.")
     msgs = [{'role':'system','content':sys}] + st.session_state['messages']
     with st.spinner("Sir Felix is thinking…"):
-        try: reply=client.chat.completions.create(model='gpt-3.5-turbo', messages=msgs).choices[0].message.content
-        except: reply="Sorry, there was a problem."
+        try:
+            resp = client.chat.completions.create(model='gpt-3.5-turbo', messages=msgs)
+            reply = resp.choices[0].message.content
+        except:
+            reply = "Sorry, there was a problem."
     st.session_state['messages'].append({'role':'assistant','content':reply})
     st.chat_message('assistant', avatar='🧑‍🏫').markdown(f"**{tutor}:** {reply}")
     # Grammar check
-    gm=[{'role':'system','content':f"You are {tutor}, a helpful {language} teacher at level {level}. Check and correct: "},{'role':'user','content':user_input}]
-    try: gresp=client.chat.completions.create(model='gpt-3.5-turbo',messages=gm,max_tokens=150); st.info(gresp.choices[0].message.content)
-    except: st.error("Grammar check failed.")
+    grammar_msgs = [
+        {"role":"system","content":f"You are {tutor}, a helpful {language} teacher at level {level}. Check the sentence for errors and provide the corrected version with a brief explanation."},
+        {"role":"user","content":user_input}
+    ]
+    try:
+        gresp = client.chat.completions.create(model='gpt-3.5-turbo', messages=grammar_msgs, max_tokens=150)
+        st.info(gresp.choices[0].message.content)
+    except:
+        st.error("Grammar check failed.")
 
 # Gamification
-today=pd.Timestamp(datetime.now().date())
-mask=(usage_df.user_email==st.session_state['user_email'])&(usage_df.date==today)
-count=int(usage_df.loc[mask,'count'].iloc[0]) if mask.any() else 0
-prog=min(count/10,1)
+today = pd.Timestamp(datetime.now().date())
+mask = (df_usage.user_email==st.session_state['user_email'])&(df_usage.date==today)
+count = int(df_usage.loc[mask,'count'].iloc[0]) if mask.any() else 0
+prog = min(count/10,1)
 st.progress(prog)
 st.caption(f"{count}/10 messages today")
 if count in [5,10]: st.balloons()
 
 # Share button
-share=f"I just practiced {language} with {tutor}!"
+share = f"I just practiced {language} with {tutor}!"
 st.markdown(f'<a href="https://wa.me/?text={share.replace(" ","%20")}" target="_blank"><button style="width:100%;padding:10px;border:none;border-radius:8px;background:#25D366;color:white;">Share on WhatsApp 🚀</button></a>', unsafe_allow_html=True)
