@@ -146,27 +146,39 @@ st.markdown("</div>", unsafe_allow_html=True)
 user_input = st.chat_input(f"💬 {scenario_prompt or 'Talk to your tutor'}")
 if user_input:
     increment_usage()
-    st.session_state['messages'].append({'role':'user','content':user_input})
+    st.session_state['messages'].append({'role': 'user', 'content': user_input})
     st.chat_message('user').markdown(user_input)
     sys = f"You are {tutor}, a friendly {language} tutor at level {level}. " + ("Engage freely." if not scenario_prompt else f"Role-play: {scenario_prompt}.")
-    msgs = [{'role':'system','content':sys}] + st.session_state['messages']
+    msgs = [{'role': 'system', 'content': sys}] + st.session_state['messages']
     with st.spinner("Sir Felix is thinking…"):
         try:
             resp = client.chat.completions.create(model='gpt-3.5-turbo', messages=msgs)
             reply = resp.choices[0].message.content
-        except:
+        except Exception:
             reply = "Sorry, there was a problem."
-    st.session_state['messages'].append({'role':'assistant','content':reply})
+    st.session_state['messages'].append({'role': 'assistant', 'content': reply})
     st.chat_message('assistant', avatar='🧑‍🏫').markdown(f"**{tutor}:** {reply}")
-    # Grammar check
+    # Grammar check with improved formatting
     grammar_msgs = [
-        {"role":"system","content":f"You are {tutor}, a helpful {language} teacher at level {level}. Check the sentence for errors and provide the corrected version with a brief explanation."},
-        {"role":"user","content":user_input}
+        {"role": "system", "content": f"You are {tutor}, a helpful {language} teacher at level {level}. Check the sentence for errors and provide the corrected version with a brief explanation."},
+        {"role": "user", "content": user_input}
     ]
     try:
         gresp = client.chat.completions.create(model='gpt-3.5-turbo', messages=grammar_msgs, max_tokens=150)
-        st.info(gresp.choices[0].message.content)
-    except:
+        feedback = gresp.choices[0].message.content.strip()
+        # Split for correction and explanation
+        if '\n' in feedback:
+            first_line, rest = feedback.split('\n', 1)
+        else:
+            first_line, rest = feedback, ""
+        st.markdown(
+            f"<div style='background:#e8f5e9;padding:12px 16px;border-radius:10px;margin:10px 0;'>"
+            f"<b>Correction:</b><br><span style='color:#1b5e20;font-weight:bold;'>{first_line.strip()}</span>"
+            f"{'<br><b>Explanation:</b> ' + rest.strip() if rest.strip() else ''}"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    except Exception:
         st.error("Grammar check failed.")
 
 # Gamification
