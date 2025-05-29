@@ -9,6 +9,35 @@ import pandas as pd
 from datetime import datetime, timedelta
 import uuid
 
+import io
+import csv
+from fpdf import FPDF
+
+def get_chat_csv(messages):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Role", "Message"])
+    for msg in messages:
+        writer.writerow([msg["role"], msg["content"]])
+    return output.getvalue().encode("utf-8")
+
+def get_chat_pdf(messages):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, "Falowen Conversation", ln=1, align='C')
+    pdf.ln(4)
+    for msg in messages:
+        role = "Tutor" if msg["role"] == "assistant" else "You"
+        content = msg["content"]
+        pdf.set_font("Arial", style='B', size=11)
+        pdf.cell(0, 8, f"{role}:", ln=1)
+        pdf.set_font("Arial", size=11)
+        for line in content.split('\n'):
+            pdf.multi_cell(0, 8, line)
+        pdf.ln(2)
+    return pdf.output(dest="S").encode("latin-1")
+
 # --- Secure API key ---
 # Try environment variable first, then Streamlit secrets
 import os
