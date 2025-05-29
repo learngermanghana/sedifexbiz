@@ -109,8 +109,79 @@ def increment_usage():
     save_usage(df_usage)
 
 # Tutor definitions & scenarios
-tutors = {"German":"Herr Felix","French":"Madame Dupont","English":"Sir Felix","Spanish":"Señora García","Italian":"Signor Rossi","Portuguese":"Senhora Silva","Chinese":"老师李","Arabic":"الأستاذ أحمد"}
-roleplays = {key: {...} for key in ["Ordering at a Restaurant","Checking into a Hotel","Asking for Directions","Shopping for Clothes","Making a Doctor's Appointment","Booking Travel Tickets"]}
+tutors = {
+    "German": "Herr Felix",
+    "French": "Madame Dupont",
+    "English": "Sir Felix",
+    "Spanish": "Señora García",
+    "Italian": "Signor Rossi",
+    "Portuguese": "Senhora Silva",
+    "Chinese": "老师李",
+    "Arabic": "الأستاذ أحمد"
+}
+
+roleplays = {
+    "Ordering at a Restaurant": {
+        "German": "Du bist Gast in einem Restaurant. Bestelle ein Essen und ein Getränk beim Kellner.",
+        "French": "Vous êtes au restaurant. Commandez un plat et une boisson auprès du serveur.",
+        "English": "You are in a restaurant. Order a meal and a drink from the waiter.",
+        "Spanish": "Estás en un restaurante. Pide una comida y una bebida al camarero.",
+        "Italian": "Sei al ristorante. Ordina un pasto e una bevanda al cameriere.",
+        "Portuguese": "Você está em um restaurante. Peça uma refeição e uma bebida ao garçom.",
+        "Chinese": "你在餐厅。向服务员点一份餐和一杯饮料。",
+        "Arabic": "أنت في مطعم. اطلب وجبة ومشروبًا من النادل."
+    },
+    "Checking into a Hotel": {
+        "German": "Du bist an der Hotelrezeption. Melde dich an und frage nach Frühstückszeiten.",
+        "French": "Vous êtes à la réception de l'hôtel. Enregistrez-vous et demandez les horaires du petit-déjeuner.",
+        "English": "You are at a hotel reception. Check in and ask about breakfast times.",
+        "Spanish": "Estás en la recepción de un hotel. Regístrate y pregunta por los horarios del desayuno.",
+        "Italian": "Sei alla reception dell'hotel. Fai il check-in e chiedi gli orari della colazione.",
+        "Portuguese": "Você está na recepção do hotel. Faça o check-in e pergunte sobre os horários do café da manhã.",
+        "Chinese": "你在酒店前台。办理入住并询问早餐时间。",
+        "Arabic": "أنت في استقبال الفندق. سجّل دخولك واسأل عن مواعيد الإفطار."
+    },
+    "Asking for Directions": {
+        "German": "Du hast dich verlaufen. Frage jemanden auf der Straße nach dem Weg zum Bahnhof.",
+        "French": "Vous êtes perdu. Demandez à quelqu'un dans la rue le chemin pour aller à la gare.",
+        "English": "You are lost. Ask someone in the street for directions to the train station.",
+        "Spanish": "Estás perdido. Pregunta a alguien en la calle cómo llegar a la estación de tren.",
+        "Italian": "Ti sei perso. Chiedi a qualcuno per strada come arrivare alla stazione.",
+        "Portuguese": "Você está perdido. Pergunte a alguém na rua como chegar à estação de trem.",
+        "Chinese": "你迷路了。向路人询问去火车站怎么走。",
+        "Arabic": "لقد ضللت الطريق. اسأل شخصًا في الشارع عن الطريق إلى محطة القطار."
+    },
+    "Shopping for Clothes": {
+        "German": "Du bist in einem Bekleidungsgeschäft. Frage nach einer anderen Größe und dem Preis.",
+        "French": "Vous êtes dans un magasin de vêtements. Demandez une autre taille et le prix.",
+        "English": "You are in a clothing store. Ask for another size and the price.",
+        "Spanish": "Estás en una tienda de ropa. Pide otra talla y pregunta el precio.",
+        "Italian": "Sei in un negozio di abbigliamento. Chiedi un'altra taglia e il prezzo.",
+        "Portuguese": "Você está em uma loja de roupas. Peça outro tamanho e pergunte o preço.",
+        "Chinese": "你在服装店。请问有没有别的尺码，多少钱？",
+        "Arabic": "أنت في متجر ملابس. اطلب مقاسًا آخر واسأل عن السعر."
+    },
+    "Making a Doctor's Appointment": {
+        "German": "Du möchtest einen Arzttermin vereinbaren. Erkläre deine Beschwerden.",
+        "French": "Vous souhaitez prendre rendez-vous chez le médecin. Expliquez vos symptômes.",
+        "English": "You want to make a doctor's appointment. Explain your symptoms.",
+        "Spanish": "Quieres pedir cita con el médico. Explica tus síntomas.",
+        "Italian": "Vuoi prendere un appuntamento dal medico. Spiega i tuoi sintomi.",
+        "Portuguese": "Você quer marcar uma consulta médica. Explique seus sintomas.",
+        "Chinese": "你想预约医生。说明你的症状。",
+        "Arabic": "تريد حجز موعد عند الطبيب. اشرح أعراضك."
+    },
+    "Booking Travel Tickets": {
+        "German": "Du bist am Ticketschalter. Kaufe ein Zugticket nach Berlin für morgen früh.",
+        "French": "Vous êtes au guichet. Achetez un billet de train pour Paris pour demain matin.",
+        "English": "You are at the ticket counter. Buy a train ticket to London for tomorrow morning.",
+        "Spanish": "Estás en la taquilla. Compra un billete de tren a Madrid para mañana por la mañana.",
+        "Italian": "Sei alla biglietteria. Acquista un biglietto del treno per Roma per domani mattina.",
+        "Portuguese": "Você está na bilheteria. Compre uma passagem de trem para Lisboa para amanhã de manhã.",
+        "Chinese": "你在售票处。买一张明天早上去上海的火车票。",
+        "Arabic": "أنت في شباك التذاكر. اشترِ تذكرة قطار إلى القاهرة صباح الغد."
+    }
+}
 
 # Initialize chat
 if 'messages' not in st.session_state:
@@ -118,11 +189,12 @@ if 'messages' not in st.session_state:
 
 # Sidebar controls
 language = st.sidebar.selectbox("Language", list(tutors.keys()), index=2)
-level = st.sidebar.selectbox("Level", ["A1","A2","B1","B2","C1"], index=0)
+level = st.sidebar.selectbox("Level", ["A1", "A2", "B1", "B2", "C1"], index=0)
 mode = st.sidebar.selectbox("Mode", ["Free Talk"] + list(roleplays.keys()))
 
 tutor = tutors[language]
-scenario_prompt = '' if mode=='Free Talk' else roleplays[mode][language]
+scenario_prompt = '' if mode == 'Free Talk' else roleplays[mode][language]
+
 
 # Main headers
 st.markdown("<h1 style='font-size:2.4em;'>🌟 Falowen – Your AI Conversation Partner</h1>", unsafe_allow_html=True)
