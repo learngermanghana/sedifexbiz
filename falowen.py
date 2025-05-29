@@ -181,7 +181,67 @@ roleplays = {
         "Chinese": "你在售票处。买一张明天早上去上海的火车票。",
         "Arabic": "أنت في شباك التذاكر. اشترِ تذكرة قطار إلى القاهرة صباح الغد."
     }
+
+# Cultural Fun Facts per Language
+cultural_facts = {
+    "German": [
+        "In Germany, bread is a big part of the culture—there are over 300 kinds of bread!",
+        "Most Germans separate their garbage into at least five categories for recycling.",
+        "The Autobahn is famous for having stretches with no speed limit.",
+        "Christmas markets originated in Germany and are a big tradition.",
+        "Germans love their sausages—there are more than 1,500 types!"
+    ],
+    "French": [
+        "France is the most visited country in the world.",
+        "Baguettes are so important in France, there are laws regulating their price and ingredients.",
+        "The French eat around 30,000 tons of snails every year.",
+        "The Eiffel Tower was supposed to be a temporary structure.",
+        "In France, lunch breaks often last up to two hours!"
+    ],
+    "English": [
+        "English is the official language of the air—pilots worldwide must communicate in English.",
+        "The UK is home to over 1,500 castles.",
+        "Tea is a central part of British culture.",
+        "The United States has no official national language, but English is the most widely spoken.",
+        "Australia is the only continent covered by a single country that speaks English."
+    ],
+    "Spanish": [
+        "Spanish is the second-most spoken language in the world by native speakers.",
+        "The tooth fairy in Spain is actually a mouse called 'El Ratón Pérez.'",
+        "In Spain, people often eat dinner as late as 10 p.m.",
+        "There are 21 countries with Spanish as an official language.",
+        "Spanish has two words for 'to be': 'ser' and 'estar.'"
+    ],
+    "Italian": [
+        "Italy is home to the most UNESCO World Heritage sites in the world.",
+        "Italians eat more pasta than anyone else in the world.",
+        "Italians invented the thermometer in 1612.",
+        "The Italian language has over 250,000 words.",
+        "Opera was born in Italy at the end of the 16th century."
+    ],
+    "Portuguese": [
+        "Portuguese is the official language of nine countries.",
+        "Brazil is the largest Portuguese-speaking country in the world.",
+        "The longest word in Portuguese is 'anticonstitucionalissimamente.'",
+        "Portugal is the oldest nation-state in Europe.",
+        "The famous Portuguese tiles are called 'azulejos.'"
+    ],
+    "Chinese": [
+        "Chinese is the most spoken language in the world.",
+        "Mandarin uses four tones to change meaning.",
+        "Red is a very lucky color in Chinese culture.",
+        "China is home to the world’s largest high-speed rail network.",
+        "The Chinese New Year is also called the Spring Festival."
+    ],
+    "Arabic": [
+        "Arabic is written from right to left.",
+        "The word ‘algebra’ comes from Arabic.",
+        "There are more than 400 million Arabic speakers worldwide.",
+        "Arabic has no capital letters.",
+        "In Arabic culture, hospitality is extremely important."
+    ]
 }
+
 
 # Initialize chat
 if 'messages' not in st.session_state:
@@ -191,6 +251,24 @@ if 'messages' not in st.session_state:
 language = st.sidebar.selectbox("Language", list(tutors.keys()), index=2)
 level = st.sidebar.selectbox("Level", ["A1", "A2", "B1", "B2", "C1"], index=0)
 mode = st.sidebar.selectbox("Mode", ["Free Talk"] + list(roleplays.keys()))
+
+import random
+
+# --- Cultural Fun Fact Display ---
+if 'fact_idx' not in st.session_state or st.session_state.get('last_fact_lang') != language:
+    # On new login or language change, pick a new fact index
+    st.session_state['fact_idx'] = random.randint(0, len(cultural_facts[language])-1)
+    st.session_state['last_fact_lang'] = language
+
+# Show fact in sidebar (or main page if you prefer)
+fact = cultural_facts[language][st.session_state['fact_idx']]
+st.sidebar.markdown(f"💡 **Did you know?**\n\n{fact}")
+
+# Button to get another fun fact
+if st.sidebar.button("🔄 New Cultural Fact"):
+    st.session_state['fact_idx'] = random.randint(0, len(cultural_facts[language])-1)
+    fact = cultural_facts[language][st.session_state['fact_idx']]
+    st.sidebar.markdown(f"💡 **Did you know?**\n\n{fact}")
 
 tutor = tutors[language]
 scenario_prompt = '' if mode == 'Free Talk' else roleplays[mode][language]
