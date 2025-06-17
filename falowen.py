@@ -36,6 +36,88 @@ max_turns = 25
 TEACHER_PASSWORD = "Felix029"
 
 # Exam topic lists
+# --- A1 Exam Topic Lists (Teil 1, 2, 3) ---
+
+A1_TEIL1 = [
+    "Name", "Alter", "Wohnort", "Land", "Sprache", "Familie", "Beruf", "Hobby"
+]
+
+A1_TEIL2 = [
+    ("Geschäft", "schließen"),
+    ("Uhr", "Uhrzeit"),
+    ("Arbeit", "Kollege"),
+    ("Hausaufgabe", "machen"),
+    ("Küche", "kochen"),
+    ("Freizeit", "lesen"),
+    ("Telefon", "anrufen"),
+    ("Reise", "Hotel"),
+    ("Auto", "fahren"),
+    ("Einkaufen", "Obst"),
+    ("Schule", "Lehrer"),
+    ("Geburtstag", "Geschenk"),
+    ("Essen", "Frühstück"),
+    ("Arzt", "Termin"),
+    ("Zug", "Abfahrt"),
+    ("Wetter", "Regen"),
+    ("Buch", "lesen"),
+    ("Computer", "E-Mail"),
+    ("Kind", "spielen"),
+    ("Wochenende", "Plan"),
+    ("Bank", "Geld"),
+    ("Sport", "laufen"),
+    ("Abend", "Fernsehen"),
+    ("Freunde", "Besuch"),
+    ("Bahn", "Fahrkarte"),
+    ("Straße", "Stau"),
+    ("Essen gehen", "Restaurant"),
+    ("Hund", "Futter"),
+    ("Familie", "Kinder"),
+    ("Post", "Brief"),
+    ("Nachbarn", "laut"),
+    ("Kleid", "kaufen"),
+    ("Büro", "Chef"),
+    ("Urlaub", "Strand"),
+    ("Kino", "Film"),
+    ("Internet", "Seite"),
+    ("Bus", "Abfahrt"),
+    ("Arztpraxis", "Wartezeit"),
+    ("Kuchen", "backen"),
+    ("Park", "spazieren"),
+    ("Bäckerei", "Brötchen"),
+    ("Geldautomat", "Karte"),
+    ("Buchladen", "Roman"),
+    ("Fernseher", "Programm"),
+    ("Tasche", "vergessen"),
+    ("Stadtplan", "finden"),
+    ("Ticket", "bezahlen"),
+    ("Zahnarzt", "Schmerzen"),
+    ("Museum", "Öffnungszeiten"),
+    ("Handy", "Akku leer"),
+]
+
+A1_TEIL3 = [
+    "Radio anmachen",
+    "Fenster zumachen",
+    "Licht anschalten",
+    "Tür aufmachen",
+    "Tisch sauber machen",
+    "Hausaufgaben schicken",
+    "Buch bringen",
+    "Handy ausmachen",
+    "Stuhl nehmen",
+    "Wasser holen",
+    "Fenster öffnen",
+    "Musik leiser machen",
+    "Tafel sauber wischen",
+    "Kaffee kochen",
+    "Deutsch üben",
+    "Auto waschen",
+    "Kind abholen",
+    "Tisch decken",
+    "Termin machen",
+    "Nachricht schreiben",
+]
+
 A2_TEIL1 = [
     "Wohnort", "Tagesablauf", "Freizeit", "Sprachen", "Essen & Trinken", "Haustiere",
     "Lieblingsmonat", "Jahreszeit", "Sport", "Kleidung (Sommer)", "Familie", "Beruf",
@@ -248,13 +330,19 @@ elif st.session_state["step"] == 4:
     st.header("Prüfungsteil wählen / Choose exam part")
     exam_level = st.selectbox(
         "Welches Prüfungsniveau möchtest du üben?",
-        ["A2", "B1"],
+        ["A1", "A2", "B1"],
         key="exam_level_select",
         index=0
     )
     st.session_state["selected_exam_level"] = exam_level
 
+    # Teil options for each level
     teil_options = (
+        [
+            "Teil 1 – Basic Introduction",
+            "Teil 2 – Question and Answer",
+            "Teil 3 – Making A Request"
+        ] if exam_level == "A1" else
         [
             "Teil 1 – Fragen zu Schlüsselwörtern",
             "Teil 2 – Bildbeschreibung & Diskussion",
@@ -279,26 +367,63 @@ elif st.session_state["step"] == 4:
             st.session_state["step"] = 3
     with col2:
         if st.button("Start Chat ➡️", key="stage4_start"):
-            if exam_level == "A2":
+            # --------- PROMPT GENERATION FOR EACH LEVEL ---------
+            if exam_level == "A1":
+                if teil.startswith("Teil 1"):
+                    topic = random.choice(A1_TEIL1)
+                    prompt = (
+                        f"**A1 Teil 1:** Das Thema ist **{topic}**. "
+                        "Stelle eine Frage und beantworte eine Frage zu diesem Thema."
+                    )
+                elif teil.startswith("Teil 2"):
+                    thema, keyword = random.choice(A1_TEIL2)
+                    prompt = (
+                        f"**A1 Teil 2:** Thema: **{thema}** | Schlüsselwort: **{keyword}**. "
+                        "Stelle und beantworte eine Frage mit dem Schlüsselwort."
+                    )
+                else:  # Teil 3
+                    aufgabe = random.choice(A1_TEIL3)
+                    prompt = (
+                        f"**A1 Teil 3:** Bitten & Planen: **{aufgabe}**. "
+                        "Formuliere eine höfliche Bitte oder einen Vorschlag."
+                    )
+            elif exam_level == "A2":
                 if teil.startswith("Teil 1"):
                     topic = random.choice(A2_TEIL1)
-                    prompt = f"**A2 Teil 1:** The Keyword is **{topic}**. Stelle eine passende Frage und beantworte eine Frage dazu. Beispiel: 'Hast du Geschwister? – Ja, ich habe eine Schwester.'"
+                    prompt = (
+                        f"**A2 Teil 1:** The Keyword is **{topic}**. "
+                        "Stelle eine passende Frage und beantworte eine Frage dazu. "
+                        "Beispiel: 'Hast du Geschwister? – Ja, ich habe eine Schwester.'"
+                    )
                 elif teil.startswith("Teil 2"):
                     topic = random.choice(A2_TEIL2)
                     prompt = f"**A2 Teil 2:** Talk about the topic: **{topic}**."
                 else:
                     topic = random.choice(A2_TEIL3)
-                    prompt = f"**A2 Teil 3:** Plan a meeting with Herr Felix: **{topic}**. Mache Vorschläge, reagiere, und trefft eine Entscheidung."
-            else:
+                    prompt = (
+                        f"**A2 Teil 3:** Plan a meeting with Herr Felix: **{topic}**. "
+                        "Mache Vorschläge, reagiere, und trefft eine Entscheidung."
+                    )
+            else:  # B1
                 if teil.startswith("Teil 1"):
                     topic = random.choice(B1_TEIL1)
-                    prompt = f"**B1 Teil 1:** Plant gemeinsam: **{topic}**. Mache Vorschläge, reagiere auf deinen Partner, und trefft eine Entscheidung."
+                    prompt = (
+                        f"**B1 Teil 1:** Plant gemeinsam: **{topic}**. "
+                        "Mache Vorschläge, reagiere auf deinen Partner, und trefft eine Entscheidung."
+                    )
                 elif teil.startswith("Teil 2"):
                     topic = random.choice(B1_TEIL2)
-                    prompt = f"**B1 Teil 2:** Halte eine Präsentation über das Thema: **{topic}**. Begrüße, nenne das Thema, gib deine Meinung, teile Vor- und Nachteile, fasse zusammen."
+                    prompt = (
+                        f"**B1 Teil 2:** Halte eine Präsentation über das Thema: **{topic}**. "
+                        "Begrüße, nenne das Thema, gib deine Meinung, teile Vor- und Nachteile, fasse zusammen."
+                    )
                 else:
                     topic = random.choice(B1_TEIL3)
-                    prompt = f"**B1 Teil 3:** {topic}: Dein Partner hat eine Präsentation gehalten. Stelle 1–2 Fragen dazu und gib positives Feedback."
+                    prompt = (
+                        f"**B1 Teil 3:** {topic}: Dein Partner hat eine Präsentation gehalten. "
+                        "Stelle 1–2 Fragen dazu und gib positives Feedback."
+                    )
+
             st.session_state["initial_prompt"] = prompt
             st.session_state["messages"] = []
             st.session_state["turn_count"] = 0
