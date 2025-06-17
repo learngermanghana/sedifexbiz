@@ -370,10 +370,11 @@ elif st.session_state["step"] == 4:
             # --------- PROMPT GENERATION FOR EACH LEVEL ---------
             if exam_level == "A1":
                 if teil.startswith("Teil 1"):
-                    topic = random.choice(A1_TEIL1)
                     prompt = (
-                        f"**A1 Teil 1:** Das Thema ist **{topic}**. "
-                        "Stelle eine Frage und beantworte eine Frage zu diesem Thema."
+                        "**A1 Teil 1:** Stell dich bitte vor! "
+                        "Nenne deinen **Namen**, **Alter**, **Land**, **Wohnort**, **Beruf**, **Hobby** usw. "
+                        "Das ist die Selbsteinführung wie in der Prüfung. "
+                        "Ich gebe dir danach Feedback und weitere Fragen."
                     )
                 elif teil.startswith("Teil 2"):
                     thema, keyword = random.choice(A1_TEIL2)
