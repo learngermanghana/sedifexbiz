@@ -330,6 +330,31 @@ elif st.session_state["step"] == 3:
             else:
                 st.session_state["step"] = 4
 
+elif st.session_state["step"] == 3:
+    st.header("Wie möchtest du üben? (How would you like to practice?)")
+    mode = st.radio(
+        "Choose your practice mode:",
+        ["Geführte Prüfungssimulation (Exam Mode)", "Eigenes Thema/Frage (Custom Topic Chat)"],
+        index=0,
+        key="mode_selector"
+    )
+    st.session_state["selected_mode"] = mode
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("⬅️ Back", key="stage3_back"):
+            st.session_state["step"] = 2
+    with col2:
+        if st.button("Next ➡️", key="stage3_next"):
+            # Reset everything before entering next stage
+            st.session_state["messages"] = []
+            st.session_state["turn_count"] = 0
+            st.session_state["corrections"] = []
+            if mode == "Eigenes Thema/Frage (Custom Topic Chat)":
+                st.session_state["step"] = 5
+            else:
+                st.session_state["step"] = 4
+
 elif st.session_state["step"] == 4:
     st.header("Prüfungsteil wählen / Choose exam part")
     exam_level = st.selectbox(
@@ -384,15 +409,15 @@ elif st.session_state["step"] == 4:
                     thema, keyword = random.choice(A1_TEIL2)
                     prompt = (
                         f"**A1 Teil 2:** Thema: **{thema}** | Schlüsselwort: **{keyword}**. "
-                        "Use the keyword to ask a question. If you can use both keyword and Thema is a plus."
-                        "Beispiel: 'Hast du Geschwister? – Ja, ich habe eine Schwester.'"
+                        "Use the keyword to ask a question. If you can use both keyword and Thema is a plus. "
+                        "Beispiel: 'Wann schließt das Geschäft? – Das Geschäft schließt um 18 Uhr.'"
                     )
                 else:  # Teil 3
                     aufgabe = random.choice(A1_TEIL3)
                     prompt = (
                         f"**A1 Teil 3:** Bitten & Planen: **{aufgabe}**. "
-                        "Formulate a request or give an instruction. "
-                        
+                        "Formulate a polite request or give an instruction. "
+                        "Beispiel: 'Können Sie bitte das Radio anmachen?' oder 'Machen Sie bitte das Fenster zu.'"
                     )
             elif exam_level == "A2":
                 if teil.startswith("Teil 1"):
@@ -405,11 +430,11 @@ elif st.session_state["step"] == 4:
                 elif teil.startswith("Teil 2"):
                     topic = random.choice(A2_TEIL2)
                     prompt = f"**A2 Teil 2:** Talk about the topic: **{topic}**."
-                else:
+                else:  # Teil 3
                     topic = random.choice(A2_TEIL3)
                     prompt = (
                         f"**A2 Teil 3:** Plan a meeting with Herr Felix: **{topic}**. "
-                        "Make suggestions and agree on a given time for the meeting."
+                        "Make suggestions and agree on a time."
                     )
             else:  # B1
                 if teil.startswith("Teil 1"):
@@ -424,7 +449,7 @@ elif st.session_state["step"] == 4:
                         f"**B1 Teil 2:** Halte eine Präsentation über das Thema: **{topic}**. "
                         "Begrüße, nenne das Thema, gib deine Meinung, teile Vor- und Nachteile, fasse zusammen."
                     )
-                else:
+                else:  # Teil 3
                     topic = random.choice(B1_TEIL3)
                     prompt = (
                         f"**B1 Teil 3:** {topic}: Dein Partner hat eine Präsentation gehalten. "
@@ -436,6 +461,7 @@ elif st.session_state["step"] == 4:
             st.session_state["turn_count"] = 0
             st.session_state["corrections"] = []
             st.session_state["step"] = 5
+
 
 def show_formatted_ai_reply(ai_reply):
     # Formatting for AI output: Answer, Correction, Grammar Tip (English), Next Question (German)
