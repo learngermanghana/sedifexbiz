@@ -283,17 +283,21 @@ elif st.session_state["step"] == 2:
         unsafe_allow_html=True,
     )
     st.markdown("> Students who use Falowen are **3x more prepared** for their exams and class!")
-    st.info(
+    st.markdown(
         """
-        🎤 **This is not just chat—it's your personal exam preparation bootcamp!**
-        Every time you talk to Herr Felix, imagine you are **in the exam hall**.
-        Expect realisticspeaking questions, surprise prompts, and real exam tips—sometimes, you’ll even get questions from last year’s exam!
-        **Want to prepare for a class presentation or your next homework?**
-        👉 You can also enter your **own question or topic** at any time—perfect for practicing real classroom situations or special assignments!
-        Let’s make exam training engaging, surprising, and impactful.  
-        **Are you ready? Let’s go! 🚀**
-        """, icon="💡"
+        <div style="font-size:1.11rem;line-height:1.8;">
+        <span style="font-size:1.4em;">🎤</span>
+        <b>This is not just chat—it's your personal exam preparation bootcamp!</b><br><br>
+        Every time you talk to Herr Felix, <b>imagine you are <span style="color:#1866a3;">in the exam hall</span></b>.<br>
+        Expect realistic speaking questions, surprise prompts, and real exam tips—sometimes, you’ll even get questions from last year’s exam!<br><br>
+        <b>Want to prepare for a class presentation or your next homework?</b><br>
+        👉 You can also enter your <b>own question or topic</b> at any time—perfect for practicing real classroom situations or special assignments!<br><br>
+        Let’s make exam training engaging, surprising, and impactful.<br>
+        <b>Are you ready? Let’s go! 🚀</b>
+        </div>
+        """, unsafe_allow_html=True
     )
+
     col1, col2 = st.columns(2)
     with col1:
         if st.button("⬅️ Back", key="stage2_back"):
