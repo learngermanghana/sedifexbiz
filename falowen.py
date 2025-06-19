@@ -550,10 +550,24 @@ if st.session_state["step"] == 5:
         )
         if st.button("Start Custom Chat"):
             st.session_state["custom_chat_level"] = level
-            st.session_state["messages"] = [{
-                "role": "assistant",
-                "content": "Hallo! 👋 What would you like to talk about? Please enter your topic or a question."
-            }]
+            # B2 and C1 get a different intro message for advanced support
+            if level in ["B2", "C1"]:
+                st.session_state["messages"] = [{
+                    "role": "assistant",
+                    "content": (
+                        "Hallo! 👋 What would you like to discuss? "
+                        "Please enter your **presentation topic** or a challenging question (in German or English). "
+                        "I will support you, correct you, and help you improve your B2/C1 skills!"
+                    )
+                }]
+            else:
+                st.session_state["messages"] = [{
+                    "role": "assistant",
+                    "content": (
+                        "Hallo! 👋 What would you like to talk about? "
+                        "Please enter your topic or a question."
+                    )
+                }]
         st.stop()
 
     # ------ B1 Teil 3 exam mode initialization -------
@@ -600,7 +614,7 @@ if st.session_state["step"] == 5:
                 # Self-intro prompt (first time)
                 if not st.session_state["a1_teil1_done"]:
                     prompt = (
-                        "**A1 Teil 1:** Stell dich bitte vor! "
+                        "**A1 Teil 1:** Stell dich bitte vor. Introduce yourself with these keyw! "
                         "Nenne deinen **Namen**, **Alter**, **Land**, **Wohnort**, **Sprachen**, **Beruf**, **Hobby** usw. "
                         "Dies ist die Selbsteinführung wie in der Prüfung."
                     )
