@@ -12,7 +12,7 @@ import requests
 import io
 from openai import OpenAI
 from fpdf import FPDF
-from streamlit_cookies_manager import EncryptedCookieManager
+from st_cookies_manager import EncryptedCookieManager
 import unicodedata
 import firebase_admin
 from firebase_admin import credentials, firestore
