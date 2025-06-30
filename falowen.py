@@ -1,4 +1,5 @@
-import os, json
+import os
+import json
 import streamlit as st
 import pyrebase
 from datetime import datetime
@@ -79,8 +80,26 @@ if not st.session_state["logged_in"]:
                 st.rerun()
             except Exception as e:
                 st.error("Login failed. Try again or register first.")
-    st.stop()
 
+    # --- Google Login Button (Professional UI, Info Only) ---
+    st.markdown("---")
+    col1, col2 = st.columns([1, 8])
+    with col1:
+        st.image("https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg", width=32)
+    with col2:
+        if st.button("Sign in with Google (coming soon)"):
+            st.info(
+                "One-click Google sign-in is coming soon! "
+                "For now, please use Email/Password. "
+                "Visit [falowenapp.com](https://falowenapp.com) for updates."
+            )
+
+    st.markdown("""
+    <style>
+    .stButton button {background-color:#fff; color:#444; border:1px solid #ccc; border-radius:4px;}
+    </style>
+    """, unsafe_allow_html=True)
+    st.stop()
 
 
 # =====================
