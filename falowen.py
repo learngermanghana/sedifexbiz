@@ -12,10 +12,11 @@ import requests
 import io
 from openai import OpenAI
 from fpdf import FPDF
-from st_cookies_manager import EncryptedCookieManager
+from st_cookies_manager import EncryptedCookieManager  # <-- Correct package
 import unicodedata
 import firebase_admin
 from firebase_admin import credentials, firestore
+
 
 # =====================
 # 2. FIREBASE INITIALIZATION
