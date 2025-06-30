@@ -1,3 +1,6 @@
+# =====================
+# 1. IMPORTS & FIREBASE SETUP
+# =====================
 import os
 import random
 import difflib
@@ -11,337 +14,31 @@ from openai import OpenAI
 from fpdf import FPDF
 from streamlit_cookies_manager import EncryptedCookieManager
 import unicodedata
-import snowflake.connector
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-# ---- OpenAI Client Setup ----
+# =====================
+# 2. FIREBASE INITIALIZATION
+# =====================
+if not firebase_admin._apps:
+    firebase_credentials = json.loads(os.getenv("FIREBASE_SERVICE_ACCOUNT"))
+    cred = credentials.Certificate(firebase_credentials)
+    firebase_admin.initialize_app(cred)
+db = firestore.client()
+
+# =====================
+# 3. OPENAI SETUP
+# =====================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
-    st.error(
-        "Missing OpenAI API key. Please set OPENAI_API_KEY as an environment variable or in Streamlit secrets."
-    )
+    st.error("Missing OpenAI API key.")
     st.stop()
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 client = OpenAI()
 
-# ---- SNOWFLAKE DB CONNECTION ----
-@st.cache_resource(show_spinner=False)
-def get_snowflake_conn():
-    return snowflake.connector.connect(
-        user=st.secrets["SNOWFLAKE_USER"],
-        password=st.secrets["SNOWFLAKE_PASSWORD"],
-        account=st.secrets["SNOWFLAKE_ACCOUNT"],
-        warehouse=st.secrets["SNOWFLAKE_WAREHOUSE"],
-        database='FALOWEN_DB',
-        schema='PUBLIC'
-    )
-conn = get_snowflake_conn()
-cs = conn.cursor()
-
-def safe_pdf_val(val):
-    # Converts any value to a string, replacing None/nan with ""
-    if pd.isnull(val) or val is None:
-        return ""
-    return str(val)
-
-
-def get_vocab_progress(student_code):
-    cs.execute(
-        """
-        SELECT word, student_answer, is_correct, date_learned
-        FROM vocab_backup
-        WHERE student_code = %s
-        ORDER BY date_learned DESC
-        """,
-        (student_code,)
-    )
-    return cs.fetchall()
-
-def save_schreiben_submission(student_code, name, level, essay, score, feedback):
-    cs.execute(
-        """
-        INSERT INTO schreiben_backup (student_code, name, level, text, score, feedback, date_submitted)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """,
-        (student_code, name, level, essay, score, feedback, str(date.today()))
-    )
-
-def get_schreiben_progress(student_code):
-    cs.execute(
-        """
-        SELECT text, score, feedback, date_submitted
-        FROM schreiben_backup
-        WHERE student_code = %s
-        ORDER BY date_submitted DESC
-        """,
-        (student_code,)
-    )
-    return cs.fetchall()
-
-def save_sprechen_submission(student_code, name, level, teil, message, score, feedback):
-    cs.execute(
-        """
-        INSERT INTO sprechen_backup (student_code, name, level, task, response, score, feedback, date_submitted)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        (student_code, name, level, teil, message, score, feedback, str(date.today()))
-    )
-
-def get_sprechen_progress(student_code):
-    cs.execute(
-        """
-        SELECT task, response, score, feedback, date_submitted
-        FROM sprechen_backup
-        WHERE student_code = %s
-        ORDER BY date_submitted DESC
-        """,
-        (student_code,)
-    )
-    return cs.fetchall()
-
-def ascii_only(text):
-    return unicodedata.normalize('NFKD', str(text)).encode('ascii', 'ignore').decode('ascii')
-
-# ====== PERSONAL VOCAB HELPERS ======
-def add_my_vocab(student_code, level, word, translation):
-    cs.execute(
-        """
-        INSERT INTO vocab_backup (student_code, level, word, meaning, status, date_learned)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """,
-        (student_code, level, word, translation, 'personal', str(date.today()))
-    )
-
-def get_my_vocab(student_code, level=None):
-    if level:
-        cs.execute(
-            """
-            SELECT word, meaning, date_learned FROM vocab_backup
-            WHERE student_code=%s AND level=%s AND status='personal'
-            ORDER BY date_learned DESC
-            """,
-            (student_code, level)
-        )
-    else:
-        cs.execute(
-            """
-            SELECT word, meaning, date_learned FROM vocab_backup
-            WHERE student_code=%s AND status='personal'
-            ORDER BY date_learned DESC
-            """,
-            (student_code,)
-        )
-    return cs.fetchall()
-
-def delete_my_vocab(student_code, word):
-    cs.execute(
-        """
-        DELETE FROM vocab_backup WHERE student_code=%s AND word=%s AND status='personal'
-        """,
-        (student_code, word)
-    )
-
-def count_my_vocab(student_code, level=None):
-    if level:
-        cs.execute(
-            """
-            SELECT COUNT(*) FROM vocab_backup
-            WHERE student_code=%s AND level=%s AND status='personal'
-            """,
-            (student_code, level)
-        )
-    else:
-        cs.execute(
-            """
-            SELECT COUNT(*) FROM vocab_backup
-            WHERE student_code=%s AND status='personal'
-            """,
-            (student_code,)
-        )
-    return cs.fetchone()[0]
-
-# ====== EXAM PROGRESS (LOAD & SAVE) ======
-def load_progress(student_code, level, teil):
-    cs.execute(
-        """
-        SELECT remaining, used FROM exam_progress
-        WHERE student_code=%s AND level=%s AND teil=%s
-        """,
-        (student_code, level, teil)
-    )
-    row = cs.fetchone()
-    if row:
-        return json.loads(row[0]), json.loads(row[1])
-    return None, None
-
-def save_progress(student_code, level, teil, remaining, used):
-    cs.execute(
-        """
-        MERGE INTO exam_progress t
-        USING (SELECT %s AS student_code, %s AS level, %s AS teil) s
-        ON t.student_code=s.student_code AND t.level=s.level AND t.teil=s.teil
-        WHEN MATCHED THEN
-            UPDATE SET remaining=%s, used=%s
-        WHEN NOT MATCHED THEN
-            INSERT (student_code, level, teil, remaining, used)
-            VALUES (%s, %s, %s, %s, %s)
-        """,
-        (
-            student_code, level, teil,
-            json.dumps(remaining), json.dumps(used),
-            student_code, level, teil,
-            json.dumps(remaining), json.dumps(used)
-        )
-    )
-
-def reset_vocab_progress(student_code, level):
-    cs.execute(
-        "DELETE FROM vocab_backup WHERE student_code=%s AND level=%s AND (status IS NULL OR status='')",
-        (student_code, level)
-    )
-
-def save_vocab_submission(student_code, name, level, word, student_answer, is_correct):
-    cs.execute(
-        """
-        INSERT INTO vocab_backup (student_code, name, level, word, student_answer, is_correct, date_learned)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """,
-        (student_code, name, level, word, student_answer, int(is_correct), str(date.today()))
-    )
-
-
-# ====== VOCAB STATS HELPERS (Snowflake, real-time) ======
-def practiced_count(student_code, level):
-    cs.execute(
-        """
-        SELECT COUNT(DISTINCT word)
-        FROM vocab_backup
-        WHERE student_code = %s AND level = %s
-        """,
-        (student_code, level)
-    )
-    return cs.fetchone()[0] or 0
-
-def mastered_count(student_code, level):
-    cs.execute(
-        """
-        SELECT COUNT(DISTINCT word)
-        FROM vocab_backup
-        WHERE student_code = %s AND level = %s AND is_correct = 1
-        """,
-        (student_code, level)
-    )
-    return cs.fetchone()[0] or 0
-
-def personal_count(student_code, level=None):
-    try:
-        return count_my_vocab(student_code, level)
-    except Exception:
-        return 0
-
-# ====== VOCAB DAILY STREAK ======
-def get_vocab_streak(student_code):
-    rows = get_vocab_progress(student_code)
-    if not rows:
-        return 0
-    dates = sorted({str(row[3]) for row in rows if row[2]}, reverse=True)
-    if not dates:
-        return 0
-    streak = 0
-    today = date.today()
-    for i, d in enumerate(dates):
-        day = datetime.strptime(d, "%Y-%m-%d").date()
-        if day == today - timedelta(days=streak):
-            streak += 1
-        else:
-            break
-    return streak
-
-
-def fast_clean(text: str) -> str:
-    """Normalize to ASCII, lowercase, trim."""
-    return (
-        unicodedata.normalize("NFKD", str(text))
-        .encode("ascii", "ignore")
-        .decode("ascii")
-        .strip()
-        .lower()
-    )
-        
-# ====== WRITING STATS (fix this as needed) ======
-def get_writing_stats(student_code):
-    cs.execute(
-        """
-        SELECT COUNT(*), SUM(CASE WHEN score >= 17 THEN 1 ELSE 0 END)
-        FROM schreiben_backup
-        WHERE student_code = %s
-        """,
-        (student_code,)
-    )
-    attempted, passed = cs.fetchone()
-    attempted = attempted or 0
-    passed = passed or 0
-    accuracy = round(100 * passed / attempted, 1) if attempted else 0
-    return attempted, passed, accuracy
-
-def get_student_stats(student_code):
-    cs.execute("""
-        SELECT level, COUNT(*) as attempted, SUM(CASE WHEN score >= 17 THEN 1 ELSE 0 END) as correct
-        FROM schreiben_backup
-        WHERE student_code = %s
-        GROUP BY level
-    """, (student_code,))
-    rows = cs.fetchall()
-    stats = {}
-    for level, attempted, correct in rows:
-        stats[level] = {"attempted": attempted, "correct": correct}
-    return stats
-
-# ====== FALOWEN USAGE & DAILY QUOTA ======
-FALOWEN_DAILY_LIMIT = 20  # Set your daily max attempts per student
-
-def get_falowen_usage(student_code):
-    today_str = str(date.today())
-    key = f"{student_code}_falowen_{today_str}"
-    if "falowen_usage" not in st.session_state:
-        st.session_state["falowen_usage"] = {}
-    st.session_state["falowen_usage"].setdefault(key, 0)
-    return st.session_state["falowen_usage"][key]
-
-def inc_falowen_usage(student_code):
-    today_str = str(date.today())
-    key = f"{student_code}_falowen_{today_str}"
-    if "falowen_usage" not in st.session_state:
-        st.session_state["falowen_usage"] = {}
-    st.session_state["falowen_usage"].setdefault(key, 0)
-    st.session_state["falowen_usage"][key] += 1
-
-def get_vocab_streak(student_code):
-    """Return the number of consecutive days student has done vocab practice."""
-    rows = get_vocab_progress(student_code)
-    if not rows:
-        return 0
-    # Extract dates where correct == True
-    dates = sorted({str(row[3]) for row in rows if row[2]}, reverse=True)
-    if not dates:
-        return 0
-    streak = 0
-    today = date.today()
-    for i, d in enumerate(dates):
-        day = datetime.strptime(d, "%Y-%m-%d").date()
-        if day == today - timedelta(days=streak):
-            streak += 1
-        else:
-            break
-    return streak
-
-def has_falowen_quota(student_code):
-    return get_falowen_usage(student_code) < FALOWEN_DAILY_LIMIT
-
-    
 # =====================
-# 1. CONFIG & DATA LOAD
+# 4. COOKIE MANAGER
 # =====================
-
 COOKIE_SECRET = os.getenv("COOKIE_SECRET") or st.secrets.get("COOKIE_SECRET")
 if not COOKIE_SECRET:
     raise ValueError("COOKIE_SECRET environment variable not set!")
@@ -349,167 +46,134 @@ if not COOKIE_SECRET:
 cookie_manager = EncryptedCookieManager(prefix="falowen_", password=COOKIE_SECRET)
 cookie_manager.ready()
 
-@st.cache_data
-def load_student_data():
-    GOOGLE_SHEET_CSV = "https://docs.google.com/spreadsheets/d/12NXf5FeVHr7JJT47mRHh7Jp-TC1yhPS7ZG6nzZVTt1U/gviz/tq?tqx=out:csv"
-    try:
-        response = requests.get(GOOGLE_SHEET_CSV, timeout=7)
-        response.raise_for_status()
-        df = pd.read_csv(io.StringIO(response.text), engine='python')
-        df.columns = [c.strip() for c in df.columns]
-        for col in ["StudentCode", "Email"]:
-            if col in df.columns:
-                df[col] = df[col].astype(str).str.strip().str.lower()
-        return df
-    except Exception as e:
-        st.warning(f"Could not load student data from Google Sheets: {e}")
-        return pd.DataFrame()
-
-df_students = load_student_data()
-if df_students.empty or "StudentCode" not in df_students.columns:
-    st.error("Could not load student list. Please try again later.")
-    st.stop()
-
 # =====================
-# 2. SESSION STATE DEFAULTS
+# 5. SESSION STATE DEFAULTS
 # =====================
 for k, v in {
     "logged_in": False,
-    "student_row": None,
-    "student_code": "",
-    "student_name": ""
+    "user_row": None,
+    "user_code": "",
+    "user_name": ""
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
 # =====================
-# 3. LOGIN LOGIC (CLEAN FLOW)
+# 6. LOGIN LOGIC (NO GOOGLE SHEETS)
 # =====================
 
-# -- 1. Always check if cookie manager is ready --
+def fetch_user_by_code_or_email(code_or_email):
+    """Returns the user Firestore doc as dict if found, else None."""
+    code_or_email = code_or_email.strip().lower()
+    query = (
+        db.collection("users")
+        .where("user_code", "==", code_or_email)
+        .stream()
+    )
+    docs = list(query)
+    if docs:
+        return docs[0].to_dict()
+    # Try email lookup if not found
+    query = (
+        db.collection("users")
+        .where("email", "==", code_or_email)
+        .stream()
+    )
+    docs = list(query)
+    if docs:
+        return docs[0].to_dict()
+    return None
+
 if not cookie_manager.ready():
     st.warning("Cookies are not ready. Please refresh this page.")
     st.stop()
 
-# -- 2. Attempt auto-login from cookie --
+# Try auto-login via cookie
 if not st.session_state["logged_in"]:
-    cookie_code = None
-    try:
-        cookie_code = cookie_manager.get("student_code")
-    except Exception:
-        cookie_code = None
+    cookie_code = cookie_manager.get("user_code")
     if cookie_code:
-        cookie_code = cookie_code.strip().lower()
-        match = df_students[df_students["StudentCode"].str.lower().str.strip() == cookie_code]
-        if not match.empty:
-            st.session_state["student_code"] = cookie_code
-            st.session_state["student_row"] = match.iloc[0].to_dict()
-            st.session_state["student_name"] = match.iloc[0]["Name"]
+        user = fetch_user_by_code_or_email(cookie_code)
+        if user:
+            st.session_state["user_code"] = user["user_code"]
+            st.session_state["user_row"] = user
+            st.session_state["user_name"] = user["name"]
             st.session_state["logged_in"] = True
 
-# -- 3. Manual login UI if not logged in --
+# Manual login if not logged in
 if not st.session_state["logged_in"]:
-    st.title("🔑 Student Login")
-    login_input = st.text_input("Enter your Student Code or Email:").strip().lower()
+    st.title("🔑 User Login")
+    login_input = st.text_input("Enter your User Code or Email:").strip().lower()
     if st.button("Login"):
-        match = df_students[
-            (df_students["StudentCode"].str.lower().str.strip() == login_input) |
-            (df_students["Email"].str.lower().str.strip() == login_input)
-        ]
-        if not match.empty:
-            st.session_state["student_code"] = match.iloc[0]["StudentCode"].strip().lower()
-            st.session_state["student_row"] = match.iloc[0].to_dict()
-            st.session_state["student_name"] = match.iloc[0]["Name"]
+        user = fetch_user_by_code_or_email(login_input)
+        if user:
+            st.session_state["user_code"] = user["user_code"]
+            st.session_state["user_row"] = user
+            st.session_state["user_name"] = user["name"]
             st.session_state["logged_in"] = True
-            cookie_manager["student_code"] = st.session_state["student_code"]
+            cookie_manager["user_code"] = user["user_code"]
             cookie_manager.save()
-            st.success(f"Welcome, {st.session_state['student_name']}! Login successful.")
+            st.success(f"Welcome, {st.session_state['user_name']}!")
             st.rerun()
         else:
-            st.error("Login failed. Please check your Student Code or Email and try again.")
+            st.error("Login failed. Please check your User Code or Email.")
     st.stop()
 
-# -- 4. Final check: If logged in, but student is missing from sheet (deleted, error, etc) --
+# Check: if account deleted after login, force logout
 if st.session_state["logged_in"]:
-    code = st.session_state["student_code"]
-    match = df_students[df_students["StudentCode"].str.lower().str.strip() == code]
-    if match.empty:
-        st.warning("Your student account could not be found. Please log in again.")
-        for k in ["logged_in", "student_code", "student_name", "student_row"]:
+    user = fetch_user_by_code_or_email(st.session_state["user_code"])
+    if not user:
+        st.warning("Your user account could not be found. Please log in again.")
+        for k in ["logged_in", "user_code", "user_name", "user_row"]:
             st.session_state[k] = "" if "name" in k or "code" in k else False
-        cookie_manager["student_code"] = ""
+        cookie_manager["user_code"] = ""
         cookie_manager.save()
         st.rerun()
 
-# =====================
-# 4. LOGOUT BUTTON
-# =====================
-if st.session_state.get("logged_in", False):
-    col1, col2 = st.columns([2, 3])
-    with col2:
-        if st.button("🚪 Log out", key="logout_btn"):
-            for k in ["logged_in", "student_row", "student_code", "student_name"]:
-                if k in st.session_state:
-                    del st.session_state[k]
-            cookie_manager["student_code"] = ""
-            cookie_manager.save()
-            st.success("Logged out successfully.")
-            st.rerun()
+# ====== FIREBASE HELPERS (example: get user plan) ======
+def get_user_plan(user_code):
+    user = fetch_user_by_code_or_email(user_code)
+    if user:
+        return user.get("plan", "Free Plan")
+    return "Free Plan"
 
-# ====== Now continue your app below this point, tabs, etc... ======
+# ====== VOCAB HELPERS (just sample functions; expand as needed) ======
+def get_vocab_streak(user_code):
+    docs = db.collection("vocab_backup")\
+             .where("user_code", "==", user_code)\
+             .where("is_correct", "==", True)\
+             .stream()
+    dates = sorted({
+        doc.get("date_learned")
+        for doc in docs if doc.get("date_learned")
+    }, reverse=True)
+    if not dates:
+        return 0
+    streak = 0
+    today = date.today()
+    for i, d in enumerate(dates):
+        try:
+            day = datetime.strptime(d, "%Y-%m-%d").date()
+            if day == today - timedelta(days=streak):
+                streak += 1
+            else:
+                break
+        except:
+            continue
+    return streak
 
+def get_writing_stats(user_code):
+    docs = db.collection("schreiben_backup")\
+             .where("user_code", "==", user_code)\
+             .stream()
+    attempted = 0
+    passed = 0
+    for doc in docs:
+        attempted += 1
+        if doc.get("score", 0) >= 17:
+            passed += 1
+    accuracy = round(100 * passed / attempted, 1) if attempted else 0
+    return attempted, passed, accuracy
 
-
-
-# ====================================
-# 4. FLEXIBLE ANSWER CHECKERS
-# ====================================
-
-def is_close_answer(student, correct):
-    student = student.strip().lower()
-    correct = correct.strip().lower()
-    if correct.startswith("to "):
-        correct = correct[3:]
-    if len(student) < 3 or len(student) < 0.6 * len(correct):
-        return False
-    similarity = difflib.SequenceMatcher(None, student, correct).ratio()
-    return similarity > 0.80
-
-def is_almost(student, correct):
-    student = student.strip().lower()
-    correct = correct.strip().lower()
-    if correct.startswith("to "):
-        correct = correct[3:]
-    similarity = difflib.SequenceMatcher(None, student, correct).ratio()
-    return 0.60 < similarity <= 0.80
-
-def validate_translation_openai(word, student_answer):
-    """Use OpenAI to verify if the student's answer is a valid translation."""
-    prompt = (
-        f"Is '{student_answer.strip()}' an accurate English translation of the German word '{word}'? "
-        "Reply with 'True' or 'False' only."
-    )
-    try:
-        resp = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1,
-            temperature=0,
-        )
-        reply = resp.choices[0].message.content.strip().lower()
-        return reply.startswith("true")
-    except Exception:
-        return False
-
-
-# ====================================
-# 5. CONSTANTS & VOCAB LISTS
-# ====================================
-
-FALOWEN_DAILY_LIMIT = 20
-VOCAB_DAILY_LIMIT = 20
-SCHREIBEN_DAILY_LIMIT = 5
-max_turns = 25
 
 
 # --- Vocab lists for all levels ---
