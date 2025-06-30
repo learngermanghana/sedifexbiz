@@ -1,133 +1,87 @@
-# =====================
-# 1. IMPORTS & FIREBASE SETUP
-# =====================
-import os
-import random
-import difflib
-import json
-from datetime import date, datetime, timedelta
-import pandas as pd
+import os, json
 import streamlit as st
-import requests
-import io
-from openai import OpenAI
-from fpdf import FPDF
-from st_cookies_manager import EncryptedCookieManager  # <-- Correct package
-import unicodedata
+import pyrebase
+from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 
+# === Firebase Configs ===
+FIREBASE_CONFIG = json.loads(os.getenv("FIREBASE_CONFIG"))
+firebase = pyrebase.initialize_app(FIREBASE_CONFIG)
+auth = firebase.auth()
 
-# =====================
-# 2. FIREBASE INITIALIZATION
-# =====================
 if not firebase_admin._apps:
     firebase_credentials = json.loads(os.getenv("FIREBASE_SERVICE_ACCOUNT"))
     cred = credentials.Certificate(firebase_credentials)
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# =====================
-# 3. OPENAI SETUP
-# =====================
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    st.error("Missing OpenAI API key.")
-    st.stop()
-os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
-client = OpenAI()
-
-# =====================
-# 4. COOKIE MANAGER
-# =====================
-COOKIE_SECRET = os.getenv("COOKIE_SECRET") or st.secrets.get("COOKIE_SECRET")
-if not COOKIE_SECRET:
-    raise ValueError("COOKIE_SECRET environment variable not set!")
-
-cookie_manager = EncryptedCookieManager(prefix="falowen_", password=COOKIE_SECRET)
-cookie_manager.ready()
-
-# =====================
-# 5. SESSION STATE DEFAULTS
-# =====================
-for k, v in {
-    "logged_in": False,
-    "user_row": None,
-    "user_code": "",
-    "user_name": ""
-}.items():
+# === Session State Defaults ===
+for k, v in {"logged_in": False, "user_row": None, "user_email": "", "user_name": ""}.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# =====================
-# 6. LOGIN LOGIC (NO GOOGLE SHEETS)
-# =====================
-def fetch_user_by_code_or_email(code_or_email):
-    """Returns the user Firestore doc as dict if found, else None."""
-    code_or_email = code_or_email.strip().lower()
-    query = (
-        db.collection("users")
-        .where("user_code", "==", code_or_email)
-        .stream()
-    )
+def create_or_fetch_user(email, name):
+    users_ref = db.collection("users")
+    # Query by email
+    query = users_ref.where("email", "==", email).stream()
     docs = list(query)
     if docs:
-        return docs[0].to_dict()
-    # Try email lookup if not found
-    query = (
-        db.collection("users")
-        .where("email", "==", code_or_email)
-        .stream()
-    )
-    docs = list(query)
-    if docs:
-        return docs[0].to_dict()
-    return None
+        doc = docs[0]
+        user_data = doc.to_dict()
+        # Update name if changed
+        if user_data.get("name") != name:
+            users_ref.document(doc.id).update({"name": name})
+            user_data["name"] = name
+        return user_data
+    # Create new
+    user_code = email.split("@")[0]
+    user_doc = {
+        "email": email,
+        "name": name,
+        "user_code": user_code,
+        "joined": datetime.utcnow().isoformat()
+    }
+    users_ref.document(user_code).set(user_doc)
+    return user_doc
 
-if not cookie_manager.ready():
-    st.warning("Cookies are not ready. Please refresh this page.")
+# --- Login/Register UI ---
+if not st.session_state["logged_in"]:
+    st.title("🔐 Welcome to Falowen!")
+    menu = st.radio("Choose an option:", ["Login", "Register"])
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    if menu == "Register":
+        name = st.text_input("Your Name")
+        if st.button("Register"):
+            try:
+                user = auth.create_user_with_email_and_password(email, password)
+                user_profile = create_or_fetch_user(email, name)
+                st.session_state["user_email"] = email
+                st.session_state["user_name"] = name
+                st.session_state["user_row"] = user_profile
+                st.session_state["logged_in"] = True
+                st.success("Registration successful!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Registration failed: {e}")
+    else:
+        if st.button("Login"):
+            try:
+                user = auth.sign_in_with_email_and_password(email, password)
+                # Pull name from Firestore (or fallback to email)
+                user_profile = create_or_fetch_user(email, user.get("displayName") or email.split("@")[0])
+                st.session_state["user_email"] = email
+                st.session_state["user_name"] = user_profile["name"]
+                st.session_state["user_row"] = user_profile
+                st.session_state["logged_in"] = True
+                st.success(f"Welcome, {st.session_state['user_name']}!")
+                st.rerun()
+            except Exception as e:
+                st.error("Login failed. Try again or register first.")
     st.stop()
 
-# Try auto-login via cookie
-if not st.session_state["logged_in"]:
-    cookie_code = cookie_manager.get("user_code")
-    if cookie_code:
-        user = fetch_user_by_code_or_email(cookie_code)
-        if user:
-            st.session_state["user_code"] = user["user_code"]
-            st.session_state["user_row"] = user
-            st.session_state["user_name"] = user["name"]
-            st.session_state["logged_in"] = True
 
-# Manual login if not logged in
-if not st.session_state["logged_in"]:
-    st.title("🔑 User Login")
-    login_input = st.text_input("Enter your User Code or Email:").strip().lower()
-    if st.button("Login"):
-        user = fetch_user_by_code_or_email(login_input)
-        if user:
-            st.session_state["user_code"] = user["user_code"]
-            st.session_state["user_row"] = user
-            st.session_state["user_name"] = user["name"]
-            st.session_state["logged_in"] = True
-            cookie_manager["user_code"] = user["user_code"]
-            cookie_manager.save()
-            st.success(f"Welcome, {st.session_state['user_name']}!")
-            st.rerun()
-        else:
-            st.error("Login failed. Please check your User Code or Email.")
-    st.stop()
-
-# Check: if account deleted after login, force logout
-if st.session_state["logged_in"]:
-    user = fetch_user_by_code_or_email(st.session_state["user_code"])
-    if not user:
-        st.warning("Your user account could not be found. Please log in again.")
-        for k in ["logged_in", "user_code", "user_name", "user_row"]:
-            st.session_state[k] = "" if "name" in k or "code" in k else False
-        cookie_manager["user_code"] = ""
-        cookie_manager.save()
-        st.rerun()
 
 # =====================
 # 7. VOCABULARY DICTIONARIES & EXAM TOPICS
