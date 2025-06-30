@@ -4,6 +4,7 @@ import streamlit as st
 import pyrebase
 from datetime import datetime
 import firebase_admin
+import random
 from firebase_admin import credentials, firestore
 
 # === Firebase Configs ===
