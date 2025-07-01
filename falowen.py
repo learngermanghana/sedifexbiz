@@ -537,5 +537,69 @@ elif st.session_state["logged_in"] and tab == "Exams":
         )
 
 
+elif st.session_state["logged_in"] and tab == "Grammar Helper":
+    user_row = st.session_state.get("user_row", {})
+    user_name = user_row.get("name", "User")
+
+    st.header("💡 Falowen Grammar Chat (Herr Felix A.I.)")
+    st.info("Ask any German grammar question below. Herr Felix will answer clearly in English with examples.")
+
+    # Chat history in session
+    if "grammar_chat" not in st.session_state:
+        st.session_state["grammar_chat"] = []
+
+    # Reset chat button
+    if st.button("Reset Grammar Chat"):
+        st.session_state["grammar_chat"] = []
+
+    # Show chat history
+    for msg in st.session_state["grammar_chat"]:
+        who = "🧑‍🏫 Herr Felix" if msg["role"] == "assistant" else "🧑 Student"
+        st.markdown(f"**{who}:** {msg['content']}")
+
+    # Chat input
+    grammar_input = st.text_input("Ask any grammar question...", key="grammar_input")
+    if st.button("Send", disabled=not grammar_input.strip()):
+        st.session_state["grammar_chat"].append({"role": "user", "content": grammar_input.strip()})
+
+        # AI prompt: always respond in English, clear/simple explanation, with an example
+        prompt = (
+            "You are Herr Felix, a friendly and expert German grammar teacher. "
+            "Answer every question in clear, simple English. "
+            "Always give a practical example, and explain step-by-step for beginners. "
+            "Never switch to German in your explanations."
+        )
+        messages = [{"role": "system", "content": prompt}] + st.session_state["grammar_chat"]
+
+        with st.spinner("Herr Felix is thinking..."):
+            try:
+                resp = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages,
+                    temperature=0.25,
+                    max_tokens=400
+                )
+                answer = resp.choices[0].message.content
+            except Exception as e:
+                answer = f"Sorry, something went wrong: {e}"
+
+        st.session_state["grammar_chat"].append({"role": "assistant", "content": answer})
+        st.experimental_rerun()
+
+    # Download chat as PDF
+    if st.session_state["grammar_chat"]:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        for m in st.session_state["grammar_chat"]:
+            who = "Herr Felix" if m["role"] == "assistant" else "Student"
+            pdf.multi_cell(0, 8, f"{who}: {m['content']}\n")
+        pdf_bytes = pdf.output(dest="S").encode("latin1", "replace")
+        st.download_button(
+            "⬇️ Download Chat as PDF",
+            pdf_bytes,
+            file_name=f"Grammar_Chat_{user_name}.pdf",
+            mime="application/pdf"
+        )
 
 
