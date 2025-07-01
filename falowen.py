@@ -86,8 +86,8 @@ google_auth = OAuth2Component(
     client_secret=GOOGLE_CLIENT_SECRET,
     authorize_endpoint="https://accounts.google.com/o/oauth2/v2/auth",
     token_endpoint="https://oauth2.googleapis.com/token",
-    revoke_endpoint="https://oauth2.googleapis.com/revoke",
 )
+
 
 def create_or_fetch_user(email, name, google_id=None):
     users_ref = db.collection("users")
@@ -236,3 +236,306 @@ if st.session_state["logged_in"] and tab == "Dashboard":
     st.markdown("---")
     st.subheader("Your Learning Streak & Achievements (coming soon)")
     st.info("Streak, badges and XP will be added for more motivation!")
+
+VOCAB_LISTS = {
+    "A1": [
+        ("Haus", "house"),
+        ("Buch", "book"),
+        ("Auto", "car"),
+        ("Tisch", "table"),
+        ("Hund", "dog"),
+    ],
+    "A2": [
+        ("Flughafen", "airport"),
+        ("Geschenk", "gift"),
+        ("Gemüse", "vegetables"),
+    ],
+    # Add more levels/words as you grow!
+}
+
+if st.session_state["logged_in"] and tab == "Vocab Trainer":
+    user_row = st.session_state.get("user_row", {})
+    user_code = user_row.get("user_code", "")
+    user_name = user_row.get("name", "User")
+    level = st.selectbox("Choose Level", list(VOCAB_LISTS.keys()), key="vocab_level")
+
+    # Pick a random vocab to practice (filter out completed)
+    practiced = set()
+    docs = db.collection("vocab_progress") \
+        .where("user_code", "==", user_code) \
+        .where("level", "==", level) \
+        .where("is_correct", "==", True).stream()
+    for doc in docs:
+        practiced.add(doc.to_dict().get("word"))
+
+    choices = [v for v in VOCAB_LISTS[level] if v[0] not in practiced]
+    if not choices:
+        st.success("🎉 You finished all words for this level!")
+        if st.button("Reset Progress"):
+            # Delete all vocab_progress for this user/level
+            docs = db.collection("vocab_progress") \
+                .where("user_code", "==", user_code) \
+                .where("level", "==", level).stream()
+            for doc in docs:
+                db.collection("vocab_progress").document(doc.id).delete()
+            st.rerun()
+        st.stop()
+
+    # Random question
+    word, correct = random.choice(choices)
+    st.markdown(f"**Translate:** `{word}`")
+    user_input = st.text_input("Your Answer", key=f"vocab_input_{word}")
+
+    if st.button("Check Answer"):
+        if user_input.strip().lower() == correct.lower():
+            st.success("✅ Correct!")
+            is_correct = True
+        else:
+            st.error(f"❌ Not correct. The answer is: **{correct}**")
+            is_correct = False
+        # Save attempt (always save, even if wrong)
+        save_vocab_submission(user_code, user_name, level, word, user_input, is_correct)
+        st.experimental_rerun()
+
+    # Progress bar
+    total = len(VOCAB_LISTS[level])
+    done = len(practiced)
+    st.progress(done / total, text=f"{done}/{total} mastered")
+
+elif st.session_state["logged_in"] and tab == "My Vocab":
+    user_row = st.session_state.get("user_row", {})
+    user_code = user_row.get("user_code", "")
+    user_name = user_row.get("name", "User")
+    level = st.selectbox("Choose Level", ["A1", "A2", "B1", "B2", "C1"], key="my_vocab_level")
+
+    st.header("📝 My Personal Vocabulary List")
+    st.write("Add words you want to remember, delete any, and download your full list as PDF.")
+
+    # Add new word form
+    with st.form("add_my_vocab_form", clear_on_submit=True):
+        new_word = st.text_input("German Word", key="my_vocab_word")
+        new_translation = st.text_input("Translation (English or other)", key="my_vocab_translation")
+        submitted = st.form_submit_button("Add to My Vocab")
+        if submitted and new_word.strip() and new_translation.strip():
+            add_my_vocab(user_code, level, new_word.strip(), new_translation.strip())
+            st.success(f"Added '{new_word.strip()}' → '{new_translation.strip()}' to your list.")
+            st.rerun()
+
+    # Show current list
+    rows = get_my_vocab(user_code, level)
+    if rows:
+        for row in rows:
+            col1, col2, col3 = st.columns([4, 4, 1])
+            col1.markdown(f"**{row[1]}**")
+            col2.markdown(f"{row[2]}")
+            if col3.button("🗑️", key=f"del_{row[0]}"):
+                delete_my_vocab(row[0], user_code)
+                st.rerun()
+        if st.button("📄 Download My Vocab as PDF"):
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=11)
+            title = f"My Personal Vocab – {level} ({user_name})"
+            pdf.cell(0, 8, title, ln=1)
+            pdf.ln(3)
+            # Table headers
+            pdf.set_font("Arial", "B", 10)
+            pdf.cell(50, 8, "German", border=1)
+            pdf.cell(60, 8, "Translation", border=1)
+            pdf.cell(30, 8, "Date", border=1)
+            pdf.ln()
+            pdf.set_font("Arial", "", 10)
+            for row in rows:
+                pdf.cell(50, 8, str(row[1]), border=1)
+                pdf.cell(60, 8, str(row[2]), border=1)
+                pdf.cell(30, 8, str(row[3]), border=1)
+                pdf.ln()
+            pdf_bytes = pdf.output(dest="S").encode("latin1", "replace")
+            st.download_button(
+                label="Download PDF",
+                data=pdf_bytes,
+                file_name=f"{user_code}_my_vocab_{level}.pdf",
+                mime="application/pdf"
+            )
+    else:
+        st.info("No personal vocab saved yet for this level.")
+elif st.session_state["logged_in"] and tab == "Schreiben Trainer":
+    user_row = st.session_state.get("user_row", {})
+    user_code = user_row.get("user_code", "")
+    user_name = user_row.get("name", "User")
+    user_email = user_row.get("email", "")
+    schreiben_levels = ["A1", "A2", "B1", "B2", "C1"]
+    schreiben_level = st.selectbox("Choose your writing level:", schreiben_levels, key="schreiben_level")
+    today_str = str(datetime.today().date())
+
+    # Show your writing history (today)
+    # --- Optional: You can expand this for full stats!
+    # If you want to count, you can do:
+    # docs = db.collection("writing_submissions").where("user_code", "==", user_code).where("level", "==", schreiben_level).stream()
+    # st.write("Attempts today:", len(list(docs)))
+
+    st.header("✍️ Schreiben Trainer (Writing Practice)")
+    user_letter = st.text_area("Paste or type your German letter/essay here.", height=180, key="schreiben_text")
+
+    ai_prompt = (
+        f"You are Herr Felix, a supportive and innovative German letter writing trainer. "
+        f"The student has submitted a {schreiben_level} German letter or essay. "
+        "Write a brief comment in English about what the student did well and what they should improve while highlighting their points so they understand. "
+        "Check if the letter matches their level. Talk as Herr Felix talking to a student and highlight the phrases with errors so they see it. "
+        "Don't just say errors—show exactly where the mistakes are. "
+        "1. Give a score out of 25 marks and always display the score clearly. "
+        "2. If the score is 17 or more, write: '**Passed: You may submit to your tutor!**'. "
+        "3. If the score is 16 or less, write: '**Keep improving before you submit.**'. "
+        "4. Only write one of these two sentences, never both, and place it on a separate bolded line at the end of your feedback. "
+        "5. Always explain why you gave the student that score based on grammar, spelling, vocabulary, coherence, etc. "
+        "6. Also check for AI usage or if the student wrote with their own effort. "
+        "7. List and show the phrases to improve on with tips, suggestions, and what they should do. Let the student use your suggestions to correct the letter, but don't write the full corrected letter for them. "
+        "Give scores by analyzing grammar, structure, vocabulary, etc. Explain to the student why you gave that score."
+    )
+
+    if st.button("Get Feedback", type="primary", disabled=not user_letter.strip()):
+        with st.spinner("🧑‍🏫 Herr Felix is typing..."):
+            try:
+                completion = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": ai_prompt},
+                        {"role": "user", "content": user_letter},
+                    ],
+                    temperature=0.6,
+                )
+                feedback = completion.choices[0].message.content
+            except Exception as e:
+                st.error("AI feedback failed. Please check your OpenAI setup.")
+                feedback = None
+
+        if feedback:
+            import re
+            # Detect score robustly
+            score_match = re.search(r"score\s*(?:[:=]|is)?\s*(\d+)\s*/\s*25", feedback, re.IGNORECASE)
+            if not score_match:
+                score_match = re.search(r"Score[:\s]+(\d+)\s*/\s*25", feedback, re.IGNORECASE)
+            score = int(score_match.group(1)) if score_match else 0
+
+            # Save submission to Firestore
+            db.collection("writing_submissions").add({
+                "user_code": user_code,
+                "user_name": user_name,
+                "user_email": user_email,
+                "level": schreiben_level,
+                "letter": user_letter,
+                "feedback": feedback,
+                "score": score,
+                "date": today_str,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+
+            # Show feedback
+            st.markdown("---")
+            st.markdown("#### 📝 Feedback from Herr Felix")
+            st.markdown(feedback)
+
+            # Download as PDF
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            pdf.multi_cell(0, 10, f"Your Letter:\n\n{user_letter}\n\nFeedback from Herr Felix:\n\n{feedback}")
+            pdf_bytes = pdf.output(dest="S").encode("latin1", "replace")
+            st.download_button(
+                "⬇️ Download Feedback as PDF",
+                pdf_bytes,
+                file_name=f"Schreiben_Feedback_{user_name}_{schreiben_level}.pdf",
+                mime="application/pdf"
+            )
+elif st.session_state["logged_in"] and tab == "Exams":
+    user_row = st.session_state.get("user_row", {})
+    user_code = user_row.get("user_code", "")
+    user_name = user_row.get("name", "User")
+    user_email = user_row.get("email", "")
+
+    st.header("🎤 Oral Exam Practice (Falowen AI)")
+
+    exam_levels = ["A1", "A2", "B1"]
+    exam_level = st.selectbox("Choose exam level:", exam_levels, key="exam_level")
+    exam_parts = {
+        "A1": ["Teil 1 – Introduction", "Teil 2 – Question & Answer", "Teil 3 – Request"],
+        "A2": ["Teil 1 – General Questions", "Teil 2 – Opinion/Argument", "Teil 3 – Planning"],
+        "B1": ["Teil 1 – Dialogue", "Teil 2 – Monologue", "Teil 3 – Feedback/Q&A"]
+    }
+    exam_part = st.selectbox("Choose exam part:", exam_parts[exam_level], key="exam_part")
+
+    # Instruction
+    if exam_level == "A1" and exam_part.startswith("Teil 1"):
+        st.info("Introduce yourself: Name, Age, Country, City, Languages, Job, Hobby.")
+        system_prompt = (
+            "You are Herr Felix, an A1 German examiner. The student will introduce themselves. "
+            "Give 3 follow-up questions, and after each student response, correct any mistakes (in English) and encourage them."
+        )
+    elif exam_level == "A1" and exam_part.startswith("Teil 2"):
+        st.info("Ask a question using a provided topic and keyword, then answer it yourself.")
+        system_prompt = (
+            "You are Herr Felix, an A1 German examiner. Give the student a topic and keyword (e.g., 'Geschäft – schließen'). "
+            "The student must write a question using the keyword and answer it themselves. Give short, motivating feedback after."
+        )
+    elif exam_level == "A1" and exam_part.startswith("Teil 3"):
+        st.info("Write a polite request (e.g., 'Radio anmachen', 'Fenster zumachen').")
+        system_prompt = (
+            "You are Herr Felix, an A1 German examiner. The student will write a short, polite request using the given prompt. Correct errors and encourage them."
+        )
+    else:
+        st.info("Practice exam questions at your level. The AI will simulate an examiner and give you feedback.")
+
+    # Track conversation
+    if "exam_chat" not in st.session_state:
+        st.session_state["exam_chat"] = []
+
+    # Reset chat button
+    if st.button("Restart Exam Chat"):
+        st.session_state["exam_chat"] = []
+
+    # Display history
+    for msg in st.session_state["exam_chat"]:
+        who = "🧑‍🏫 Herr Felix" if msg["role"] == "assistant" else "🧑 Student"
+        st.markdown(f"**{who}:** {msg['content']}")
+
+    # Chat input
+    user_msg = st.text_input("Your answer / introduction...", key="exam_input")
+    if st.button("Send", disabled=not user_msg.strip()):
+        # Append user message
+        st.session_state["exam_chat"].append({"role": "user", "content": user_msg.strip()})
+
+        # AI responds as Herr Felix
+        with st.spinner("Herr Felix is thinking..."):
+            try:
+                messages = [{"role": "system", "content": system_prompt}] + st.session_state["exam_chat"]
+                resp = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages,
+                    temperature=0.4,
+                    max_tokens=300
+                )
+                ai_reply = resp.choices[0].message.content.strip()
+            except Exception as e:
+                ai_reply = f"AI error: {e}"
+        st.session_state["exam_chat"].append({"role": "assistant", "content": ai_reply})
+        st.experimental_rerun()
+
+    # Download as PDF
+    if st.session_state["exam_chat"]:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        for m in st.session_state["exam_chat"]:
+            who = "Herr Felix" if m["role"] == "assistant" else "Student"
+            pdf.multi_cell(0, 8, f"{who}: {m['content']}\n")
+        pdf_bytes = pdf.output(dest="S").encode("latin1", "replace")
+        st.download_button(
+            "⬇️ Download Exam Practice as PDF",
+            pdf_bytes,
+            file_name=f"Exam_Practice_{user_name}_{exam_level}.pdf",
+            mime="application/pdf"
+        )
+
+
+
+
