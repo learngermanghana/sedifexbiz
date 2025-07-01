@@ -181,19 +181,7 @@ if st.session_state["logged_in"]:
         st.success("Logged out!")
         st.rerun()
 
-tab = st.radio(
-    "Choose a section:",
-    [
-        "Dashboard",
-        "Vocab Trainer",
-        "My Vocab",
-        "Schreiben Trainer",
-        "Exams",
-        "Custom Chat",
-        "Grammar Helper",    # <--- Add this!
-    ],
-    key="main_tab_select"
-)
+
 
 # VOCAB_LISTS (minimal, expand as needed)
 VOCAB_LISTS = {
@@ -220,7 +208,8 @@ if st.session_state["logged_in"]:
             "My Vocab",
             "Schreiben Trainer",
             "Exams",
-            "Custom Chat"
+            "Custom Chat",
+            "Grammar Helper"
         ],
         key="main_tab_select"
     )
