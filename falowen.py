@@ -57,6 +57,10 @@ cookie_manager.ready()
 # 3. SESSION DEFAULTS & LOGIN/REGISTER UI
 # =========================
 
+import requests
+from streamlit_oauth import OAuth2Component
+
+# Session state defaults
 for k, v in {
     "logged_in": False,
     "user_row": None,
@@ -67,6 +71,23 @@ for k, v in {
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+# --- Google OAuth Setup ---
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+
+if "localhost" in st.get_option("server.address") or st.get_option("server.address") is None:
+    REDIRECT_URI = "http://localhost:8501"
+else:
+    REDIRECT_URI = "https://falowen.onrender.com"
+
+google_auth = OAuth2Component(
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
+    authorize_endpoint="https://accounts.google.com/o/oauth2/v2/auth",
+    token_endpoint="https://oauth2.googleapis.com/token",
+    revoke_endpoint="https://oauth2.googleapis.com/revoke",
+)
 
 def create_or_fetch_user(email, name, google_id=None):
     users_ref = db.collection("users")
@@ -97,7 +118,7 @@ def create_or_fetch_user(email, name, google_id=None):
     users_ref.document(user_code).set(user_doc)
     return user_doc
 
-# --- Login/Register UI (with email, password) ---
+# --- Login/Register UI (with email, password, and Google) ---
 if not st.session_state["logged_in"]:
     st.title("🔐 Welcome to Falowen!")
     menu = st.radio("Choose an option:", ["Login", "Register"])
@@ -105,10 +126,33 @@ if not st.session_state["logged_in"]:
     password = st.text_input("Password", type="password")
 
     # --- Google Login Button ---
-    # You can add a Google sign-in button here using an external OAuth package for Streamlit
-    # For now, just placeholder
     st.markdown("---")
-    st.info("Coming soon: Google Login (Sign in with Google for instant access)")
+    st.info("Or sign in with Google:")
+
+    result = google_auth.authorize_button(
+        name="Continue with Google",
+        redirect_uri=REDIRECT_URI,
+        scope="openid email profile",
+        key="google"
+    )
+    if result and "token" in result:
+        token = result["token"]
+        headers = {"Authorization": f"Bearer {token['access_token']}"}
+        resp = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers=headers)
+        user_info = resp.json()
+        email = user_info.get("email")
+        name = user_info.get("name") or email.split("@")[0]
+        google_id = user_info.get("id")
+        # Create or update user in DB
+        user_profile = create_or_fetch_user(email, name, google_id)
+        st.session_state["user_email"] = email
+        st.session_state["user_name"] = name
+        st.session_state["user_row"] = user_profile
+        st.session_state["logged_in"] = True
+        st.success(f"Google login successful! Welcome, {name}")
+        st.rerun()
+
+    st.markdown("---")
 
     if menu == "Register":
         name = st.text_input("Your Name")
@@ -128,7 +172,6 @@ if not st.session_state["logged_in"]:
         if st.button("Login"):
             try:
                 user = auth.sign_in_with_email_and_password(email, password)
-                # Pull name from Firestore (or fallback to email)
                 user_profile = create_or_fetch_user(email, user.get("displayName") or email.split("@")[0])
                 st.session_state["user_email"] = email
                 st.session_state["user_name"] = user_profile["name"]
@@ -139,8 +182,8 @@ if not st.session_state["logged_in"]:
             except Exception as e:
                 st.error("Login failed. Try again or register first.")
     st.stop()
+# -- End of login code --
 
-# -- End of base code --
 
 # ========= MY VOCAB HELPERS (Firestore) =========
 
