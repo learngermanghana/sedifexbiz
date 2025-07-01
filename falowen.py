@@ -181,10 +181,17 @@ if st.session_state["logged_in"]:
         st.success("Logged out!")
         st.rerun()
 
-# === TABS (All in one place) ===
 tab = st.radio(
     "Choose a section:",
-    ["Dashboard", "Vocab Trainer", "My Vocab", "Schreiben Trainer", "Exams", "Grammar Helper"],
+    [
+        "Dashboard",
+        "Vocab Trainer",
+        "My Vocab",
+        "Schreiben Trainer",
+        "Exams",
+        "Custom Chat",
+        "Grammar Helper",    # <--- Add this!
+    ],
     key="main_tab_select"
 )
 
