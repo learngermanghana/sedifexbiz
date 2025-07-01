@@ -8,3 +8,4 @@ requests
 pyrebase4
 pycryptodome
 fpdf
+streamlit-oauth
