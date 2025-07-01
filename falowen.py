@@ -6,11 +6,9 @@ import os
 import json
 from datetime import datetime
 import random
-import difflib
 import pandas as pd
 import streamlit as st
 import requests
-import io
 import urllib.parse
 
 from openai import OpenAI
@@ -57,7 +55,6 @@ cookie_manager.ready()
 # 3. SESSION DEFAULTS & LOGIN/REGISTER UI
 # =========================
 
-import requests
 from streamlit_oauth import OAuth2Component
 
 # Session state defaults
@@ -88,16 +85,18 @@ google_auth = OAuth2Component(
     token_endpoint="https://oauth2.googleapis.com/token",
 )
 
-
+# ========= Helper: Create or fetch user =========
 def create_or_fetch_user(email, name, google_id=None):
     users_ref = db.collection("users")
-    # Query by email
     query = users_ref.where("email", "==", email).stream()
     docs = list(query)
     if docs:
         doc = docs[0]
         user_data = doc.to_dict()
-        # Update name if changed
+        # Add pro_user if missing
+        if "pro_user" not in user_data:
+            users_ref.document(doc.id).update({"pro_user": False})
+            user_data["pro_user"] = False
         if user_data.get("name") != name:
             users_ref.document(doc.id).update({"name": name})
             user_data["name"] = name
@@ -105,27 +104,44 @@ def create_or_fetch_user(email, name, google_id=None):
             users_ref.document(doc.id).update({"google_id": google_id})
             user_data["google_id"] = google_id
         return user_data
-    # Create new
     user_code = email.split("@")[0]
     user_doc = {
         "email": email,
         "name": name,
         "user_code": user_code,
         "joined": datetime.utcnow().isoformat(),
+        "pro_user": False,
     }
     if google_id:
         user_doc["google_id"] = google_id
     users_ref.document(user_code).set(user_doc)
     return user_doc
 
-# --- Login/Register UI (with email, password, and Google) ---
+# ========== PAYSTACK PAYMENT CHECK ==========
+def paywall():
+    if not st.session_state.get("pro_user"):
+        st.markdown("## 🔒 Pro Features Locked")
+        st.info("Upgrade to unlock all premium features!")
+        pay_url = "https://paystack.com/pay/YOUR_CUSTOM_LINK"  # Replace with your link!
+        st.markdown(f"[**Pay with Paystack**]({pay_url})", unsafe_allow_html=True)
+        st.stop()
+
+# ========== Handle payment callback (unlock pro!) ==========
+query_params = st.query_params if hasattr(st, "query_params") else st.experimental_get_query_params()
+if query_params.get("paid") == ["true"] and st.session_state.get("logged_in"):
+    user_code = st.session_state["user_row"]["user_code"]
+    db.collection("users").document(user_code).update({"pro_user": True})
+    st.session_state["pro_user"] = True
+    st.success("🎉 Payment successful! Pro features unlocked. You now have access to all features!")
+
+# =================== LOGIN UI ===================
 if not st.session_state["logged_in"]:
     st.title("🔐 Welcome to Falowen!")
     menu = st.radio("Choose an option:", ["Login", "Register"])
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
-    # --- Google Login Button ---
+    # Google Login Button
     st.markdown("---")
     st.info("Or sign in with Google:")
 
@@ -143,17 +159,16 @@ if not st.session_state["logged_in"]:
         email = user_info.get("email")
         name = user_info.get("name") or email.split("@")[0]
         google_id = user_info.get("id")
-        # Create or update user in DB
         user_profile = create_or_fetch_user(email, name, google_id)
         st.session_state["user_email"] = email
         st.session_state["user_name"] = name
         st.session_state["user_row"] = user_profile
+        st.session_state["pro_user"] = user_profile.get("pro_user", False)
         st.session_state["logged_in"] = True
         st.success(f"Google login successful! Welcome, {name}")
         st.rerun()
 
     st.markdown("---")
-
     if menu == "Register":
         name = st.text_input("Your Name")
         if st.button("Register"):
@@ -163,6 +178,7 @@ if not st.session_state["logged_in"]:
                 st.session_state["user_email"] = email
                 st.session_state["user_name"] = name
                 st.session_state["user_row"] = user_profile
+                st.session_state["pro_user"] = user_profile.get("pro_user", False)
                 st.session_state["logged_in"] = True
                 st.success("Registration successful!")
                 st.rerun()
@@ -176,17 +192,15 @@ if not st.session_state["logged_in"]:
                 st.session_state["user_email"] = email
                 st.session_state["user_name"] = user_profile["name"]
                 st.session_state["user_row"] = user_profile
+                st.session_state["pro_user"] = user_profile.get("pro_user", False)
                 st.session_state["logged_in"] = True
                 st.success(f"Welcome, {st.session_state['user_name']}!")
                 st.rerun()
             except Exception as e:
                 st.error("Login failed. Try again or register first.")
     st.stop()
-# -- End of login code --
 
-# =====================
-# LOGOUT BUTTON
-# =====================
+# ======== LOGOUT BUTTON ========
 if st.session_state["logged_in"]:
     st.sidebar.markdown("---")
     if st.sidebar.button("🚪 Logout"):
@@ -198,7 +212,9 @@ if st.session_state["logged_in"]:
         st.success("Logged out!")
         st.experimental_rerun()
 
-
+# =========================
+# 4. TABS & FEATURE EXAMPLES
+# =========================
 
 tab = st.radio(
     "Choose a section:",
@@ -206,16 +222,39 @@ tab = st.radio(
     key="main_tab_select"
 )
 
+# === Dashboard ===
 if st.session_state["logged_in"] and tab == "Dashboard":
+    paywall()  # <<<<<< LOCKED UNTIL PAYMENT
+
     user_row = st.session_state.get("user_row", {})
     name = user_row.get("name", "User")
     email = user_row.get("email", "")
     user_code = user_row.get("user_code", "")
     join_date = user_row.get("joined", "—")
-    level = "A1"  # Change or let user select
+    level = "A1"
 
-    # You must define VOCAB_LISTS at the top for vocab stats to show
-    # Example: VOCAB_LISTS = {"A1": [("Haus", "house"), ...], ...}
+    VOCAB_LISTS = {
+        "A1": [
+            ("Haus", "house"),
+            ("Buch", "book"),
+            ("Auto", "car"),
+            ("Tisch", "table"),
+            ("Hund", "dog"),
+        ],
+        "A2": [
+            ("Flughafen", "airport"),
+            ("Geschenk", "gift"),
+            ("Gemüse", "vegetables"),
+        ],
+    }
+
+    def get_progress(user_code, level):
+        vocab_total = len(VOCAB_LISTS.get(level, []))
+        vocab_mastered = 0  # For now, just 0 (customize as needed)
+        exams_practiced = 0
+        writing_attempts = 0
+        return vocab_total, vocab_mastered, exams_practiced, writing_attempts
+
     vocab_total, vocab_mastered, exams_practiced, writing_attempts = get_progress(user_code, level)
 
     st.markdown(f"""
@@ -232,26 +271,43 @@ if st.session_state["logged_in"] and tab == "Dashboard":
     with col2:
         st.metric("🎤 Exams Practiced", exams_practiced)
         st.metric("📅 Member Since", join_date[:10] if join_date else "-")
-
     st.markdown("---")
     st.subheader("Your Learning Streak & Achievements (coming soon)")
     st.info("Streak, badges and XP will be added for more motivation!")
 
-VOCAB_LISTS = {
-    "A1": [
-        ("Haus", "house"),
-        ("Buch", "book"),
-        ("Auto", "car"),
-        ("Tisch", "table"),
-        ("Hund", "dog"),
-    ],
-    "A2": [
-        ("Flughafen", "airport"),
-        ("Geschenk", "gift"),
-        ("Gemüse", "vegetables"),
-    ],
-    # Add more levels/words as you grow!
-}
+# === Vocab Trainer Example ===
+if st.session_state["logged_in"] and tab == "Vocab Trainer":
+    paywall()  # <<<<<< LOCKED UNTIL PAYMENT
+
+    user_row = st.session_state.get("user_row", {})
+    user_code = user_row.get("user_code", "")
+    user_name = user_row.get("name", "User")
+    VOCAB_LISTS = {
+        "A1": [
+            ("Haus", "house"),
+            ("Buch", "book"),
+            ("Auto", "car"),
+            ("Tisch", "table"),
+            ("Hund", "dog"),
+        ],
+        "A2": [
+            ("Flughafen", "airport"),
+            ("Geschenk", "gift"),
+            ("Gemüse", "vegetables"),
+        ],
+    }
+    level = "A1"  # Set static or random (since you want to skip user selection)
+
+    # Random question for demo
+    word, correct = random.choice(VOCAB_LISTS[level])
+    st.markdown(f"**Translate:** `{word}`")
+    user_input = st.text_input("Your Answer", key=f"vocab_input_{word}")
+
+    if st.button("Check Answer"):
+        if user_input.strip().lower() == correct.lower():
+            st.success("✅ Correct!")
+        else:
+            st.error(f"❌ Not correct. The answer is: **{correct}**")
 
 if st.session_state["logged_in"] and tab == "Vocab Trainer":
     user_row = st.session_state.get("user_row", {})
