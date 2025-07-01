@@ -210,7 +210,7 @@ if st.session_state["logged_in"]:
             if k in st.session_state:
                 del st.session_state[k]
         st.success("Logged out!")
-        st.experimental_rerun()
+        st.rerun()
 
 # =========================
 # 4. TABS & FEATURE EXAMPLES
