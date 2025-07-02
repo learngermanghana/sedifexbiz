@@ -595,5 +595,94 @@ if tab == "Dashboard":
     )
 
 
+if tab == "Vocab Trainer":
+    st.header("📝 Vocab Trainer")
+    user_row = st.session_state.get("user_row", {})
+    user_code = user_row.get("user_code", "")
+    user_name = user_row.get("name", "User")
+
+    # --- Level Selector ---
+    levels = list(VOCAB_LISTS.keys())
+    level = st.selectbox("Choose Level:", levels, key="vocab_level")
+
+    # --- Practice Progress ---
+    practiced = set()
+    docs = db.collection("vocab_progress") \
+        .where("user_code", "==", user_code) \
+        .where("level", "==", level) \
+        .where("is_correct", "==", True).stream()
+    for doc in docs:
+        practiced.add(doc.to_dict().get("word"))
+
+    total = len(VOCAB_LISTS[level])
+    done = len(practiced)
+
+    st.markdown(f"#### Progress: {done} / {total} words mastered")
+    st.progress(done / total if total else 0.01)
+
+    # --- Vocab Practice Logic ---
+    choices = [v for v in VOCAB_LISTS[level] if v[0] not in practiced]
+    if not choices:
+        st.success("🎉 You finished all words for this level!")
+        if st.button("Reset Progress"):
+            # Delete progress for this user/level
+            docs = db.collection("vocab_progress") \
+                .where("user_code", "==", user_code) \
+                .where("level", "==", level).stream()
+            for doc in docs:
+                db.collection("vocab_progress").document(doc.id).delete()
+            st.rerun()
+        st.stop()
+
+    word, correct = random.choice(choices)
+    st.subheader(f"**Translate this word:**  `{word}`")
+    user_input = st.text_input("Your Answer", key=f"vocab_input_{word}")
+
+    # --- Check Answer Button ---
+    if st.button("Check Answer"):
+        if user_input.strip().lower() == correct.lower():
+            st.success("✅ Correct!")
+            is_correct = True
+        else:
+            st.error(f"❌ Not correct. The answer is: **{correct}**")
+            is_correct = False
+
+        # Save attempt
+        doc_id = f"{user_code}_{level}_{word}_{int(datetime.utcnow().timestamp())}"
+        db.collection("vocab_progress").document(doc_id).set({
+            "user_code": user_code,
+            "user_name": user_name,
+            "level": level,
+            "word": word,
+            "answer": user_input,
+            "is_correct": bool(is_correct),
+            "date": datetime.utcnow().strftime("%Y-%m-%d")
+        })
+        st.rerun()
+
+    # --- Optional: Download All Words as PDF ---
+    with st.expander("📄 Download full vocab list (all words)"):
+        from fpdf import FPDF
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=11)
+        pdf.cell(0, 10, f"Vocab List – {level} ({user_name})", ln=1)
+        pdf.ln(4)
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(60, 8, "German", border=1)
+        pdf.cell(60, 8, "Translation", border=1)
+        pdf.ln()
+        pdf.set_font("Arial", "", 10)
+        for w, t in VOCAB_LISTS[level]:
+            pdf.cell(60, 8, w, border=1)
+            pdf.cell(60, 8, t, border=1)
+            pdf.ln()
+        pdf_bytes = pdf.output(dest="S").encode("latin1", "replace")
+        st.download_button(
+            label="Download as PDF",
+            data=pdf_bytes,
+            file_name=f"{user_code}_vocab_list_{level}.pdf",
+            mime="application/pdf"
+        )
 
 
