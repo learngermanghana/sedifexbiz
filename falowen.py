@@ -608,7 +608,14 @@ if tab == "Dashboard":
                 "<span style='color:green'>Unlock unlimited practice, instant AI feedback, and full exam simulators with <b>Pro</b>!</span>",
                 unsafe_allow_html=True,
             )
-            st.button("Upgrade Now", on_click=lambda: st.switch_page("YOUR_PAYSTACK_LINK_HERE"))  # Replace with your link
+            pay_url = "https://paystack.shop/pay/pgsf1kucjw"  # Replace with your Paystack link!
+            st.markdown(
+                f'<a href="{pay_url}" target="_blank">'
+                '<button style="background-color:#28a745;color:white;border:none;'
+                'padding:0.5em 1.3em;border-radius:8px;font-size:1em;">'
+                'Upgrade Now</button></a>',
+                unsafe_allow_html=True,
+            )
         else:
             st.success("You have Pro access! Enjoy all features.")
 
