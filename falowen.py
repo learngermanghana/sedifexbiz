@@ -108,13 +108,15 @@ if query_params.get("paid") == ["true"] and st.session_state.get("logged_in"):
     st.success("🎉 Payment successful! Pro features unlocked.")
 
 def save_login_cookies():
-    cookie_manager.set("logged_in", True)
-    cookie_manager.set("user_email", st.session_state["user_email"])
-    cookie_manager.set("user_name", st.session_state["user_name"])
-    cookie_manager.set("pro_user", st.session_state["pro_user"])
+    cookie_manager["logged_in"] = True
+    cookie_manager["user_email"] = st.session_state["user_email"]
+    cookie_manager["user_name"] = st.session_state["user_name"]
+    cookie_manager["pro_user"] = st.session_state["pro_user"]
     cookie_manager.save()
 
+
 # Restore session from cookies on page load
+cookie_manager.ready()
 cookie_manager.ready()
 if not st.session_state.get("logged_in", False):
     if cookie_manager.get("logged_in"):
@@ -129,6 +131,7 @@ if not st.session_state.get("logged_in", False):
                 st.session_state["user_name"]
             )
             st.session_state["user_row"] = user_profile
+
 
 def falowen_download_pdf(messages, filename):
     from fpdf import FPDF
