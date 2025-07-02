@@ -183,9 +183,17 @@ if not st.session_state.get("logged_in", False):
         st.session_state["user_row"] = user_profile
         st.session_state["pro_user"] = user_profile.get("pro_user", False)
         st.session_state["logged_in"] = True
-        save_login_cookies()  # <----- ADDED
+
+        # --- Set cookies using dict style ---
+        cookie_manager["logged_in"] = True
+        cookie_manager["user_email"] = email
+        cookie_manager["user_name"] = name
+        cookie_manager["pro_user"] = user_profile.get("pro_user", False)
+        cookie_manager.save()
+
         st.success(f"Google login successful! Welcome, {name}")
         st.rerun()
+
     st.markdown("---")
     if menu == "Register":
         name = st.text_input("Your Name")
@@ -198,7 +206,13 @@ if not st.session_state.get("logged_in", False):
                 st.session_state["user_row"] = user_profile
                 st.session_state["pro_user"] = user_profile.get("pro_user", False)
                 st.session_state["logged_in"] = True
-                save_login_cookies()  # <----- ADDED
+
+                cookie_manager["logged_in"] = True
+                cookie_manager["user_email"] = email
+                cookie_manager["user_name"] = name
+                cookie_manager["pro_user"] = user_profile.get("pro_user", False)
+                cookie_manager.save()
+
                 st.success("Registration successful!")
                 st.rerun()
             except Exception as e:
@@ -213,7 +227,13 @@ if not st.session_state.get("logged_in", False):
                 st.session_state["user_row"] = user_profile
                 st.session_state["pro_user"] = user_profile.get("pro_user", False)
                 st.session_state["logged_in"] = True
-                save_login_cookies()  # <----- ADDED
+
+                cookie_manager["logged_in"] = True
+                cookie_manager["user_email"] = email
+                cookie_manager["user_name"] = user_profile["name"]
+                cookie_manager["pro_user"] = user_profile.get("pro_user", False)
+                cookie_manager.save()
+
                 st.success(f"Welcome, {st.session_state['user_name']}!")
                 st.rerun()
             except Exception as e:
@@ -231,10 +251,12 @@ if st.session_state.get("logged_in", False):
                 del st.session_state[k]
         # Clear cookies!
         for c in ["logged_in", "user_email", "user_name", "pro_user"]:
-            cookie_manager.delete(c)
+            if c in cookie_manager:
+                del cookie_manager[c]
         cookie_manager.save()
         st.success("Logged out!")
         st.rerun()
+
 
 
 # =============================
