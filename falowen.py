@@ -130,6 +130,28 @@ if not st.session_state.get("logged_in", False):
             )
             st.session_state["user_row"] = user_profile
 
+def falowen_download_pdf(messages, filename):
+    from fpdf import FPDF
+    import os
+    def safe_latin1(text):
+        return text.encode("latin1", "replace").decode("latin1")
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    chat_text = ""
+    for m in messages:
+        role = "Herr Felix" if m["role"] == "assistant" else "Student"
+        safe_msg = safe_latin1(m["content"])
+        chat_text += f"{role}: {safe_msg}\n\n"
+    pdf.multi_cell(0, 10, chat_text)
+    pdf_output = f"{filename}.pdf"
+    pdf.output(pdf_output)
+    with open(pdf_output, "rb") as f:
+        pdf_bytes = f.read()
+    os.remove(pdf_output)
+    return pdf_bytes
+
+
 # === LOGIN UI ===
 if not st.session_state.get("logged_in", False):
     st.title("🔐 Welcome to Falowen!")
@@ -765,5 +787,74 @@ if tab == "Ideas Generator":
             st.rerun()
     else:
         st.info("Enter a topic to begin receiving ideas and conversation practice from Herr Felix.")
+
+if tab == "Oral Exam Trainer":
+    paywall()  # PRO ONLY
+    st.header("🎤 Oral Exam Trainer")
+    user_row = st.session_state.get("user_row", {})
+    user_code = user_row.get("user_code", "")
+    user_name = user_row.get("name", "User")
+    
+    exam_levels = ["A1", "A2", "B1", "B2", "C1"]
+    exam_level = st.selectbox("Choose exam level:", exam_levels, key="oral_exam_level")
+    exam_parts = {
+        "A1": ["Teil 1 – Introduction", "Teil 2 – Question & Answer", "Teil 3 – Request"],
+        "A2": ["Teil 1 – Question", "Teil 2 – Short Monologue", "Teil 3 – Planning"],
+        "B1": ["Teil 1 – Planning", "Teil 2 – Presentation", "Teil 3 – Feedback"],
+        "B2": ["Teil 1 – Discussion", "Teil 2 – Presentation", "Teil 3 – Argumentation"],
+        "C1": ["Teil 1 – Vortrag", "Teil 2 – Diskussion", "Teil 3 – Bewertung"]
+    }
+    exam_part = st.selectbox("Choose exam part:", exam_parts[exam_level], key="oral_exam_part")
+
+    # Set up chat history key (unique per session/level/part)
+    chat_key = f"oral_exam_chat_{exam_level}_{exam_part}"
+    if chat_key not in st.session_state:
+        st.session_state[chat_key] = []
+
+    # Show instructions at top
+    st.info(build_exam_instruction(exam_level, exam_part))
+
+    # Show chat history
+    for msg in st.session_state[chat_key]:
+        who = "🧑‍🏫 Herr Felix" if msg["role"] == "assistant" else "🧑 Student"
+        st.markdown(f"**{who}:** {msg['content']}")
+
+    # User input
+    user_msg = st.text_input("Your answer or question…", key=f"oral_exam_input_{exam_level}_{exam_part}")
+
+    if st.button("Send", key=f"oral_exam_send_{exam_level}_{exam_part}", disabled=not user_msg.strip()):
+        st.session_state[chat_key].append({"role": "user", "content": user_msg.strip()})
+        system_prompt = build_exam_system_prompt(exam_level, exam_part)
+        history = [{"role": "system", "content": system_prompt}]
+        history += st.session_state[chat_key]
+        with st.spinner("Herr Felix is thinking..."):
+            try:
+                resp = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=history,
+                    temperature=0.45,
+                    max_tokens=500
+                )
+                ai_reply = resp.choices[0].message.content
+            except Exception as e:
+                ai_reply = f"AI error: {e}"
+        st.session_state[chat_key].append({"role": "assistant", "content": ai_reply})
+        st.rerun()
+
+    # Reset chat button
+    if st.button("Restart Exam", key=f"reset_oral_exam_{exam_level}_{exam_part}"):
+        st.session_state[chat_key] = []
+        st.rerun()
+
+    # Download as PDF
+    if st.session_state[chat_key]:
+        pdf_bytes = falowen_download_pdf(st.session_state[chat_key], f"Oral_Exam_{user_name}_{exam_level}_{exam_part}")
+        st.download_button(
+            "⬇️ Download Conversation as PDF",
+            pdf_bytes,
+            file_name=f"Oral_Exam_{user_name}_{exam_level}_{exam_part}.pdf",
+            mime="application/pdf"
+        )
+
 
 
