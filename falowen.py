@@ -106,24 +106,24 @@ if query_params.get("paid") == ["true"] and st.session_state.get("logged_in"):
     db.collection("users").document(user_code).update({"pro_user": True})
     st.session_state["pro_user"] = True
     st.success("🎉 Payment successful! Pro features unlocked.")
-
+    
 def save_login_cookies():
-    cookie_manager["logged_in"] = True
-    cookie_manager["user_email"] = st.session_state["user_email"]
-    cookie_manager["user_name"] = st.session_state["user_name"]
-    cookie_manager["pro_user"] = st.session_state["pro_user"]
+    cookie_manager["logged_in"] = "true"  # Must be string!
+    cookie_manager["user_email"] = str(st.session_state["user_email"])
+    cookie_manager["user_name"] = str(st.session_state["user_name"])
+    # Store pro_user as "true" or "false"
+    cookie_manager["pro_user"] = "true" if st.session_state["pro_user"] else "false"
     cookie_manager.save()
-
 
 # Restore session from cookies on page load
 cookie_manager.ready()
-cookie_manager.ready()
 if not st.session_state.get("logged_in", False):
-    if cookie_manager.get("logged_in"):
+    if cookie_manager.get("logged_in") == "true":
         st.session_state["logged_in"] = True
         st.session_state["user_email"] = cookie_manager.get("user_email", "")
         st.session_state["user_name"] = cookie_manager.get("user_name", "")
-        st.session_state["pro_user"] = cookie_manager.get("pro_user", False)
+        # Restore pro_user as bool
+        st.session_state["pro_user"] = cookie_manager.get("pro_user", "false") == "true"
         # Optionally restore user_row from DB
         if st.session_state["user_email"]:
             user_profile = create_or_fetch_user(
@@ -131,6 +131,7 @@ if not st.session_state.get("logged_in", False):
                 st.session_state["user_name"]
             )
             st.session_state["user_row"] = user_profile
+
 
 
 def falowen_download_pdf(messages, filename):
@@ -184,11 +185,11 @@ if not st.session_state.get("logged_in", False):
         st.session_state["pro_user"] = user_profile.get("pro_user", False)
         st.session_state["logged_in"] = True
 
-        # --- Set cookies using dict style ---
-        cookie_manager["logged_in"] = True
-        cookie_manager["user_email"] = email
-        cookie_manager["user_name"] = name
-        cookie_manager["pro_user"] = user_profile.get("pro_user", False)
+        # --- Set cookies using string values only ---
+        cookie_manager["logged_in"] = "true"
+        cookie_manager["user_email"] = str(email)
+        cookie_manager["user_name"] = str(name)
+        cookie_manager["pro_user"] = "true" if user_profile.get("pro_user", False) else "false"
         cookie_manager.save()
 
         st.success(f"Google login successful! Welcome, {name}")
@@ -207,10 +208,10 @@ if not st.session_state.get("logged_in", False):
                 st.session_state["pro_user"] = user_profile.get("pro_user", False)
                 st.session_state["logged_in"] = True
 
-                cookie_manager["logged_in"] = True
-                cookie_manager["user_email"] = email
-                cookie_manager["user_name"] = name
-                cookie_manager["pro_user"] = user_profile.get("pro_user", False)
+                cookie_manager["logged_in"] = "true"
+                cookie_manager["user_email"] = str(email)
+                cookie_manager["user_name"] = str(name)
+                cookie_manager["pro_user"] = "true" if user_profile.get("pro_user", False) else "false"
                 cookie_manager.save()
 
                 st.success("Registration successful!")
@@ -228,10 +229,10 @@ if not st.session_state.get("logged_in", False):
                 st.session_state["pro_user"] = user_profile.get("pro_user", False)
                 st.session_state["logged_in"] = True
 
-                cookie_manager["logged_in"] = True
-                cookie_manager["user_email"] = email
-                cookie_manager["user_name"] = user_profile["name"]
-                cookie_manager["pro_user"] = user_profile.get("pro_user", False)
+                cookie_manager["logged_in"] = "true"
+                cookie_manager["user_email"] = str(email)
+                cookie_manager["user_name"] = str(user_profile["name"])
+                cookie_manager["pro_user"] = "true" if user_profile.get("pro_user", False) else "false"
                 cookie_manager.save()
 
                 st.success(f"Welcome, {st.session_state['user_name']}!")
