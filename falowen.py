@@ -183,7 +183,9 @@ if st.session_state["logged_in"]:
 
 
 
-# VOCAB_LISTS (minimal, expand as needed)
+# =============================
+# VOCAB_LISTS (expand as needed)
+# =============================
 VOCAB_LISTS = {
     "A1": [
         ("Haus", "house"),
@@ -199,7 +201,10 @@ VOCAB_LISTS = {
     ],
 }
 
-if st.session_state["logged_in"]:
+# ======================
+# SHOW APP CONTENT HERE!
+# ======================
+if st.session_state.get("logged_in", False):
     tab = st.radio(
         "Choose a section:",
         [
@@ -214,7 +219,7 @@ if st.session_state["logged_in"]:
         key="main_tab_select"
     )
 
-    # ---------- DASHBOARD ----------
+    # -------------- DASHBOARD --------------
     if tab == "Dashboard":
         paywall()
         st.header("📊 Dashboard")
@@ -223,6 +228,7 @@ if st.session_state["logged_in"]:
         join_date = user_row.get("joined", "—")
         st.metric("📅 Member Since", join_date[:10] if join_date else "-")
         st.success("Dashboard ready! Copy your real Dashboard logic here.")
+
 
     # ---------- VOCAB TRAINER ----------
     elif tab == "Vocab Trainer":
