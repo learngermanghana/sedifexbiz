@@ -181,6 +181,9 @@ if st.session_state["logged_in"]:
         st.success("Logged out!")
         st.rerun()
 
+if st.session_state.get("user_email") == "YOUR_EMAIL@domain.com":
+    st.session_state["pro_user"] = True
+    db.collection("users").document(st.session_state["user_row"]["user_code"]).update({"pro_user": True})
 
 
 # =============================
