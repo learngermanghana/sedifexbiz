@@ -96,7 +96,7 @@ def paywall():
     if not st.session_state.get("pro_user"):
         st.markdown("## 🔒 Pro Features Locked")
         st.info("Upgrade to unlock all premium features!")
-        pay_url = "https://paystack.com/pay/YOUR_CUSTOM_LINK"  # Replace with your Paystack page
+        pay_url = "https://paystack.shop/pay/pgsf1kucjw"  # Replace with your Paystack page
         st.markdown(f"[**Pay with Paystack**]({pay_url})", unsafe_allow_html=True)
         st.stop()
 
@@ -213,24 +213,58 @@ if st.session_state.get("logged_in", False):
         [
             "Dashboard",
             "Vocab Trainer",
-            "My Vocab",
+            "Ideas Generator",
             "Schreiben Trainer",
-            "Exams",
-            "Custom Chat",
+            "Oral Exam Trainer",  # <--- updated title here
             "Grammar Helper"
         ],
         key="main_tab_select"
     )
 
-    # -------------- DASHBOARD --------------
-    if tab == "Dashboard":
-        paywall()
-        st.header("📊 Dashboard")
-        user_row = st.session_state.get("user_row", {})
-        name = user_row.get("name", "User")
-        join_date = user_row.get("joined", "—")
+
+
+# -------------- DASHBOARD --------------
+if tab == "Dashboard":
+    paywall()
+    st.header("👋 Welcome, " + name + "!")
+    st.subheader("Your Goethe Exam Preparation Dashboard")
+    st.markdown("---")
+
+    col1, col2 = st.columns(2)
+    with col1:
         st.metric("📅 Member Since", join_date[:10] if join_date else "-")
-        st.success("Dashboard ready! Copy your real Dashboard logic here.")
+        st.metric("🌟 Pro Status", "✅ Yes" if st.session_state.get("pro_user") else "❌ No")
+        st.metric("📝 Level", user_row.get("level", "—"))
+    with col2:
+        st.markdown("#### Your Progress")
+        st.progress(0.35, text="35% overall (demo)")  # TODO: replace with real stats
+
+    st.markdown("---")
+
+    st.markdown("""
+    ### What would you like to practice today?
+    - **Vocab Trainer:** Expand your German vocabulary for the Goethe exam.
+    - **My Vocab:** Build your own personal word list.
+    - **Schreiben Trainer:** Practice German letter/essay writing with instant feedback.
+    - **Ideas Generator:** Stuck? Get exam topic ideas and phrases (NEW).
+    - **Sprechen Practice:** Simulate real speaking tests.
+    - **Grammar Helper:** Ask any grammar question, get instant answers.
+    """)
+    st.info("Start with any section from the menu on the left!")
+
+    # Add quick links as buttons (optional)
+    st.markdown("#### Quick Start")
+    btn_col1, btn_col2, btn_col3 = st.columns(3)
+    if btn_col1.button("Vocab Trainer"):
+        st.session_state["main_tab_select"] = "Vocab Trainer"
+        st.rerun()
+    if btn_col2.button("Schreiben Trainer"):
+        st.session_state["main_tab_select"] = "Schreiben Trainer"
+        st.rerun()
+    if btn_col3.button("Ideas Generator"):
+        st.session_state["main_tab_select"] = "Ideas Generator"
+        st.rerun()
+
 
 
     # ---------- VOCAB TRAINER ----------
