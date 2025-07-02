@@ -685,4 +685,85 @@ if tab == "Vocab Trainer":
             mime="application/pdf"
         )
 
+if tab == "Ideas Generator":
+    paywall()  # PRO ONLY!
+    st.header("💡 Ideas Generator")
+    user_row = st.session_state.get("user_row", {})
+    user_code = user_row.get("user_code", "")
+    user_name = user_row.get("name", "User")
+    
+    # Step 1: Level select (A1–C1)
+    levels = ["A1", "A2", "B1", "B2", "C1"]
+    level = st.selectbox("Select your exam level:", levels, key="ideas_level")
+    
+    # Step 2: Topic input
+    topic = st.text_input("Enter your topic (e.g., Reisen, Arbeit, Familie...)", key="ideas_topic")
+    
+    # Step 3: Chat history for this session
+    chat_key = f"ideas_chat_{level}_{topic}"
+    if chat_key not in st.session_state:
+        st.session_state[chat_key] = []
+
+    # Step 4: Prompt logic (your prompt above, wrapped for use)
+    def build_ideas_prompt(level):
+        if level == "C1":
+            return (
+                "Du bist Herr Felix, ein C1-Prüfer. Sprich nur Deutsch. "
+                "Gib konstruktives Feedback, stelle schwierige Fragen, und hilf dem Studenten, auf C1-Niveau zu sprechen."
+            )
+        if level in ["A1", "A2", "B1", "B2"]:
+            correction_lang = "in English" if level in ["A1", "A2"] else "half in English and half in German"
+            return (
+                f"You are Herr Felix, a supportive and innovative German teacher. "
+                f"The student's first input is their chosen topic. Only give suggestions, phrases, tips and ideas at first in English, no corrections. "
+                f"Pick 4 useful keywords related to the student's topic and use them as the focus for conversation. Give students ideas and how to build their points for the conversation in English. "
+                f"For each keyword, ask the student up to 3 creative, diverse and interesting questions in German only based on student language level, one at a time, not all at once. Just ask the question and don't let student know this is the keyword you are using. "
+                f"After each student answer, give feedback and a suggestion to extend their answer if it's too short. Feedback in English and suggestion in German. "
+                f"1. Explain difficult words when level is A1,A2,B1,B2. "
+                f"After keyword questions, continue with other random follow-up questions that reflect student selected level about the topic in German (until you reach 20 questions in total). "
+                f"Never ask more than 3 questions about the same keyword. "
+                f"After the student answers 18 questions, write a summary of their performance: what they did well, mistakes, and what to improve in English. "
+                f"All feedback and corrections should be {correction_lang}. "
+                f"Encourage the student and keep the chat motivating. "
+            )
+        return ""
+    
+    # Step 5: Only show chat once topic is entered
+    if topic.strip():
+        st.markdown("#### 💬 Start your practice conversation below:")
+
+        # Display chat history
+        for msg in st.session_state[chat_key]:
+            who = "🧑‍🏫 Herr Felix" if msg["role"] == "assistant" else "🧑 Student"
+            st.markdown(f"**{who}:** {msg['content']}")
+        
+        user_msg = st.text_input("Type your answer or question…", key=f"ideas_input_{level}_{topic}")
+        if st.button("Send", key=f"ideas_send_{level}_{topic}", disabled=not user_msg.strip()):
+            st.session_state[chat_key].append({"role": "user", "content": user_msg.strip()})
+
+            prompt = build_ideas_prompt(level)
+            history = [{"role": "system", "content": prompt}]
+            history += st.session_state[chat_key]
+            
+            with st.spinner("Herr Felix is thinking..."):
+                try:
+                    resp = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=history,
+                        temperature=0.5,
+                        max_tokens=500
+                    )
+                    reply = resp.choices[0].message.content
+                except Exception as e:
+                    reply = f"AI error: {e}"
+            st.session_state[chat_key].append({"role": "assistant", "content": reply})
+            st.rerun()
+
+        # Optional: Reset chat for new topic
+        if st.button("Start Over with New Topic", key=f"reset_ideas_{level}_{topic}"):
+            st.session_state[chat_key] = []
+            st.rerun()
+    else:
+        st.info("Enter a topic to begin receiving ideas and conversation practice from Herr Felix.")
+
 
