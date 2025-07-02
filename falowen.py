@@ -107,8 +107,31 @@ if query_params.get("paid") == ["true"] and st.session_state.get("logged_in"):
     st.session_state["pro_user"] = True
     st.success("🎉 Payment successful! Pro features unlocked.")
 
+def save_login_cookies():
+    cookie_manager.set("logged_in", True)
+    cookie_manager.set("user_email", st.session_state["user_email"])
+    cookie_manager.set("user_name", st.session_state["user_name"])
+    cookie_manager.set("pro_user", st.session_state["pro_user"])
+    cookie_manager.save()
+
+# Restore session from cookies on page load
+cookie_manager.ready()
+if not st.session_state.get("logged_in", False):
+    if cookie_manager.get("logged_in"):
+        st.session_state["logged_in"] = True
+        st.session_state["user_email"] = cookie_manager.get("user_email", "")
+        st.session_state["user_name"] = cookie_manager.get("user_name", "")
+        st.session_state["pro_user"] = cookie_manager.get("pro_user", False)
+        # Optionally restore user_row from DB
+        if st.session_state["user_email"]:
+            user_profile = create_or_fetch_user(
+                st.session_state["user_email"],
+                st.session_state["user_name"]
+            )
+            st.session_state["user_row"] = user_profile
+
 # === LOGIN UI ===
-if not st.session_state["logged_in"]:
+if not st.session_state.get("logged_in", False):
     st.title("🔐 Welcome to Falowen!")
     menu = st.radio("Choose an option:", ["Login", "Register"])
     email = st.text_input("Email")
@@ -135,6 +158,7 @@ if not st.session_state["logged_in"]:
         st.session_state["user_row"] = user_profile
         st.session_state["pro_user"] = user_profile.get("pro_user", False)
         st.session_state["logged_in"] = True
+        save_login_cookies()  # <----- ADDED
         st.success(f"Google login successful! Welcome, {name}")
         st.rerun()
     st.markdown("---")
@@ -149,6 +173,7 @@ if not st.session_state["logged_in"]:
                 st.session_state["user_row"] = user_profile
                 st.session_state["pro_user"] = user_profile.get("pro_user", False)
                 st.session_state["logged_in"] = True
+                save_login_cookies()  # <----- ADDED
                 st.success("Registration successful!")
                 st.rerun()
             except Exception as e:
@@ -163,6 +188,7 @@ if not st.session_state["logged_in"]:
                 st.session_state["user_row"] = user_profile
                 st.session_state["pro_user"] = user_profile.get("pro_user", False)
                 st.session_state["logged_in"] = True
+                save_login_cookies()  # <----- ADDED
                 st.success(f"Welcome, {st.session_state['user_name']}!")
                 st.rerun()
             except Exception as e:
@@ -170,7 +196,7 @@ if not st.session_state["logged_in"]:
     st.stop()
 
 # === LOGOUT ===
-if st.session_state["logged_in"]:
+if st.session_state.get("logged_in", False):
     st.sidebar.markdown("---")
     if st.sidebar.button("🚪 Logout"):
         for k in [
@@ -178,31 +204,309 @@ if st.session_state["logged_in"]:
         ]:
             if k in st.session_state:
                 del st.session_state[k]
+        # Clear cookies!
+        for c in ["logged_in", "user_email", "user_name", "pro_user"]:
+            cookie_manager.delete(c)
+        cookie_manager.save()
         st.success("Logged out!")
         st.rerun()
-
-if st.session_state.get("user_email") == "YOUR_EMAIL@domain.com":
-    st.session_state["pro_user"] = True
-    db.collection("users").document(st.session_state["user_row"]["user_code"]).update({"pro_user": True})
 
 
 # =============================
 # VOCAB_LISTS (expand as needed)
 # =============================
+# --- Vocab lists for all levels ---
+
+a1_vocab = [
+    ("Südseite", "south side"), ("3. Stock", "third floor"), ("Geschenk", "present/gift"),
+    ("Buslinie", "bus line"), ("Ruhetag", "rest day (closed)"), ("Heizung", "heating"),
+    ("Hälfte", "half"), ("die Wohnung", "apartment"), ("das Zimmer", "room"), ("die Miete", "rent"),
+    ("der Balkon", "balcony"), ("der Garten", "garden"), ("das Schlafzimmer", "bedroom"),
+    ("das Wohnzimmer", "living room"), ("das Badezimmer", "bathroom"), ("die Garage", "garage"),
+    ("der Tisch", "table"), ("der Stuhl", "chair"), ("der Schrank", "cupboard"), ("die Tür", "door"),
+    ("das Fenster", "window"), ("der Boden", "floor"), ("die Wand", "wall"), ("die Lampe", "lamp"),
+    ("der Fernseher", "television"), ("das Bett", "bed"), ("die Küche", "kitchen"), ("die Toilette", "toilet"),
+    ("die Dusche", "shower"), ("das Waschbecken", "sink"), ("der Ofen", "oven"),
+    ("der Kühlschrank", "refrigerator"), ("die Mikrowelle", "microwave"), ("die Waschmaschine", "washing machine"),
+    ("die Spülmaschine", "dishwasher"), ("das Haus", "house"), ("die Stadt", "city"), ("das Land", "country"),
+    ("die Straße", "street"), ("der Weg", "way"), ("der Park", "park"), ("die Ecke", "corner"),
+    ("die Bank", "bank"), ("der Supermarkt", "supermarket"), ("die Apotheke", "pharmacy"),
+    ("die Schule", "school"), ("die Universität", "university"), ("das Geschäft", "store"),
+    ("der Markt", "market"), ("der Flughafen", "airport"), ("der Bahnhof", "train station"),
+    ("die Haltestelle", "bus stop"), ("die Fahrt", "ride"), ("das Ticket", "ticket"), ("der Zug", "train"),
+    ("der Bus", "bus"), ("das Taxi", "taxi"), ("das Auto", "car"), ("die Ampel", "traffic light"),
+    ("die Kreuzung", "intersection"), ("der Parkplatz", "parking lot"), ("der Fahrplan", "schedule"),
+    ("zumachen", "to close"), ("aufmachen", "to open"), ("ausmachen", "to turn off"),
+    ("übernachten", "to stay overnight"), ("anfangen", "to begin"), ("vereinbaren", "to arrange"),
+    ("einsteigen", "to get in / board"), ("umsteigen", "to change (trains)"), ("aussteigen", "to get out / exit"),
+    ("anschalten", "to switch on"), ("ausschalten", "to switch off"), ("Anreisen", "to arrive"), ("Ankommen", "to arrive"),
+    ("Abreisen", "to depart"), ("Absagen", "to cancel"), ("Zusagen", "to agree"), ("günstig", "cheap"),
+    ("billig", "inexpensive")
+]
+
+a2_vocab = [
+    ("die Verantwortung", "responsibility"), ("die Besprechung", "meeting"), ("die Überstunden", "overtime"),
+    ("laufen", "to run"), ("das Fitnessstudio", "gym"), ("die Entspannung", "relaxation"),
+    ("der Müll", "waste, garbage"), ("trennen", "to separate"), ("der Umweltschutz", "environmental protection"),
+    ("der Abfall", "waste, rubbish"), ("der Restmüll", "residual waste"), ("die Anweisung", "instruction"),
+    ("die Gemeinschaft", "community"), ("der Anzug", "suit"), ("die Beförderung", "promotion"),
+    ("die Abteilung", "department"), ("drinnen", "indoors"), ("die Vorsorgeuntersuchung", "preventive examination"),
+    ("die Mahlzeit", "meal"), ("behandeln", "to treat"), ("Hausmittel", "home remedies"),
+    ("Salbe", "ointment"), ("Tropfen", "drops"), ("nachhaltig", "sustainable"),
+    ("berühmt / bekannt", "famous / well-known"), ("einleben", "to settle in"), ("sich stören", "to be bothered"),
+    ("liefern", "to deliver"), ("zum Mitnehmen", "to take away"), ("erreichbar", "reachable"),
+    ("bedecken", "to cover"), ("schwanger", "pregnant"), ("die Impfung", "vaccination"),
+    ("am Fluss", "by the river"), ("das Guthaben", "balance / credit"), ("kostenlos", "free of charge"),
+    ("kündigen", "to cancel / to terminate"), ("der Anbieter", "provider"), ("die Bescheinigung", "certificate / confirmation"),
+    ("retten", "rescue"), ("die Falle", "trap"), ("die Feuerwehr", "fire department"),
+    ("der Schreck", "shock, fright"), ("schwach", "weak"), ("verletzt", "injured"),
+    ("der Wildpark", "wildlife park"), ("die Akrobatik", "acrobatics"), ("bauen", "to build"),
+    ("extra", "especially"), ("der Feriengruß", "holiday greeting"), ("die Pyramide", "pyramid"),
+    ("regnen", "to rain"), ("schicken", "to send"), ("das Souvenir", "souvenir"),
+    ("wahrscheinlich", "probably"), ("das Chaos", "chaos"), ("deutlich", "clearly"),
+    ("der Ohrring", "earring"), ("verlieren", "to lose"), ("der Ärger", "trouble"),
+    ("besorgt", "worried"), ("deprimiert", "depressed"), ("der Streit", "argument"),
+    ("sich streiten", "to argue"), ("dagegen sein", "to be against"), ("egal", "doesn't matter"),
+    ("egoistisch", "selfish"), ("kennenlernen", "to get to know"), ("nicht leiden können", "to dislike"),
+    ("der Mädchentag", "girls' day"), ("der Ratschlag", "advice"), ("tun", "to do"),
+    ("zufällig", "by chance"), ("ansprechen", "to approach"), ("plötzlich", "suddenly"),
+    ("untrennbar", "inseparable"), ("sich verabreden", "to make an appointment"),
+    ("versprechen", "to promise"), ("weglaufen", "to run away"), ("ab (+ Dativ)", "from, starting from"),
+    ("das Aquarium", "aquarium"), ("der Flohmarkt", "flea market"), ("der Jungentag", "boys' day"),
+    ("kaputt", "broken"), ("kostenlos", "free"), ("präsentieren", "to present"),
+    ("das Quiz", "quiz"), ("schwitzen", "to sweat"), ("das Straßenfest", "street festival"),
+    ("täglich", "daily"), ("vorschlagen", "to suggest"), ("wenn", "if, when"),
+    ("die Bühne", "stage"), ("dringend", "urgently"), ("die Reaktion", "reaction"),
+    ("unterwegs", "on the way"), ("vorbei", "over, past"), ("die Bauchschmerzen", "stomach ache"),
+    ("der Busfahrer", "bus driver"), ("die Busfahrerin", "female bus driver"),
+    ("der Fahrplan", "schedule"), ("der Platten", "flat tire"), ("die Straßenbahn", "tram"),
+    ("streiken", "to strike"), ("der Unfall", "accident"), ("die Ausrede", "excuse"),
+    ("baden", "to bathe"), ("die Grillwurst", "grilled sausage"), ("klingeln", "to ring"),
+    ("die Mitternacht", "midnight"), ("der Nachbarhund", "neighbor's dog"),
+    ("verbieten", "to forbid"), ("wach", "awake"), ("der Wecker", "alarm clock"),
+    ("die Wirklichkeit", "reality"), ("zuletzt", "lastly, finally"), ("das Bandmitglied", "band member"),
+    ("loslassen", "to let go"), ("der Strumpf", "stocking"), ("anprobieren", "to try on"),
+    ("aufdecken", "to uncover / flip over"), ("behalten", "to keep"), ("der Wettbewerb", "competition"),
+    ("schmutzig", "dirty"), ("die Absperrung", "barricade"), ("böse", "angry, evil"),
+    ("trocken", "dry"), ("aufbleiben", "to stay up"), ("hässlich", "ugly"),
+    ("ausweisen", "to identify"), ("erfahren", "to learn, find out"), ("entdecken", "to discover"),
+    ("verbessern", "to improve"), ("aufstellen", "to set up"), ("die Notaufnahme", "emergency department"),
+    ("das Arzneimittel", "medication"), ("die Diagnose", "diagnosis"), ("die Therapie", "therapy"),
+    ("die Rehabilitation", "rehabilitation"), ("der Chirurg", "surgeon"), ("die Anästhesie", "anesthesia"),
+    ("die Infektion", "infection"), ("die Entzündung", "inflammation"), ("die Unterkunft", "accommodation"),
+    ("die Sehenswürdigkeit", "tourist attraction"), ("die Ermäßigung", "discount"), ("die Verspätung", "delay"),
+    ("die Quittung", "receipt"), ("die Veranstaltung", "event"), ("die Bewerbung", "application")
+]
+
+# --- Short starter lists for B1/B2/C1 (add more later as you wish) ---
+b1_vocab = [
+    "Fortschritt", "Eindruck", "Unterschied", "Vorschlag", "Erfahrung", "Ansicht", "Abschluss", "Entscheidung"
+]
+
+b2_vocab = [
+    "Umwelt", "Entwicklung", "Auswirkung", "Verhalten", "Verhältnis", "Struktur", "Einfluss", "Kritik"
+]
+
+c1_vocab = [
+    "Ausdruck", "Beziehung", "Erkenntnis", "Verfügbarkeit", "Bereich", "Perspektive", "Relevanz", "Effizienz"
+]
+
+# --- Vocab list dictionary for your app ---
 VOCAB_LISTS = {
-    "A1": [
-        ("Haus", "house"),
-        ("Buch", "book"),
-        ("Auto", "car"),
-        ("Tisch", "table"),
-        ("Hund", "dog"),
-    ],
-    "A2": [
-        ("Flughafen", "airport"),
-        ("Geschenk", "gift"),
-        ("Gemüse", "vegetables"),
-    ],
+    "A1": a1_vocab,
+    "A2": a2_vocab,
+    "B1": b1_vocab,
+    "B2": b2_vocab,
+    "C1": c1_vocab
 }
+
+# Exam topic lists
+# --- A1 Exam Topic Lists (Teil 1, 2, 3) ---
+
+A1_TEIL1 = [
+    "Name", "Alter", "Wohnort", "Land", "Sprache", "Familie", "Beruf", "Hobby"
+]
+
+A1_TEIL2 = [
+    ("Geschäft", "schließen"),
+    ("Uhr", "Uhrzeit"),
+    ("Arbeit", "Kollege"),
+    ("Hausaufgabe", "machen"),
+    ("Küche", "kochen"),
+    ("Freizeit", "lesen"),
+    ("Telefon", "anrufen"),
+    ("Reise", "Hotel"),
+    ("Auto", "fahren"),
+    ("Einkaufen", "Obst"),
+    ("Schule", "Lehrer"),
+    ("Geburtstag", "Geschenk"),
+    ("Essen", "Frühstück"),
+    ("Arzt", "Termin"),
+    ("Zug", "Abfahrt"),
+    ("Wetter", "Regen"),
+    ("Buch", "lesen"),
+    ("Computer", "E-Mail"),
+    ("Kind", "spielen"),
+    ("Wochenende", "Plan"),
+    ("Bank", "Geld"),
+    ("Sport", "laufen"),
+    ("Abend", "Fernsehen"),
+    ("Freunde", "Besuch"),
+    ("Bahn", "Fahrkarte"),
+    ("Straße", "Stau"),
+    ("Essen gehen", "Restaurant"),
+    ("Hund", "Futter"),
+    ("Familie", "Kinder"),
+    ("Post", "Brief"),
+    ("Nachbarn", "laut"),
+    ("Kleid", "kaufen"),
+    ("Büro", "Chef"),
+    ("Urlaub", "Strand"),
+    ("Kino", "Film"),
+    ("Internet", "Seite"),
+    ("Bus", "Abfahrt"),
+    ("Arztpraxis", "Wartezeit"),
+    ("Kuchen", "backen"),
+    ("Park", "spazieren"),
+    ("Bäckerei", "Brötchen"),
+    ("Geldautomat", "Karte"),
+    ("Buchladen", "Roman"),
+    ("Fernseher", "Programm"),
+    ("Tasche", "vergessen"),
+    ("Stadtplan", "finden"),
+    ("Ticket", "bezahlen"),
+    ("Zahnarzt", "Schmerzen"),
+    ("Museum", "Öffnungszeiten"),
+    ("Handy", "Akku leer"),
+]
+
+A1_TEIL3 = [
+    "Radio anmachen",
+    "Fenster zumachen",
+    "Licht anschalten",
+    "Tür aufmachen",
+    "Tisch sauber machen",
+    "Hausaufgaben schicken",
+    "Buch bringen",
+    "Handy ausmachen",
+    "Stuhl nehmen",
+    "Wasser holen",
+    "Fenster öffnen",
+    "Musik leiser machen",
+    "Tafel sauber wischen",
+    "Kaffee kochen",
+    "Deutsch üben",
+    "Auto waschen",
+    "Kind abholen",
+    "Tisch decken",
+    "Termin machen",
+    "Nachricht schreiben",
+]
+
+A2_TEIL1 = [
+    "Wohnort", "Tagesablauf", "Freizeit", "Sprachen", "Essen & Trinken", "Haustiere",
+    "Lieblingsmonat", "Jahreszeit", "Sport", "Kleidung (Sommer)", "Familie", "Beruf",
+    "Hobbys", "Feiertage", "Reisen", "Lieblingsessen", "Schule", "Wetter", "Auto oder Fahrrad", "Perfekter Tag"
+]
+A2_TEIL2 = [
+    "Was machen Sie mit Ihrem Geld?",
+    "Was machen Sie am Wochenende?",
+    "Wie verbringen Sie Ihren Urlaub?",
+    "Wie oft gehen Sie einkaufen und was kaufen Sie?",
+    "Was für Musik hören Sie gern?",
+    "Wie feiern Sie Ihren Geburtstag?",
+    "Welche Verkehrsmittel nutzen Sie?",
+    "Wie bleiben Sie gesund?",
+    "Was machen Sie gern mit Ihrer Familie?",
+    "Wie sieht Ihr Traumhaus aus?",
+    "Welche Filme oder Serien mögen Sie?",
+    "Wie oft gehen Sie ins Restaurant?",
+    "Was ist Ihr Lieblingsfeiertag?",
+    "Was machen Sie morgens als Erstes?",
+    "Wie lange schlafen Sie normalerweise?",
+    "Welche Hobbys hatten Sie als Kind?",
+    "Machen Sie lieber Urlaub am Meer oder in den Bergen?",
+    "Wie sieht Ihr Lieblingszimmer aus?",
+    "Was ist Ihr Lieblingsgeschäft?",
+    "Wie sieht ein perfekter Tag für Sie aus?"
+]
+A2_TEIL3 = [
+    "Zusammen ins Kino gehen", "Ein Café besuchen", "Gemeinsam einkaufen gehen",
+    "Ein Picknick im Park organisieren", "Eine Fahrradtour planen",
+    "Zusammen in die Stadt gehen", "Einen Ausflug ins Schwimmbad machen",
+    "Eine Party organisieren", "Zusammen Abendessen gehen",
+    "Gemeinsam einen Freund/eine Freundin besuchen", "Zusammen ins Museum gehen",
+    "Einen Spaziergang im Park machen", "Ein Konzert besuchen",
+    "Zusammen eine Ausstellung besuchen", "Einen Wochenendausflug planen",
+    "Ein Theaterstück ansehen", "Ein neues Restaurant ausprobieren",
+    "Einen Kochabend organisieren", "Einen Sportevent besuchen", "Eine Wanderung machen"
+]
+
+B1_TEIL1 = [
+    "Mithilfe beim Sommerfest", "Eine Reise nach Köln planen",
+    "Überraschungsparty organisieren", "Kulturelles Ereignis (Konzert, Ausstellung) planen",
+    "Museumsbesuch organisieren"
+]
+B1_TEIL2 = [
+    "Ausbildung", "Auslandsaufenthalt", "Behinderten-Sport", "Berufstätige Eltern",
+    "Berufswahl", "Bio-Essen", "Chatten", "Computer für jeden Kursraum", "Das Internet",
+    "Einkaufen in Einkaufszentren", "Einkaufen im Internet", "Extremsport", "Facebook",
+    "Fertigessen", "Freiwillige Arbeit", "Freundschaft", "Gebrauchte Kleidung",
+    "Getrennter Unterricht für Jungen und Mädchen", "Haushalt", "Haustiere", "Heiraten",
+    "Hotel Mama", "Ich bin reich genug", "Informationen im Internet", "Kinder und Fernsehen",
+    "Kinder und Handys", "Kinos sterben", "Kreditkarten", "Leben auf dem Land oder in der Stadt",
+    "Makeup für Kinder", "Marken-Kleidung", "Mode", "Musikinstrument lernen",
+    "Musik im Zeitalter des Internets", "Rauchen", "Reisen", "Schokolade macht glücklich",
+    "Sport treiben", "Sprachenlernen", "Sprachenlernen mit dem Internet",
+    "Stadtzentrum ohne Autos", "Studenten und Arbeit in den Ferien", "Studium", "Tattoos",
+    "Teilzeitarbeit", "Unsere Idole", "Umweltschutz", "Vegetarische Ernährung", "Zeitungslesen"
+]
+B1_TEIL3 = [
+    "Fragen stellen zu einer Präsentation", "Positives Feedback geben",
+    "Etwas überraschend finden oder planen", "Weitere Details erfragen"
+]
+b2_teil1_topics = [
+    "Sollten Smartphones in der Schule erlaubt sein?",
+    "Wie wichtig ist Umweltschutz in unserem Alltag?",
+    "Wie beeinflusst Social Media unser Leben?",
+    "Welche Rolle spielt Sport für die Gesundheit?",
+]
+
+b2_teil2_presentations = [
+    "Die Bedeutung von Ehrenamt",
+    "Vorteile und Nachteile von Homeoffice",
+    "Auswirkungen der Digitalisierung auf die Arbeitswelt",
+    "Mein schönstes Reiseerlebnis",
+]
+
+b2_teil3_arguments = [
+    "Sollte man in der Stadt oder auf dem Land leben?",
+    "Sind E-Autos die Zukunft?",
+    "Brauchen wir mehr Urlaubstage?",
+    "Muss Schule mehr praktische Fächer anbieten?",
+]
+
+c1_teil1_lectures = [
+    "Die Zukunft der künstlichen Intelligenz",
+    "Internationale Migration: Herausforderungen und Chancen",
+    "Wandel der Arbeitswelt im 21. Jahrhundert",
+    "Digitalisierung und Datenschutz",
+]
+
+c1_teil2_discussions = [
+    "Sollten Universitäten Studiengebühren verlangen?",
+    "Welchen Einfluss haben soziale Medien auf die Demokratie?",
+    "Ist lebenslanges Lernen notwendig?",
+    "Die Bedeutung von Nachhaltigkeit in der Wirtschaft",
+]
+
+c1_teil3_evaluations = [
+    "Die wichtigsten Kompetenzen für die Zukunft",
+    "Vor- und Nachteile globaler Zusammenarbeit",
+    "Welchen Einfluss hat Technik auf unser Leben?",
+    "Wie verändert sich die Familie?",
+]
+
 
 # ======================
 # SHOW APP CONTENT HERE!
@@ -221,497 +525,75 @@ if st.session_state.get("logged_in", False):
         key="main_tab_select"
     )
 
-
-
-# -------------- DASHBOARD --------------
 if tab == "Dashboard":
-    paywall()
     user_row = st.session_state.get("user_row", {})
     name = user_row.get("name", "User")
     join_date = user_row.get("joined", "—")
+    pro_user = st.session_state.get("pro_user", False)
+
     st.header(f"👋 Welcome, {name}!")
+    st.markdown("---")
     
-    col1, col2 = st.columns([2, 1])
+    # -- Main summary cards/columns --
+    col1, col2, col3 = st.columns([2, 1, 1])
     
     with col1:
-        st.markdown("### 🚀 Quick Start")
+        st.subheader("🚀 Quick Start")
         st.write(
-            "Get started with Goethe exam practice! "
-            "Use the tabs on the left to practice Vocab, Sprechen, Schreiben, or generate ideas for any topic."
+            "Welcome to your Goethe Exam Preparation Hub! "
+            "Use the tabs above to practice Vocabulary, Speaking, Writing, or get ideas for your exam topics."
         )
-        st.markdown("#### Progress Overview")
+        st.markdown("#### 📊 Progress Overview")
         st.metric("📅 Member Since", join_date[:10] if join_date else "-")
-        # Add more metrics below as needed (e.g. completed vocab, essays, etc.)
-        # st.metric("Completed Vocab", "5/50")
-        # st.metric("Mock Exams Taken", "2")
-    
+        # Future: add progress stats
+        # st.metric("📝 Words Mastered", "5/50")
+        # st.metric("🗣️ Mock Exams", "2")
+
     with col2:
-        st.markdown("#### 💡 Tip")
-        st.info(
-            "Use the **Ideas Generator** to get inspiration for Sprechen or Schreiben on any topic!"
-        )
-        st.markdown("#### 🏆 Upgrade to Pro!")
-        st.markdown(
-            "<span style='color:green'>Unlock unlimited practice, instant feedback, and exam simulators with Pro!</span>",
-            unsafe_allow_html=True,
-        )
-        st.button("Upgrade Now", on_click=lambda: st.switch_page("YOUR_PAYSTACK_LINK_HERE"))  # Replace or link directly
+        st.subheader("💡 Tip of the Day")
+        st.info("Try the **Ideas Generator** to get instant inspiration and sample answers for your next Goethe exam topic!")
 
-    # Optionally, add cards or more stats
+    with col3:
+        st.subheader("🏆 Go Pro!")
+        if not pro_user:
+            st.markdown(
+                "<span style='color:green'>Unlock unlimited practice, instant AI feedback, and full exam simulators with <b>Pro</b>!</span>",
+                unsafe_allow_html=True,
+            )
+            st.button("Upgrade Now", on_click=lambda: st.switch_page("YOUR_PAYSTACK_LINK_HERE"))  # Replace with your link
+        else:
+            st.success("You have Pro access! Enjoy all features.")
+
     st.markdown("---")
-    st.subheader("Learning Modes")
-    st.markdown("""
-    - **Ideas Generator:** Get topic ideas and structure for Sprechen & Schreiben (A1–C1)
-    - **Vocab Trainer:** Memorize essential Goethe vocabulary
-    - **Schreiben Trainer:** AI feedback for writing tasks
-    - **Exam Simulator:** Full or part mock exams (Pro)
-    """)
+    st.subheader("✨ Learning Modes")
+
+    st.markdown(
+        """
+        <div style='display: flex; gap: 16px; flex-wrap: wrap;'>
+            <div style='background: #f5f6fa; border-radius: 10px; padding: 18px; min-width: 220px; flex: 1; margin-bottom:10px;'>
+                <b>💬 Ideas Generator</b><br>
+                <span style='color: #333;'>Get ideas and sample answers for Sprechen & Schreiben (A1–C1).</span>
+            </div>
+            <div style='background: #e6f7ff; border-radius: 10px; padding: 18px; min-width: 220px; flex: 1; margin-bottom:10px;'>
+                <b>📚 Vocab Trainer</b><br>
+                <span style='color: #333;'>Memorize and practice all key Goethe exam vocabulary.</span>
+            </div>
+            <div style='background: #fffbe7; border-radius: 10px; padding: 18px; min-width: 220px; flex: 1; margin-bottom:10px;'>
+                <b>✍️ Schreiben Trainer</b><br>
+                <span style='color: #333;'>Get instant AI feedback for your writing tasks.</span>
+            </div>
+            <div style='background: #f9eef6; border-radius: 10px; padding: 18px; min-width: 220px; flex: 1; margin-bottom:10px;'>
+                <b>🗣️ Oral Exam Trainer</b><br>
+                <span style='color: #333;'>Practice your speaking with mock exam scenarios (A1–C1).</span>
+            </div>
+            <div style='background: #f3f3fa; border-radius: 10px; padding: 18px; min-width: 220px; flex: 1; margin-bottom:10px;'>
+                <b>🧑‍🏫 Grammar Helper</b><br>
+                <span style='color: #333;'>Ask any grammar question and get clear explanations.</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True
+    )
 
 
-
-    # ---------- VOCAB TRAINER ----------
-    elif tab == "Vocab Trainer":
-        paywall()
-        st.header("📝 Vocab Trainer")
-        user_row = st.session_state.get("user_row", {})
-        user_code = user_row.get("user_code", "")
-        user_name = user_row.get("name", "User")
-        level = "A1"  # Always A1 for now
-
-        VOCAB_LISTS = {
-            "A1": [
-                ("Haus", "house"),
-                ("Buch", "book"),
-                ("Auto", "car"),
-                ("Tisch", "table"),
-                ("Hund", "dog"),
-            ],
-            "A2": [
-                ("Flughafen", "airport"),
-                ("Geschenk", "gift"),
-                ("Gemüse", "vegetables"),
-            ],
-        }
-
-        def save_vocab_submission(user_code, user_name, level, word, answer, is_correct):
-            doc_id = f"{user_code}_{level}_{word}_{int(datetime.utcnow().timestamp())}"
-            db.collection("vocab_progress").document(doc_id).set({
-                "user_code": user_code,
-                "user_name": user_name,
-                "level": level,
-                "word": word,
-                "answer": answer,
-                "is_correct": bool(is_correct),
-                "date": datetime.utcnow().strftime("%Y-%m-%d")
-            })
-
-        practiced = set()
-        docs = db.collection("vocab_progress") \
-            .where("user_code", "==", user_code) \
-            .where("level", "==", level) \
-            .where("is_correct", "==", True).stream()
-        for doc in docs:
-            practiced.add(doc.to_dict().get("word"))
-
-        choices = [v for v in VOCAB_LISTS[level] if v[0] not in practiced]
-
-        if not choices:
-            st.success("🎉 You finished all words for this level!")
-            if st.button("Reset Progress"):
-                docs = db.collection("vocab_progress") \
-                    .where("user_code", "==", user_code) \
-                    .where("level", "==", level).stream()
-                for doc in docs:
-                    db.collection("vocab_progress").document(doc.id).delete()
-                st.rerun()
-            st.stop()
-
-        word, correct = random.choice(choices)
-        st.markdown(f"**Translate:** `{word}`")
-        user_input = st.text_input("Your Answer", key=f"vocab_input_{word}")
-
-        if st.button("Check Answer"):
-            if user_input.strip().lower() == correct.lower():
-                st.success("✅ Correct!")
-                is_correct = True
-            else:
-                st.error(f"❌ Not correct. The answer is: **{correct}**")
-                is_correct = False
-            save_vocab_submission(user_code, user_name, level, word, user_input, is_correct)
-            st.rerun()
-
-        total = len(VOCAB_LISTS[level])
-        done = len(practiced)
-        st.progress(done / total, text=f"{done}/{total} mastered")
-
-    # ---------- MY VOCAB ----------
-    elif tab == "My Vocab":
-        paywall()
-        st.header("📓 My Vocab")
-        user_row = st.session_state.get("user_row", {})
-        user_code = user_row.get("user_code", "")
-        user_name = user_row.get("name", "User")
-        level = "A1"
-
-        def add_my_vocab(user_code, level, word, translation):
-            doc_id = f"{user_code}_{level}_{word}_{int(datetime.utcnow().timestamp())}"
-            db.collection("my_vocab").document(doc_id).set({
-                "user_code": user_code,
-                "level": level,
-                "word": word,
-                "translation": translation,
-                "date": datetime.utcnow().strftime("%Y-%m-%d")
-            })
-
-        def get_my_vocab(user_code, level):
-            docs = db.collection("my_vocab") \
-                .where("user_code", "==", user_code) \
-                .where("level", "==", level).stream()
-            rows = []
-            for doc in docs:
-                d = doc.to_dict()
-                rows.append([doc.id, d.get("word", ""), d.get("translation", ""), d.get("date", "")])
-            rows.sort(key=lambda x: x[3], reverse=True)
-            return rows
-
-        def delete_my_vocab(doc_id, user_code):
-            db.collection("my_vocab").document(doc_id).delete()
-
-        with st.form("add_my_vocab_form", clear_on_submit=True):
-            new_word = st.text_input("German Word", key="my_vocab_word")
-            new_translation = st.text_input("Translation (English or other)", key="my_vocab_translation")
-            submitted = st.form_submit_button("Add to My Vocab")
-            if submitted and new_word.strip() and new_translation.strip():
-                add_my_vocab(user_code, level, new_word.strip(), new_translation.strip())
-                st.success(f"Added '{new_word.strip()}' → '{new_translation.strip()}' to your list.")
-                st.rerun()
-
-        rows = get_my_vocab(user_code, level)
-        if rows:
-            for row in rows:
-                col1, col2, col3 = st.columns([4, 4, 1])
-                col1.markdown(f"**{row[1]}**")
-                col2.markdown(f"{row[2]}")
-                if col3.button("🗑️", key=f"del_{row[0]}"):
-                    delete_my_vocab(row[0], user_code)
-                    st.rerun()
-            if st.button("📄 Download My Vocab as PDF"):
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font("Arial", size=11)
-                title = f"My Personal Vocab – {level} ({user_name})"
-                pdf.cell(0, 8, title, ln=1)
-                pdf.ln(3)
-                pdf.set_font("Arial", "B", 10)
-                pdf.cell(50, 8, "German", border=1)
-                pdf.cell(60, 8, "Translation", border=1)
-                pdf.cell(30, 8, "Date", border=1)
-                pdf.ln()
-                pdf.set_font("Arial", "", 10)
-                for row in rows:
-                    pdf.cell(50, 8, str(row[1]), border=1)
-                    pdf.cell(60, 8, str(row[2]), border=1)
-                    pdf.cell(30, 8, str(row[3]), border=1)
-                    pdf.ln()
-                pdf_bytes = pdf.output(dest="S").encode("latin1", "replace")
-                st.download_button(
-                    label="Download PDF",
-                    data=pdf_bytes,
-                    file_name=f"{user_code}_my_vocab_{level}.pdf",
-                    mime="application/pdf"
-                )
-        else:
-            st.info("No personal vocab saved yet for this level.")
-
-    # ---------- SCHREIBEN TRAINER ----------
-    elif tab == "Schreiben Trainer":
-        paywall()
-        st.header("✍️ Schreiben Trainer")
-        user_row = st.session_state.get("user_row", {})
-        user_code = user_row.get("user_code", "")
-        user_name = user_row.get("name", "User")
-        user_email = user_row.get("email", "")
-
-        schreiben_levels = ["A1", "A2", "B1", "B2", "C1"]
-        schreiben_level = st.selectbox("Choose your writing level:", schreiben_levels, key="schreiben_level")
-        today_str = str(datetime.today().date())
-        user_letter = st.text_area("Paste or type your German letter/essay here.", height=180, key="schreiben_text")
-
-        ai_prompt = (
-            f"You are Herr Felix, a supportive and innovative German letter writing trainer. "
-            f"The student has submitted a {schreiben_level} German letter or essay. "
-            "Write a brief comment in English about what the student did well and what they should improve while highlighting their points so they understand. "
-            "Check if the letter matches their level. Talk as Herr Felix talking to a student and highlight the phrases with errors so they see it. "
-            "Don't just say errors—show exactly where the mistakes are. "
-            "1. Give a score out of 25 marks and always display the score clearly. "
-            "2. If the score is 17 or more, write: '**Passed: You may submit to your tutor!**'. "
-            "3. If the score is 16 or less, write: '**Keep improving before you submit.**'. "
-            "4. Only write one of these two sentences, never both, and place it on a separate bolded line at the end of your feedback. "
-            "5. Always explain why you gave the student that score based on grammar, spelling, vocabulary, coherence, etc. "
-            "6. Also check for AI usage or if the student wrote with their own effort. "
-            "7. List and show the phrases to improve on with tips, suggestions, and what they should do. Let the student use your suggestions to correct the letter, but don't write the full corrected letter for them. "
-            "Give scores by analyzing grammar, structure, vocabulary, etc. Explain to the student why you gave that score."
-        )
-
-        if st.button("Get Feedback", type="primary", disabled=not user_letter.strip()):
-            with st.spinner("🧑‍🏫 Herr Felix is typing..."):
-                try:
-                    completion = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": ai_prompt},
-                            {"role": "user", "content": user_letter},
-                        ],
-                        temperature=0.6,
-                    )
-                    feedback = completion.choices[0].message.content
-                except Exception as e:
-                    st.error("AI feedback failed. Please check your OpenAI setup.")
-                    feedback = None
-
-            if feedback:
-                import re
-                score_match = re.search(r"score\s*(?:[:=]|is)?\s*(\d+)\s*/\s*25", feedback, re.IGNORECASE)
-                if not score_match:
-                    score_match = re.search(r"Score[:\s]+(\d+)\s*/\s*25", feedback, re.IGNORECASE)
-                score = int(score_match.group(1)) if score_match else 0
-
-                db.collection("writing_submissions").add({
-                    "user_code": user_code,
-                    "user_name": user_name,
-                    "user_email": user_email,
-                    "level": schreiben_level,
-                    "letter": user_letter,
-                    "feedback": feedback,
-                    "score": score,
-                    "date": today_str,
-                    "timestamp": datetime.utcnow().isoformat(),
-                })
-
-                st.markdown("---")
-                st.markdown("#### 📝 Feedback from Herr Felix")
-                st.markdown(feedback)
-
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font("Arial", size=12)
-                pdf.multi_cell(0, 10, f"Your Letter:\n\n{user_letter}\n\nFeedback from Herr Felix:\n\n{feedback}")
-                pdf_bytes = pdf.output(dest="S").encode("latin1", "replace")
-                st.download_button(
-                    "⬇️ Download Feedback as PDF",
-                    pdf_bytes,
-                    file_name=f"Schreiben_Feedback_{user_name}_{schreiben_level}.pdf",
-                    mime="application/pdf"
-                )
-
-    # ---------- EXAMS ----------
-    elif tab == "Exams":
-        paywall()
-        st.header("🎤 Exams")
-        user_row = st.session_state.get("user_row", {})
-        user_code = user_row.get("user_code", "")
-        user_name = user_row.get("name", "User")
-
-        exam_levels = ["A1", "A2", "B1"]
-        exam_level = st.selectbox("Choose exam level:", exam_levels, key="exam_level")
-        exam_parts = {
-            "A1": ["Teil 1 – Introduction", "Teil 2 – Question & Answer", "Teil 3 – Request"],
-            "A2": ["Teil 1 – General Questions", "Teil 2 – Opinion/Argument", "Teil 3 – Planning"],
-            "B1": ["Teil 1 – Dialogue", "Teil 2 – Monologue", "Teil 3 – Feedback/Q&A"]
-        }
-        exam_part = st.selectbox("Choose exam part:", exam_parts[exam_level], key="exam_part")
-
-        if exam_level == "A1" and exam_part.startswith("Teil 1"):
-            st.info("Introduce yourself: Name, Age, Country, City, Languages, Job, Hobby.")
-            system_prompt = (
-                "You are Herr Felix, an A1 German examiner. The student will introduce themselves. "
-                "Give 3 follow-up questions, and after each student response, correct any mistakes (in English) and encourage them."
-            )
-        elif exam_level == "A1" and exam_part.startswith("Teil 2"):
-            st.info("Ask a question using a provided topic and keyword, then answer it yourself.")
-            system_prompt = (
-                "You are Herr Felix, an A1 German examiner. Give the student a topic and keyword (e.g., 'Geschäft – schließen'). "
-                "The student must write a question using the keyword and answer it themselves. Give short, motivating feedback after."
-            )
-        elif exam_level == "A1" and exam_part.startswith("Teil 3"):
-            st.info("Write a polite request (e.g., 'Radio anmachen', 'Fenster zumachen').")
-            system_prompt = (
-                "You are Herr Felix, an A1 German examiner. The student will write a short, polite request using the given prompt. Correct errors and encourage them."
-            )
-        else:
-            st.info("Practice exam questions at your level. The AI will simulate an examiner and give you feedback.")
-            system_prompt = (
-                "You are Herr Felix, a German exam trainer for oral exams. Respond as an examiner, "
-                "giving questions and instant feedback to the student. Be supportive and correct mistakes in English."
-            )
-
-        if "exam_chat" not in st.session_state:
-            st.session_state["exam_chat"] = []
-
-        if st.button("Restart Exam Chat"):
-            st.session_state["exam_chat"] = []
-
-        for msg in st.session_state["exam_chat"]:
-            who = "🧑‍🏫 Herr Felix" if msg["role"] == "assistant" else "🧑 Student"
-            st.markdown(f"**{who}:** {msg['content']}")
-
-        user_msg = st.text_input("Your answer / introduction...", key="exam_input")
-        if st.button("Send", disabled=not user_msg.strip()):
-            st.session_state["exam_chat"].append({"role": "user", "content": user_msg.strip()})
-            with st.spinner("Herr Felix is thinking..."):
-                try:
-                    messages = [{"role": "system", "content": system_prompt}] + st.session_state["exam_chat"]
-                    resp = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=messages,
-                        temperature=0.4,
-                        max_tokens=300
-                    )
-                    ai_reply = resp.choices[0].message.content.strip()
-                except Exception as e:
-                    ai_reply = f"AI error: {e}"
-            st.session_state["exam_chat"].append({"role": "assistant", "content": ai_reply})
-            st.rerun()
-
-        if st.session_state["exam_chat"]:
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-            for m in st.session_state["exam_chat"]:
-                who = "Herr Felix" if m["role"] == "assistant" else "Student"
-                pdf.multi_cell(0, 8, f"{who}: {m['content']}\n")
-            pdf_bytes = pdf.output(dest="S").encode("latin1", "replace")
-            st.download_button(
-                "⬇️ Download Exam Practice as PDF",
-                pdf_bytes,
-                file_name=f"Exam_Practice_{user_name}_{exam_level}.pdf",
-                mime="application/pdf"
-            )
-
-    # ---------- CUSTOM CHAT ----------
-    elif tab == "Custom Chat":
-        paywall()
-        st.header("💬 Freestyle Conversation with Herr Felix (AI)")
-        st.info("Practice any German conversation. Herr Felix will reply, correct, and help you improve. Use this tab to prepare for anything!")
-
-        user_row = st.session_state.get("user_row", {})
-        user_name = user_row.get("name", "User")
-
-        if "custom_chat" not in st.session_state:
-            st.session_state["custom_chat"] = []
-
-        if st.button("Reset Custom Chat"):
-            st.session_state["custom_chat"] = []
-
-        for msg in st.session_state["custom_chat"]:
-            who = "🧑‍🏫 Herr Felix" if msg["role"] == "assistant" else "🧑 Student"
-            st.markdown(f"**{who}:** {msg['content']}")
-
-        custom_input = st.text_input("Type your message or start a conversation...", key="custom_input")
-        if st.button("Send", key="custom_send", disabled=not custom_input.strip()):
-            st.session_state["custom_chat"].append({"role": "user", "content": custom_input.strip()})
-
-            system_prompt = (
-                "You are Herr Felix, an expert German teacher and conversation partner. "
-                "Reply to the student's German message. If there are mistakes, correct them and give a clear explanation in English. "
-                "Encourage the student, suggest better phrases, and keep the conversation interactive. "
-                "Never just translate—always keep the conversation in German with English feedback if needed."
-            )
-            messages = [{"role": "system", "content": system_prompt}] + st.session_state["custom_chat"]
-
-            with st.spinner("Herr Felix is thinking..."):
-                try:
-                    resp = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=messages,
-                        temperature=0.5,
-                        max_tokens=400
-                    )
-                    reply = resp.choices[0].message.content
-                except Exception as e:
-                    reply = f"AI error: {e}"
-
-            st.session_state["custom_chat"].append({"role": "assistant", "content": reply})
-            st.rerun()
-
-        if st.session_state["custom_chat"]:
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-            for m in st.session_state["custom_chat"]:
-                who = "Herr Felix" if m["role"] == "assistant" else "Student"
-                pdf.multi_cell(0, 8, f"{who}: {m['content']}\n")
-            pdf_bytes = pdf.output(dest="S").encode("latin1", "replace")
-            st.download_button(
-                "⬇️ Download Chat as PDF",
-                pdf_bytes,
-                file_name=f"Custom_Chat_{user_name}.pdf",
-                mime="application/pdf"
-            )
-
-
-    # Grammar Helper
-    elif tab == "Grammar Helper":
-        paywall()
-        st.header("📚 Grammar Helper")
-        st.info("Ask any German grammar question below. Herr Felix will answer clearly in English with examples.")
-
-        user_row = st.session_state.get("user_row", {})
-        user_name = user_row.get("name", "User")
-
-        # Chat history in session state
-        if "grammar_chat" not in st.session_state:
-            st.session_state["grammar_chat"] = []
-
-        if st.button("Reset Grammar Chat"):
-            st.session_state["grammar_chat"] = []
-
-        # Show conversation history
-        for msg in st.session_state["grammar_chat"]:
-            who = "🧑‍🏫 Herr Felix" if msg["role"] == "assistant" else "🧑 Student"
-            st.markdown(f"**{who}:** {msg['content']}")
-
-        grammar_input = st.text_input("Ask any grammar question...", key="grammar_input")
-        if st.button("Send", key="grammar_send", disabled=not grammar_input.strip()):
-            st.session_state["grammar_chat"].append({"role": "user", "content": grammar_input.strip()})
-
-            system_prompt = (
-                "You are Herr Felix, a friendly and expert German grammar teacher. "
-                "Answer every question in clear, simple English. "
-                "Always give a practical example, and explain step-by-step for beginners. "
-                "Never switch to German in your explanations."
-            )
-            messages = [{"role": "system", "content": system_prompt}] + st.session_state["grammar_chat"]
-
-            with st.spinner("Herr Felix is thinking..."):
-                try:
-                    resp = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=messages,
-                        temperature=0.25,
-                        max_tokens=400
-                    )
-                    answer = resp.choices[0].message.content
-                except Exception as e:
-                    answer = f"Sorry, something went wrong: {e}"
-
-            st.session_state["grammar_chat"].append({"role": "assistant", "content": answer})
-            st.rerun()
-
-        # Download chat as PDF
-        if st.session_state["grammar_chat"]:
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-            for m in st.session_state["grammar_chat"]:
-                who = "Herr Felix" if m["role"] == "assistant" else "Student"
-                pdf.multi_cell(0, 8, f"{who}: {m['content']}\n")
-            pdf_bytes = pdf.output(dest="S").encode("latin1", "replace")
-            st.download_button(
-                "⬇️ Download Chat as PDF",
-                pdf_bytes,
-                file_name=f"Grammar_Chat_{user_name}.pdf",
-                mime="application/pdf"
-            )
 
 
