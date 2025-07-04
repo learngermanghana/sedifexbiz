@@ -21,9 +21,9 @@ st.set_page_config(page_title="Falowen App", layout="centered")
 sa_json = os.environ["FIREBASE_SERVICE_ACCOUNT"]
 sa_info = json.loads(sa_json)
 cred    = credentials.Certificate(sa_info)
-if not firebase_admin._apps:  # Prevent duplicate initialization on rerun
+if not firebase_admin._apps:  # Only initialize ONCE
     firebase_admin.initialize_app(cred)
-db      = firestore.client()
+db = firestore.client()
 
 
 # ========== CONSTANTS ==========
