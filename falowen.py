@@ -14,15 +14,17 @@ from fpdf import FPDF
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# 1) Load your service‐account JSON from Streamlit secrets
+# -- PAGE CONFIG & RENDER BLOCK --
+st.set_page_config(page_title="Falowen App", layout="centered")
+
+# initialize firebase here, in your render section
 sa_info = json.loads(st.secrets["FIREBASE_SERVICE_ACCOUNT"])
-
-# 2) Turn it into a Credential and initialize the app
-cred = credentials.Certificate(sa_info)
+cred    = credentials.Certificate(sa_info)
 firebase_admin.initialize_app(cred)
+db      = firestore.client()
 
-# 3) Get your Firestore client
-db = firestore.client()
+# now your db variable is ready for all subsequent save_* and fetch_* calls
+
 
 # ========== CONSTANTS ==========
 FALOWEN_DAILY_LIMIT   = 20
