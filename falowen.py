@@ -17,12 +17,12 @@ from firebase_admin import credentials, firestore
 # -- PAGE CONFIG & RENDER BLOCK --
 st.set_page_config(page_title="Falowen App", layout="centered")
 
-
 # --- FIREBASE INIT (RENDER) ---
 sa_json = os.environ["FIREBASE_SERVICE_ACCOUNT"]
 sa_info = json.loads(sa_json)
 cred    = credentials.Certificate(sa_info)
-firebase_admin.initialize_app(cred)
+if not firebase_admin._apps:  # Prevent duplicate initialization on rerun
+    firebase_admin.initialize_app(cred)
 db      = firestore.client()
 
 
