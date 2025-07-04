@@ -14,17 +14,13 @@ from fpdf import FPDF
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# -- PAGE CONFIG & RENDER BLOCK --
-st.set_page_config(page_title="Falowen App", layout="centered")
-
 # --- FIREBASE INIT (RENDER) ---
 sa_json = os.environ["FIREBASE_SERVICE_ACCOUNT"]
 sa_info = json.loads(sa_json)
 cred    = credentials.Certificate(sa_info)
-if not firebase_admin._apps:  # Only initialize ONCE
+if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
-
 
 # ========== CONSTANTS ==========
 FALOWEN_DAILY_LIMIT   = 20
