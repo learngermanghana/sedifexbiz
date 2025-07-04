@@ -10,18 +10,16 @@ import streamlit as st
 from openai import OpenAI
 from fpdf import FPDF
 
-# Firebase Admin imports
-import firebase_admin
-from firebase_admin import credentials, firestore
-
-# --- FIREBASE INIT (RENDER) ---
+# Load service account from environment variable
 sa_json = os.environ["FIREBASE_SERVICE_ACCOUNT"]
 sa_info = json.loads(sa_json)
 cred    = credentials.Certificate(sa_info)
+
+# Safe initialization (works on Render, Streamlit Cloud, etc)
 if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
-db = firestore.client()
 
+db = firestore.client()
 # ========== CONSTANTS ==========
 FALOWEN_DAILY_LIMIT   = 20
 VOCAB_DAILY_LIMIT     = 20
