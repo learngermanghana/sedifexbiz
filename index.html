@@ -3,26 +3,25 @@
   const ONESIGNAL_APP_ID   = "2c2cf4aa-07ec-4b11-8234-76d452ea3ad5";
   const SCRIPT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyEEXf2u18UEbfYSamjwYC58mohEPinibLsXt6Bu9fCkaA8cr2h6oubL2A_KxJUji6C/exec";
 
+  // Use PATH ONLY here because dashboard already has the filenames
   window.OneSignal = window.OneSignal || [];
   OneSignal.push(function () {
     OneSignal.init({
       appId: ONESIGNAL_APP_ID,
-      notifyButton: { enable: false },
-      // point exactly to your project paths:
-      serviceWorkerPath: '/falowen/OneSignalSDKWorker.js',
-      serviceWorkerUpdaterPath: '/falowen/OneSignalSDKUpdaterWorker.js',
-      serviceWorkerParam: { scope: '/falowen/' }
+      serviceWorkerPath: '/falowen/',   // <- IMPORTANT: path, not file
+      notifyButton: { enable: false }
     });
   });
 
-  // wait for SDK to be ready
   async function ensureOneSignalReady(timeoutMs = 10000) {
-    const start = Date.now();
-    return await new Promise((res, rej) => (function poll(){
-      if (window.OneSignal && OneSignal.User && OneSignal.Notification) return res(window.OneSignal);
-      if (Date.now() - start > timeoutMs) return rej(new Error("OneSignal SDK didn't initialize. Check Site URL & worker paths."));
-      setTimeout(poll, 150);
-    })());
+    const t0 = Date.now();
+    return new Promise((resolve, reject) => {
+      (function tick(){
+        if (window.OneSignal && OneSignal.User && OneSignal.Notification) return resolve(window.OneSignal);
+        if (Date.now() - t0 > timeoutMs) return reject(new Error("OneSignal SDK didn't initialize. Check Site URL & worker paths."));
+        setTimeout(tick, 150);
+      })();
+    });
   }
 
   document.getElementById('btn').onclick = async () => {
