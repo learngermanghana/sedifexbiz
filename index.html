@@ -1,0 +1,62 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Enable Score Notifications</title>
+  <script src="https://cdn.onesignal.com/sdks/OneSignalSDK.js" async></script>
+  <style>
+    body { font-family: system-ui, Arial; max-width: 520px; margin: 40px auto; padding: 0 16px; }
+    label, input, button { font-size: 16px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+    .ok { color: #0b8e3e; } .err { color: #b00020; }
+  </style>
+</head>
+<body>
+  <h2>Enable Score Notifications</h2>
+  <div class="card">
+    <p>Enter your student code and click “Allow” when your browser asks for notifications.</p>
+    <label>Student code</label><br>
+    <input id="code" placeholder="e.g. felixa1" style="width:100%;padding:8px;margin:8px 0;" />
+    <button id="btn" style="padding:10px 14px;">Enable Notifications</button>
+    <p id="status"></p>
+  </div>
+
+  <script>
+    const ONESIGNAL_APP_ID = "PUT_YOUR_ONESIGNAL_APP_ID_HERE";
+    const SCRIPT_WEBHOOK_URL = "PUT_YOUR_APPS_SCRIPT_EXEC_URL_HERE"; // your /exec URL
+
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.init({
+        appId: ONESIGNAL_APP_ID,
+        notifyButton: { enable: false }
+      });
+    });
+
+    document.getElementById('btn').onclick = async () => {
+      const code = (document.getElementById('code').value || '').trim();
+      const s = document.getElementById('status');
+      if (!code) { s.innerHTML = '<span class="err">Enter your student code.</span>'; return; }
+      try {
+        const OneSignal = window.OneSignal;
+        await OneSignal.Notification.requestPermission();
+        const id = await OneSignal.User.getId(); // player ID
+        if (!id) throw new Error('No playerId (permission denied?)');
+
+        // send to Apps Script to store: {type:'onesignal_register', studentcode, playerId}
+        const res = await fetch(SCRIPT_WEBHOOK_URL, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ type:'onesignal_register', studentcode: code, playerId: id })
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || 'Server error');
+        s.innerHTML = '<span class="ok">✅ Notifications enabled. You will receive updates here.</span>';
+      } catch (e) {
+        console.error(e);
+        s.innerHTML = '<span class="err">Failed: ' + e.message + '</span>';
+      }
+    };
+  </script>
+</body>
+</html>
