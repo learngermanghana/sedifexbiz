@@ -1,50 +1,83 @@
-<script src="https://cdn.onesignal.com/sdks/OneSignalSDK.js" async></script>
-<script>
-  const ONESIGNAL_APP_ID   = "2c2cf4aa-07ec-4b11-8234-76d452ea3ad5";
-  const SCRIPT_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyEEXf2u18UEbfYSamjwYC58mohEPinibLsXt6Bu9fCkaA8cr2h6oubL2A_KxJUji6C/exec";
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Enable Score Notifications</title>
 
-  // Use PATH ONLY here because dashboard already has the filenames
-  window.OneSignal = window.OneSignal || [];
-  OneSignal.push(function () {
-    OneSignal.init({
-      appId: ONESIGNAL_APP_ID,
-      serviceWorkerPath: '/falowen/',   // <- IMPORTANT: path, not file
-      notifyButton: { enable: false }
-    });
-  });
+  <!-- OneSignal SDK (load once) -->
+  <script src="https://cdn.onesignal.com/sdks/OneSignalSDK.js" async></script>
 
-  async function ensureOneSignalReady(timeoutMs = 10000) {
-    const t0 = Date.now();
-    return new Promise((resolve, reject) => {
-      (function tick(){
-        if (window.OneSignal && OneSignal.User && OneSignal.Notification) return resolve(window.OneSignal);
-        if (Date.now() - t0 > timeoutMs) return reject(new Error("OneSignal SDK didn't initialize. Check Site URL & worker paths."));
-        setTimeout(tick, 150);
-      })();
-    });
-  }
+  <style>
+    body { font-family: system-ui, Arial; max-width: 520px; margin: 40px auto; padding: 0 16px; }
+    label, input, button { font-size: 16px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 20px; }
+    .ok { color: #0b8e3e; } .err { color: #b00020; }
+  </style>
+</head>
+<body>
+  <h2>Enable Score Notifications</h2>
+  <div class="card">
+    <p>Enter your student code and click “Allow” when your browser asks for notifications.</p>
+    <label>Student code</label><br>
+    <input id="code" placeholder="e.g. felixa1" style="width:100%;padding:8px;margin:8px 0;" />
+    <button id="btn" style="padding:10px 14px;">Enable Notifications</button>
+    <p id="status"></p>
+  </div>
 
-  document.getElementById('btn').onclick = async () => {
-    const s = document.getElementById('status');
-    const code = (document.getElementById('code').value || '').trim();
-    if (!code) { s.innerHTML = '<span class="err">Enter your student code.</span>'; return; }
-    try {
-      const OneSignal = await ensureOneSignalReady();
-      await OneSignal.Notification.requestPermission();
-      const playerId = await OneSignal.User.getId();
-      if (!playerId) throw new Error('Permission denied or playerId unavailable.');
+  <script>
+    // ====== EDIT THESE TWO LINES ======
+    const ONESIGNAL_APP_ID    = "2c2cf4aa-07ec-4b11-8234-76d452ea3ad5"; // from OneSignal > Settings > Keys & IDs
+    const SCRIPT_WEBHOOK_URL  = "https://script.google.com/macros/s/AKfycbyEEXf2u18UEbfYSamjwYC58mohEPinibLsXt6Bu9fCkaA8cr2h6oubL2A_KxJUji6C/exec";
+    // ==================================
 
-      const r = await fetch(SCRIPT_WEBHOOK_URL, {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ type:'onesignal_register', studentcode: code, playerId })
+    // Initialize OneSignal once it’s ready
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.init({
+        appId: ONESIGNAL_APP_ID,
+        serviceWorkerPath: '/falowen/', // your GitHub project path
+        notifyButton: { enable: false }
       });
-      const j = await r.json();
-      if (!j.ok) throw new Error(j.error || 'Server error');
-      s.innerHTML = '<span class="ok">✅ Notifications enabled. You will receive updates.</span>';
-    } catch (e) {
-      console.error(e);
-      s.innerHTML = '<span class="err">Failed: ' + e.message + '</span>';
+    });
+
+    // Wait until OneSignal is really initialized
+    function ensureOneSignalReady(timeoutMs = 10000) {
+      return new Promise((resolve, reject) => {
+        const start = Date.now();
+        (function tick() {
+          if (window.OneSignal && OneSignal.User && OneSignal.Notification) return resolve(window.OneSignal);
+          if (Date.now() - start > timeoutMs) return reject(new Error("OneSignal SDK didn't initialize. Check Site URL & worker paths."));
+          setTimeout(tick, 150);
+        })();
+      });
     }
-  };
-</script>
+
+    document.getElementById('btn').onclick = async () => {
+      const code = (document.getElementById('code').value || '').trim();
+      const s = document.getElementById('status');
+      if (!code) { s.innerHTML = '<span class="err">Enter your student code.</span>'; return; }
+      try {
+        const OneSignal = await ensureOneSignalReady();
+
+        await OneSignal.Notification.requestPermission();   // triggers browser prompt
+        const playerId = await OneSignal.User.getId();       // OneSignal player ID
+        if (!playerId) throw new Error('Permission denied or playerId unavailable.');
+
+        // Send to Apps Script to store against the student’s row
+        const res = await fetch(SCRIPT_WEBHOOK_URL, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ type:'onesignal_register', studentcode: code, playerId })
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || 'Server error from Apps Script');
+
+        s.innerHTML = '<span class="ok">✅ Notifications enabled. You will receive updates.</span>';
+      } catch (e) {
+        console.error(e);
+        s.innerHTML = '<span class="err">Failed: ' + e.message + '</span>';
+      }
+    };
+  </script>
+</body>
+</html>
