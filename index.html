@@ -1,3 +1,17 @@
+<script src="https://cdn.onesignal.com/sdks/OneSignalSDK.js" async=""></script>
+<script>
+  window.OneSignal = window.OneSignal || [];
+  OneSignal.push(function() {
+    OneSignal.init({
+      appId: "YOUR-ONESIGNAL-APP-ID", // replace with your real App ID
+      safari_web_id: "YOUR-SAFARI-ID-IF-ANY",
+      notifyButton: { enable: true }, // optional bell icon
+      serviceWorkerPath: '/falowen/'
+    });
+  });
+</script>
+
+
 <!doctype html>
 <html>
 <head>
