@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   collection, addDoc, onSnapshot, query, where, orderBy,
   doc, updateDoc, deleteDoc, deleteField
@@ -14,6 +14,76 @@ type Product = {
   barcode?: string
   minStock?: number
   updatedAt?: number
+}
+
+function escapePdfText(text: string) {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/\r/g, ' ')
+    .replace(/\n/g, ' ')
+}
+
+function buildSimplePdf(title: string, lines: string[]): Uint8Array {
+  const encoder = new TextEncoder()
+  const header = '%PDF-1.4\n'
+
+  let content = 'BT\n'
+  content += '/F1 18 Tf\n'
+  content += '72 760 Td\n'
+  content += `(${escapePdfText(title)}) Tj\n`
+  content += '/F1 11 Tf\n'
+  content += '0 -20 Td\n'
+
+  lines.forEach((line, index) => {
+    content += `(${escapePdfText(line)}) Tj\n`
+    if (index < lines.length - 1) {
+      content += '0 -16 Td\n'
+    }
+  })
+
+  content += 'ET\n'
+
+  const contentBytes = encoder.encode(content)
+
+  const objects: string[] = []
+  const offsets: number[] = [0]
+
+  objects.push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n')
+  objects.push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n')
+  objects.push('3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n')
+  objects.push(`4 0 obj\n<< /Length ${contentBytes.length} >>\nstream\n${content}\nendstream\nendobj\n`)
+  objects.push('5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n')
+
+  let currentOffset = header.length
+  const encodedObjects = objects.map(obj => {
+    offsets.push(currentOffset)
+    const bytes = encoder.encode(obj)
+    currentOffset += bytes.length
+    return bytes
+  })
+
+  const xrefOffset = currentOffset
+  let xref = `xref\n0 ${objects.length + 1}\n`
+  xref += '0000000000 65535 f \n'
+  for (let i = 1; i < offsets.length; i++) {
+    xref += offsets[i].toString().padStart(10, '0') + ' 00000 n \n'
+  }
+
+  const trailer = `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`
+
+  const parts: Uint8Array[] = [encoder.encode(header), ...encodedObjects, encoder.encode(xref), encoder.encode(trailer)]
+
+  const totalLength = parts.reduce((sum, part) => sum + part.length, 0)
+  const result = new Uint8Array(totalLength)
+  let offset = 0
+  parts.forEach(part => {
+    result.set(part, offset)
+    offset += part.length
+  })
+
+  return result
 }
 
 export default function Products() {
@@ -32,6 +102,9 @@ export default function Products() {
   const [scanningFor, setScanningFor] = useState<'new' | 'edit' | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
   const [scanMessage, setScanMessage] = useState('Point your camera at a barcode')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [stockFilter, setStockFilter] = useState<'all' | 'in-stock' | 'low-stock' | 'out-of-stock'>('all')
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null)
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -227,6 +300,115 @@ export default function Products() {
     }
   }, [scanningFor])
 
+  const filteredItems = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase()
+
+    return items.filter((item) => {
+      const matchesTerm = term
+        ? [item.name, item.barcode]
+            .filter(Boolean)
+            .some(value => value!.toLowerCase().includes(term))
+        : true
+
+      if (!matchesTerm) return false
+
+      const stock = item.stockCount ?? 0
+      const minStock = item.minStock ?? 5
+
+      switch (stockFilter) {
+        case 'in-stock':
+          return stock > 0
+        case 'low-stock':
+          return stock > 0 && stock <= minStock
+        case 'out-of-stock':
+          return stock <= 0
+        default:
+          return true
+      }
+    })
+  }, [items, searchTerm, stockFilter])
+
+  const exportFile = useCallback((content: BlobPart, type: string, filename: string) => {
+    const blob = new Blob([content], { type })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [])
+
+  const handleDownloadCsv = useCallback(() => {
+    if (!filteredItems.length) return
+
+    const header = ['Name', 'Price (GHS)', 'Stock', 'Barcode']
+    const rows = filteredItems.map(item => [
+      `"${item.name.replace(/"/g, '""')}"`,
+      item.price?.toFixed(2) ?? '0.00',
+      String(item.stockCount ?? 0),
+      item.barcode ? `"${item.barcode.replace(/"/g, '""')}"` : ''
+    ])
+
+    const csv = [header.join(','), ...rows.map(row => row.join(','))].join('\n')
+    exportFile(csv, 'text/csv;charset=utf-8;', 'products.csv')
+  }, [exportFile, filteredItems])
+
+  const handleDownloadPdf = useCallback(() => {
+    if (!filteredItems.length) return
+
+    const column = (value: string, length: number) => {
+      if (value.length > length) {
+        return value.slice(0, length - 1) + '…'
+      }
+      return value.padEnd(length, ' ')
+    }
+
+    const lines = [
+      '',
+      `${column('Name', 24)}${column('Price', 10)}${column('Stock', 8)}Barcode`,
+      `${'-'.repeat(24)}${'-'.repeat(10)}${'-'.repeat(8)}${'-'.repeat(12)}`,
+      ...filteredItems.map(item => {
+        const price = `GHS ${(item.price ?? 0).toFixed(2)}`
+        const stock = `${item.stockCount ?? 0}`
+        const barcode = item.barcode ?? '—'
+        return `${column(item.name, 24)}${column(price, 10)}${column(stock, 8)}${barcode}`
+      })
+    ]
+
+    const pdfBytes = buildSimplePdf('Products Report', lines)
+    const pdfBuffer = pdfBytes.buffer.slice(
+      pdfBytes.byteOffset,
+      pdfBytes.byteOffset + pdfBytes.byteLength
+    ) as ArrayBuffer
+    exportFile(pdfBuffer, 'application/pdf', 'products.pdf')
+  }, [exportFile, filteredItems])
+
+  const handleShare = useCallback(async () => {
+    if (!filteredItems.length) return
+
+    const summary = filteredItems
+      .map(item => `${item.name} – GHS ${(item.price ?? 0).toFixed(2)} (${item.stockCount ?? 0} in stock)${item.barcode ? ` – ${item.barcode}` : ''}`)
+      .join('\n')
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Product list', text: summary })
+        setShareFeedback('Shared successfully')
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(summary)
+        setShareFeedback('Copied details to clipboard')
+      } else {
+        exportFile(summary, 'text/plain', 'products.txt')
+        setShareFeedback('Downloaded product summary')
+      }
+    } catch (error) {
+      console.error('Failed to share product list', error)
+      setShareFeedback('Unable to share right now')
+    }
+
+    setTimeout(() => setShareFeedback(null), 4000)
+  }, [exportFile, filteredItems])
+
   return (
     <div>
       <h2 style={{color:'#4338CA'}}>Products</h2>
@@ -262,6 +444,63 @@ export default function Products() {
         <button type="submit" style={{background:'#4338CA', color:'#fff', border:0, borderRadius:8, padding:'8px 12px'}}>Add</button>
       </form>
 
+      <div
+        style={{
+          display:'flex',
+          flexWrap:'wrap',
+          gap:12,
+          alignItems:'center',
+          marginTop:16
+        }}
+      >
+        <input
+          placeholder="Search by name or barcode"
+          value={searchTerm}
+          onChange={e=>setSearchTerm(e.target.value)}
+          style={{flex:'1 1 240px'}}
+        />
+        <select
+          value={stockFilter}
+          onChange={e=>setStockFilter(e.target.value as typeof stockFilter)}
+          style={{flex:'0 0 200px'}}
+        >
+          <option value="all">All stock levels</option>
+          <option value="in-stock">In stock</option>
+          <option value="low-stock">Low stock</option>
+          <option value="out-of-stock">Out of stock</option>
+        </select>
+        <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            style={{background:'#4338CA', color:'#fff', border:0, borderRadius:8, padding:'8px 12px'}}
+            disabled={!filteredItems.length}
+          >
+            Download PDF
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadCsv}
+            style={{background:'#2563EB', color:'#fff', border:0, borderRadius:8, padding:'8px 12px'}}
+            disabled={!filteredItems.length}
+          >
+            Download CSV
+          </button>
+          <button
+            type="button"
+            onClick={handleShare}
+            style={{background:'#059669', color:'#fff', border:0, borderRadius:8, padding:'8px 12px'}}
+            disabled={!filteredItems.length}
+          >
+            Share
+          </button>
+        </div>
+      </div>
+
+      {shareFeedback && (
+        <p style={{marginTop:8, color:'#047857'}}>{shareFeedback}</p>
+      )}
+
       <table style={{width:'100%', marginTop:16, borderCollapse:'collapse'}}>
         <thead>
           <tr>
@@ -273,7 +512,7 @@ export default function Products() {
           </tr>
         </thead>
         <tbody>
-          {items.map(p=>(
+          {filteredItems.map(p=>(
             <tr key={p.id} style={{borderTop:'1px solid #eee'}}>
               <td>
                 {editing===p.id
