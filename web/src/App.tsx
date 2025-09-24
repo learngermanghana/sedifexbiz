@@ -1,12 +1,21 @@
 import React, { useEffect, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth'
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+} from 'firebase/auth'
+import { FirebaseError } from 'firebase/app'
 import { Outlet } from 'react-router-dom'
 import { auth } from './firebase'
 import './App.css'
 import './pwa'
 import { useToast } from './components/ToastProvider'
-import { configureAuthPersistence, persistSession, refreshSessionHeartbeat } from './controllers/sessionController'
+import {
+  configureAuthPersistence,
+  persistSession,
+  refreshSessionHeartbeat,
+} from './controllers/sessionController'
 
 type AuthMode = 'login' | 'signup'
 
@@ -30,6 +39,7 @@ export default function App() {
   const { publish } = useToast()
 
   useEffect(() => {
+    // Ensure persistence is configured before we react to auth changes
     configureAuthPersistence(auth).catch(error => {
       console.warn('[auth] Unable to configure persistence', error)
     })
@@ -42,20 +52,22 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!user) {
-      return
-    }
-
+    if (!user) return
     refreshSessionHeartbeat(user).catch(error => {
       console.warn('[session] Unable to refresh session', error)
     })
   }, [user])
 
+  useEffect(() => {
+    // Small UX touch: show the current auth mode in the tab title
+    document.title = mode === 'login' ? 'Sedifex — Log in' : 'Sedifex — Sign up'
+  }, [mode])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setStatus({
       tone: 'loading',
-      message: mode === 'login' ? 'Signing you in…' : 'Creating your account…'
+      message: mode === 'login' ? 'Signing you in…' : 'Creating your account…',
     })
     try {
       if (mode === 'login') {
@@ -67,27 +79,22 @@ export default function App() {
       }
       setStatus({
         tone: 'success',
-        message: mode === 'login' ? 'Welcome back! Redirecting…' : 'All set! Your account is ready.'
+        message: mode === 'login' ? 'Welcome back! Redirecting…' : 'All set! Your account is ready.',
       })
-    } catch (err: any) {
+      // Optional: clear the password field post-success
+      setPassword('')
+    } catch (err: unknown) {
       setStatus({
         tone: 'error',
-        message: getErrorMessage(err)
+        message: getErrorMessage(err),
       })
-
     }
   }
 
   useEffect(() => {
-    if (!status.message) {
-      return
-    }
-
+    if (!status.message) return
     if (status.tone === 'success' || status.tone === 'error') {
-      publish({
-        tone: status.tone,
-        message: status.message
-      })
+      publish({ tone: status.tone, message: status.message })
     }
   }, [publish, status.message, status.tone])
 
@@ -96,9 +103,12 @@ export default function App() {
     setStatus({ tone: 'idle', message: '' })
   }
 
+  // Inline minHeight is just a safety net; CSS already uses dvh/svh.
+  const appStyle: React.CSSProperties = { minHeight: '100dvh' }
+
   if (!isAuthReady) {
     return (
-      <main className="app">
+      <main className="app" style={appStyle}>
         <div className="app__card">
           <p className="form__hint">Checking your session…</p>
         </div>
@@ -108,7 +118,7 @@ export default function App() {
 
   if (!user) {
     return (
-      <main className="app">
+      <main className="app" style={appStyle}>
         <div className="app__layout">
           <div className="app__card">
             <div className="app__brand">
@@ -133,75 +143,79 @@ export default function App() {
                 : 'Create an account to start tracking sales and inventory in minutes.'}
             </p>
 
-          <div className="toggle-group" role="tablist" aria-label="Authentication mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'login'}
-              className={`toggle-button${mode === 'login' ? ' is-active' : ''}`}
-              onClick={() => handleModeChange('login')}
-            >
-              Log in
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'signup'}
-              className={`toggle-button${mode === 'signup' ? ' is-active' : ''}`}
-              onClick={() => handleModeChange('signup')}
-            >
-              Sign up
-            </button>
+            <div className="toggle-group" role="tablist" aria-label="Authentication mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'login'}
+                className={`toggle-button${mode === 'login' ? ' is-active' : ''}`}
+                onClick={() => handleModeChange('login')}
+                disabled={isLoading}
+              >
+                Log in
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'signup'}
+                className={`toggle-button${mode === 'signup' ? ' is-active' : ''}`}
+                onClick={() => handleModeChange('signup')}
+                disabled={isLoading}
+              >
+                Sign up
+              </button>
+            </div>
+
+            <form className="form" onSubmit={handleSubmit} aria-busy={isLoading} noValidate>
+              <div className="form__field">
+                <label htmlFor="email">Email</label>
+                <input
+                  id="email"
+                  value={email}
+                  onChange={event => setEmail(event.target.value)}
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  required
+                  disabled={isLoading}
+                  inputMode="email"
+                />
+              </div>
+              <div className="form__field">
+                <label htmlFor="password">Password</label>
+                <input
+                  id="password"
+                  value={password}
+                  onChange={event => setPassword(event.target.value)}
+                  type="password"
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                  placeholder="Enter at least 6 characters"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+              <button className="primary-button" type="submit" disabled={isLoading}>
+                {isLoading
+                  ? mode === 'login'
+                    ? 'Signing in…'
+                    : 'Creating account…'
+                  : mode === 'login'
+                    ? 'Log in'
+                    : 'Create account'}
+              </button>
+            </form>
+
+            {status.tone !== 'idle' && status.message && (
+              <p
+                className={`status status--${status.tone}`}
+                role={status.tone === 'error' ? 'alert' : 'status'}
+                aria-live={status.tone === 'error' ? 'assertive' : 'polite'}
+              >
+                {status.message}
+              </p>
+            )}
           </div>
 
-          <form className="form" onSubmit={handleSubmit} aria-busy={isLoading}>
-            <div className="form__field">
-              <label htmlFor="email">Email</label>
-              <input
-                id="email"
-                value={email}
-                onChange={event => setEmail(event.target.value)}
-                type="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-                required
-                disabled={isLoading}
-              />
-            </div>
-            <div className="form__field">
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                value={password}
-                onChange={event => setPassword(event.target.value)}
-                type="password"
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                placeholder="Enter at least 6 characters"
-                required
-                disabled={isLoading}
-              />
-            </div>
-            <button className="primary-button" type="submit" disabled={isLoading}>
-              {isLoading
-                ? mode === 'login'
-                  ? 'Signing in…'
-                  : 'Creating account…'
-                : mode === 'login'
-                  ? 'Log in'
-                  : 'Create account'}
-            </button>
-          </form>
-
-          {status.tone !== 'idle' && status.message && (
-            <p
-              className={`status status--${status.tone}`}
-              role={status.tone === 'error' ? 'alert' : 'status'}
-              aria-live={status.tone === 'error' ? 'assertive' : 'polite'}
-            >
-              {status.message}
-            </p>
-          )}
-          </div>
           <aside className="app__visual" aria-hidden="true">
             <img
               src={LOGIN_IMAGE_URL}
@@ -227,6 +241,27 @@ export default function App() {
 }
 
 function getErrorMessage(error: unknown): string {
+  // Friendlier Firebase Auth errors
+  if (error instanceof FirebaseError) {
+    const code = error.code || ''
+    switch (code) {
+      case 'auth/invalid-credential':
+      case 'auth/wrong-password':
+      case 'auth/user-not-found':
+        return 'Incorrect email or password.'
+      case 'auth/too-many-requests':
+        return 'Too many attempts. Please wait a moment and try again.'
+      case 'auth/network-request-failed':
+        return 'Network error. Please check your connection and try again.'
+      case 'auth/email-already-in-use':
+        return 'An account already exists with this email.'
+      case 'auth/weak-password':
+        return 'Please choose a stronger password (at least 6 characters).'
+      default:
+        return error.message || 'Something went wrong. Please try again.'
+    }
+  }
+
   if (error instanceof Error) {
     return error.message || 'Something went wrong. Please try again.'
   }
