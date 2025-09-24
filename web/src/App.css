@@ -45,7 +45,8 @@ body {
     radial-gradient(140% 140% at 88% 12%, rgba(168, 85, 247, 0.16) 0%, rgba(3, 7, 18, 0) 60%),
     radial-gradient(120% 120% at 50% 100%, rgba(59, 130, 246, 0.18) 0%, rgba(3, 7, 18, 0) 65%),
     linear-gradient(180deg, #020617 0%, #0f172a 100%);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .app::before,
