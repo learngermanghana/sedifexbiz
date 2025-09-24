@@ -4,6 +4,7 @@ import {
   doc, updateDoc, deleteDoc, deleteField
 } from 'firebase/firestore'
 import { db, auth } from '../firebase'
+import './Products.css'
 
 type Product = {
   id?: string
@@ -174,6 +175,14 @@ export default function Products() {
   }
 
   if (!STORE_ID) return <div>Loading…</div>
+
+  function stockStatus(item: Product) {
+    const stock = item.stockCount ?? 0
+    const minStock = item.minStock ?? 5
+    if (stock <= 0) return 'out'
+    if (stock <= minStock) return 'low'
+    return 'ok'
+  }
 
   function stopScanning() {
     setScanningFor(null)
@@ -410,195 +419,288 @@ export default function Products() {
   }, [exportFile, filteredItems])
 
   return (
-    <div>
-      <h2 style={{color:'#4338CA'}}>Products</h2>
-
-      <form
-        onSubmit={addProduct}
-        style={{
-          display:'grid',
-          gridTemplateColumns:'2fr 1fr 1.5fr auto',
-          gap:8,
-          marginTop:12,
-          alignItems:'center'
-        }}
-      >
-        <input placeholder="Name" value={name} onChange={e=>setName(e.target.value)} />
-        <input placeholder="Price (GHS)" type="number" min={0} step="0.01"
-               value={price} onChange={e=>setPrice(e.target.value)} />
-        <div style={{display:'flex', gap:8}}>
-          <input
-            placeholder="Barcode"
-            value={barcode}
-            onChange={e=>setBarcode(e.target.value)}
-            style={{flex:1}}
-          />
-          <button
-            type="button"
-            onClick={()=>setScanningFor('new')}
-            style={{background:'#e5e7eb', border:'1px solid #d1d5db', borderRadius:8, padding:'8px 12px'}}
-          >
-            Scan
-          </button>
+    <div className="page products-page">
+      <header className="page__header">
+        <div>
+          <h2 className="page__title">Products</h2>
+          <p className="page__subtitle">Manage your Firestore catalogue, pricing, and shelf stock in one place.</p>
         </div>
-        <button type="submit" style={{background:'#4338CA', color:'#fff', border:0, borderRadius:8, padding:'8px 12px'}}>Add</button>
-      </form>
+        {shareFeedback && (
+          <span className="feedback" role="status" aria-live="polite">{shareFeedback}</span>
+        )}
+      </header>
 
-      <div
-        style={{
-          display:'flex',
-          flexWrap:'wrap',
-          gap:12,
-          alignItems:'center',
-          marginTop:16
-        }}
-      >
-        <input
-          placeholder="Search by name or barcode"
-          value={searchTerm}
-          onChange={e=>setSearchTerm(e.target.value)}
-          style={{flex:'1 1 240px'}}
-        />
-        <select
-          value={stockFilter}
-          onChange={e=>setStockFilter(e.target.value as typeof stockFilter)}
-          style={{flex:'0 0 200px'}}
-        >
-          <option value="all">All stock levels</option>
-          <option value="in-stock">In stock</option>
-          <option value="low-stock">Low stock</option>
-          <option value="out-of-stock">Out of stock</option>
-        </select>
-        <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+      <section className="card products__form-card" aria-label="Add a new product">
+        <div>
+          <h3 className="card__title">Add a product</h3>
+          <p className="card__subtitle">Create items with optional barcodes so the team can scan and sell faster.</p>
+        </div>
+        <form onSubmit={addProduct} className="products__form">
+          <div className="field">
+            <label className="field__label" htmlFor="product-name">Name</label>
+            <input
+              id="product-name"
+              placeholder="e.g. Premium bottled water"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              required
+            />
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="product-price">Price (GHS)</label>
+            <input
+              id="product-price"
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="0.00"
+              value={price}
+              onChange={e => setPrice(e.target.value)}
+              required
+            />
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="product-barcode">Barcode</label>
+            <div className="products__scan-input">
+              <input
+                id="product-barcode"
+                placeholder="Optional — scan or type barcode"
+                value={barcode}
+                onChange={e => setBarcode(e.target.value)}
+              />
+              <button
+                type="button"
+                className="button button--neutral button--small"
+                onClick={() => setScanningFor('new')}
+              >
+                Scan
+              </button>
+            </div>
+          </div>
+          <div className="products__form-actions">
+            <button type="submit" className="button button--primary">Add product</button>
+          </div>
+        </form>
+      </section>
+
+      <section className="card products__controls">
+        <div className="products__filters">
+          <div className="field">
+            <label className="field__label" htmlFor="product-search">Search</label>
+            <input
+              id="product-search"
+              placeholder="Search by name or barcode"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="product-stock-filter">Stock filter</label>
+            <select
+              id="product-stock-filter"
+              value={stockFilter}
+              onChange={e => setStockFilter(e.target.value as typeof stockFilter)}
+            >
+              <option value="all">All stock levels</option>
+              <option value="in-stock">In stock</option>
+              <option value="low-stock">Low stock</option>
+              <option value="out-of-stock">Out of stock</option>
+            </select>
+          </div>
+        </div>
+        <div className="products__export-actions">
           <button
             type="button"
+            className="button button--primary button--small"
             onClick={handleDownloadPdf}
-            style={{background:'#4338CA', color:'#fff', border:0, borderRadius:8, padding:'8px 12px'}}
             disabled={!filteredItems.length}
           >
             Download PDF
           </button>
           <button
             type="button"
+            className="button button--secondary button--small"
             onClick={handleDownloadCsv}
-            style={{background:'#2563EB', color:'#fff', border:0, borderRadius:8, padding:'8px 12px'}}
             disabled={!filteredItems.length}
           >
             Download CSV
           </button>
           <button
             type="button"
+            className="button button--success button--small"
             onClick={handleShare}
-            style={{background:'#059669', color:'#fff', border:0, borderRadius:8, padding:'8px 12px'}}
             disabled={!filteredItems.length}
           >
-            Share
+            Share list
           </button>
         </div>
-      </div>
+      </section>
 
-      {shareFeedback && (
-        <p style={{marginTop:8, color:'#047857'}}>{shareFeedback}</p>
-      )}
-
-      <table style={{width:'100%', marginTop:16, borderCollapse:'collapse'}}>
-        <thead>
-          <tr>
-            <th align="left">Name</th>
-            <th align="right">Price (GHS)</th>
-            <th align="right">Stock</th>
-            <th align="left">Barcode</th>
-            <th align="right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredItems.map(p=>(
-            <tr key={p.id} style={{borderTop:'1px solid #eee'}}>
-              <td>
-                {editing===p.id
-                  ? <input value={editName} onChange={e=>setEditName(e.target.value)} />
-                  : p.name}
-              </td>
-              <td align="right">
-                {editing===p.id
-                  ? <input style={{textAlign:'right'}} type="number" min={0} step="0.01"
-                           value={editPrice} onChange={e=>setEditPrice(e.target.value)} />
-                  : p.price?.toFixed(2)}
-              </td>
-              <td align="right">
-                {editing===p.id
-                  ? <input style={{textAlign:'right'}} type="number" min={0} step="1"
-                           value={editStock} onChange={e=>setEditStock(e.target.value)} />
-                  : (p.stockCount ?? 0)}
-              </td>
-              <td>
-                {editing===p.id ? (
-                  <div style={{display:'flex', gap:8}}>
-                    <input
-                      value={editBarcode}
-                      onChange={e=>setEditBarcode(e.target.value)}
-                      placeholder="Barcode"
-                    />
-                    <button
-                      type="button"
-                      onClick={()=>setScanningFor('edit')}
-                      style={{background:'#e5e7eb', border:'1px solid #d1d5db', borderRadius:8, padding:'4px 8px'}}
-                    >
-                      Scan
-                    </button>
-                  </div>
-                ) : (
-                  p.barcode || '—'
-                )}
-              </td>
-              <td align="right" style={{whiteSpace:'nowrap'}}>
-                {editing===p.id ? (
-                  <>
-                    <button onClick={()=>saveEdit(p.id!)} style={{marginRight:8}}>Save</button>
-                    <button onClick={()=>setEditing(null)}>Cancel</button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={()=>beginEdit(p)} style={{marginRight:8}}>Edit</button>
-                    <button onClick={()=>remove(p.id!)}>Delete</button>
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <section className="card card--flush">
+        <div className="products__table-header">
+          <div>
+            <h3 className="card__title">Product catalogue</h3>
+            <p className="card__subtitle">{items.length} products synced from Firestore.</p>
+          </div>
+        </div>
+        <div className="table-wrapper">
+          {filteredItems.length ? (
+            <table className="table products__table">
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col" className="products__price-column">Price</th>
+                  <th scope="col">Stock</th>
+                  <th scope="col">Barcode</th>
+                  <th scope="col" className="products__actions-column">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.map(p => {
+                  const status = stockStatus(p)
+                  const stockLabel = status === 'out'
+                    ? 'Out of stock'
+                    : status === 'low'
+                      ? 'Low stock'
+                      : 'In stock'
+                  const stockCount = p.stockCount ?? 0
+                  return (
+                    <tr key={p.id} className={`products__row${editing === p.id ? ' is-editing' : ''}`}>
+                      <td>
+                        {editing === p.id ? (
+                          <input value={editName} onChange={e => setEditName(e.target.value)} />
+                        ) : (
+                          <div className="products__name">
+                            <span className="products__name-text">{p.name}</span>
+                            {p.minStock ? (
+                              <span className="products__meta">Reorder at {p.minStock}</span>
+                            ) : null}
+                          </div>
+                        )}
+                      </td>
+                      <td className="products__price-column">
+                        {editing === p.id ? (
+                          <input
+                            className="input--align-right"
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={editPrice}
+                            onChange={e => setEditPrice(e.target.value)}
+                          />
+                        ) : (
+                          <span className="products__price">GHS {(p.price ?? 0).toFixed(2)}</span>
+                        )}
+                      </td>
+                      <td>
+                        {editing === p.id ? (
+                          <input
+                            className="input--align-right"
+                            type="number"
+                            min={0}
+                            step="1"
+                            value={editStock}
+                            onChange={e => setEditStock(e.target.value)}
+                          />
+                        ) : (
+                          <div className="products__stock">
+                            <span className={`badge badge--${status}`}>{stockLabel}</span>
+                            <span className="products__stock-count">{stockCount} on hand</span>
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        {editing === p.id ? (
+                          <div className="products__scan-input">
+                            <input
+                              value={editBarcode}
+                              onChange={e => setEditBarcode(e.target.value)}
+                              placeholder="Barcode"
+                            />
+                            <button
+                              type="button"
+                              className="button button--neutral button--small"
+                              onClick={() => setScanningFor('edit')}
+                            >
+                              Scan
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="products__barcode">{p.barcode || '—'}</span>
+                        )}
+                      </td>
+                      <td className="products__actions-column">
+                        {editing === p.id ? (
+                          <div className="products__action-group">
+                            <button
+                              type="button"
+                              className="button button--primary button--small"
+                              onClick={() => saveEdit(p.id!)}
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              className="button button--ghost button--small"
+                              onClick={() => setEditing(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="products__action-group">
+                            <button
+                              type="button"
+                              className="button button--outline button--small"
+                              onClick={() => beginEdit(p)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="button button--danger button--small"
+                              onClick={() => remove(p.id!)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <div className="empty-state">
+              <h3 className="empty-state__title">No products match your filters</h3>
+              <p>Adjust the search or stock filter to see more items, or add a new product above.</p>
+            </div>
+          )}
+        </div>
+      </section>
 
       {scanningFor && (
-        <div
-          style={{
-            position:'fixed',
-            inset:0,
-            background:'rgba(17,24,39,0.6)',
-            display:'flex',
-            alignItems:'center',
-            justifyContent:'center',
-            zIndex:50
-          }}
-        >
-          <div style={{background:'#fff', borderRadius:16, padding:24, width:'min(480px, 90%)'}}>
-            <h3 style={{marginTop:0, marginBottom:12}}>Scan barcode</h3>
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="scan-modal-title">
+          <div className="modal products__modal">
+            <h3 id="scan-modal-title" className="modal__title">Scan barcode</h3>
             {scanError ? (
-              <p style={{color:'#b91c1c'}}>{scanError}</p>
+              <p className="modal__error">{scanError}</p>
             ) : (
               <>
                 <video
                   ref={videoRef}
                   playsInline
-                  style={{width:'100%', borderRadius:12, background:'#000', aspectRatio:'3 / 2'}}
+                  className="products__video"
                   muted
                 />
-                <p style={{marginTop:12, color:'#4b5563'}}>{scanMessage}</p>
+                <p className="modal__message" aria-live="polite">{scanMessage}</p>
               </>
             )}
             <button
+              type="button"
+              className="button button--primary button--block"
               onClick={stopScanning}
-              style={{marginTop:16, background:'#4338CA', color:'#fff', border:0, borderRadius:8, padding:'10px 16px'}}
             >
               Close
             </button>
