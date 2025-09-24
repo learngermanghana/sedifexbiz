@@ -15,6 +15,8 @@ interface StatusState {
   message: string
 }
 
+const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
@@ -74,16 +76,16 @@ export default function App() {
 
   if (!user) {
     return (
-
       <main className="app">
-        <div className="app__card">
-          <div className="app__brand">
-            <span className="app__logo">Sx</span>
-            <div>
-              <h1 className="app__title">Sedifex</h1>
-              <p className="app__tagline">
-                Sell faster. <span className="app__highlight">Count smarter.</span>
-              </p>
+        <div className="app__layout">
+          <div className="app__card">
+            <div className="app__brand">
+              <span className="app__logo">Sx</span>
+              <div>
+                <h1 className="app__title">Sedifex</h1>
+                <p className="app__tagline">
+                  Sell faster. <span className="app__highlight">Count smarter.</span>
+                </p>
             </div>
           </div>
 
@@ -161,9 +163,16 @@ export default function App() {
               {status.message}
             </p>
           )}
+          </div>
+          <aside className="app__visual">
+            <img
+              src={LOGIN_IMAGE_URL}
+              alt="Team members organizing inventory packages in a warehouse"
+              loading="lazy"
+            />
+          </aside>
         </div>
       </main>
-
     )
   }
 
