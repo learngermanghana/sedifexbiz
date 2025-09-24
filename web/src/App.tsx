@@ -86,14 +86,20 @@ export default function App() {
                 <p className="app__tagline">
                   Sell faster. <span className="app__highlight">Count smarter.</span>
                 </p>
+              </div>
             </div>
-          </div>
 
-          <p className="form__hint">
-            {mode === 'login'
-              ? 'Welcome back! Sign in to keep your stock moving.'
-              : 'Create an account to start tracking sales and inventory in minutes.'}
-          </p>
+            <div className="app__pill-group" role="list">
+              <span className="app__pill" role="listitem">Realtime visibility</span>
+              <span className="app__pill" role="listitem">Multi-location ready</span>
+              <span className="app__pill" role="listitem">Floor-friendly UI</span>
+            </div>
+
+            <p className="form__hint">
+              {mode === 'login'
+                ? 'Welcome back! Sign in to keep your stock moving.'
+                : 'Create an account to start tracking sales and inventory in minutes.'}
+            </p>
 
           <div className="toggle-group" role="tablist" aria-label="Authentication mode">
             <button
@@ -164,12 +170,21 @@ export default function App() {
             </p>
           )}
           </div>
-          <aside className="app__visual">
+          <aside className="app__visual" aria-hidden="true">
             <img
               src={LOGIN_IMAGE_URL}
               alt="Team members organizing inventory packages in a warehouse"
               loading="lazy"
             />
+            <div className="app__visual-overlay" />
+            <div className="app__visual-caption">
+              <span className="app__visual-pill">Operations snapshot</span>
+              <h2>Stay synced from the floor to finance</h2>
+              <p>
+                Live sales, inventory alerts, and smart counts help your whole team stay aligned
+                from any device.
+              </p>
+            </div>
           </aside>
         </div>
       </main>
