@@ -1,11 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import type { User } from 'firebase/auth'
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut
-} from 'firebase/auth'
+import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth'
+import { Outlet } from 'react-router-dom'
 import { auth } from './firebase'
 import './App.css'
 import './pwa'
@@ -20,14 +16,21 @@ interface StatusState {
 }
 
 export default function App() {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [isAuthReady, setIsAuthReady] = useState(false)
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
   const isLoading = status.tone === 'loading'
 
-  useEffect(() => onAuthStateChanged(auth, setUser), [])
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, nextUser => {
+      setUser(nextUser)
+      setIsAuthReady(true)
+    })
+    return unsubscribe
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -48,17 +51,25 @@ export default function App() {
     } catch (err: any) {
       setStatus({
         tone: 'error',
-        message: err?.message || 'Something went wrong. Please try again.'
+        message: getErrorMessage(err)
       })
 
     }
-  }, [status])
-
-  const modeLabel = mode === 'login' ? 'Login' : 'Create account'
+  }
 
   function handleModeChange(nextMode: AuthMode) {
     setMode(nextMode)
     setStatus({ tone: 'idle', message: '' })
+  }
+
+  if (!isAuthReady) {
+    return (
+      <main className="app">
+        <div className="app__card">
+          <p className="form__hint">Checking your session…</p>
+        </div>
+      </main>
+    )
   }
 
   if (!user) {
@@ -156,39 +167,7 @@ export default function App() {
     )
   }
 
-  return (
-    <main className="app">
-      <div className="app__card">
-        <div className="app__brand">
-          <span className="app__logo">Sx</span>
-          <div>
-            <h1 className="app__title">Sedifex</h1>
-            <p className="app__tagline">Your retail command center.</p>
-          </div>
-        </div>
-
-        <p className="form__hint">
-          Signed in as <strong>{user.email}</strong>
-        </p>
-
-        <ul className="app__feature-list">
-          <li>Track live stock levels across every location.</li>
-          <li>Checkout customers in seconds with the Sell screen.</li>
-          <li>Stay on target with smart alerts and insights.</li>
-        </ul>
-
-        <a className="link-button" href="#/products">
-          Browse products <span aria-hidden="true">→</span>
-        </a>
-
-        <button className="secondary-button" onClick={() => signOut(auth)}>
-          Sign out
-        </button>
-
-        <p className="app__footer">Next up: Products &amp; Sell screen.</p>
-      </div>
-    </main>
-  )
+  return <Outlet />
 }
 
 function getErrorMessage(error: unknown): string {
