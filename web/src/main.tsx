@@ -9,6 +9,7 @@ import Sell from './pages/Sell'
 import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
 import Settings from './pages/Settings'
+import { ToastProvider } from './components/ToastProvider'
 
 const router = createHashRouter([
   {
@@ -27,6 +28,8 @@ const router = createHashRouter([
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <ToastProvider>
+      <RouterProvider router={router} />
+    </ToastProvider>
   </React.StrictMode>,
 )
