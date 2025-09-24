@@ -15,9 +15,9 @@
 }
 
 .shell__header-inner {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 12px 18px;
+  width: 100%;
+  margin: 0;
+  padding: 12px clamp(18px, 4vw, 48px);
   display: flex;
   align-items: center;
   gap: 16px;
@@ -99,9 +99,8 @@
 }
 
 .shell__main {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 32px 20px 48px;
+  width: 100%;
+  padding: 32px clamp(20px, 4vw, 64px) 48px;
 }
 
 .shell a {
