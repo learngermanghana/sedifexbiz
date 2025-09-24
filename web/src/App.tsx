@@ -6,6 +6,7 @@ import { auth } from './firebase'
 import './App.css'
 import './pwa'
 import { useToast } from './components/ToastProvider'
+import { configureAuthPersistence, persistSession, refreshSessionHeartbeat } from './controllers/sessionController'
 
 type AuthMode = 'login' | 'signup'
 
@@ -29,12 +30,26 @@ export default function App() {
   const { publish } = useToast()
 
   useEffect(() => {
+    configureAuthPersistence(auth).catch(error => {
+      console.warn('[auth] Unable to configure persistence', error)
+    })
+
     const unsubscribe = onAuthStateChanged(auth, nextUser => {
       setUser(nextUser)
       setIsAuthReady(true)
     })
     return unsubscribe
   }, [])
+
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    refreshSessionHeartbeat(user).catch(error => {
+      console.warn('[session] Unable to refresh session', error)
+    })
+  }, [user])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -44,9 +59,11 @@ export default function App() {
     })
     try {
       if (mode === 'login') {
-        await signInWithEmailAndPassword(auth, email, password)
+        const { user: nextUser } = await signInWithEmailAndPassword(auth, email, password)
+        await persistSession(nextUser)
       } else {
-        await createUserWithEmailAndPassword(auth, email, password)
+        const { user: nextUser } = await createUserWithEmailAndPassword(auth, email, password)
+        await persistSession(nextUser)
       }
       setStatus({
         tone: 'success',
