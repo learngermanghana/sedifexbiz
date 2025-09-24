@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore'
 import { db, auth } from '../firebase'
+import './Receive.css'
 
 type Product = { id: string; name: string; stockCount?: number; storeId: string }
 
@@ -28,16 +29,54 @@ export default function Receive() {
   if (!STORE_ID) return <div>Loading…</div>
 
   return (
-    <div>
-      <h2 style={{color:'#4338CA'}}>Receive Stock</h2>
-      <div style={{display:'flex', gap:8}}>
-        <select value={selected} onChange={e=>setSelected(e.target.value)} style={{padding:8}}>
-          <option value="">Select product…</option>
-          {products.map(p=><option key={p.id} value={p.id}>{p.name} (Stock {p.stockCount ?? 0})</option>)}
-        </select>
-        <input type="number" min={1} placeholder="Qty" value={qty} onChange={e=>setQty(e.target.value)} style={{padding:8, width:120}} />
-        <button onClick={receive} style={{padding:'8px 12px', background:'#4338CA', color:'#fff', border:0, borderRadius:8}}>Add Stock</button>
-      </div>
+    <div className="page receive-page">
+      <header className="page__header">
+        <div>
+          <h2 className="page__title">Receive stock</h2>
+          <p className="page__subtitle">Log deliveries against your Firestore inventory so shelves stay replenished.</p>
+        </div>
+      </header>
+
+      <section className="card receive-page__card">
+        <div className="receive-page__form">
+          <div className="field">
+            <label className="field__label" htmlFor="receive-product">Product</label>
+            <select
+              id="receive-product"
+              value={selected}
+              onChange={e => setSelected(e.target.value)}
+            >
+              <option value="">Select product…</option>
+              {products.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} (Stock {p.stockCount ?? 0})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="receive-qty">Quantity received</label>
+            <input
+              id="receive-qty"
+              type="number"
+              min={1}
+              placeholder="0"
+              value={qty}
+              onChange={e => setQty(e.target.value)}
+            />
+          </div>
+          <div className="receive-page__actions">
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={receive}
+              disabled={!selected || !qty}
+            >
+              Add stock
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }

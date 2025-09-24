@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { collection, query, where, orderBy, onSnapshot, doc, writeBatch, addDoc, serverTimestamp } from 'firebase/firestore'
 import { db, auth } from '../firebase'
+import './Sell.css'
 
 type Product = { id: string; name: string; price: number; stockCount?: number; storeId: string }
 type CartLine = { productId: string; name: string; price: number; qty: number }
@@ -61,62 +62,120 @@ export default function Sell() {
   const filtered = products.filter(p => p.name.toLowerCase().includes(queryText.toLowerCase()))
 
   return (
-    <div>
-      <h2 style={{color:'#4338CA'}}>Sell</h2>
-
-      <input
-        placeholder="Search product…"
-        value={queryText}
-        onChange={e=>setQueryText(e.target.value)}
-        style={{width:'100%', padding:10, margin:'8px 0'}}
-      />
-
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+    <div className="page sell-page">
+      <header className="page__header">
         <div>
-          <h3>Products</h3>
-          <div style={{maxHeight:320, overflow:'auto', border:'1px solid #eee', borderRadius:8}}>
-            {filtered.map(p=>(
-              <div key={p.id} style={{display:'flex', justifyContent:'space-between', padding:'8px 12px', borderBottom:'1px solid #f3f3f3'}}>
-                <div>
-                  <div>{p.name}</div>
-                  <small>GHS {p.price.toFixed(2)} • Stock {p.stockCount ?? 0}</small>
-                </div>
-                <button onClick={()=>addToCart(p)}>Add</button>
+          <h2 className="page__title">Sell</h2>
+          <p className="page__subtitle">Build a cart from your product list and record the sale in seconds.</p>
+        </div>
+        <div className="sell-page__total" aria-live="polite">
+          <span className="sell-page__total-label">Subtotal</span>
+          <span className="sell-page__total-value">GHS {subtotal.toFixed(2)}</span>
+        </div>
+      </header>
+
+      <section className="card">
+        <div className="field">
+          <label className="field__label" htmlFor="sell-search">Find a product</label>
+          <input
+            id="sell-search"
+            placeholder="Search by name"
+            value={queryText}
+            onChange={e => setQueryText(e.target.value)}
+          />
+          <p className="field__hint">Tip: start typing and tap a product to add it to the cart.</p>
+        </div>
+      </section>
+
+      <div className="sell-page__grid">
+        <section className="card sell-page__catalog" aria-label="Product list">
+          <div className="sell-page__section-header">
+            <h3 className="card__title">Products</h3>
+            <p className="card__subtitle">{filtered.length} items available to sell.</p>
+          </div>
+          <div className="sell-page__catalog-list">
+            {filtered.length ? (
+              filtered.map(p => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="sell-page__product"
+                  onClick={() => addToCart(p)}
+                >
+                  <div>
+                    <span className="sell-page__product-name">{p.name}</span>
+                    <span className="sell-page__product-meta">GHS {p.price.toFixed(2)} • Stock {p.stockCount ?? 0}</span>
+                  </div>
+                  <span className="sell-page__product-action">Add</span>
+                </button>
+              ))
+            ) : (
+              <div className="empty-state">
+                <h3 className="empty-state__title">No products found</h3>
+                <p>Try a different search term or add new inventory from the products page.</p>
               </div>
-            ))}
+            )}
           </div>
-        </div>
+        </section>
 
-        <div>
-          <h3>Cart</h3>
-          <table style={{width:'100%', borderCollapse:'collapse'}}>
-            <thead><tr><th align="left">Item</th><th align="right">Qty</th><th align="right">Price</th></tr></thead>
-            <tbody>
-              {cart.map(l=>(
-                <tr key={l.productId} style={{borderTop:'1px solid #eee'}}>
-                  <td>{l.name}</td>
-                  <td align="right">
-                    <input type="number" min={0} value={l.qty}
-                           onChange={e=>setQty(l.productId, Number(e.target.value))}
-                           style={{width:70, textAlign:'right'}} />
-                  </td>
-                  <td align="right">GHS {(l.price*l.qty).toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div style={{display:'flex', justifyContent:'space-between', marginTop:12, fontWeight:700}}>
-            <div>Total</div>
-            <div>GHS {subtotal.toFixed(2)}</div>
+        <section className="card sell-page__cart" aria-label="Cart">
+          <div className="sell-page__section-header">
+            <h3 className="card__title">Cart</h3>
+            <p className="card__subtitle">Adjust quantities before recording the sale.</p>
           </div>
 
-          <button onClick={recordSale}
-                  style={{marginTop:12, background:'#4338CA', color:'#fff', border:0, borderRadius:8, padding:'10px 14px'}}
-                  disabled={cart.length===0}>
-            Record Sale
-          </button>
-        </div>
+          {cart.length ? (
+            <>
+              <div className="table-wrapper">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Item</th>
+                      <th scope="col" className="sell-page__numeric">Qty</th>
+                      <th scope="col" className="sell-page__numeric">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cart.map(line => (
+                      <tr key={line.productId}>
+                        <td>{line.name}</td>
+                        <td className="sell-page__numeric">
+                          <input
+                            className="input--inline input--align-right"
+                            type="number"
+                            min={0}
+                            value={line.qty}
+                            onChange={e => setQty(line.productId, Number(e.target.value))}
+                          />
+                        </td>
+                        <td className="sell-page__numeric">GHS {(line.price * line.qty).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="sell-page__summary">
+                <span>Total</span>
+                <strong>GHS {subtotal.toFixed(2)}</strong>
+              </div>
+
+              <button
+                type="button"
+                className="button button--primary button--block"
+                onClick={recordSale}
+                disabled={cart.length === 0}
+              >
+                Record sale
+              </button>
+            </>
+          ) : (
+            <div className="empty-state">
+              <h3 className="empty-state__title">Cart is empty</h3>
+              <p>Select products from the list to start a new sale.</p>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   )
