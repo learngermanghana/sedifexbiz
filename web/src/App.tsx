@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import type { User } from 'firebase/auth'
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -10,6 +11,7 @@ import './App.css'
 import './pwa'
 
 type AuthMode = 'login' | 'signup'
+
 type StatusTone = 'idle' | 'loading' | 'success' | 'error'
 
 interface StatusState {
@@ -48,8 +50,11 @@ export default function App() {
         tone: 'error',
         message: err?.message || 'Something went wrong. Please try again.'
       })
+
     }
-  }
+  }, [status])
+
+  const modeLabel = mode === 'login' ? 'Login' : 'Create account'
 
   function handleModeChange(nextMode: AuthMode) {
     setMode(nextMode)
@@ -58,6 +63,7 @@ export default function App() {
 
   if (!user) {
     return (
+
       <main className="app">
         <div className="app__card">
           <div className="app__brand">
@@ -146,6 +152,7 @@ export default function App() {
           )}
         </div>
       </main>
+
     )
   }
 
@@ -182,4 +189,16 @@ export default function App() {
       </div>
     </main>
   )
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || 'Something went wrong. Please try again.'
+  }
+
+  if (typeof error === 'string') {
+    return error
+  }
+
+  return 'Something went wrong. Please try again.'
 }
