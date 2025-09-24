@@ -5,6 +5,7 @@ import { Outlet } from 'react-router-dom'
 import { auth } from './firebase'
 import './App.css'
 import './pwa'
+import { useToast } from './components/ToastProvider'
 
 type AuthMode = 'login' | 'signup'
 
@@ -25,6 +26,7 @@ export default function App() {
   const [password, setPassword] = useState('')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
   const isLoading = status.tone === 'loading'
+  const { publish } = useToast()
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, nextUser => {
@@ -58,6 +60,19 @@ export default function App() {
 
     }
   }
+
+  useEffect(() => {
+    if (!status.message) {
+      return
+    }
+
+    if (status.tone === 'success' || status.tone === 'error') {
+      publish({
+        tone: status.tone,
+        message: status.message
+      })
+    }
+  }, [publish, status.message, status.tone])
 
   function handleModeChange(nextMode: AuthMode) {
     setMode(nextMode)
