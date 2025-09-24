@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import type { User } from 'firebase/auth'
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -8,29 +9,87 @@ import {
 import { auth } from './firebase'
 import './pwa'
 
+type AuthMode = 'login' | 'signup'
+
+type StatusState = {
+  message: string
+  tone: 'info' | 'success' | 'error'
+}
+
 export default function App() {
-  const [user, setUser] = useState<any>(null)
-  const [mode, setMode] = useState<'login' | 'signup'>('login')
+  const [user, setUser] = useState<User | null>(null)
+  const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState<StatusState | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  useEffect(() => onAuthStateChanged(auth, setUser), [])
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, nextUser => setUser(nextUser))
+    return unsubscribe
+  }, [])
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setStatus(mode === 'login' ? 'Signing in…' : 'Creating account…')
-    try {
-      if (mode === 'login') {
-        await signInWithEmailAndPassword(auth, email, password)
-      } else {
-        await createUserWithEmailAndPassword(auth, email, password)
+  const handleModeChange = useCallback((nextMode: AuthMode) => {
+    setMode(nextMode)
+    setStatus(null)
+  }, [])
+
+  const handleSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (isSubmitting) return
+
+      const trimmedEmail = email.trim()
+      const trimmedPassword = password.trim()
+
+      if (!trimmedEmail || !trimmedPassword) {
+        setStatus({
+          message: 'Please enter both an email and a password.',
+          tone: 'error'
+        })
+        return
       }
-      setStatus('Success')
-    } catch (err: any) {
-      setStatus(err.message || 'Error')
+
+      setStatus({
+        message: mode === 'login' ? 'Signing in…' : 'Creating account…',
+        tone: 'info'
+      })
+      setIsSubmitting(true)
+
+      try {
+        if (mode === 'login') {
+          await signInWithEmailAndPassword(auth, trimmedEmail, trimmedPassword)
+        } else {
+          await createUserWithEmailAndPassword(auth, trimmedEmail, trimmedPassword)
+        }
+        setStatus({
+          message: mode === 'login' ? 'Signed in successfully.' : 'Account created successfully.',
+          tone: 'success'
+        })
+      } catch (error) {
+        setStatus({
+          message: getErrorMessage(error),
+          tone: 'error'
+        })
+      } finally {
+        setIsSubmitting(false)
+      }
+    },
+    [email, isSubmitting, mode, password]
+  )
+
+  const statusColor = useMemo(() => {
+    switch (status?.tone) {
+      case 'success':
+        return '#047857'
+      case 'error':
+        return '#B91C1C'
+      default:
+        return '#555'
     }
-  }
+  }, [status])
+
+  const modeLabel = mode === 'login' ? 'Login' : 'Create account'
 
   if (!user) {
     return (
@@ -40,7 +99,7 @@ export default function App() {
 
         <div style={{ marginTop: 16 }}>
           <button
-            onClick={() => setMode('login')}
+            onClick={() => handleModeChange('login')}
             style={{
               marginRight: 8,
               padding: '6px 10px',
@@ -52,7 +111,7 @@ export default function App() {
             Login
           </button>
           <button
-            onClick={() => setMode('signup')}
+            onClick={() => handleModeChange('signup')}
             style={{
               padding: '6px 10px',
               borderRadius: 8,
@@ -68,7 +127,10 @@ export default function App() {
           <label>Email</label>
           <input
             value={email}
-            onChange={e => setEmail(e.target.value)}
+            onChange={event => {
+              setEmail(event.target.value)
+              if (status) setStatus(null)
+            }}
             type="email"
             required
             style={{ display: 'block', width: '100%', padding: 12, marginTop: 8 }}
@@ -76,7 +138,10 @@ export default function App() {
           <label style={{ marginTop: 12, display: 'block' }}>Password</label>
           <input
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={event => {
+              setPassword(event.target.value)
+              if (status) setStatus(null)
+            }}
             type="password"
             required
             style={{ display: 'block', width: '100%', padding: 12, marginTop: 8 }}
@@ -89,14 +154,19 @@ export default function App() {
               background: '#4338CA',
               color: '#fff',
               borderRadius: 8,
-              border: 0
+              border: 0,
+              opacity: isSubmitting ? 0.85 : 1,
+              cursor: isSubmitting ? 'not-allowed' : 'pointer'
             }}
+            disabled={isSubmitting}
           >
-            {mode === 'login' ? 'Login' : 'Create account'}
+            {modeLabel}
           </button>
         </form>
 
-        <p style={{ marginTop: 12, color: '#555' }}>{status}</p>
+        <p aria-live="polite" style={{ marginTop: 12, color: statusColor }}>
+          {status?.message}
+        </p>
       </div>
     )
   }
@@ -123,4 +193,16 @@ export default function App() {
       <p style={{ marginTop: 24 }}>Next: Products & Sell screen.</p>
     </div>
   )
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || 'Something went wrong. Please try again.'
+  }
+
+  if (typeof error === 'string') {
+    return error
+  }
+
+  return 'Something went wrong. Please try again.'
 }
