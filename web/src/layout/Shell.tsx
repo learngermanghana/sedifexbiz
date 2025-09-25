@@ -4,6 +4,7 @@ import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
+import { useActiveStore } from '../hooks/useActiveStore'
 import './Shell.css'
 import './Workspace.css'
 
@@ -57,10 +58,30 @@ function buildBannerMessage(queueStatus: ReturnType<typeof useConnectivityStatus
   return null
 }
 
+function formatStoreRole(role: string | null) {
+  if (!role) {
+    return null
+  }
+
+  return role
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 export default function Shell({ children }: { children: React.ReactNode }) {
   const user = useAuthUser()
   const userEmail = user?.email ?? 'Account'
   const connectivity = useConnectivityStatus()
+  const {
+    storeId: activeStoreId,
+    role: storeRole,
+    stores: availableStores,
+    isLoading: storeLoading,
+    error: storeError,
+    selectStore,
+  } = useActiveStore()
 
   const { isOnline, isReachable, queue } = connectivity
 
@@ -98,6 +119,23 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return null
   }, [isOnline, isReachable, queue.lastError, queue.pending, queue.status])
 
+  const storeSelectId = 'shell-store-select'
+  const storeErrorId = storeError ? 'shell-store-error' : undefined
+  const storeSelectDisabled = storeLoading || availableStores.length === 0
+  const storePlaceholder = storeLoading
+    ? 'Loading stores…'
+    : availableStores.length === 0
+      ? 'No store access'
+      : 'Select a store'
+  const formattedRole = formatStoreRole(storeRole)
+
+  function handleStoreChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const { value } = event.target
+    if (value) {
+      selectStore(value)
+    }
+  }
+
   return (
     <div className="shell">
       <header className="shell__header">
@@ -120,16 +158,52 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
 
-          <div className="shell__account">
-            <span className="shell__account-email">{userEmail}</span>
-            <button
-              type="button"
-              className="button button--primary button--small"
-              onClick={() => signOut(auth)}
-            >
-              Sign out
-            </button>
+          <div className="shell__controls">
+            <div className="shell__store-switcher">
+              <label className="shell__store-label" htmlFor={storeSelectId}>
+                Store
+              </label>
+              <select
+                id={storeSelectId}
+                aria-label="Select active store"
+                aria-describedby={storeErrorId}
+                className="shell__store-select"
+                value={activeStoreId ?? ''}
+                onChange={handleStoreChange}
+                disabled={storeSelectDisabled}
+              >
+                <option value="" disabled>
+                  {storePlaceholder}
+                </option>
+                {availableStores.map(store => (
+                  <option key={store} value={store}>
+                    {store}
+                  </option>
+                ))}
+              </select>
+              {formattedRole ? (
+                <span className="shell__store-role" aria-live="polite">
+                  {formattedRole}
+                </span>
+              ) : null}
+            </div>
+
+            <div className="shell__account">
+              <span className="shell__account-email">{userEmail}</span>
+              <button
+                type="button"
+                className="button button--primary button--small"
+                onClick={() => signOut(auth)}
+              >
+                Sign out
+              </button>
+            </div>
           </div>
+          {storeError ? (
+            <div className="shell__store-error" role="alert" id={storeErrorId}>
+              {storeError}
+            </div>
+          ) : null}
         </div>
       </header>
 
