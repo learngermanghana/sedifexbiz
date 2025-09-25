@@ -6,11 +6,9 @@ import {
   orderBy,
   onSnapshot,
   doc,
-  writeBatch,
-  addDoc,
-  serverTimestamp,
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { httpsCallable } from 'firebase/functions'
+import { db, functions as cloudFunctions } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'
@@ -34,6 +32,40 @@ type ReceiptData = {
     phone?: string
     email?: string
   }
+}
+
+type CommitSalePayload = {
+  storeId: string
+  branchId: string | null
+  saleId: string
+  cashierId: string
+  totals: {
+    total: number
+    taxTotal: number
+  }
+  payment: {
+    method: string
+    amountPaid: number
+    changeDue: number
+  }
+  customer?: {
+    id?: string
+    name: string
+    phone?: string
+    email?: string
+  }
+  items: Array<{
+    productId: string
+    name: string
+    price: number
+    qty: number
+    taxRate?: number
+  }>
+}
+
+type CommitSaleResponse = {
+  ok: boolean
+  saleId: string
 }
 
 export default function Sell() {
@@ -101,6 +133,10 @@ export default function Sell() {
   }
   async function recordSale() {
     if (!STORE_ID || cart.length === 0) return
+    if (!user) {
+      setSaleError('You must be signed in to record a sale.')
+      return
+    }
     if (isCashShort) {
       setSaleError('Cash received is less than the total due.')
       return
@@ -110,38 +146,47 @@ export default function Sell() {
     setReceipt(null)
     setIsRecording(true)
     try {
-      const salePayload: Record<string, unknown> = {
+      const saleId = doc(collection(db, 'sales')).id
+      const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
+      const payload: CommitSalePayload = {
         storeId: STORE_ID,
-        createdAt: serverTimestamp(),
-        items: cart,
-        total: subtotal,
+        branchId: null,
+        saleId,
+        cashierId: user.uid,
+        totals: {
+          total: subtotal,
+          taxTotal: 0,
+        },
         payment: {
           method: paymentMethod,
           amountPaid,
           changeDue,
         },
+        items: cart.map(line => ({
+          productId: line.productId,
+          name: line.name,
+          price: line.price,
+          qty: line.qty,
+          taxRate: 0,
+        })),
       }
       if (selectedCustomer) {
-        salePayload.customer = {
+        payload.customer = {
           id: selectedCustomer.id,
           name: selectedCustomer.name,
           ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
           ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
         }
       }
-      const saleRef = await addDoc(collection(db, 'sales'), salePayload)
-      const batch = writeBatch(db)
-      cart.forEach(line => {
-        const pRef = doc(db,'products', line.productId)
-        const p = products.find(x=>x.id===line.productId)
-        const next = Math.max(0, (p?.stockCount || 0) - line.qty)
-        batch.update(pRef, { stockCount: next })
-      })
-      await batch.commit()
+
+      const { data } = await commitSale(payload)
+      if (!data?.ok) {
+        throw new Error('Sale was not recorded')
+      }
 
       const receiptItems = cart.map(line => ({ ...line }))
       setReceipt({
-        saleId: saleRef.id,
+        saleId: data.saleId,
         createdAt: new Date(),
         items: receiptItems,
         subtotal,
@@ -161,10 +206,13 @@ export default function Sell() {
       setCart([])
       setSelectedCustomerId('')
       setAmountTendered('')
-      setSaleSuccess(`Sale recorded #${saleRef.id}. Receipt sent to printer.`)
+      setSaleSuccess(`Sale recorded #${data.saleId}. Receipt sent to printer.`)
     } catch (err) {
       console.error('[sell] Unable to record sale', err)
-      setSaleError('We were unable to record this sale. Please try again.')
+      const message = err instanceof Error ? err.message : null
+      setSaleError(message && message !== 'Sale was not recorded'
+        ? message
+        : 'We were unable to record this sale. Please try again.')
     } finally {
       setIsRecording(false)
     }
