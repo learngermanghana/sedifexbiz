@@ -21,6 +21,20 @@ vi.mock('../utils/offlineQueue', () => ({
   queueCallableRequest: (...args: unknown[]) => mockQueueCallableRequest(...args),
 }))
 
+const mockLoadCachedProducts = vi.fn(async () => [] as unknown[])
+const mockSaveCachedProducts = vi.fn(async () => {})
+const mockLoadCachedCustomers = vi.fn(async () => [] as unknown[])
+const mockSaveCachedCustomers = vi.fn(async () => {})
+
+vi.mock('../utils/offlineCache', () => ({
+  PRODUCT_CACHE_LIMIT: 200,
+  CUSTOMER_CACHE_LIMIT: 200,
+  loadCachedProducts: (...args: unknown[]) => mockLoadCachedProducts(...args),
+  saveCachedProducts: (...args: unknown[]) => mockSaveCachedProducts(...args),
+  loadCachedCustomers: (...args: unknown[]) => mockLoadCachedCustomers(...args),
+  saveCachedCustomers: (...args: unknown[]) => mockSaveCachedCustomers(...args),
+}))
+
 vi.mock('../firebase', () => ({
   db: {},
   functions: {},
@@ -56,8 +70,9 @@ const query = vi.fn((collectionRef: { path: string }, ...clauses: unknown[]) => 
   clauses,
 }))
 const where = vi.fn((...args: unknown[]) => ({ type: 'where', args }))
-const orderBy = vi.fn((field: string) => ({ type: 'orderBy', field }))
+const orderBy = vi.fn((field: string, direction?: string) => ({ type: 'orderBy', field, direction }))
 const doc = vi.fn(() => ({ id: 'generated-sale-id' }))
+const limit = vi.fn((value: number) => ({ type: 'limit', value }))
 
 const onSnapshot = vi.fn((queryRef: { collection: { path: string } }, callback: (snap: unknown) => void) => {
   if (queryRef.collection.path === 'products') {
@@ -75,7 +90,8 @@ vi.mock('firebase/firestore', () => ({
   collection: (...args: unknown[]) => collection(...args),
   query: (...args: unknown[]) => query(...args as [any, ...unknown[]]),
   where: (...args: unknown[]) => where(...args),
-  orderBy: (...args: unknown[]) => orderBy(...args as [string]),
+  orderBy: (...args: unknown[]) => orderBy(...args as [string, string?]),
+  limit: (...args: unknown[]) => limit(...args as [number]),
   doc: (...args: unknown[]) => doc(...args),
   onSnapshot: (...args: unknown[]) => onSnapshot(...args as [any, any]),
 }))
@@ -109,10 +125,17 @@ describe('Sell page', () => {
       },
     })
     mockQueueCallableRequest.mockReset()
+    mockLoadCachedProducts.mockReset()
+    mockLoadCachedCustomers.mockReset()
+    mockSaveCachedProducts.mockReset()
+    mockSaveCachedCustomers.mockReset()
+    mockLoadCachedProducts.mockResolvedValue([])
+    mockLoadCachedCustomers.mockResolvedValue([])
     collection.mockClear()
     query.mockClear()
     where.mockClear()
     orderBy.mockClear()
+    limit.mockClear()
     doc.mockClear()
     onSnapshot.mockClear()
   })

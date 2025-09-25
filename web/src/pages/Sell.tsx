@@ -4,6 +4,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   onSnapshot,
   doc,
 } from 'firebase/firestore'
@@ -15,6 +16,14 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'
 import { Link } from 'react-router-dom'
 import { queueCallableRequest } from '../utils/offlineQueue'
+import {
+  CUSTOMER_CACHE_LIMIT,
+  PRODUCT_CACHE_LIMIT,
+  loadCachedCustomers,
+  loadCachedProducts,
+  saveCachedCustomers,
+  saveCachedProducts,
+} from '../utils/offlineCache'
 import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
 
@@ -109,18 +118,86 @@ export default function Sell() {
 
   useEffect(() => {
     if (!STORE_ID || !hasAccess) return
-    const q = query(collection(db,'products'), where('storeId','==',STORE_ID), orderBy('name'))
-    return onSnapshot(q, snap => {
-      setProducts(snap.docs.map(d => ({ id:d.id, ...(d.data() as any) })))
+
+    let cancelled = false
+
+    loadCachedProducts<Product>(STORE_ID)
+      .then(cached => {
+        if (!cancelled && cached.length) {
+          setProducts(
+            [...cached].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+          )
+        }
+      })
+      .catch(error => {
+        console.warn('[sell] Failed to load cached products', error)
+      })
+
+    const q = query(
+      collection(db, 'products'),
+      where('storeId', '==', STORE_ID),
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(PRODUCT_CACHE_LIMIT),
+    )
+
+    const unsubscribe = onSnapshot(q, snap => {
+      const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+      saveCachedProducts(STORE_ID, rows).catch(error => {
+        console.warn('[sell] Failed to cache products', error)
+      })
+      const sortedRows = [...rows].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+      )
+      setProducts(sortedRows)
     })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [STORE_ID, hasAccess])
 
   useEffect(() => {
     if (!STORE_ID || !hasAccess) return
-    const q = query(collection(db, 'customers'), where('storeId', '==', STORE_ID), orderBy('name'))
-    return onSnapshot(q, snap => {
-      setCustomers(snap.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Customer) })))
+
+    let cancelled = false
+
+    loadCachedCustomers<Customer>(STORE_ID)
+      .then(cached => {
+        if (!cancelled && cached.length) {
+          setCustomers(
+            [...cached].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+          )
+        }
+      })
+      .catch(error => {
+        console.warn('[sell] Failed to load cached customers', error)
+      })
+
+    const q = query(
+      collection(db, 'customers'),
+      where('storeId', '==', STORE_ID),
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(CUSTOMER_CACHE_LIMIT),
+    )
+
+    const unsubscribe = onSnapshot(q, snap => {
+      const rows = snap.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Customer) }))
+      saveCachedCustomers(STORE_ID, rows).catch(error => {
+        console.warn('[sell] Failed to cache customers', error)
+      })
+      const sortedRows = [...rows].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+      )
+      setCustomers(sortedRows)
     })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [STORE_ID, hasAccess])
 
   useEffect(() => {

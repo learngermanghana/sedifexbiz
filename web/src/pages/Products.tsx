@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  collection, addDoc, onSnapshot, query, where, orderBy,
+  collection, addDoc, onSnapshot, query, where, orderBy, limit,
   doc, updateDoc, deleteDoc, deleteField
 } from 'firebase/firestore'
 import { db } from '../firebase'
@@ -8,6 +8,7 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
 import './Products.css'
+import { loadCachedProducts, saveCachedProducts, PRODUCT_CACHE_LIMIT } from '../utils/offlineCache'
 
 type Product = {
   id?: string
@@ -250,16 +251,44 @@ export default function Products() {
   // live products subscription
   useEffect(() => {
     if (!STORE_ID || !hasAccess) return
+
+    let cancelled = false
+
+    loadCachedProducts<Product>(STORE_ID)
+      .then(cached => {
+        if (!cancelled && cached.length) {
+          setItems(
+            [...cached].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+          )
+        }
+      })
+      .catch(error => {
+        console.warn('[products] Failed to load cached products', error)
+      })
+
     const q = query(
       collection(db, 'products'),
       where('storeId', '==', STORE_ID),
-      orderBy('name')
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(PRODUCT_CACHE_LIMIT),
     )
-    const unsub = onSnapshot(q, (snap) => {
+
+    const unsub = onSnapshot(q, snap => {
       const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as Product) }))
-      setItems(rows)
+      saveCachedProducts(STORE_ID, rows).catch(error => {
+        console.warn('[products] Failed to cache products', error)
+      })
+      const sortedRows = [...rows].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+      )
+      setItems(sortedRows)
     })
-    return () => unsub()
+
+    return () => {
+      cancelled = true
+      unsub()
+    }
   }, [STORE_ID, hasAccess])
 
   if (!storeLoading && !hasAccess) {
