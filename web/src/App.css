@@ -438,6 +438,44 @@ body {
   font-size: 14px;
 }
 
+.form__hint-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.form__hint-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form__hint-list li[data-complete='true'] {
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.form__hint-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+  color: rgba(148, 163, 184, 0.85);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.form__hint-indicator.is-valid {
+  background: rgba(52, 211, 153, 0.18);
+  color: var(--color-positive);
+}
+
 label {
   font-weight: 600;
   color: var(--color-text-secondary);
