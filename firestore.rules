@@ -15,7 +15,9 @@ service cloud.firestore {
 
     match /products/{id} {
       allow read: if inStore(resource.data.storeId);
-      allow create, update: if hasRole(request.resource.data.storeId, ['owner','manager']);
+      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
+      allow update: if hasRole(resource.data.storeId, ['owner','manager'])
+                     && request.resource.data.storeId == resource.data.storeId;
       allow delete: if hasRole(resource.data.storeId, ['owner']);
     }
 
@@ -27,7 +29,9 @@ service cloud.firestore {
     match /sales/{id} {
       allow read: if inStore(resource.data.storeId);
       allow create: if hasRole(request.resource.data.storeId, ['owner','manager','cashier']);
-      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']);
+      allow update: if hasRole(resource.data.storeId, ['owner','manager'])
+                    && request.resource.data.storeId == resource.data.storeId;
+      allow delete: if hasRole(resource.data.storeId, ['owner','manager']);
     }
 
     match /saleItems/{id} {
@@ -38,7 +42,9 @@ service cloud.firestore {
     match /expenses/{id} {
       allow read: if inStore(resource.data.storeId);
       allow create: if hasRole(request.resource.data.storeId, ['owner','manager','cashier']);
-      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']);
+      allow update: if hasRole(resource.data.storeId, ['owner','manager'])
+                    && request.resource.data.storeId == resource.data.storeId;
+      allow delete: if hasRole(resource.data.storeId, ['owner','manager']);
     }
 
     match /cashSessions/{id} {
