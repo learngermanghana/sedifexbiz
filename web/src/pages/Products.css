@@ -18,6 +18,19 @@
   gap: 18px;
 }
 
+.products__form-feedback {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.products__form-feedback--success {
+  color: #047857;
+}
+
+.products__form-feedback--error {
+  color: #b91c1c;
+}
+
 @media (min-width: 720px) {
   .products__form {
     grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
