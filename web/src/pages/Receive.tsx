@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore'
-import { db } from '../firebase'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore'
+import { httpsCallable } from 'firebase/functions'
+import { db, functions } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Receive.css'
 
@@ -12,9 +13,13 @@ export default function Receive() {
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string>('')
   const [qty, setQty] = useState<string>('')
+  const [supplier, setSupplier] = useState('')
+  const [reference, setReference] = useState('')
+  const [unitCost, setUnitCost] = useState('')
   const [status, setStatus] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const statusTimeoutRef = useRef<number | null>(null)
+  const receiveStock = useMemo(() => httpsCallable(functions, 'receiveStock'), [])
 
   useEffect(() => {
     return () => {
@@ -54,10 +59,36 @@ export default function Receive() {
       showStatus('error', 'Enter a valid quantity greater than zero.')
       return
     }
+    const supplierName = supplier.trim()
+    if (!supplierName) {
+      showStatus('error', 'Add the supplier who fulfilled this delivery.')
+      return
+    }
+    const referenceNumber = reference.trim()
+    if (!referenceNumber) {
+      showStatus('error', 'Add the packing slip or purchase order reference number.')
+      return
+    }
+    const costValue = unitCost.trim()
+    const parsedCost = costValue ? Number(costValue) : null
+    if (parsedCost !== null && (!Number.isFinite(parsedCost) || parsedCost < 0)) {
+      showStatus('error', 'Enter a valid cost that is zero or greater.')
+      return
+    }
     setBusy(true)
     try {
-      await updateDoc(doc(db,'products', selected), { stockCount: (p.stockCount || 0) + amount })
+      await receiveStock({
+        storeId: STORE_ID,
+        productId: selected,
+        qty: amount,
+        supplier: supplierName,
+        reference: referenceNumber,
+        unitCost: parsedCost
+      })
       setQty('')
+      setSupplier('')
+      setReference('')
+      setUnitCost('')
       showStatus('success', 'Stock received successfully.')
     } catch (error) {
       console.error('[receive] Failed to update stock', error)
@@ -107,12 +138,44 @@ export default function Receive() {
               onChange={e => setQty(e.target.value)}
             />
           </div>
+          <div className="field">
+            <label className="field__label" htmlFor="receive-supplier">Supplier</label>
+            <input
+              id="receive-supplier"
+              type="text"
+              placeholder="Acme Distribution"
+              value={supplier}
+              onChange={e => setSupplier(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="receive-reference">Reference number</label>
+            <input
+              id="receive-reference"
+              type="text"
+              placeholder="PO-12345 or packing slip"
+              value={reference}
+              onChange={e => setReference(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="receive-cost">Unit cost (optional)</label>
+            <input
+              id="receive-cost"
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="0.00"
+              value={unitCost}
+              onChange={e => setUnitCost(e.target.value)}
+            />
+          </div>
           <div className="receive-page__actions">
             <button
               type="button"
               className="button button--primary"
               onClick={receive}
-              disabled={!selected || !qty || busy}
+              disabled={!selected || !qty || !supplier.trim() || !reference.trim() || busy}
             >
               Add stock
             </button>
