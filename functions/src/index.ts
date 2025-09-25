@@ -4,7 +4,7 @@ admin.initializeApp()
 const db = admin.firestore()
 
 export const commitSale = functions.https.onCall(async (data, context) => {
-  const { storeId, branchId, items, totals, cashierId, saleId } = data || {}
+  const { storeId, branchId, items, totals, cashierId, saleId, payment, customer } = data || {}
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required')
   const claims = context.auth.token as any
   if (!claims?.stores?.includes?.(storeId)) throw new functions.https.HttpsError('permission-denied', 'No store access')
@@ -13,14 +13,33 @@ export const commitSale = functions.https.onCall(async (data, context) => {
   const saleItemsRef = db.collection('saleItems')
 
   await db.runTransaction(async (tx) => {
+    const normalizedItems = Array.isArray(items)
+      ? items.map((it: any) => {
+          const productId = typeof it?.productId === 'string' ? it.productId : null
+          const name = typeof it?.name === 'string' ? it.name : null
+          const qty = Number(it?.qty ?? 0) || 0
+          const price = Number(it?.price ?? 0) || 0
+          const taxRate = Number(it?.taxRate ?? 0) || 0
+          return { productId, name, qty, price, taxRate }
+        })
+      : []
+
     tx.set(saleRef, {
-      storeId, branchId, cashierId,
+      storeId,
+      branchId: branchId ?? null,
+      cashierId,
       total: totals?.total ?? 0,
       taxTotal: totals?.taxTotal ?? 0,
+      payment: payment ?? null,
+      customer: customer ?? null,
+      items: normalizedItems,
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     })
 
-    for (const it of (items || [])) {
+    for (const it of normalizedItems) {
+      if (!it.productId) {
+        throw new functions.https.HttpsError('failed-precondition', 'Bad product')
+      }
       const itemId = db.collection('_').doc().id
       tx.set(saleItemsRef.doc(itemId), {
         storeId, saleId, productId: it.productId, qty: it.qty, price: it.price, taxRate: it.taxRate
