@@ -27,6 +27,31 @@ interface StatusState {
   message: string
 }
 
+type QueueRequestType = 'sale' | 'receipt'
+
+type QueueCompletionMessage = {
+  type: 'QUEUE_REQUEST_COMPLETED'
+  requestType?: unknown
+}
+
+type QueueFailureMessage = {
+  type: 'QUEUE_REQUEST_FAILED'
+  requestType?: unknown
+  error?: unknown
+}
+
+type ServiceWorkerMessage = QueueCompletionMessage | QueueFailureMessage | MessageEvent['data']
+
+function isQueueRequestType(value: unknown): value is QueueRequestType {
+  return value === 'sale' || value === 'receipt'
+}
+
+function getQueueRequestLabel(requestType: QueueRequestType | null) {
+  if (requestType === 'sale') return 'sale'
+  if (requestType === 'receipt') return 'receipt'
+  return 'request'
+}
+
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
@@ -105,6 +130,26 @@ function getSignupValidationError(
   return null
 }
 
+function buildQueueSuccessMessage(requestType: QueueRequestType | null) {
+  if (requestType === 'sale') {
+    return 'Queued sale synced successfully.'
+  }
+  if (requestType === 'receipt') {
+    return 'Queued receipt synced successfully.'
+  }
+  return 'Queued request synced successfully.'
+}
+
+function buildQueueFailureMessage(requestType: QueueRequestType | null, error: string | null) {
+  const label = getQueueRequestLabel(requestType)
+  const base = `We couldn’t sync a queued ${label}.`
+  const detail = error && error.trim().length > 0 ? ` (${error.trim()})` : ''
+  const followUp = typeof navigator !== 'undefined' && navigator.onLine
+    ? ' We’ll retry automatically.'
+    : ' We’ll send it once you’re back online.'
+  return `${base}${detail}${followUp}`
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
@@ -163,6 +208,41 @@ export default function App() {
     // Small UX touch: show the current auth mode in the tab title
     document.title = mode === 'login' ? 'Sedifex — Log in' : 'Sedifex — Sign up'
   }, [mode])
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) {
+      return
+    }
+
+    const handleMessage = (event: MessageEvent<ServiceWorkerMessage>) => {
+      const data = event.data
+      if (!data || typeof data !== 'object') {
+        return
+      }
+
+      const messageType = (data as { type?: unknown }).type
+      if (messageType === 'QUEUE_REQUEST_COMPLETED') {
+        const queueMessage = data as QueueCompletionMessage
+        const requestType = isQueueRequestType(queueMessage.requestType) ? queueMessage.requestType : null
+        publish({ message: buildQueueSuccessMessage(requestType), tone: 'success' })
+      } else if (messageType === 'QUEUE_REQUEST_FAILED') {
+        const failureMessage = data as QueueFailureMessage
+        const requestType = isQueueRequestType(failureMessage.requestType) ? failureMessage.requestType : null
+        const errorDetail = typeof failureMessage.error === 'string' ? failureMessage.error : null
+        publish({
+          message: buildQueueFailureMessage(requestType, errorDetail),
+          tone: 'error',
+          duration: 0,
+        })
+      }
+    }
+
+    navigator.serviceWorker.addEventListener('message', handleMessage)
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage)
+    }
+  }, [publish])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
