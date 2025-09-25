@@ -28,6 +28,14 @@ function navLinkClass(isActive: boolean) {
 
 type BannerVariant = 'offline' | 'degraded' | 'pending' | 'processing' | 'error'
 
+const BADGE_LABELS: Record<BannerVariant, string> = {
+  offline: 'Offline',
+  degraded: 'Connection issues',
+  pending: 'Sync pending',
+  processing: 'Syncing…',
+  error: 'Sync error',
+}
+
 type BannerState =
   | { variant: BannerVariant; message: string; pulse?: boolean }
   | null
@@ -200,6 +208,23 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               ) : null}
             </div>
 
+            {banner && (
+              <div
+                className="shell__status-badge"
+                data-variant={banner.variant}
+                role="status"
+                aria-live="polite"
+                title={banner.message}
+              >
+                <span
+                  className={`shell__status-dot${banner.pulse ? ' is-pulsing' : ''}`}
+                  aria-hidden="true"
+                />
+                <span className="shell__status-label">{BADGE_LABELS[banner.variant]}</span>
+                <span className="shell__sr-only">{banner.message}</span>
+              </div>
+            )}
+
             <div className="shell__account">
               <span className="shell__account-email">{userEmail}</span>
               <button
@@ -218,21 +243,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           ) : null}
         </div>
       </header>
-
-      {banner && (
-        <div
-          className="shell__status-banner"
-          data-variant={banner.variant}
-          role="status"
-          aria-live="polite"
-        >
-          <span
-            className={`shell__status-dot${banner.pulse ? ' is-pulsing' : ''}`}
-            aria-hidden="true"
-          />
-          <span className="shell__status-text">{banner.message}</span>
-        </div>
-      )}
 
       <main className="shell__main">{children}</main>
     </div>
