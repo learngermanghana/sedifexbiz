@@ -107,6 +107,9 @@ export default function Products() {
   const [stockFilter, setStockFilter] = useState<'all' | 'in-stock' | 'low-stock' | 'out-of-stock'>('all')
   const [shareFeedback, setShareFeedback] = useState<string | null>(null)
 
+  // NEW: page-level busy flag to control any dimming only during real work
+  const [busy, setBusy] = useState(false)
+
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const frameRef = useRef<number>()
@@ -128,22 +131,24 @@ export default function Products() {
   async function addProduct(e: React.FormEvent) {
     e.preventDefault()
     if (!STORE_ID || !name || price === '') return
-    const trimmedBarcode = barcode.trim()
-
-    const newProduct: Omit<Product, 'id'> = {
-      storeId: STORE_ID,
-      name,
-      price: Number(price),
-      stockCount: 0,
-      updatedAt: Date.now()
+    setBusy(true)
+    try {
+      const trimmedBarcode = barcode.trim()
+      const newProduct: Omit<Product, 'id'> = {
+        storeId: STORE_ID,
+        name,
+        price: Number(price),
+        stockCount: 0,
+        updatedAt: Date.now(),
+        ...(trimmedBarcode ? { barcode: trimmedBarcode } : {})
+      }
+      await addDoc(collection(db, 'products'), newProduct)
+      setName('')
+      setPrice('')
+      setBarcode('')
+    } finally {
+      setBusy(false)
     }
-
-    if (trimmedBarcode) {
-      (newProduct as Product).barcode = trimmedBarcode
-    }
-
-    await addDoc(collection(db, 'products'), newProduct)
-    setName(''); setPrice(''); setBarcode('')
   }
 
   function beginEdit(p: Product) {
@@ -155,23 +160,30 @@ export default function Products() {
   }
 
   async function saveEdit(id: string) {
-    const trimmed = editBarcode.trim()
-
-    const payload: Record<string, unknown> = {
-      name: editName,
-      price: Number(editPrice),
-      stockCount: Number(editStock),
-      updatedAt: Date.now()
+    setBusy(true)
+    try {
+      const trimmed = editBarcode.trim()
+      const payload: Record<string, unknown> = {
+        name: editName,
+        price: Number(editPrice),
+        stockCount: Number(editStock),
+        updatedAt: Date.now(),
+        barcode: trimmed ? trimmed : deleteField(),
+      }
+      await updateDoc(doc(db, 'products', id), payload)
+      setEditing(null)
+    } finally {
+      setBusy(false)
     }
-
-    payload.barcode = trimmed ? trimmed : deleteField()
-
-    await updateDoc(doc(db, 'products', id), payload)
-    setEditing(null)
   }
 
   async function remove(id: string) {
-    await deleteDoc(doc(db, 'products', id))
+    setBusy(true)
+    try {
+      await deleteDoc(doc(db, 'products', id))
+    } finally {
+      setBusy(false)
+    }
   }
 
   if (!STORE_ID) return <div>Loading…</div>
@@ -319,7 +331,7 @@ export default function Products() {
             .some(value => value!.toLowerCase().includes(term))
         : true
 
-      if (!matchesTerm) return false
+    if (!matchesTerm) return false
 
       const stock = item.stockCount ?? 0
       const minStock = item.minStock ?? 5
@@ -339,7 +351,6 @@ export default function Products() {
 
   const exportFile = useCallback((content: BlobPart, type: string, filename: string) => {
     if (typeof window === 'undefined') return
-
     const blob = new Blob([content], { type })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -348,12 +359,10 @@ export default function Products() {
     link.rel = 'noopener'
     document.body.appendChild(link)
     link.click()
-
     const revoke = () => {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
     }
-
     if ('requestAnimationFrame' in window) {
       window.requestAnimationFrame(revoke)
     } else {
@@ -363,7 +372,6 @@ export default function Products() {
 
   const handleDownloadCsv = useCallback(() => {
     if (!filteredItems.length) return
-
     const header = ['Name', 'Price (GHS)', 'Stock', 'Barcode']
     const rows = filteredItems.map(item => [
       `"${item.name.replace(/"/g, '""')}"`,
@@ -371,21 +379,16 @@ export default function Products() {
       String(item.stockCount ?? 0),
       item.barcode ? `"${item.barcode.replace(/"/g, '""')}"` : ''
     ])
-
     const csv = [header.join(','), ...rows.map(row => row.join(','))].join('\n')
     exportFile(csv, 'text/csv;charset=utf-8;', 'products.csv')
   }, [exportFile, filteredItems])
 
   const handleDownloadPdf = useCallback(() => {
     if (!filteredItems.length) return
-
     const column = (value: string, length: number) => {
-      if (value.length > length) {
-        return value.slice(0, length - 1) + '…'
-      }
+      if (value.length > length) return value.slice(0, length - 1) + '…'
       return value.padEnd(length, ' ')
     }
-
     const lines = [
       '',
       `${column('Name', 24)}${column('Price', 10)}${column('Stock', 8)}Barcode`,
@@ -397,7 +400,6 @@ export default function Products() {
         return `${column(item.name, 24)}${column(price, 10)}${column(stock, 8)}${barcode}`
       })
     ]
-
     const pdfBytes = buildSimplePdf('Products Report', lines)
     const pdfBuffer = pdfBytes.buffer.slice(
       pdfBytes.byteOffset,
@@ -408,11 +410,9 @@ export default function Products() {
 
   const handleShare = useCallback(async () => {
     if (!filteredItems.length) return
-
     const summary = filteredItems
       .map(item => `${item.name} – GHS ${(item.price ?? 0).toFixed(2)} (${item.stockCount ?? 0} in stock)${item.barcode ? ` – ${item.barcode}` : ''}`)
       .join('\n')
-
     try {
       if (navigator.share) {
         await navigator.share({ title: 'Product list', text: summary })
@@ -428,12 +428,14 @@ export default function Products() {
       console.error('Failed to share product list', error)
       setShareFeedback('Unable to share right now')
     }
-
     setTimeout(() => setShareFeedback(null), 4000)
   }, [exportFile, filteredItems])
 
   return (
-    <div className="page products-page">
+    <div
+      className="page products-page"
+      aria-busy={busy ? 'true' : 'false'}  // controls any dimming
+    >
       <header className="page__header">
         <div>
           <h2 className="page__title">Products</h2>
@@ -492,7 +494,7 @@ export default function Products() {
             </div>
           </div>
           <div className="products__form-actions">
-            <button type="submit" className="button button--primary">Add product</button>
+            <button type="submit" className="button button--primary" disabled={busy}>Add product</button>
           </div>
         </form>
       </section>
@@ -650,6 +652,7 @@ export default function Products() {
                               type="button"
                               className="button button--primary button--small"
                               onClick={() => saveEdit(p.id!)}
+                              disabled={busy}
                             >
                               Save
                             </button>
@@ -657,6 +660,7 @@ export default function Products() {
                               type="button"
                               className="button button--ghost button--small"
                               onClick={() => setEditing(null)}
+                              disabled={busy}
                             >
                               Cancel
                             </button>
@@ -667,6 +671,7 @@ export default function Products() {
                               type="button"
                               className="button button--outline button--small"
                               onClick={() => beginEdit(p)}
+                              disabled={busy}
                             >
                               Edit
                             </button>
@@ -674,6 +679,7 @@ export default function Products() {
                               type="button"
                               className="button button--danger button--small"
                               onClick={() => remove(p.id!)}
+                              disabled={busy}
                             >
                               Delete
                             </button>
