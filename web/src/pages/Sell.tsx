@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   collection,
   query,
@@ -86,6 +86,44 @@ export default function Sell() {
       setAmountTendered('')
     }
   }, [paymentMethod])
+
+  const receiptSharePayload = useMemo(() => {
+    if (!receipt) return null
+
+    const lines: string[] = []
+    lines.push(`Sale #${receipt.saleId}`)
+    lines.push(receipt.createdAt.toLocaleString())
+
+    if (receipt.customer) {
+      lines.push('')
+      lines.push(`Customer: ${receipt.customer.name}`)
+      if (receipt.customer.phone) {
+        lines.push(`Phone: ${receipt.customer.phone}`)
+      }
+      if (receipt.customer.email) {
+        lines.push(`Email: ${receipt.customer.email}`)
+      }
+    }
+
+    lines.push('')
+    receipt.items.forEach(line => {
+      lines.push(`${line.qty} × ${line.name} — GHS ${(line.qty * line.price).toFixed(2)}`)
+    })
+
+    lines.push('')
+    lines.push(`Subtotal: GHS ${receipt.subtotal.toFixed(2)}`)
+    lines.push(`Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`)
+    lines.push(`Change due: GHS ${receipt.payment.changeDue.toFixed(2)}`)
+    lines.push('')
+    lines.push('Thank you for shopping with us!')
+
+    const message = lines.join('\n')
+    const emailSubject = `Receipt for sale #${receipt.saleId}`
+    const emailHref = `mailto:${receipt.customer?.email ?? ''}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(message)}`
+    const smsHref = `sms:${receipt.customer?.phone ?? ''}?body=${encodeURIComponent(message)}`
+
+    return { message, emailHref, smsHref }
+  }, [receipt])
 
   function addToCart(p: Product) {
     setCart(cs => {
@@ -296,11 +334,27 @@ export default function Sell() {
                       </option>
                     ))}
                   </select>
-                  <p className="field__hint">
-                    Need to add someone new? Manage records on the{' '}
-                    <Link to="/customers" className="sell-page__customers-link">Customers page</Link>.
+              <p className="field__hint">
+                Need to add someone new? Manage records on the{' '}
+                <Link to="/customers" className="sell-page__customers-link">Customers page</Link>.
+              </p>
+              {selectedCustomer && (
+                <div className="sell-page__loyalty" role="status" aria-live="polite">
+                  <strong className="sell-page__loyalty-title">Keep {selectedCustomer.name} coming back</strong>
+                  <p className="sell-page__loyalty-text">
+                    Enroll them in your loyalty program or apply any available rewards before completing checkout.
                   </p>
+                  <div className="sell-page__loyalty-actions">
+                    <Link to="/customers" className="button button--ghost button--small">
+                      Enroll customer
+                    </Link>
+                    <Link to="/customers" className="button button--ghost button--small">
+                      Apply rewards
+                    </Link>
+                  </div>
                 </div>
+              )}
+            </div>
 
                 <div className="sell-page__field-group">
                   <label className="field__label" htmlFor="sell-payment-method">Payment method</label>
@@ -359,6 +413,33 @@ export default function Sell() {
                     Print again
                   </button>
                 </div>
+              )}
+
+              {saleSuccess && receiptSharePayload && (
+                <section className="sell-page__engagement" aria-live="polite">
+                  <h4 className="sell-page__engagement-title">Share the receipt</h4>
+                  <p className="sell-page__engagement-text">
+                    Email or text the receipt so your customer has a digital copy right away.
+                  </p>
+                  <div className="sell-page__engagement-actions">
+                    <a
+                      className="button button--ghost button--small"
+                      href={receiptSharePayload.emailHref}
+                    >
+                      Email receipt
+                    </a>
+                    <a
+                      className="button button--ghost button--small"
+                      href={receiptSharePayload.smsHref}
+                    >
+                      Text receipt
+                    </a>
+                  </div>
+                  <details className="sell-page__engagement-details">
+                    <summary>Preview message</summary>
+                    <pre className="sell-page__engagement-preview">{receiptSharePayload.message}</pre>
+                  </details>
+                </section>
               )}
 
               <button
