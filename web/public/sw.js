@@ -18,6 +18,8 @@ const STORE_NAME = 'pending'
 const MAX_RETRIES = 3
 
 let isProcessingQueue = false
+let lastQueueStatus = 'idle'
+let lastQueueError = null
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -43,6 +45,13 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return
 
   const url = new URL(request.url)
+
+  if (url.pathname === '/heartbeat.json') {
+    event.respondWith(
+      fetch(new Request(request, { cache: 'no-store' }))
+    )
+    return
+  }
 
   if (request.mode === 'navigate') {
     event.respondWith(
@@ -84,6 +93,10 @@ self.addEventListener('message', event => {
   if (data.type === 'PROCESS_QUEUE_NOW') {
     event.waitUntil(processQueue())
   }
+
+  if (data.type === 'REQUEST_QUEUE_STATUS') {
+    event.waitUntil(respondQueueStatus(event.source))
+  }
 })
 
 self.addEventListener('sync', event => {
@@ -105,6 +118,7 @@ async function handleQueueRequest(payload) {
 
   await addQueueEntry(entry)
   await scheduleSync()
+  await broadcastQueueState(isProcessingQueue ? 'processing' : 'pending')
 }
 
 async function scheduleSync() {
@@ -168,6 +182,23 @@ async function getQueueEntries() {
   })
 }
 
+async function getQueueCount() {
+  const db = await openQueueDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly')
+    const store = tx.objectStore(STORE_NAME)
+    const request = store.count()
+    request.onsuccess = () => {
+      db.close()
+      resolve(request.result || 0)
+    }
+    request.onerror = () => {
+      db.close()
+      reject(request.error)
+    }
+  })
+}
+
 async function deleteQueueEntry(id) {
   const db = await openQueueDb()
   return new Promise((resolve, reject) => {
@@ -218,10 +249,14 @@ async function processQueue() {
   try {
     const entries = await getQueueEntries()
     if (!entries.length) {
+      await broadcastQueueState('idle', { pending: 0 })
       return
     }
 
+    await broadcastQueueState('processing', { pending: entries.length })
+
     const failures = []
+    let lastFailureMessage = null
 
     for (const entry of entries) {
       if (!entry || entry.id === undefined) continue
@@ -242,11 +277,18 @@ async function processQueue() {
         } else {
           await updateQueueEntry(entry.id, { retries: attempts, updatedAt: Date.now() })
           failures.push(entry.id)
+          lastFailureMessage = error instanceof Error ? error.message : 'Unknown error'
         }
       }
     }
 
+    const pending = await getQueueCount()
+
     if (failures.length) {
+      await broadcastQueueState('error', {
+        pending,
+        error: lastFailureMessage || 'Some queued requests failed',
+      })
       notifyClients({ type: 'QUEUE_PROCESSING_REQUIRED' })
       if (self.registration && 'sync' in self.registration) {
         try {
@@ -255,7 +297,19 @@ async function processQueue() {
           console.warn('[sw] Unable to re-register sync after failure', error)
         }
       }
+    } else if (pending > 0) {
+      await broadcastQueueState('pending', { pending })
+    } else {
+      await broadcastQueueState('idle', { pending })
     }
+  } catch (error) {
+    console.warn('[sw] Queue processing failed', error)
+    const pending = await getQueueCount().catch(() => 0)
+    await broadcastQueueState('error', {
+      pending,
+      error: error instanceof Error ? error.message : 'Queue processing failed',
+    })
+    throw error
   } finally {
     isProcessingQueue = false
   }
@@ -285,11 +339,72 @@ async function sendQueueEntry(entry) {
 }
 
 function notifyClients(message) {
-  self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-    clients.forEach(client => {
-      client.postMessage(message)
+  return self.clients
+    .matchAll({ type: 'window', includeUncontrolled: true })
+    .then(clients => {
+      clients.forEach(client => {
+        client.postMessage(message)
+      })
     })
-  }).catch(error => {
-    console.warn('[sw] Unable to notify clients', error)
-  })
+    .catch(error => {
+      console.warn('[sw] Unable to notify clients', error)
+    })
+}
+
+async function broadcastQueueState(status, details = {}, target) {
+  let pending = typeof details.pending === 'number' ? details.pending : await getQueueCount().catch(() => 0)
+  if (pending <= 0 && status !== 'error') {
+    pending = 0
+    status = 'idle'
+  }
+
+  if (status === 'error') {
+    lastQueueError = typeof details.error === 'string' ? details.error : lastQueueError || 'Queue processing failed'
+  }
+
+  if (status === 'idle') {
+    lastQueueError = null
+  }
+
+  lastQueueStatus = status
+
+  const message = { type: 'QUEUE_STATUS', status, pending }
+  if (status === 'error' && lastQueueError) {
+    message.error = lastQueueError
+  }
+
+  if (target && typeof target.postMessage === 'function') {
+    target.postMessage(message)
+    return
+  }
+
+  await notifyClients(message)
+}
+
+async function respondQueueStatus(target) {
+  let status = lastQueueStatus
+  let error = lastQueueError
+
+  if (isProcessingQueue) {
+    status = 'processing'
+  }
+
+  let pending = await getQueueCount().catch(() => 0)
+  if (pending <= 0 && status !== 'error') {
+    pending = 0
+    status = 'idle'
+    error = null
+  }
+
+  const message = { type: 'QUEUE_STATUS', status, pending }
+  if (status === 'error' && error) {
+    message.error = error
+  }
+
+  if (target && typeof target.postMessage === 'function') {
+    target.postMessage(message)
+    return
+  }
+
+  await notifyClients(message)
 }
