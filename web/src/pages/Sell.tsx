@@ -252,8 +252,9 @@ export default function Sell() {
     const emailSubject = `Receipt for sale #${receipt.saleId}`
     const emailHref = `mailto:${receipt.customer?.email ?? ''}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(message)}`
     const smsHref = `sms:${receipt.customer?.phone ?? ''}?body=${encodeURIComponent(message)}`
+    const whatsappHref = `https://wa.me/?text=${encodeURIComponent(message)}`
 
-    return { message, emailHref, smsHref }
+    return { message, emailHref, smsHref, whatsappHref }
   }, [receipt])
 
   function addToCart(p: Product) {
@@ -595,9 +596,15 @@ export default function Sell() {
                 <section className="sell-page__engagement" aria-live="polite">
                   <h4 className="sell-page__engagement-title">Share the receipt</h4>
                   <p className="sell-page__engagement-text">
-                    Email or text the receipt so your customer has a digital copy right away.
+                    Email, text, or WhatsApp the receipt so your customer has a digital copy right away.
                   </p>
                   <div className="sell-page__engagement-actions">
+                    <a
+                      className="button button--ghost button--small"
+                      href={receiptSharePayload.whatsappHref}
+                    >
+                      WhatsApp receipt
+                    </a>
                     <a
                       className="button button--ghost button--small"
                       href={receiptSharePayload.emailHref}
