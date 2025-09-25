@@ -5,17 +5,21 @@ import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
 import { useActiveStore } from '../hooks/useActiveStore'
+import type { AppFeature } from '../utils/permissions'
+import { canAccessFeature } from '../utils/permissions'
 import './Shell.css'
 import './Workspace.css'
 
-const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/products', label: 'Products' },
-  { to: '/sell', label: 'Sell' },
-  { to: '/receive', label: 'Receive' },
-  { to: '/customers', label: 'Customers' },
-  { to: '/close-day', label: 'Close Day' },
-  { to: '/settings', label: 'Settings' }
+type NavItem = { to: string; label: string; end?: boolean; feature: AppFeature }
+
+const NAV_ITEMS: NavItem[] = [
+  { to: '/', label: 'Dashboard', end: true, feature: 'dashboard' },
+  { to: '/products', label: 'Products', feature: 'products' },
+  { to: '/sell', label: 'Sell', feature: 'sell' },
+  { to: '/receive', label: 'Receive', feature: 'receive' },
+  { to: '/customers', label: 'Customers', feature: 'customers' },
+  { to: '/close-day', label: 'Close Day', feature: 'close-day' },
+  { to: '/settings', label: 'Settings', feature: 'settings' },
 ]
 
 function navLinkClass(isActive: boolean) {
@@ -136,6 +140,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const visibleNavItems = useMemo(() => {
+    if (storeLoading) {
+      return NAV_ITEMS
+    }
+
+    return NAV_ITEMS.filter(item => canAccessFeature(storeRole, item.feature))
+  }, [storeLoading, storeRole])
+
   return (
     <div className="shell">
       <header className="shell__header">
@@ -146,7 +158,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
 
           <nav className="shell__nav" aria-label="Primary">
-            {NAV_ITEMS.map(item => (
+            {visibleNavItems.map(item => (
               <NavLink
                 key={item.to}
                 to={item.to}

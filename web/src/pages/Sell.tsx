@@ -15,6 +15,8 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'
 import { Link } from 'react-router-dom'
 import { queueCallableRequest } from '../utils/offlineQueue'
+import { AccessDenied } from '../components/AccessDenied'
+import { canAccessFeature } from '../utils/permissions'
 
 type Product = { id: string; name: string; price: number; stockCount?: number; storeId: string }
 type CartLine = { productId: string; name: string; price: number; qty: number }
@@ -84,7 +86,7 @@ function isOfflineError(error: unknown) {
 
 export default function Sell() {
   const user = useAuthUser()
-  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
+  const { storeId: STORE_ID, role, isLoading: storeLoading, error: storeError } = useActiveStore()
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -103,35 +105,41 @@ export default function Sell() {
   const changeDue = Math.max(0, amountPaid - subtotal)
   const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0
 
+  const hasAccess = canAccessFeature(role, 'sell')
+
   useEffect(() => {
-    if (!STORE_ID) return
+    if (!STORE_ID || !hasAccess) return
     const q = query(collection(db,'products'), where('storeId','==',STORE_ID), orderBy('name'))
     return onSnapshot(q, snap => {
       setProducts(snap.docs.map(d => ({ id:d.id, ...(d.data() as any) })))
     })
-  }, [STORE_ID])
+  }, [STORE_ID, hasAccess])
 
   useEffect(() => {
-    if (!STORE_ID) return
+    if (!STORE_ID || !hasAccess) return
     const q = query(collection(db, 'customers'), where('storeId', '==', STORE_ID), orderBy('name'))
     return onSnapshot(q, snap => {
       setCustomers(snap.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Customer) })))
     })
-  }, [STORE_ID])
+  }, [STORE_ID, hasAccess])
 
   useEffect(() => {
-    if (!receipt) return
+    if (!hasAccess || !receipt) return
     const timeout = window.setTimeout(() => {
       window.print()
     }, 250)
     return () => window.clearTimeout(timeout)
-  }, [receipt])
+  }, [hasAccess, receipt])
 
   useEffect(() => {
     if (paymentMethod !== 'cash') {
       setAmountTendered('')
     }
   }, [paymentMethod])
+
+  if (!storeLoading && !hasAccess) {
+    return <AccessDenied feature="sell" role={role ?? null} />
+  }
 
   const receiptSharePayload = useMemo(() => {
     if (!receipt) return null

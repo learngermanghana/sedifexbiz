@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuthUser } from './useAuthUser'
 
-type StoreRole = 'owner' | 'manager' | 'cashier' | string
+export type StoreRole = 'owner' | 'manager' | 'cashier' | string
 
 type StoreRoleMap = Record<string, StoreRole>
 
