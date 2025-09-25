@@ -18,6 +18,8 @@ type Product = {
   updatedAt?: number
 }
 
+/* ---------------- PDF helpers ---------------- */
+
 function escapePdfText(text: string) {
   return text
     .replace(/\\/g, '\\\\')
@@ -88,7 +90,130 @@ function buildSimplePdf(title: string, lines: string[]): Uint8Array {
   return result
 }
 
+/* ---------------- Scanner modal (isolates hooks) ---------------- */
+
+type ScannerProps = {
+  mode: 'new' | 'edit'
+  onValue: (barcode: string) => void
+  onClose: () => void
+}
+
+function ScannerModal({ mode, onValue, onClose }: ScannerProps) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const frameRef = useRef<number>()
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [scanMessage, setScanMessage] = useState('Point your camera at a barcode')
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function init() {
+      setScanError(null)
+      setScanMessage('Point your camera at a barcode')
+
+      const Detector = (window as any).BarcodeDetector
+      if (!Detector) {
+        setScanError('Barcode scanning is not supported on this device. You can still type the barcode manually.')
+        return
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setScanError('Camera access is not available on this device. You can enter the barcode manually instead.')
+        return
+      }
+
+      let detector: any
+      try {
+        detector = new Detector({
+          formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf']
+        })
+      } catch (err) {
+        console.error(err)
+        setScanError('Unable to start the barcode scanner.')
+        return
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false
+        })
+        if (cancelled) {
+          stream.getTracks().forEach(t => t.stop())
+          return
+        }
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+
+        setScanMessage('Looking for a barcode…')
+
+        const detectLoop = async () => {
+          if (cancelled) return
+          try {
+            if (!videoRef.current) return
+            const barcodes = await detector.detect(videoRef.current)
+            const value = barcodes[0]?.rawValue?.trim()
+            if (value) {
+              onValue(value)
+              onClose()
+              return
+            }
+            frameRef.current = requestAnimationFrame(detectLoop)
+          } catch (error) {
+            console.error(error)
+            setScanError('An error occurred while scanning. You can enter the barcode manually or close this window.')
+            if (frameRef.current) cancelAnimationFrame(frameRef.current)
+            frameRef.current = undefined
+          }
+        }
+
+        detectLoop()
+      } catch (err) {
+        console.error(err)
+        setScanError('We could not access the camera. Please allow camera access or enter the barcode manually.')
+      }
+    }
+
+    init()
+
+    return () => {
+      cancelled = true
+      if (frameRef.current) cancelAnimationFrame(frameRef.current)
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+        streamRef.current = null
+      }
+      if (videoRef.current) videoRef.current.srcObject = null
+    }
+  }, [onClose, onValue])
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="scan-modal-title">
+      <div className="modal products__modal">
+        <h3 id="scan-modal-title" className="modal__title">Scan barcode</h3>
+        {scanError ? (
+          <p className="modal__error">{scanError}</p>
+        ) : (
+          <>
+            <video ref={videoRef} playsInline className="products__video" muted />
+            <p className="modal__message" aria-live="polite">{scanMessage}</p>
+          </>
+        )}
+        <button type="button" className="button button--primary button--block" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ---------------- Main component ---------------- */
+
 export default function Products() {
+  // Keep all hooks *unconditional* and *top-level*
   const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
 
   const [items, setItems] = useState<Product[]>([])
@@ -100,23 +225,15 @@ export default function Products() {
   const [editPrice, setEditPrice] = useState<string>('')
   const [editStock, setEditStock] = useState<string>('')
   const [editBarcode, setEditBarcode] = useState('')
-  const [scanningFor, setScanningFor] = useState<'new' | 'edit' | null>(null)
-  const [scanError, setScanError] = useState<string | null>(null)
-  const [scanMessage, setScanMessage] = useState('Point your camera at a barcode')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [stockFilter, setStockFilter] = useState<'all' | 'in-stock' | 'low-stock' | 'out-of-stock'>('all')
+  const [scanMode, setScanMode] = useState<'new' | 'edit' | null>(null)
   const [shareFeedback, setShareFeedback] = useState<string | null>(null)
-
   const [formFeedback, setFormFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
   const feedbackTimeoutRef = useRef<number | null>(null)
-
-  // NEW: page-level busy flag to control any dimming only during real work
   const [busy, setBusy] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [stockFilter, setStockFilter] = useState<'all' | 'in-stock' | 'low-stock' | 'out-of-stock'>('all')
 
-  const videoRef = useRef<HTMLVideoElement | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const frameRef = useRef<number>()
-
+  // cleanup for transient UI feedback timers
   useEffect(() => {
     return () => {
       if (feedbackTimeoutRef.current) {
@@ -126,17 +243,7 @@ export default function Products() {
     }
   }, [])
 
-  function showFormFeedback(tone: 'success' | 'error', message: string) {
-    setFormFeedback({ tone, message })
-    if (feedbackTimeoutRef.current) {
-      window.clearTimeout(feedbackTimeoutRef.current)
-    }
-    feedbackTimeoutRef.current = window.setTimeout(() => {
-      setFormFeedback(null)
-      feedbackTimeoutRef.current = null
-    }, 4000)
-  }
-
+  // live products subscription
   useEffect(() => {
     if (!STORE_ID) return
     const q = query(
@@ -150,6 +257,15 @@ export default function Products() {
     })
     return () => unsub()
   }, [STORE_ID])
+
+  function showFormFeedback(tone: 'success' | 'error', message: string) {
+    setFormFeedback({ tone, message })
+    if (feedbackTimeoutRef.current) window.clearTimeout(feedbackTimeoutRef.current)
+    feedbackTimeoutRef.current = window.setTimeout(() => {
+      setFormFeedback(null)
+      feedbackTimeoutRef.current = null
+    }, 4000)
+  }
 
   async function addProduct(e: React.FormEvent) {
     e.preventDefault()
@@ -213,9 +329,7 @@ export default function Products() {
     try {
       await deleteDoc(doc(db, 'products', id))
       showFormFeedback('success', 'Product removed.')
-      if (editing === id) {
-        setEditing(null)
-      }
+      if (editing === id) setEditing(null)
     } catch (error) {
       console.error('[products] Failed to delete product', error)
       showFormFeedback('error', 'Unable to delete product. Please try again.')
@@ -237,142 +351,13 @@ export default function Products() {
     return 'ok'
   }
 
-  function stopScanning() {
-    setScanningFor(null)
-    setScanError(null)
-    setScanMessage('Point your camera at a barcode')
-  }
-
-  useEffect(() => {
-    if (!scanningFor) {
-      if (frameRef.current) {
-        cancelAnimationFrame(frameRef.current)
-        frameRef.current = undefined
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop())
-        streamRef.current = null
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null
-      }
-      return
-    }
-
-    let cancelled = false
-
-    async function initScanner() {
-      setScanError(null)
-      setScanMessage('Point your camera at a barcode')
-
-      const Detector = (window as any).BarcodeDetector
-      if (!Detector) {
-        setScanError('Barcode scanning is not supported on this device. You can still type the barcode manually.')
-        return
-      }
-
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setScanError('Camera access is not available on this device. You can enter the barcode manually instead.')
-        return
-      }
-
-      let detector: any
-      try {
-        detector = new Detector({
-          formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'itf']
-        })
-      } catch (err) {
-        console.error(err)
-        setScanError('Unable to start the barcode scanner.')
-        return
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-          audio: false
-        })
-        if (cancelled) {
-          stream.getTracks().forEach(track => track.stop())
-          return
-        }
-        streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          await videoRef.current.play()
-        }
-
-        setScanMessage('Looking for a barcode…')
-
-        const detectLoop = async () => {
-          if (cancelled) return
-          try {
-            if (!videoRef.current) return
-            const barcodes = await detector.detect(videoRef.current)
-            const value = barcodes[0]?.rawValue?.trim()
-            if (value) {
-              if (scanningFor === 'new') {
-                setBarcode(value)
-              } else if (scanningFor === 'edit') {
-                setEditBarcode(value)
-              }
-              stopScanning()
-              return
-            }
-            frameRef.current = requestAnimationFrame(detectLoop)
-          } catch (error) {
-            console.error(error)
-            setScanError('An error occurred while scanning. You can enter the barcode manually or close this window.')
-            if (frameRef.current) {
-              cancelAnimationFrame(frameRef.current)
-              frameRef.current = undefined
-            }
-            if (streamRef.current) {
-              streamRef.current.getTracks().forEach(track => track.stop())
-              streamRef.current = null
-            }
-            if (videoRef.current) {
-              videoRef.current.srcObject = null
-            }
-          }
-        }
-
-        detectLoop()
-      } catch (err) {
-        console.error(err)
-        setScanError('We could not access the camera. Please allow camera access or enter the barcode manually.')
-      }
-    }
-
-    initScanner()
-
-    return () => {
-      cancelled = true
-      if (frameRef.current) {
-        cancelAnimationFrame(frameRef.current)
-        frameRef.current = undefined
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop())
-        streamRef.current = null
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null
-      }
-    }
-  }, [scanningFor])
-
   const filteredItems = useMemo(() => {
     const term = searchTerm.trim().toLowerCase()
-
     return items.filter((item) => {
       const matchesTerm = term
-        ? [item.name, item.barcode]
-            .filter(Boolean)
-            .some(value => value!.toLowerCase().includes(term))
+        ? [item.name, item.barcode].filter(Boolean).some(value => value!.toLowerCase().includes(term))
         : true
-
-    if (!matchesTerm) return false
+      if (!matchesTerm) return false
 
       const stock = item.stockCount ?? 0
       const minStock = item.minStock ?? 5
@@ -473,14 +458,11 @@ export default function Products() {
   }, [exportFile, filteredItems])
 
   return (
-    <div
-      className="page products-page"
-      aria-busy={busy ? 'true' : 'false'}  // controls any dimming
-    >
+    <div className="page products-page" aria-busy={busy ? 'true' : 'false'}>
       <header className="page__header">
         <div>
           <h2 className="page__title">Products</h2>
-          <p className="page__subtitle">Manage your Firestore catalogue, pricing, and shelf stock in one place.</p>
+          <p className="card__subtitle">Manage your Firestore catalogue, pricing, and shelf stock in one place.</p>
         </div>
         {shareFeedback && (
           <span className="feedback" role="status" aria-live="polite">{shareFeedback}</span>
@@ -528,7 +510,7 @@ export default function Products() {
               <button
                 type="button"
                 className="button button--neutral button--small"
-                onClick={() => setScanningFor('new')}
+                onClick={() => setScanMode('new')}
               >
                 Scan
               </button>
@@ -691,7 +673,7 @@ export default function Products() {
                             <button
                               type="button"
                               className="button button--neutral button--small"
-                              onClick={() => setScanningFor('edit')}
+                              onClick={() => setScanMode('edit')}
                             >
                               Scan
                             </button>
@@ -755,32 +737,16 @@ export default function Products() {
         </div>
       </section>
 
-      {scanningFor && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="scan-modal-title">
-          <div className="modal products__modal">
-            <h3 id="scan-modal-title" className="modal__title">Scan barcode</h3>
-            {scanError ? (
-              <p className="modal__error">{scanError}</p>
-            ) : (
-              <>
-                <video
-                  ref={videoRef}
-                  playsInline
-                  className="products__video"
-                  muted
-                />
-                <p className="modal__message" aria-live="polite">{scanMessage}</p>
-              </>
-            )}
-            <button
-              type="button"
-              className="button button--primary button--block"
-              onClick={stopScanning}
-            >
-              Close
-            </button>
-          </div>
-        </div>
+      {/* Scanner modal mounts/unmounts as a separate component (stable hook order in Products) */}
+      {scanMode && (
+        <ScannerModal
+          mode={scanMode}
+          onValue={(value) => {
+            if (scanMode === 'new') setBarcode(value)
+            if (scanMode === 'edit') setEditBarcode(value)
+          }}
+          onClose={() => setScanMode(null)}
+        />
       )}
     </div>
   )
