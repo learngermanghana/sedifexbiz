@@ -51,8 +51,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     }
 
     setToasts(current => [...current, toast])
+
+    if (toast.duration > 0 && typeof window !== 'undefined') {
+      window.setTimeout(() => dismiss(toast.id), toast.duration)
+    }
+
     return toast.id
-  }, [])
+  }, [dismiss])
 
   const value = useMemo(() => ({ publish, dismiss }), [publish, dismiss])
 
@@ -85,15 +90,6 @@ interface ToastProps {
 function Toast({ toast, onDismiss }: ToastProps) {
   const role = toast.tone === 'error' ? 'alert' : 'status'
   const ariaLive = toast.tone === 'error' ? 'assertive' : 'polite'
-
-  React.useEffect(() => {
-    if (toast.duration <= 0) {
-      return
-    }
-
-    const timer = window.setTimeout(() => onDismiss(toast.id), toast.duration)
-    return () => window.clearTimeout(timer)
-  }, [toast, onDismiss])
 
   return (
     <div
