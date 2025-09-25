@@ -7,6 +7,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  limit,
   serverTimestamp,
   updateDoc,
   where,
@@ -18,6 +19,14 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import './Customers.css'
 import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
+import {
+  CUSTOMER_CACHE_LIMIT,
+  SALES_CACHE_LIMIT,
+  loadCachedCustomers,
+  loadCachedSales,
+  saveCachedCustomers,
+  saveCachedSales,
+} from '../utils/offlineCache'
 
 type Customer = {
   id: string
@@ -170,12 +179,29 @@ export default function Customers() {
 
   useEffect(() => {
     if (!STORE_ID || !hasAccess) return
+    let cancelled = false
+
+    loadCachedCustomers<Customer>(STORE_ID)
+      .then(cached => {
+        if (!cancelled && cached.length) {
+          setCustomers(
+            [...cached].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+          )
+        }
+      })
+      .catch(error => {
+        console.warn('[customers] Failed to load cached customers', error)
+      })
+
     const q = query(
       collection(db, 'customers'),
       where('storeId', '==', STORE_ID),
-      orderBy('name')
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(CUSTOMER_CACHE_LIMIT),
     )
-    return onSnapshot(q, snap => {
+
+    const unsubscribe = onSnapshot(q, snap => {
       const rows = snap.docs.map(docSnap => {
         const data = docSnap.data() as Omit<Customer, 'id'>
         return {
@@ -183,54 +209,131 @@ export default function Customers() {
           ...data,
         }
       })
-      setCustomers(rows)
+      saveCachedCustomers(STORE_ID, rows).catch(error => {
+        console.warn('[customers] Failed to cache customers', error)
+      })
+      const sortedRows = [...rows].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+      )
+      setCustomers(sortedRows)
     })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [STORE_ID, hasAccess])
+
+  function normalizeSaleDate(value: unknown): Date | null {
+    if (!value) return null
+    if (value instanceof Date) return value
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return new Date(value)
+    }
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value)
+      return Number.isNaN(parsed) ? null : new Date(parsed)
+    }
+    if (typeof value === 'object') {
+      const anyValue = value as { toDate?: () => Date; seconds?: number; nanoseconds?: number }
+      if (typeof anyValue.toDate === 'function') {
+        try {
+          return anyValue.toDate()
+        } catch (error) {
+          console.warn('[customers] Failed to convert timestamp via toDate', error)
+        }
+      }
+      if (typeof anyValue.seconds === 'number') {
+        const millis = anyValue.seconds * 1000 + Math.round((anyValue.nanoseconds ?? 0) / 1_000_000)
+        return Number.isFinite(millis) ? new Date(millis) : null
+      }
+    }
+    return null
+  }
+
+  function applySalesData(records: Array<{ id: string } & Record<string, any>>) {
+    const statsMap: Record<string, CustomerStats> = {}
+    const historyMap: Record<string, SaleHistoryEntry[]> = {}
+
+    records.forEach(record => {
+      const data = record || {}
+      const customerId = data?.customer?.id
+      if (!customerId) return
+
+      const createdAt = normalizeSaleDate(data?.createdAt)
+      const total = Number(data?.total ?? 0) || 0
+      const paymentMethod = data?.payment?.method ?? null
+      const items = Array.isArray(data?.items) ? data.items : []
+
+      if (!statsMap[customerId]) {
+        statsMap[customerId] = { visits: 0, totalSpend: 0, lastVisit: null }
+      }
+      const stats = statsMap[customerId]
+      stats.visits += 1
+      stats.totalSpend += total
+      if (!stats.lastVisit || (createdAt && stats.lastVisit < createdAt)) {
+        stats.lastVisit = createdAt ?? stats.lastVisit
+      }
+
+      const entry: SaleHistoryEntry = {
+        id: record.id,
+        total,
+        createdAt,
+        paymentMethod,
+        items: items.map(item => ({
+          name: item?.name ?? null,
+          qty: item?.qty ?? null,
+        })),
+      }
+
+      historyMap[customerId] = [...(historyMap[customerId] ?? []), entry]
+    })
+
+    Object.keys(historyMap).forEach(customerId => {
+      historyMap[customerId] = historyMap[customerId].sort((a, b) => {
+        const aTime = a.createdAt?.getTime?.() ?? 0
+        const bTime = b.createdAt?.getTime?.() ?? 0
+        return bTime - aTime
+      })
+    })
+
+    setCustomerStats(statsMap)
+    setSalesHistory(historyMap)
+  }
 
   useEffect(() => {
     if (!STORE_ID || !hasAccess) return
-    const q = query(collection(db, 'sales'), where('storeId', '==', STORE_ID))
-    return onSnapshot(q, snapshot => {
-      const statsMap: Record<string, CustomerStats> = {}
-      const historyMap: Record<string, SaleHistoryEntry[]> = {}
+    let cancelled = false
 
-      snapshot.docs.forEach(docSnap => {
-        const data = docSnap.data() as any
-        const customerId = data?.customer?.id
-        if (!customerId) return
-        const createdAt = data?.createdAt?.toDate?.() ?? null
-        const total = Number(data?.total ?? 0) || 0
-        if (!statsMap[customerId]) {
-          statsMap[customerId] = { visits: 0, totalSpend: 0, lastVisit: null }
+    loadCachedSales<{ id: string } & Record<string, any>>(STORE_ID)
+      .then(cached => {
+        if (!cancelled && cached.length) {
+          applySalesData(cached)
         }
-        const stats = statsMap[customerId]
-        stats.visits += 1
-        stats.totalSpend += total
-        if (!stats.lastVisit || (createdAt && stats.lastVisit < createdAt)) {
-          stats.lastVisit = createdAt ?? stats.lastVisit
-        }
-
-        const entry: SaleHistoryEntry = {
-          id: docSnap.id,
-          total,
-          createdAt,
-          paymentMethod: data?.payment?.method ?? null,
-          items: Array.isArray(data?.items) ? data.items : [],
-        }
-        historyMap[customerId] = [...(historyMap[customerId] ?? []), entry]
+      })
+      .catch(error => {
+        console.warn('[customers] Failed to load cached sales', error)
       })
 
-      Object.keys(historyMap).forEach(customerId => {
-        historyMap[customerId] = historyMap[customerId].sort((a, b) => {
-          const aTime = a.createdAt?.getTime?.() ?? 0
-          const bTime = b.createdAt?.getTime?.() ?? 0
-          return bTime - aTime
-        })
-      })
+    const q = query(
+      collection(db, 'sales'),
+      where('storeId', '==', STORE_ID),
+      orderBy('createdAt', 'desc'),
+      limit(SALES_CACHE_LIMIT),
+    )
 
-      setCustomerStats(statsMap)
-      setSalesHistory(historyMap)
+    const unsubscribe = onSnapshot(q, snapshot => {
+      const rows = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as any) }))
+      applySalesData(rows)
+      saveCachedSales(STORE_ID, rows).catch(error => {
+        console.warn('[customers] Failed to cache sales', error)
+      })
     })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [STORE_ID, hasAccess])
 
   useEffect(() => {

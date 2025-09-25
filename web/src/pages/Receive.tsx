@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore'
+import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../firebase'
@@ -8,6 +8,7 @@ import './Receive.css'
 import { queueCallableRequest } from '../utils/offlineQueue'
 import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
+import { loadCachedProducts, saveCachedProducts, PRODUCT_CACHE_LIMIT } from '../utils/offlineCache'
 
 type Product = { id: string; name: string; stockCount?: number; storeId: string }
 
@@ -60,8 +61,44 @@ export default function Receive() {
 
   useEffect(() => {
     if (!STORE_ID || !hasAccess) return
-    const q = query(collection(db,'products'), where('storeId','==',STORE_ID), orderBy('name'))
-    return onSnapshot(q, snap => setProducts(snap.docs.map(d=>({id:d.id, ...(d.data() as any)}))))
+
+    let cancelled = false
+
+    loadCachedProducts<Product>(STORE_ID)
+      .then(cached => {
+        if (!cancelled && cached.length) {
+          setProducts(
+            [...cached].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+          )
+        }
+      })
+      .catch(error => {
+        console.warn('[receive] Failed to load cached products', error)
+      })
+
+    const q = query(
+      collection(db, 'products'),
+      where('storeId', '==', STORE_ID),
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(PRODUCT_CACHE_LIMIT),
+    )
+
+    const unsubscribe = onSnapshot(q, snap => {
+      const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+      saveCachedProducts(STORE_ID, rows).catch(error => {
+        console.warn('[receive] Failed to cache products', error)
+      })
+      const sortedRows = [...rows].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+      )
+      setProducts(sortedRows)
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [STORE_ID, hasAccess])
 
   async function receive() {

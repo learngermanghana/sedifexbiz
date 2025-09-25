@@ -1,6 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, doc, onSnapshot, query, setDoc, where, type Timestamp } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  where,
+  type Timestamp,
+} from 'firebase/firestore'
 import { db } from '../firebase'
 
 import { useAuthUser } from '../hooks/useAuthUser'
@@ -9,6 +19,17 @@ import { useToast } from '../components/ToastProvider'
 import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
 import type { AppFeature } from '../utils/permissions'
+import {
+  CUSTOMER_CACHE_LIMIT,
+  PRODUCT_CACHE_LIMIT,
+  SALES_CACHE_LIMIT,
+  loadCachedCustomers,
+  loadCachedProducts,
+  loadCachedSales,
+  saveCachedCustomers,
+  saveCachedProducts,
+  saveCachedSales,
+} from '../utils/offlineCache'
 
 
 type InventorySeverity = 'warning' | 'info' | 'critical'
@@ -284,38 +305,118 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!STORE_ID || !hasAccess) return
-    const q = query(collection(db, 'sales'), where('storeId', '==', STORE_ID))
-    return onSnapshot(q, snapshot => {
+    let cancelled = false
+
+    loadCachedSales<SaleRecord>(STORE_ID)
+      .then(cached => {
+        if (!cancelled && cached.length) {
+          setSales(cached)
+        }
+      })
+      .catch(error => {
+        console.warn('[dashboard] Failed to load cached sales', error)
+      })
+
+    const q = query(
+      collection(db, 'sales'),
+      where('storeId', '==', STORE_ID),
+      orderBy('createdAt', 'desc'),
+      limit(SALES_CACHE_LIMIT),
+    )
+
+    const unsubscribe = onSnapshot(q, snapshot => {
       const rows: SaleRecord[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         ...(docSnap.data() as Omit<SaleRecord, 'id'>),
       }))
       setSales(rows)
+      saveCachedSales(STORE_ID, rows).catch(error => {
+        console.warn('[dashboard] Failed to cache sales', error)
+      })
     })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [STORE_ID, hasAccess])
 
   useEffect(() => {
     if (!STORE_ID || !hasAccess) return
-    const q = query(collection(db, 'products'), where('storeId', '==', STORE_ID))
-    return onSnapshot(q, snapshot => {
+    let cancelled = false
+
+    loadCachedProducts<ProductRecord>(STORE_ID)
+      .then(cached => {
+        if (!cancelled && cached.length) {
+          setProducts(cached)
+        }
+      })
+      .catch(error => {
+        console.warn('[dashboard] Failed to load cached products', error)
+      })
+
+    const q = query(
+      collection(db, 'products'),
+      where('storeId', '==', STORE_ID),
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(PRODUCT_CACHE_LIMIT),
+    )
+
+    const unsubscribe = onSnapshot(q, snapshot => {
       const rows: ProductRecord[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         ...(docSnap.data() as Omit<ProductRecord, 'id'>),
       }))
       setProducts(rows)
+      saveCachedProducts(STORE_ID, rows).catch(error => {
+        console.warn('[dashboard] Failed to cache products', error)
+      })
     })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [STORE_ID, hasAccess])
 
   useEffect(() => {
     if (!STORE_ID || !hasAccess) return
-    const q = query(collection(db, 'customers'), where('storeId', '==', STORE_ID))
-    return onSnapshot(q, snapshot => {
+    let cancelled = false
+
+    loadCachedCustomers<CustomerRecord>(STORE_ID)
+      .then(cached => {
+        if (!cancelled && cached.length) {
+          setCustomers(cached)
+        }
+      })
+      .catch(error => {
+        console.warn('[dashboard] Failed to load cached customers', error)
+      })
+
+    const q = query(
+      collection(db, 'customers'),
+      where('storeId', '==', STORE_ID),
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(CUSTOMER_CACHE_LIMIT),
+    )
+
+    const unsubscribe = onSnapshot(q, snapshot => {
       const rows: CustomerRecord[] = snapshot.docs.map(docSnap => ({
         id: docSnap.id,
         ...(docSnap.data() as Omit<CustomerRecord, 'id'>),
       }))
       setCustomers(rows)
+      saveCachedCustomers(STORE_ID, rows).catch(error => {
+        console.warn('[dashboard] Failed to cache customers', error)
+      })
     })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [STORE_ID, hasAccess])
 
   useEffect(() => {
