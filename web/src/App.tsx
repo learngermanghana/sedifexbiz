@@ -233,6 +233,44 @@ export default function App() {
             </div>
           </aside>
         </div>
+
+        <section className="app__info-grid" aria-label="Sedifex company information">
+          <article className="info-card">
+            <h3>About Sedifex</h3>
+            <p>
+              We&apos;ll soon share the story behind Sedifex, the retailers we empower, and the
+              product principles that guide our platform.
+            </p>
+            <footer>
+              <span className="info-card__placeholder">Team bio and product timeline coming soon.</span>
+            </footer>
+          </article>
+
+          <article className="info-card">
+            <h3>Our Mission</h3>
+            <p>
+              This space will outline our mission, vision, and the values that keep every
+              inventory count accurate and every sales floor connected.
+            </p>
+            <ul className="info-card__list">
+              <li>Mission statement</li>
+              <li>Core values</li>
+              <li>Customer promises</li>
+            </ul>
+          </article>
+
+          <article className="info-card">
+            <h3>Contact Sales</h3>
+            <p>
+              Ready to see Sedifex in action? We&apos;ll add direct ways to reach our sales team
+              for demos, pricing, and onboarding support.
+            </p>
+            <button type="button" className="info-card__cta" disabled>
+              Contact our sales team
+            </button>
+            <span className="info-card__placeholder">Live chat and calendar booking coming soon.</span>
+          </article>
+        </section>
       </main>
     )
   }
