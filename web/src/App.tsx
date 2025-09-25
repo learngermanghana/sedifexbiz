@@ -6,7 +6,7 @@ import {
   signInWithEmailAndPassword,
 } from 'firebase/auth'
 import { FirebaseError } from 'firebase/app'
-import { Outlet } from 'react-router-dom'
+import { Link, Outlet } from 'react-router-dom'
 import { auth } from './firebase'
 import './App.css'
 import './pwa'
@@ -228,8 +228,21 @@ export default function App() {
               <span className="app__visual-pill">Operations snapshot</span>
               <h2>Stay synced from the floor to finance</h2>
               <p>
-                Live sales, inventory alerts, and smart counts help your whole team stay aligned
-                from any device.
+                <Link className="app__visual-link" to="/sell">
+                  Live sales
+                </Link>
+                ,
+                {' '}
+                <Link className="app__visual-link" to="/products">
+                  inventory alerts
+                </Link>
+                , and
+                {' '}
+                <Link className="app__visual-link" to="/close-day">
+                  smart counts
+                </Link>
+                {' '}
+                help your whole team stay aligned from any device.
               </p>
             </div>
           </aside>
