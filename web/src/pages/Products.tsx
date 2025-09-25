@@ -338,13 +338,27 @@ export default function Products() {
   }, [items, searchTerm, stockFilter])
 
   const exportFile = useCallback((content: BlobPart, type: string, filename: string) => {
+    if (typeof window === 'undefined') return
+
     const blob = new Blob([content], { type })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
     link.download = filename
+    link.rel = 'noopener'
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(url)
+
+    const revoke = () => {
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    }
+
+    if ('requestAnimationFrame' in window) {
+      window.requestAnimationFrame(revoke)
+    } else {
+      setTimeout(revoke, 0)
+    }
   }, [])
 
   const handleDownloadCsv = useCallback(() => {
