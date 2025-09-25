@@ -4,7 +4,7 @@ import {
   doc, updateDoc, deleteDoc, deleteField
 } from 'firebase/firestore'
 import { db } from '../firebase'
-import { useAuthUser } from '../hooks/useAuthUser'
+import { useActiveStore } from '../hooks/useActiveStore'
 import './Products.css'
 
 type Product = {
@@ -89,8 +89,7 @@ function buildSimplePdf(title: string, lines: string[]): Uint8Array {
 }
 
 export default function Products() {
-  const user = useAuthUser()
-  const STORE_ID = useMemo(() => user?.uid || null, [user?.uid])
+  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
 
   const [items, setItems] = useState<Product[]>([])
   const [name, setName] = useState('')
@@ -108,12 +107,35 @@ export default function Products() {
   const [stockFilter, setStockFilter] = useState<'all' | 'in-stock' | 'low-stock' | 'out-of-stock'>('all')
   const [shareFeedback, setShareFeedback] = useState<string | null>(null)
 
+  const [formFeedback, setFormFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
+  const feedbackTimeoutRef = useRef<number | null>(null)
+
   // NEW: page-level busy flag to control any dimming only during real work
   const [busy, setBusy] = useState(false)
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const frameRef = useRef<number>()
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimeoutRef.current) {
+        window.clearTimeout(feedbackTimeoutRef.current)
+        feedbackTimeoutRef.current = null
+      }
+    }
+  }, [])
+
+  function showFormFeedback(tone: 'success' | 'error', message: string) {
+    setFormFeedback({ tone, message })
+    if (feedbackTimeoutRef.current) {
+      window.clearTimeout(feedbackTimeoutRef.current)
+    }
+    feedbackTimeoutRef.current = window.setTimeout(() => {
+      setFormFeedback(null)
+      feedbackTimeoutRef.current = null
+    }, 4000)
+  }
 
   useEffect(() => {
     if (!STORE_ID) return
@@ -147,6 +169,10 @@ export default function Products() {
       setName('')
       setPrice('')
       setBarcode('')
+      showFormFeedback('success', 'Product saved successfully.')
+    } catch (error) {
+      console.error('[products] Failed to add product', error)
+      showFormFeedback('error', 'Unable to add product. Please try again.')
     } finally {
       setBusy(false)
     }
@@ -173,6 +199,10 @@ export default function Products() {
       }
       await updateDoc(doc(db, 'products', id), payload)
       setEditing(null)
+      showFormFeedback('success', 'Changes saved.')
+    } catch (error) {
+      console.error('[products] Failed to update product', error)
+      showFormFeedback('error', 'Unable to save changes. Please try again.')
     } finally {
       setBusy(false)
     }
@@ -182,12 +212,22 @@ export default function Products() {
     setBusy(true)
     try {
       await deleteDoc(doc(db, 'products', id))
+      showFormFeedback('success', 'Product removed.')
+      if (editing === id) {
+        setEditing(null)
+      }
+    } catch (error) {
+      console.error('[products] Failed to delete product', error)
+      showFormFeedback('error', 'Unable to delete product. Please try again.')
     } finally {
       setBusy(false)
     }
   }
 
-  if (!STORE_ID) return <div>Loading…</div>
+  if (storeLoading) return <div>Loading…</div>
+  if (!STORE_ID) {
+    return <div>We were unable to determine your store access. Please sign out and back in.</div>
+  }
 
   function stockStatus(item: Product) {
     const stock = item.stockCount ?? 0
@@ -498,6 +538,20 @@ export default function Products() {
             <button type="submit" className="button button--primary" disabled={busy}>Add product</button>
           </div>
         </form>
+        {formFeedback && (
+          <p
+            className={`products__form-feedback products__form-feedback--${formFeedback.tone}`}
+            role={formFeedback.tone === 'error' ? 'alert' : 'status'}
+            aria-live={formFeedback.tone === 'error' ? 'assertive' : 'polite'}
+          >
+            {formFeedback.message}
+          </p>
+        )}
+        {storeError && (
+          <p className="products__form-feedback products__form-feedback--error" role="alert">
+            {storeError}
+          </p>
+        )}
       </section>
 
       <section className="card products__controls">

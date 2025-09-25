@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, where } from 'firebase/firestore'
 import { Timestamp } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
-import { useAuthUser } from '../hooks/useAuthUser'
+import { useActiveStore } from '../hooks/useActiveStore'
 import './Customers.css'
 
 type Customer = {
@@ -16,8 +16,7 @@ type Customer = {
 }
 
 export default function Customers() {
-  const user = useAuthUser()
-  const STORE_ID = useMemo(() => user?.uid || null, [user?.uid])
+  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [name, setName] = useState('')
@@ -26,6 +25,28 @@ export default function Customers() {
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
+  const messageTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (messageTimeoutRef.current) {
+        window.clearTimeout(messageTimeoutRef.current)
+        messageTimeoutRef.current = null
+      }
+    }
+  }, [])
+
+  function showSuccess(message: string) {
+    setSuccess(message)
+    if (messageTimeoutRef.current) {
+      window.clearTimeout(messageTimeoutRef.current)
+    }
+    messageTimeoutRef.current = window.setTimeout(() => {
+      setSuccess(null)
+      messageTimeoutRef.current = null
+    }, 4000)
+  }
 
   useEffect(() => {
     if (!STORE_ID) return
@@ -69,9 +90,11 @@ export default function Customers() {
       setPhone('')
       setEmail('')
       setNotes('')
+      showSuccess('Customer saved successfully.')
     } catch (err) {
       console.error('[customers] Unable to save customer', err)
       setError('We could not save this customer. Please try again.')
+      setSuccess(null)
     } finally {
       setBusy(false)
     }
@@ -84,16 +107,22 @@ export default function Customers() {
     setBusy(true)
     try {
       await deleteDoc(doc(db, 'customers', id))
+      showSuccess('Customer removed.')
     } catch (err) {
       console.error('[customers] Unable to delete customer', err)
       setError('Unable to delete this customer right now.')
+      setSuccess(null)
     } finally {
       setBusy(false)
     }
   }
 
-  if (!STORE_ID) {
+  if (storeLoading) {
     return <div>Loading…</div>
+  }
+
+  if (!STORE_ID) {
+    return <div>We were unable to determine your store access. Please sign out and back in.</div>
   }
 
   return (
@@ -167,6 +196,12 @@ export default function Customers() {
             </div>
 
             {error && <p className="customers-page__message customers-page__message--error">{error}</p>}
+            {success && !error && (
+              <p className="customers-page__message customers-page__message--success" role="status">{success}</p>
+            )}
+            {storeError && (
+              <p className="customers-page__message customers-page__message--error" role="alert">{storeError}</p>
+            )}
 
             <button type="submit" className="button button--primary" disabled={busy}>
               Save customer
