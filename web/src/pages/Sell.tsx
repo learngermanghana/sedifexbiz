@@ -10,7 +10,8 @@ import {
   addDoc,
   serverTimestamp,
 } from 'firebase/firestore'
-import { db, auth } from '../firebase'
+import { db } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 import './Sell.css'
 import { Link } from 'react-router-dom'
 
@@ -35,7 +36,7 @@ type ReceiptData = {
 }
 
 export default function Sell() {
-  const user = auth.currentUser
+  const user = useAuthUser()
   const STORE_ID = useMemo(() => user?.uid || null, [user?.uid])
 
   const [products, setProducts] = useState<Product[]>([])

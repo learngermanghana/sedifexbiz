@@ -1,7 +1,7 @@
 import React from 'react'
-import { auth } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 export default function Settings() {
-  const user = auth.currentUser
+  const user = useAuthUser()
   return (
     <div>
       <h2 style={{color:'#4338CA'}}>Settings</h2>

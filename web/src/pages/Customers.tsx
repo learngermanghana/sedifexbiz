@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, where } from 'firebase/firestore'
 import { Timestamp } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
-import { auth, db } from '../firebase'
+import { db } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 import './Customers.css'
 
 type Customer = {
@@ -15,7 +16,7 @@ type Customer = {
 }
 
 export default function Customers() {
-  const user = auth.currentUser
+  const user = useAuthUser()
   const STORE_ID = useMemo(() => user?.uid || null, [user?.uid])
 
   const [customers, setCustomers] = useState<Customer[]>([])

@@ -3,7 +3,8 @@ import {
   collection, addDoc, onSnapshot, query, where, orderBy,
   doc, updateDoc, deleteDoc, deleteField
 } from 'firebase/firestore'
-import { db, auth } from '../firebase'
+import { db } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 import './Products.css'
 
 type Product = {
@@ -88,7 +89,7 @@ function buildSimplePdf(title: string, lines: string[]): Uint8Array {
 }
 
 export default function Products() {
-  const user = auth.currentUser
+  const user = useAuthUser()
   const STORE_ID = useMemo(() => user?.uid || null, [user?.uid])
 
   const [items, setItems] = useState<Product[]>([])

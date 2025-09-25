@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore'
-import { db, auth } from '../firebase'
+import { db } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 import './Receive.css'
 
 type Product = { id: string; name: string; stockCount?: number; storeId: string }
 
 export default function Receive() {
-  const user = auth.currentUser
+  const user = useAuthUser()
   const STORE_ID = useMemo(() => user?.uid || null, [user?.uid])
 
   const [products, setProducts] = useState<Product[]>([])
