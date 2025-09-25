@@ -140,3 +140,28 @@
 .shell table {
   width: 100%;
 }
+
+.shell__offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px clamp(18px, 4vw, 48px);
+  background: #fef3c7;
+  color: #92400e;
+  border-bottom: 1px solid rgba(234, 179, 8, 0.3);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.shell__offline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f97316;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.2);
+}
+
+.shell__offline-text {
+  flex: 1;
+}

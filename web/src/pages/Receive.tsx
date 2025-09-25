@@ -1,11 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore'
+import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Receive.css'
+import { queueCallableRequest } from '../utils/offlineQueue'
 
 type Product = { id: string; name: string; stockCount?: number; storeId: string }
+
+function isOfflineError(error: unknown) {
+  if (!navigator.onLine) return true
+  if (error instanceof FirebaseError) {
+    return error.code === 'unavailable' || error.code === 'internal'
+  }
+  if (error instanceof TypeError) {
+    const message = error.message.toLowerCase()
+    return message.includes('network') || message.includes('fetch')
+  }
+  return false
+}
 
 export default function Receive() {
   const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
@@ -76,15 +90,17 @@ export default function Receive() {
       return
     }
     setBusy(true)
+    const payload = {
+      storeId: STORE_ID,
+      productId: selected,
+      qty: amount,
+      supplier: supplierName,
+      reference: referenceNumber,
+      unitCost: parsedCost,
+    }
+
     try {
-      await receiveStock({
-        storeId: STORE_ID,
-        productId: selected,
-        qty: amount,
-        supplier: supplierName,
-        reference: referenceNumber,
-        unitCost: parsedCost
-      })
+      await receiveStock(payload)
       setQty('')
       setSupplier('')
       setReference('')
@@ -92,6 +108,17 @@ export default function Receive() {
       showStatus('success', 'Stock received successfully.')
     } catch (error) {
       console.error('[receive] Failed to update stock', error)
+      if (isOfflineError(error)) {
+        const queued = await queueCallableRequest('receiveStock', payload, 'receipt')
+        if (queued) {
+          setQty('')
+          setSupplier('')
+          setReference('')
+          setUnitCost('')
+          showStatus('success', 'Offline — receipt saved and will sync when you reconnect.')
+          return
+        }
+      }
       showStatus('error', 'Unable to record stock receipt. Please try again.')
     } finally {
       setBusy(false)
