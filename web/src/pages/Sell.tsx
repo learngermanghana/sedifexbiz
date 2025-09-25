@@ -7,12 +7,14 @@ import {
   onSnapshot,
   doc,
 } from 'firebase/firestore'
+import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions as cloudFunctions } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'
 import { Link } from 'react-router-dom'
+import { queueCallableRequest } from '../utils/offlineQueue'
 
 type Product = { id: string; name: string; price: number; stockCount?: number; storeId: string }
 type CartLine = { productId: string; name: string; price: number; qty: number }
@@ -66,6 +68,18 @@ type CommitSalePayload = {
 type CommitSaleResponse = {
   ok: boolean
   saleId: string
+}
+
+function isOfflineError(error: unknown) {
+  if (!navigator.onLine) return true
+  if (error instanceof FirebaseError) {
+    return error.code === 'unavailable' || error.code === 'internal'
+  }
+  if (error instanceof TypeError) {
+    const message = error.message.toLowerCase()
+    return message.includes('network') || message.includes('fetch')
+  }
+  return false
 }
 
 export default function Sell() {
@@ -183,46 +197,47 @@ export default function Sell() {
     setSaleSuccess(null)
     setReceipt(null)
     setIsRecording(true)
-    try {
-      const saleId = doc(collection(db, 'sales')).id
-      const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
-      const payload: CommitSalePayload = {
-        storeId: STORE_ID,
-        branchId: null,
-        saleId,
-        cashierId: user.uid,
-        totals: {
-          total: subtotal,
-          taxTotal: 0,
-        },
-        payment: {
-          method: paymentMethod,
-          amountPaid,
-          changeDue,
-        },
-        items: cart.map(line => ({
-          productId: line.productId,
-          name: line.name,
-          price: line.price,
-          qty: line.qty,
-          taxRate: 0,
-        })),
+    const saleId = doc(collection(db, 'sales')).id
+    const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
+    const payload: CommitSalePayload = {
+      storeId: STORE_ID,
+      branchId: null,
+      saleId,
+      cashierId: user.uid,
+      totals: {
+        total: subtotal,
+        taxTotal: 0,
+      },
+      payment: {
+        method: paymentMethod,
+        amountPaid,
+        changeDue,
+      },
+      items: cart.map(line => ({
+        productId: line.productId,
+        name: line.name,
+        price: line.price,
+        qty: line.qty,
+        taxRate: 0,
+      })),
+    }
+    if (selectedCustomer) {
+      payload.customer = {
+        id: selectedCustomer.id,
+        name: selectedCustomer.name,
+        ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
+        ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
       }
-      if (selectedCustomer) {
-        payload.customer = {
-          id: selectedCustomer.id,
-          name: selectedCustomer.name,
-          ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
-          ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
-        }
-      }
+    }
 
+    const receiptItems = cart.map(line => ({ ...line }))
+
+    try {
       const { data } = await commitSale(payload)
       if (!data?.ok) {
         throw new Error('Sale was not recorded')
       }
 
-      const receiptItems = cart.map(line => ({ ...line }))
       setReceipt({
         saleId: data.saleId,
         createdAt: new Date(),
@@ -247,6 +262,34 @@ export default function Sell() {
       setSaleSuccess(`Sale recorded #${data.saleId}. Receipt sent to printer.`)
     } catch (err) {
       console.error('[sell] Unable to record sale', err)
+      if (isOfflineError(err)) {
+        const queued = await queueCallableRequest('commitSale', payload, 'sale')
+        if (queued) {
+          setReceipt({
+            saleId,
+            createdAt: new Date(),
+            items: receiptItems,
+            subtotal,
+            payment: {
+              method: paymentMethod,
+              amountPaid,
+              changeDue,
+            },
+            customer: selectedCustomer
+              ? {
+                  name: selectedCustomer.name,
+                  phone: selectedCustomer.phone,
+                  email: selectedCustomer.email,
+                }
+              : undefined,
+          })
+          setCart([])
+          setSelectedCustomerId('')
+          setAmountTendered('')
+          setSaleSuccess(`Sale queued offline #${saleId}. We'll sync it once you're back online.`)
+          return
+        }
+      }
       const message = err instanceof Error ? err.message : null
       setSaleError(message && message !== 'Sale was not recorded'
         ? message

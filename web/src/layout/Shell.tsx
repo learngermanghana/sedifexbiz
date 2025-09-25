@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
@@ -23,6 +23,21 @@ function navLinkClass(isActive: boolean) {
 export default function Shell({ children }: { children: React.ReactNode }) {
   const user = useAuthUser()
   const userEmail = user?.email ?? 'Account'
+  const [isOffline, setIsOffline] = useState(!navigator.onLine)
+
+  useEffect(() => {
+    function handleNetworkChange() {
+      setIsOffline(!navigator.onLine)
+    }
+
+    window.addEventListener('online', handleNetworkChange)
+    window.addEventListener('offline', handleNetworkChange)
+
+    return () => {
+      window.removeEventListener('online', handleNetworkChange)
+      window.removeEventListener('offline', handleNetworkChange)
+    }
+  }, [])
 
   return (
     <div className="shell">
@@ -58,6 +73,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
+
+      {isOffline && (
+        <div className="shell__offline-banner" role="status" aria-live="polite">
+          <span className="shell__offline-dot" aria-hidden="true" />
+          <span className="shell__offline-text">You’re offline. We’ll sync pending work when the connection returns.</span>
+        </div>
+      )}
 
       <main className="shell__main">{children}</main>
     </div>
