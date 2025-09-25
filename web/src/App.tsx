@@ -29,27 +29,8 @@ interface StatusState {
 
 type QueueRequestType = 'sale' | 'receipt'
 
-type QueueCompletionMessage = {
-  type: 'QUEUE_REQUEST_COMPLETED'
-  requestType?: unknown
-}
-
-type QueueFailureMessage = {
-  type: 'QUEUE_REQUEST_FAILED'
-  requestType?: unknown
-  error?: unknown
-}
-
-type ServiceWorkerMessage = QueueCompletionMessage | QueueFailureMessage | MessageEvent['data']
-
 function isQueueRequestType(value: unknown): value is QueueRequestType {
   return value === 'sale' || value === 'receipt'
-}
-
-function getQueueRequestLabel(requestType: QueueRequestType | null) {
-  if (requestType === 'sale') return 'sale'
-  if (requestType === 'receipt') return 'receipt'
-  return 'request'
 }
 
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
@@ -155,13 +136,10 @@ function isQueueFailedMessage(value: unknown): value is QueueFailedMessage {
 }
 
 function getQueueRequestLabel(requestType: unknown): string {
-  if (requestType === 'sale') {
-    return 'sale'
+  if (!isQueueRequestType(requestType)) {
+    return 'request'
   }
-  if (requestType === 'receipt') {
-    return 'stock receipt'
-  }
-  return 'request'
+  return requestType === 'receipt' ? 'stock receipt' : 'sale'
 }
 
 function normalizeQueueError(value: unknown): string | null {
