@@ -5,8 +5,10 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { useAuthUser } from '../hooks/useAuthUser'
 import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
+import { ActivityAction, recordActivity } from '../utils/activityLogger'
 import './Products.css'
 
 type Product = {
@@ -217,6 +219,7 @@ function ScannerModal({ mode, onValue, onClose }: ScannerProps) {
 export default function Products() {
   // Keep all hooks *unconditional* and *top-level*
   const { storeId: STORE_ID, role, isLoading: storeLoading, error: storeError } = useActiveStore()
+  const user = useAuthUser()
 
   const [items, setItems] = useState<Product[]>([])
   const [name, setName] = useState('')
@@ -236,6 +239,23 @@ export default function Products() {
   const [stockFilter, setStockFilter] = useState<'all' | 'in-stock' | 'low-stock' | 'out-of-stock'>('all')
 
   const hasAccess = canAccessFeature(role, 'products')
+
+  const logProductActivity = useCallback(
+    (productId: string, action: ActivityAction) => {
+      if (!STORE_ID || !user?.uid) return
+      recordActivity({
+        storeId: STORE_ID,
+        entity: 'product',
+        entityId: productId,
+        action,
+        actorId: user.uid,
+        actorEmail: user.email ?? undefined,
+      }).catch(error => {
+        console.warn('[products] Failed to record activity', error)
+      })
+    },
+    [STORE_ID, user]
+  )
 
   // cleanup for transient UI feedback timers
   useEffect(() => {
@@ -322,6 +342,7 @@ export default function Products() {
         barcode: trimmed ? trimmed : deleteField(),
       }
       await updateDoc(doc(db, 'products', id), payload)
+      logProductActivity(id, 'update')
       setEditing(null)
       showFormFeedback('success', 'Changes saved.')
     } catch (error) {
@@ -336,6 +357,7 @@ export default function Products() {
     setBusy(true)
     try {
       await deleteDoc(doc(db, 'products', id))
+      logProductActivity(id, 'delete')
       showFormFeedback('success', 'Product removed.')
       if (editing === id) setEditing(null)
     } catch (error) {

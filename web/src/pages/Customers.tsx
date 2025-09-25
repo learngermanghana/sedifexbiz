@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc,
   collection,
@@ -15,9 +15,11 @@ import { Timestamp } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { useAuthUser } from '../hooks/useAuthUser'
 import './Customers.css'
 import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
+import { ActivityAction, recordActivity } from '../utils/activityLogger'
 
 type Customer = {
   id: string
@@ -126,6 +128,7 @@ function buildCsvValue(value: string): string {
 
 export default function Customers() {
   const { storeId: STORE_ID, role, isLoading: storeLoading, error: storeError } = useActiveStore()
+  const user = useAuthUser()
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [name, setName] = useState('')
@@ -147,6 +150,23 @@ export default function Customers() {
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [quickFilter, setQuickFilter] = useState<'all' | 'recent' | 'noPurchases' | 'highValue' | 'untagged'>('all')
   const hasAccess = canAccessFeature(role, 'customers')
+
+  const logCustomerActivity = useCallback(
+    (customerId: string, action: ActivityAction) => {
+      if (!STORE_ID || !user?.uid) return
+      recordActivity({
+        storeId: STORE_ID,
+        entity: 'customer',
+        entityId: customerId,
+        action,
+        actorId: user.uid,
+        actorEmail: user.email ?? undefined,
+      }).catch(error => {
+        console.warn('[customers] Failed to record activity', error)
+      })
+    },
+    [STORE_ID, user]
+  )
 
   useEffect(() => {
     return () => {
@@ -354,6 +374,7 @@ export default function Customers() {
         updatePayload.notes = notes.trim() ? notes.trim() : null
         updatePayload.tags = parsedTags
         await updateDoc(doc(db, 'customers', editingCustomerId), updatePayload)
+        logCustomerActivity(editingCustomerId, 'update')
         setSelectedCustomerId(editingCustomerId)
         showSuccess('Customer updated successfully.')
       } else {
@@ -385,6 +406,7 @@ export default function Customers() {
     setBusy(true)
     try {
       await deleteDoc(doc(db, 'customers', id))
+      logCustomerActivity(id, 'delete')
       showSuccess('Customer removed.')
       if (selectedCustomerId === id) {
         setSelectedCustomerId(null)
@@ -476,6 +498,7 @@ export default function Customers() {
             payload.tags = parsedTags
           }
           await updateDoc(doc(db, 'customers', existingId), payload)
+          logCustomerActivity(existingId, 'update')
           updatedCount += 1
         } else {
           const payload: Record<string, unknown> = {

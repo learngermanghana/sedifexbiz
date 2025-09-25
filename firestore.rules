@@ -61,5 +61,11 @@ service cloud.firestore {
       allow read, create: if hasRole(request.resource.data.storeId, ['owner','manager']);
       allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']);
     }
+
+    match /activities/{id} {
+      allow read: if inStore(resource.data.storeId);
+      allow create: if inStore(request.resource.data.storeId);
+      allow update, delete: if false;
+    }
   }
 }
