@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  collection, addDoc, onSnapshot, query, where, orderBy, limit,
-  doc, updateDoc, deleteDoc, deleteField
+  collection, onSnapshot, query, where, orderBy, limit,
+  doc, deleteDoc, deleteField, runTransaction
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
@@ -310,22 +310,42 @@ export default function Products() {
     setBusy(true)
     try {
       const trimmedBarcode = barcode.trim()
+      const timestamp = Date.now()
       const newProduct: Omit<Product, 'id'> = {
         storeId: STORE_ID,
         name,
         price: Number(price),
         stockCount: 0,
-        updatedAt: Date.now(),
+        updatedAt: timestamp,
         ...(trimmedBarcode ? { barcode: trimmedBarcode } : {})
       }
-      await addDoc(collection(db, 'products'), newProduct)
+      const productRef = doc(collection(db, 'products'))
+      await runTransaction(db, async tx => {
+        if (trimmedBarcode) {
+          const barcodeRef = doc(db, 'barcodes', `${STORE_ID}:${trimmedBarcode}`)
+          const barcodeSnap = await tx.get(barcodeRef)
+          if (barcodeSnap.exists()) {
+            throw new Error('barcode-conflict')
+          }
+          tx.set(barcodeRef, {
+            productId: productRef.id,
+            storeId: STORE_ID,
+            updatedAt: timestamp,
+          })
+        }
+        tx.set(productRef, { ...newProduct, createdAt: timestamp })
+      })
       setName('')
       setPrice('')
       setBarcode('')
       showFormFeedback('success', 'Product saved successfully.')
     } catch (error) {
       console.error('[products] Failed to add product', error)
-      showFormFeedback('error', 'Unable to add product. Please try again.')
+      if (error instanceof Error && error.message === 'barcode-conflict') {
+        showFormFeedback('error', 'That barcode is already assigned to another product.')
+      } else {
+        showFormFeedback('error', 'Unable to add product. Please try again.')
+      }
     } finally {
       setBusy(false)
     }
@@ -343,19 +363,56 @@ export default function Products() {
     setBusy(true)
     try {
       const trimmed = editBarcode.trim()
-      const payload: Record<string, unknown> = {
-        name: editName,
-        price: Number(editPrice),
-        stockCount: Number(editStock),
-        updatedAt: Date.now(),
-        barcode: trimmed ? trimmed : deleteField(),
-      }
-      await updateDoc(doc(db, 'products', id), payload)
+      const productRef = doc(db, 'products', id)
+      const timestamp = Date.now()
+      await runTransaction(db, async tx => {
+        const productSnap = await tx.get(productRef)
+        if (!productSnap.exists()) {
+          throw new Error('missing-product')
+        }
+        const currentData = productSnap.data() as Product
+        const currentBarcode = currentData.barcode?.trim() ?? ''
+
+        if (currentBarcode && currentBarcode !== trimmed) {
+          const oldRef = doc(db, 'barcodes', `${STORE_ID}:${currentBarcode}`)
+          tx.delete(oldRef)
+        }
+
+        if (trimmed) {
+          const newRef = doc(db, 'barcodes', `${STORE_ID}:${trimmed}`)
+          const existingSnap = await tx.get(newRef)
+          if (existingSnap.exists()) {
+            const data = existingSnap.data() as { productId?: string }
+            if (data.productId && data.productId !== id) {
+              throw new Error('barcode-conflict')
+            }
+          }
+          tx.set(newRef, {
+            productId: id,
+            storeId: STORE_ID,
+            updatedAt: timestamp,
+          })
+        }
+
+        const payload: Record<string, unknown> = {
+          name: editName,
+          price: Number(editPrice),
+          stockCount: Number(editStock),
+          updatedAt: timestamp,
+          ...(trimmed ? { barcode: trimmed } : { barcode: deleteField() }),
+        }
+
+        tx.update(productRef, payload)
+      })
       setEditing(null)
       showFormFeedback('success', 'Changes saved.')
     } catch (error) {
       console.error('[products] Failed to update product', error)
-      showFormFeedback('error', 'Unable to save changes. Please try again.')
+      if (error instanceof Error && error.message === 'barcode-conflict') {
+        showFormFeedback('error', 'That barcode is already assigned to another product.')
+      } else {
+        showFormFeedback('error', 'Unable to save changes. Please try again.')
+      }
     } finally {
       setBusy(false)
     }
