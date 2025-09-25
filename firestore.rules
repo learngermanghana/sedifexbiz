@@ -14,10 +14,35 @@ service cloud.firestore {
     }
 
     match /products/{id} {
+      function newProductPrice() {
+        return request.resource.data.keys().hasAny(['price'])
+               ? request.resource.data.price
+               : resource.data.price;
+      }
+
+      function newProductHasStockCount() {
+        return request.resource.data.keys().hasAny(['stockCount'])
+               || resource.data.keys().hasAny(['stockCount']);
+      }
+
+      function newProductStockCount() {
+        return request.resource.data.keys().hasAny(['stockCount'])
+               ? request.resource.data.stockCount
+               : resource.data.stockCount;
+      }
+
       allow read: if inStore(resource.data.storeId);
-      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
+      allow create: if hasRole(request.resource.data.storeId, ['owner','manager'])
+                    && request.resource.data.price is number
+                    && (!request.resource.data.keys().hasAny(['stockCount'])
+                        || (request.resource.data.stockCount is number
+                            && request.resource.data.stockCount >= 0));
       allow update: if hasRole(resource.data.storeId, ['owner','manager'])
-                     && request.resource.data.storeId == resource.data.storeId;
+                     && request.resource.data.storeId == resource.data.storeId
+                     && newProductPrice() is number
+                     && (!newProductHasStockCount()
+                         || (newProductStockCount() is number
+                             && newProductStockCount() >= 0));
       allow delete: if hasRole(resource.data.storeId, ['owner']);
     }
 
