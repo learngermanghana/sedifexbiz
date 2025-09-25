@@ -93,11 +93,14 @@ describe('Sell page', () => {
       uid: 'cashier-123',
       email: 'cashier@example.com',
     })
+    const selectStoreMock = vi.fn()
     mockUseActiveStore.mockReturnValue({
       storeId: 'store-1',
       role: 'cashier',
+      stores: ['store-1'],
       isLoading: false,
       error: null,
+      selectStore: selectStoreMock,
     })
     mockCommitSale.mockResolvedValue({
       data: {
