@@ -27,6 +27,31 @@ interface StatusState {
   message: string
 }
 
+type QueueRequestType = 'sale' | 'receipt'
+
+type QueueCompletionMessage = {
+  type: 'QUEUE_REQUEST_COMPLETED'
+  requestType?: unknown
+}
+
+type QueueFailureMessage = {
+  type: 'QUEUE_REQUEST_FAILED'
+  requestType?: unknown
+  error?: unknown
+}
+
+type ServiceWorkerMessage = QueueCompletionMessage | QueueFailureMessage | MessageEvent['data']
+
+function isQueueRequestType(value: unknown): value is QueueRequestType {
+  return value === 'sale' || value === 'receipt'
+}
+
+function getQueueRequestLabel(requestType: QueueRequestType | null) {
+  if (requestType === 'sale') return 'sale'
+  if (requestType === 'receipt') return 'receipt'
+  return 'request'
+}
+
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
@@ -105,6 +130,7 @@ function getSignupValidationError(
   return null
 }
 
+
 type QueueCompletedMessage = {
   type: 'QUEUE_REQUEST_COMPLETED'
   requestType?: unknown
@@ -146,6 +172,7 @@ function normalizeQueueError(value: unknown): string | null {
     }
   }
   return null
+
 }
 
 export default function App() {
@@ -213,6 +240,7 @@ export default function App() {
     }
 
     const handleMessage = (event: MessageEvent) => {
+
       const data = event.data
       if (!data || typeof data !== 'object') {
         return
@@ -236,6 +264,7 @@ export default function App() {
             : `We couldn't sync the queued ${label}. Please try again.`,
           tone: 'error',
           duration: 8000,
+
         })
       }
     }
