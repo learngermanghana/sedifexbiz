@@ -2,6 +2,12 @@
   position: relative;
 }
 
+/* ensure table renders crisp by default on this page */
+.products-page .table { opacity: 1; filter: none; transition: opacity 160ms ease; }
+
+/* only dim during real operations on this page (when aria-busy is true) */
+.products-page[aria-busy="true"] .table { opacity: .45; pointer-events: none; }
+
 .products__form-card {
   position: relative;
 }
