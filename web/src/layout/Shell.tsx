@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: '/products', label: 'Products' },
   { to: '/sell', label: 'Sell' },
   { to: '/receive', label: 'Receive' },
+  { to: '/customers', label: 'Customers' },
   { to: '/close-day', label: 'Close Day' },
   { to: '/settings', label: 'Settings' }
 ]
