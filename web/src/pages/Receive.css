@@ -23,6 +23,19 @@
   justify-content: flex-start;
 }
 
+.receive-page__message {
+  margin: 0;
+  font-size: 14px;
+}
+
+.receive-page__message--success {
+  color: #047857;
+}
+
+.receive-page__message--error {
+  color: #b91c1c;
+}
+
 @media (max-width: 640px) {
   .receive-page__form {
     grid-template-columns: minmax(0, 1fr);

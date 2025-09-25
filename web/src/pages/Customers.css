@@ -53,3 +53,7 @@
 .customers-page__message--error {
   color: #b91c1c;
 }
+
+.customers-page__message--success {
+  color: #047857;
+}

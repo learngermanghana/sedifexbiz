@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   collection,
   query,
@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
+import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'
 import { Link } from 'react-router-dom'
 
@@ -37,7 +38,7 @@ type ReceiptData = {
 
 export default function Sell() {
   const user = useAuthUser()
-  const STORE_ID = useMemo(() => user?.uid || null, [user?.uid])
+  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -169,7 +170,10 @@ export default function Sell() {
     }
   }
 
-  if (!STORE_ID) return <div>Loading…</div>
+  if (storeLoading) return <div>Loading…</div>
+  if (!STORE_ID) {
+    return <div>We were unable to determine your store access. Please sign out and back in.</div>
+  }
 
   const filtered = products.filter(p => p.name.toLowerCase().includes(queryText.toLowerCase()))
 
@@ -198,6 +202,10 @@ export default function Sell() {
           <p className="field__hint">Tip: start typing and tap a product to add it to the cart.</p>
         </div>
       </section>
+
+      {storeError && (
+        <p className="sell-page__message sell-page__message--error" role="alert">{storeError}</p>
+      )}
 
       <div className="sell-page__grid">
         <section className="card sell-page__catalog" aria-label="Product list">

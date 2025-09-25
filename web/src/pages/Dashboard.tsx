@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { collection, doc, onSnapshot, query, setDoc, where, type Timestamp } from 'firebase/firestore'
 import { db } from '../firebase'
+
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useToast } from '../components/ToastProvider'
+
 
 type InventorySeverity = 'warning' | 'info' | 'critical'
 
@@ -243,8 +245,7 @@ function parseDateInput(value: string) {
 }
 
 export default function Dashboard() {
-  const user = useAuthUser()
-  const STORE_ID = useMemo(() => user?.uid || null, [user?.uid])
+  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
 
   const [sales, setSales] = useState<SaleRecord[]>([])
   const [products, setProducts] = useState<ProductRecord[]>([])
@@ -704,13 +705,18 @@ export default function Dashboard() {
     },
   ]
 
-  if (!STORE_ID) {
+  if (storeLoading) {
     return <div>Loading…</div>
+  }
+
+  if (!STORE_ID) {
+    return <div>We were unable to determine your store access. Please sign out and back in.</div>
   }
 
   return (
     <div>
       <h2 style={{ color: '#4338CA', marginBottom: 8 }}>Dashboard</h2>
+      {storeError && <p style={{ color: '#b91c1c', marginBottom: 12 }}>{storeError}</p>}
       <p style={{ color: '#475569', marginBottom: 24 }}>
         Welcome back! Choose what you’d like to work on — the most important Sedifex pages are just one tap away.
       </p>
