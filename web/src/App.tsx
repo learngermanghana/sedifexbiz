@@ -105,6 +105,49 @@ function getSignupValidationError(
   return null
 }
 
+type QueueCompletedMessage = {
+  type: 'QUEUE_REQUEST_COMPLETED'
+  requestType?: unknown
+}
+
+type QueueFailedMessage = {
+  type: 'QUEUE_REQUEST_FAILED'
+  requestType?: unknown
+  error?: unknown
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isQueueCompletedMessage(value: unknown): value is QueueCompletedMessage {
+  return isRecord(value) && value.type === 'QUEUE_REQUEST_COMPLETED'
+}
+
+function isQueueFailedMessage(value: unknown): value is QueueFailedMessage {
+  return isRecord(value) && value.type === 'QUEUE_REQUEST_FAILED'
+}
+
+function getQueueRequestLabel(requestType: unknown): string {
+  if (requestType === 'sale') {
+    return 'sale'
+  }
+  if (requestType === 'receipt') {
+    return 'stock receipt'
+  }
+  return 'request'
+}
+
+function normalizeQueueError(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed.length > 0) {
+      return trimmed
+    }
+  }
+  return null
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
@@ -163,6 +206,46 @@ export default function App() {
     // Small UX touch: show the current auth mode in the tab title
     document.title = mode === 'login' ? 'Sedifex — Log in' : 'Sedifex — Sign up'
   }, [mode])
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) {
+      return
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data
+      if (!data || typeof data !== 'object') {
+        return
+      }
+
+      if (isQueueCompletedMessage(data)) {
+        const label = getQueueRequestLabel(data.requestType)
+        publish({
+          message: `Queued ${label} synced successfully.`,
+          tone: 'success',
+        })
+        return
+      }
+
+      if (isQueueFailedMessage(data)) {
+        const label = getQueueRequestLabel(data.requestType)
+        const detail = normalizeQueueError(data.error)
+        publish({
+          message: detail
+            ? `We couldn't sync the queued ${label}. ${detail}`
+            : `We couldn't sync the queued ${label}. Please try again.`,
+          tone: 'error',
+          duration: 8000,
+        })
+      }
+    }
+
+    navigator.serviceWorker.addEventListener('message', handleMessage)
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage)
+    }
+  }, [publish])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
