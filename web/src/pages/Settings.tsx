@@ -3,6 +3,8 @@ import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { AccessDenied } from '../components/AccessDenied'
+import { canAccessFeature } from '../utils/permissions'
 import './Settings.css'
 
 type TaxRate = {
@@ -128,6 +130,7 @@ function toStaffRoles(value: unknown): StaffRole[] {
 export default function Settings() {
   const user = useAuthUser()
   const { storeId: STORE_ID, role, isLoading: storeLoading, error: storeError } = useActiveStore()
+  const hasAccess = canAccessFeature(role, 'settings')
 
   const [settings, setSettings] = useState<StoreSettings>(() => createEmptySettings())
   const [settingsLoading, setSettingsLoading] = useState(false)
@@ -158,9 +161,9 @@ export default function Settings() {
   const [roleSuccessMessage, setRoleSuccessMessage] = useState<string | null>(null)
 
   const settingsRef = useMemo(() => {
-    if (!STORE_ID) return null
+    if (!STORE_ID || !hasAccess) return null
     return doc(db, 'storeSettings', STORE_ID)
-  }, [STORE_ID])
+  }, [STORE_ID, hasAccess])
 
   useEffect(() => {
     if (!settingsRef) {
@@ -446,6 +449,10 @@ export default function Settings() {
     } finally {
       setRoleBusy(false)
     }
+  }
+
+  if (!storeLoading && !hasAccess) {
+    return <AccessDenied feature="settings" role={role ?? null} />
   }
 
   if (storeLoading) {

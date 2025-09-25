@@ -6,6 +6,9 @@ import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useToast } from '../components/ToastProvider'
+import { AccessDenied } from '../components/AccessDenied'
+import { canAccessFeature } from '../utils/permissions'
+import type { AppFeature } from '../utils/permissions'
 
 
 type InventorySeverity = 'warning' | 'info' | 'critical'
@@ -45,32 +48,42 @@ type MonthlyGoalDocument = {
   monthly?: Record<string, Partial<GoalTargets>>
 }
 
-const QUICK_LINKS = [
+const QUICK_LINKS: Array<{
+  to: string
+  title: string
+  description: string
+  feature: AppFeature
+}> = [
   {
     to: '/products',
     title: 'Products',
-    description: 'Manage your catalogue, update prices, and keep stock levels accurate.'
+    description: 'Manage your catalogue, update prices, and keep stock levels accurate.',
+    feature: 'products',
   },
   {
     to: '/sell',
     title: 'Sell',
-    description: 'Ring up a customer, track the cart, and record a sale in seconds.'
+    description: 'Ring up a customer, track the cart, and record a sale in seconds.',
+    feature: 'sell',
   },
   {
     to: '/receive',
     title: 'Receive',
-    description: 'Log new inventory as it arrives so every aisle stays replenished.'
+    description: 'Log new inventory as it arrives so every aisle stays replenished.',
+    feature: 'receive',
   },
   {
     to: '/close-day',
     title: 'Close Day',
-    description: 'Balance the till, review totals, and lock in a clean daily report.'
+    description: 'Balance the till, review totals, and lock in a clean daily report.',
+    feature: 'close-day',
   },
   {
     to: '/settings',
     title: 'Settings',
-    description: 'Configure staff, taxes, and other controls that keep your shop running.'
-  }
+    description: 'Configure staff, taxes, and other controls that keep your shop running.',
+    feature: 'settings',
+  },
 ]
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24
@@ -246,7 +259,7 @@ function parseDateInput(value: string) {
 }
 
 export default function Dashboard() {
-  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
+  const { storeId: STORE_ID, role, isLoading: storeLoading, error: storeError } = useActiveStore()
 
   const [sales, setSales] = useState<SaleRecord[]>([])
   const [products, setProducts] = useState<ProductRecord[]>([])
@@ -263,8 +276,14 @@ export default function Dashboard() {
   const [selectedRangeId, setSelectedRangeId] = useState<PresetRangeId>('today')
   const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: '', end: '' })
 
+  const hasAccess = canAccessFeature(role, 'dashboard')
+  const visibleQuickLinks = useMemo(
+    () => QUICK_LINKS.filter(link => canAccessFeature(role, link.feature)),
+    [role],
+  )
+
   useEffect(() => {
-    if (!STORE_ID) return
+    if (!STORE_ID || !hasAccess) return
     const q = query(collection(db, 'sales'), where('storeId', '==', STORE_ID))
     return onSnapshot(q, snapshot => {
       const rows: SaleRecord[] = snapshot.docs.map(docSnap => ({
@@ -273,10 +292,10 @@ export default function Dashboard() {
       }))
       setSales(rows)
     })
-  }, [STORE_ID])
+  }, [STORE_ID, hasAccess])
 
   useEffect(() => {
-    if (!STORE_ID) return
+    if (!STORE_ID || !hasAccess) return
     const q = query(collection(db, 'products'), where('storeId', '==', STORE_ID))
     return onSnapshot(q, snapshot => {
       const rows: ProductRecord[] = snapshot.docs.map(docSnap => ({
@@ -285,10 +304,10 @@ export default function Dashboard() {
       }))
       setProducts(rows)
     })
-  }, [STORE_ID])
+  }, [STORE_ID, hasAccess])
 
   useEffect(() => {
-    if (!STORE_ID) return
+    if (!STORE_ID || !hasAccess) return
     const q = query(collection(db, 'customers'), where('storeId', '==', STORE_ID))
     return onSnapshot(q, snapshot => {
       const rows: CustomerRecord[] = snapshot.docs.map(docSnap => ({
@@ -297,10 +316,10 @@ export default function Dashboard() {
       }))
       setCustomers(rows)
     })
-  }, [STORE_ID])
+  }, [STORE_ID, hasAccess])
 
   useEffect(() => {
-    if (!STORE_ID) return
+    if (!STORE_ID || !hasAccess) return
     const ref = doc(db, 'storeGoals', STORE_ID)
     return onSnapshot(ref, snapshot => {
       const data = snapshot.data() as MonthlyGoalDocument | undefined
@@ -319,7 +338,7 @@ export default function Dashboard() {
       })
       setMonthlyGoals(parsed)
     })
-  }, [STORE_ID])
+  }, [STORE_ID, hasAccess])
 
   useEffect(() => {
     setGoalFormTouched(false)
@@ -1109,7 +1128,7 @@ export default function Dashboard() {
             </div>
           </div>
           <ul style={{ display: 'grid', gap: 12, listStyle: 'none', margin: 0, padding: 0 }}>
-            {QUICK_LINKS.map(link => (
+            {visibleQuickLinks.map(link => (
               <li key={link.to}>
                 <Link
                   to={link.to}
@@ -1304,3 +1323,6 @@ function Sparkline({
     </svg>
   )
 }
+  if (!storeLoading && !hasAccess) {
+    return <AccessDenied feature="dashboard" role={role ?? null} />
+  }
