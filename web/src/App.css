@@ -274,6 +274,25 @@ body {
   color: rgba(226, 232, 240, 0.8);
 }
 
+.app__visual-link {
+  color: rgba(224, 231, 255, 0.92);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.35);
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.app__visual-link:hover,
+.app__visual-link:focus-visible {
+  color: rgba(224, 231, 255, 1);
+  border-color: rgba(99, 102, 241, 0.6);
+}
+
+.app__visual-link:focus-visible {
+  outline: 2px solid rgba(191, 219, 254, 0.75);
+  outline-offset: 2px;
+}
+
 .app__visual-pill {
   display: inline-flex;
   align-items: center;
