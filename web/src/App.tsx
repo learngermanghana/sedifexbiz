@@ -239,37 +239,54 @@ export default function App() {
           <article className="info-card">
             <h3>About Sedifex</h3>
             <p>
-              We&apos;ll soon share the story behind Sedifex, the retailers we empower, and the
-              product principles that guide our platform.
+              Sedifex is the operations control tower for modern retail teams. We unite store
+              execution, warehouse visibility, and merchandising insights so every location
+              can act on the same live source of truth.
+            </p>
+            <p>
+              Connect your POS, ecommerce, and supplier systems in minutes to orchestrate the
+              entire product journey—from forecast to fulfillment—with less manual work and
+              far fewer stockouts.
             </p>
             <footer>
-              <span className="info-card__placeholder">Team bio and product timeline coming soon.</span>
+              <ul className="info-card__list">
+                <li>Real-time inventory that syncs every channel and warehouse</li>
+                <li>Automated replenishment playbooks driven by store performance</li>
+                <li>Integrations for Shopify, NetSuite, Square, and 40+ retail tools</li>
+              </ul>
             </footer>
           </article>
 
           <article className="info-card">
             <h3>Our Mission</h3>
             <p>
-              This space will outline our mission, vision, and the values that keep every
-              inventory count accurate and every sales floor connected.
+              We believe resilient retailers win by responding to change faster than their
+              inventory can move. Sedifex exists to give operators the clarity and confidence
+              to do exactly that.
             </p>
             <ul className="info-card__list">
-              <li>Mission statement</li>
-              <li>Core values</li>
-              <li>Customer promises</li>
+              <li>Deliver every SKU promise with predictive inventory intelligence</li>
+              <li>Empower teams with guided workflows, not spreadsheets</li>
+              <li>Earn shopper loyalty through always-on availability</li>
             </ul>
           </article>
 
           <article className="info-card">
             <h3>Contact Sales</h3>
             <p>
-              Ready to see Sedifex in action? We&apos;ll add direct ways to reach our sales team
-              for demos, pricing, and onboarding support.
+              Partner with a retail operations strategist to tailor Sedifex to your fleet,
+              review pricing, and build an onboarding plan that keeps stores running while we
+              launch.
             </p>
-            <button type="button" className="info-card__cta" disabled>
-              Contact our sales team
-            </button>
-            <span className="info-card__placeholder">Live chat and calendar booking coming soon.</span>
+            <a
+              className="info-card__cta"
+              href="https://calendly.com/sedifex/demo"
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Book a 30-minute consultation
+            </a>
+            <p className="info-card__caption">Prefer email? Reach us at sales@sedifex.com.</p>
           </article>
         </section>
       </main>
