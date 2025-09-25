@@ -141,27 +141,89 @@
   width: 100%;
 }
 
-.shell__offline-banner {
+.shell__status-banner {
+  --status-bg: #e0f2fe;
+  --status-color: #0369a1;
+  --status-border: rgba(14, 165, 233, 0.35);
+  --status-dot: #0ea5e9;
+  --status-glow: rgba(14, 165, 233, 0.22);
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px clamp(18px, 4vw, 48px);
-  background: #fef3c7;
-  color: #92400e;
-  border-bottom: 1px solid rgba(234, 179, 8, 0.3);
+  background: var(--status-bg);
+  color: var(--status-color);
+  border-bottom: 1px solid var(--status-border);
   font-size: 14px;
   font-weight: 500;
 }
 
-.shell__offline-dot {
+.shell__status-banner[data-variant='offline'] {
+  --status-bg: #fee2e2;
+  --status-color: #b91c1c;
+  --status-border: rgba(239, 68, 68, 0.45);
+  --status-dot: #ef4444;
+  --status-glow: rgba(239, 68, 68, 0.25);
+}
+
+.shell__status-banner[data-variant='degraded'] {
+  --status-bg: #fef3c7;
+  --status-color: #92400e;
+  --status-border: rgba(245, 158, 11, 0.35);
+  --status-dot: #f59e0b;
+  --status-glow: rgba(245, 158, 11, 0.22);
+}
+
+.shell__status-banner[data-variant='pending'] {
+  --status-bg: #ede9fe;
+  --status-color: #5b21b6;
+  --status-border: rgba(124, 58, 237, 0.35);
+  --status-dot: #7c3aed;
+  --status-glow: rgba(124, 58, 237, 0.22);
+}
+
+.shell__status-banner[data-variant='processing'] {
+  --status-bg: #e0f2fe;
+  --status-color: #0369a1;
+  --status-border: rgba(14, 165, 233, 0.35);
+  --status-dot: #0ea5e9;
+  --status-glow: rgba(14, 165, 233, 0.25);
+}
+
+.shell__status-banner[data-variant='error'] {
+  --status-bg: #fee2e2;
+  --status-color: #7f1d1d;
+  --status-border: rgba(185, 28, 28, 0.45);
+  --status-dot: #dc2626;
+  --status-glow: rgba(220, 38, 38, 0.25);
+}
+
+.shell__status-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #f97316;
+  background: var(--status-dot);
   flex-shrink: 0;
-  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.2);
+  box-shadow: 0 0 0 4px var(--status-glow);
 }
 
-.shell__offline-text {
+.shell__status-dot.is-pulsing {
+  animation: shell-status-pulse 1.4s ease-in-out infinite;
+}
+
+.shell__status-text {
   flex: 1;
+}
+
+@keyframes shell-status-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.2);
+    opacity: 0.65;
+  }
 }
