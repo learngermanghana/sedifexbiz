@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { collection, query, where, orderBy, onSnapshot, Timestamp } from 'firebase/firestore'
-import { db, auth } from '../firebase'
+import { db } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 
 type Sale = { total: number; createdAt?: any; storeId: string }
 
 export default function CloseDay() {
-  const user = auth.currentUser
+  const user = useAuthUser()
   const STORE_ID = useMemo(() => user?.uid || null, [user?.uid])
 
   const [total, setTotal] = useState(0)

@@ -16,6 +16,7 @@ import {
   persistSession,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
+import { AuthUserContext } from './hooks/useAuthUser'
 
 type AuthMode = 'login' | 'signup'
 
@@ -275,7 +276,11 @@ export default function App() {
     )
   }
 
-  return <Outlet />
+  return (
+    <AuthUserContext.Provider value={user}>
+      <Outlet />
+    </AuthUserContext.Provider>
+  )
 }
 
 function getErrorMessage(error: unknown): string {

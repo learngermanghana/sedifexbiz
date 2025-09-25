@@ -2,6 +2,7 @@ import React from 'react'
 import { NavLink } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 import './Shell.css'
 import './Workspace.css'
 
@@ -20,7 +21,8 @@ function navLinkClass(isActive: boolean) {
 }
 
 export default function Shell({ children }: { children: React.ReactNode }) {
-  const userEmail = auth.currentUser?.email ?? 'Account'
+  const user = useAuthUser()
+  const userEmail = user?.email ?? 'Account'
 
   return (
     <div className="shell">

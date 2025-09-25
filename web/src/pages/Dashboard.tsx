@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { collection, onSnapshot, query, where, type Timestamp } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { db } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 
 type InventorySeverity = 'warning' | 'info' | 'critical'
 
@@ -104,7 +105,7 @@ function formatHourRange(hour: number) {
 }
 
 export default function Dashboard() {
-  const user = auth.currentUser
+  const user = useAuthUser()
   const STORE_ID = useMemo(() => user?.uid || null, [user?.uid])
 
   const [sales, setSales] = useState<SaleRecord[]>([])
