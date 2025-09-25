@@ -28,6 +28,82 @@ interface StatusState {
 }
 
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PASSWORD_MIN_LENGTH = 8
+
+interface PasswordStrength {
+  isLongEnough: boolean
+  hasUppercase: boolean
+  hasLowercase: boolean
+  hasNumber: boolean
+  hasSymbol: boolean
+}
+
+function evaluatePasswordStrength(password: string): PasswordStrength {
+  return {
+    isLongEnough: password.length >= PASSWORD_MIN_LENGTH,
+    hasUppercase: /[A-Z]/.test(password),
+    hasLowercase: /[a-z]/.test(password),
+    hasNumber: /\d/.test(password),
+    hasSymbol: /[^A-Za-z0-9]/.test(password),
+  }
+}
+
+function getLoginValidationError(email: string, password: string): string | null {
+  if (!email) {
+    return 'Enter your email.'
+  }
+  if (!EMAIL_PATTERN.test(email)) {
+    return 'Enter a valid email address.'
+  }
+  if (!password) {
+    return 'Enter your password.'
+  }
+  return null
+}
+
+function getSignupValidationError(
+  email: string,
+  password: string,
+  confirmPassword: string,
+): string | null {
+  if (!email) {
+    return 'Enter your email.'
+  }
+  if (!EMAIL_PATTERN.test(email)) {
+    return 'Enter a valid email address.'
+  }
+  if (!password) {
+    return 'Create a password to continue.'
+  }
+
+  const { isLongEnough, hasUppercase, hasLowercase, hasNumber, hasSymbol } =
+    evaluatePasswordStrength(password)
+
+  if (!isLongEnough) {
+    return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`
+  }
+  if (!hasUppercase) {
+    return 'Password must include an uppercase letter.'
+  }
+  if (!hasLowercase) {
+    return 'Password must include a lowercase letter.'
+  }
+  if (!hasNumber) {
+    return 'Password must include a number.'
+  }
+  if (!hasSymbol) {
+    return 'Password must include a symbol.'
+  }
+  if (!confirmPassword) {
+    return 'Confirm your password.'
+  }
+  if (password !== confirmPassword) {
+    return 'Passwords do not match.'
+  }
+
+  return null
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -35,9 +111,33 @@ export default function App() {
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
   const isLoading = status.tone === 'loading'
   const { publish } = useToast()
+
+  const normalizedEmail = email.trim()
+  const normalizedPassword = password.trim()
+  const normalizedConfirmPassword = confirmPassword.trim()
+  const passwordStrength = evaluatePasswordStrength(normalizedPassword)
+  const passwordChecklist = [
+    { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: passwordStrength.isLongEnough },
+    { id: 'uppercase', label: 'Includes an uppercase letter', passed: passwordStrength.hasUppercase },
+    { id: 'lowercase', label: 'Includes a lowercase letter', passed: passwordStrength.hasLowercase },
+    { id: 'number', label: 'Includes a number', passed: passwordStrength.hasNumber },
+    { id: 'symbol', label: 'Includes a symbol', passed: passwordStrength.hasSymbol },
+  ] as const
+  const doesPasswordMeetAllChecks = passwordChecklist.every(item => item.passed)
+  const hasConfirmedPassword = normalizedConfirmPassword.length > 0
+  const isSignupFormValid =
+    EMAIL_PATTERN.test(normalizedEmail) &&
+    normalizedPassword.length > 0 &&
+    doesPasswordMeetAllChecks &&
+    hasConfirmedPassword &&
+    normalizedPassword === normalizedConfirmPassword
+  const isLoginFormValid =
+    EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
+  const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
 
   useEffect(() => {
     // Ensure persistence is configured before we react to auth changes
@@ -66,16 +166,44 @@ export default function App() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const sanitizedEmail = email.trim()
+    const sanitizedPassword = password.trim()
+    const sanitizedConfirmPassword = confirmPassword.trim()
+
+    setEmail(sanitizedEmail)
+    setPassword(sanitizedPassword)
+    if (mode === 'signup') {
+      setConfirmPassword(sanitizedConfirmPassword)
+    }
+
+    const validationError =
+      mode === 'login'
+        ? getLoginValidationError(sanitizedEmail, sanitizedPassword)
+        : getSignupValidationError(sanitizedEmail, sanitizedPassword, sanitizedConfirmPassword)
+
+    if (validationError) {
+      setStatus({ tone: 'error', message: validationError })
+      return
+    }
+
     setStatus({
       tone: 'loading',
       message: mode === 'login' ? 'Signing you in…' : 'Creating your account…',
     })
     try {
       if (mode === 'login') {
-        const { user: nextUser } = await signInWithEmailAndPassword(auth, email, password)
+        const { user: nextUser } = await signInWithEmailAndPassword(
+          auth,
+          sanitizedEmail,
+          sanitizedPassword,
+        )
         await persistSession(nextUser)
       } else {
-        const { user: nextUser } = await createUserWithEmailAndPassword(auth, email, password)
+        const { user: nextUser } = await createUserWithEmailAndPassword(
+          auth,
+          sanitizedEmail,
+          sanitizedPassword,
+        )
         await persistSession(nextUser)
       }
       setStatus({
@@ -84,6 +212,7 @@ export default function App() {
       })
       // Optional: clear the password field post-success
       setPassword('')
+      setConfirmPassword('')
     } catch (err: unknown) {
       setStatus({
         tone: 'error',
@@ -102,6 +231,7 @@ export default function App() {
   function handleModeChange(nextMode: AuthMode) {
     setMode(nextMode)
     setStatus({ tone: 'idle', message: '' })
+    setConfirmPassword('')
   }
 
   // Inline minHeight is just a safety net; CSS already uses dvh/svh.
@@ -174,12 +304,14 @@ export default function App() {
                   id="email"
                   value={email}
                   onChange={event => setEmail(event.target.value)}
+                  onBlur={() => setEmail(current => current.trim())}
                   type="email"
                   autoComplete="email"
                   placeholder="you@example.com"
                   required
                   disabled={isLoading}
                   inputMode="email"
+                  aria-invalid={email.length > 0 && !EMAIL_PATTERN.test(normalizedEmail)}
                 />
               </div>
               <div className="form__field">
@@ -188,14 +320,57 @@ export default function App() {
                   id="password"
                   value={password}
                   onChange={event => setPassword(event.target.value)}
+                  onBlur={() => setPassword(current => current.trim())}
                   type="password"
                   autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                  placeholder="Enter at least 6 characters"
+                  placeholder="Use a strong password"
                   required
                   disabled={isLoading}
+                  aria-invalid={
+                    mode === 'signup' &&
+                    normalizedPassword.length > 0 &&
+                    !doesPasswordMeetAllChecks
+                  }
+                  aria-describedby={mode === 'signup' ? 'password-guidelines' : undefined}
                 />
+                {mode === 'signup' && (
+                  <ul className="form__hint-list" id="password-guidelines">
+                    {passwordChecklist.map(item => (
+                      <li key={item.id} data-complete={item.passed}>
+                        <span className={`form__hint-indicator${item.passed ? ' is-valid' : ''}`}>
+                          {item.passed ? '✓' : '•'}
+                        </span>
+                        {item.label}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              <button className="primary-button" type="submit" disabled={isLoading}>
+              {mode === 'signup' && (
+                <div className="form__field">
+                  <label htmlFor="confirm-password">Confirm password</label>
+                  <input
+                    id="confirm-password"
+                    value={confirmPassword}
+                    onChange={event => setConfirmPassword(event.target.value)}
+                    onBlur={() => setConfirmPassword(current => current.trim())}
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Re-enter your password"
+                    required
+                    disabled={isLoading}
+                    aria-invalid={
+                      normalizedConfirmPassword.length > 0 &&
+                      normalizedPassword !== normalizedConfirmPassword
+                    }
+                    aria-describedby="confirm-password-hint"
+                  />
+                  <p className="form__hint" id="confirm-password-hint">
+                    Must match the password exactly.
+                  </p>
+                </div>
+              )}
+              <button className="primary-button" type="submit" disabled={isSubmitDisabled}>
                 {isLoading
                   ? mode === 'login'
                     ? 'Signing in…'
