@@ -203,78 +203,95 @@
   width: 100%;
 }
 
-.shell__status-banner {
-  --status-bg: #e0f2fe;
-  --status-color: #0369a1;
-  --status-border: rgba(14, 165, 233, 0.35);
-  --status-dot: #0ea5e9;
-  --status-glow: rgba(14, 165, 233, 0.22);
-  display: flex;
+.shell__status-badge {
+  --status-bg: #eef2ff;
+  --status-color: #4338ca;
+  --status-border: rgba(67, 56, 202, 0.2);
+  --status-dot: #4f46e5;
+  --status-glow: rgba(79, 70, 229, 0.2);
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px clamp(18px, 4vw, 48px);
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   background: var(--status-bg);
   color: var(--status-color);
-  border-bottom: 1px solid var(--status-border);
-  font-size: 14px;
-  font-weight: 500;
+  border: 1px solid var(--status-border);
+  box-shadow: none;
+  line-height: 1.2;
+  flex-shrink: 0;
 }
 
-.shell__status-banner[data-variant='offline'] {
-  --status-bg: #fee2e2;
+.shell__status-badge[data-variant='offline'] {
+  --status-bg: #fef2f2;
   --status-color: #b91c1c;
-  --status-border: rgba(239, 68, 68, 0.45);
+  --status-border: rgba(239, 68, 68, 0.3);
   --status-dot: #ef4444;
-  --status-glow: rgba(239, 68, 68, 0.25);
+  --status-glow: rgba(239, 68, 68, 0.18);
 }
 
-.shell__status-banner[data-variant='degraded'] {
-  --status-bg: #fef3c7;
+.shell__status-badge[data-variant='degraded'] {
+  --status-bg: #fff7ed;
   --status-color: #92400e;
-  --status-border: rgba(245, 158, 11, 0.35);
+  --status-border: rgba(245, 158, 11, 0.28);
   --status-dot: #f59e0b;
-  --status-glow: rgba(245, 158, 11, 0.22);
+  --status-glow: rgba(245, 158, 11, 0.18);
 }
 
-.shell__status-banner[data-variant='pending'] {
-  --status-bg: #ede9fe;
+.shell__status-badge[data-variant='pending'] {
+  --status-bg: #f5f3ff;
   --status-color: #5b21b6;
-  --status-border: rgba(124, 58, 237, 0.35);
+  --status-border: rgba(124, 58, 237, 0.28);
   --status-dot: #7c3aed;
-  --status-glow: rgba(124, 58, 237, 0.22);
+  --status-glow: rgba(124, 58, 237, 0.18);
 }
 
-.shell__status-banner[data-variant='processing'] {
-  --status-bg: #e0f2fe;
-  --status-color: #0369a1;
-  --status-border: rgba(14, 165, 233, 0.35);
-  --status-dot: #0ea5e9;
-  --status-glow: rgba(14, 165, 233, 0.25);
+.shell__status-badge[data-variant='processing'] {
+  --status-bg: #eff6ff;
+  --status-color: #1d4ed8;
+  --status-border: rgba(59, 130, 246, 0.25);
+  --status-dot: #3b82f6;
+  --status-glow: rgba(59, 130, 246, 0.18);
 }
 
-.shell__status-banner[data-variant='error'] {
-  --status-bg: #fee2e2;
+.shell__status-badge[data-variant='error'] {
+  --status-bg: #fef2f2;
   --status-color: #7f1d1d;
-  --status-border: rgba(185, 28, 28, 0.45);
+  --status-border: rgba(185, 28, 28, 0.35);
   --status-dot: #dc2626;
-  --status-glow: rgba(220, 38, 38, 0.25);
+  --status-glow: rgba(220, 38, 38, 0.2);
 }
 
 .shell__status-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--status-dot);
   flex-shrink: 0;
-  box-shadow: 0 0 0 4px var(--status-glow);
+  box-shadow: 0 0 0 3px var(--status-glow);
 }
 
 .shell__status-dot.is-pulsing {
   animation: shell-status-pulse 1.4s ease-in-out infinite;
 }
 
-.shell__status-text {
-  flex: 1;
+.shell__status-label {
+  white-space: nowrap;
+}
+
+.shell__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @keyframes shell-status-pulse {
