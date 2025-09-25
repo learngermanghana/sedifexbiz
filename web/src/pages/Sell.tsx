@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   collection,
   query,
@@ -26,6 +26,7 @@ import {
 } from '../utils/offlineCache'
 import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
+import { buildSimplePdf } from '../utils/pdf'
 
 type Product = { id: string; name: string; price: number; stockCount?: number; storeId: string }
 type CartLine = { productId: string; name: string; price: number; qty: number }
@@ -45,6 +46,15 @@ type ReceiptData = {
     phone?: string
     email?: string
   }
+}
+
+type ReceiptSharePayload = {
+  message: string
+  emailHref: string
+  smsHref: string
+  pdfBlob: Blob
+  pdfUrl: string
+  pdfFileName: string
 }
 
 type CommitSalePayload = {
@@ -108,6 +118,7 @@ export default function Sell() {
   const [saleSuccess, setSaleSuccess] = useState<string | null>(null)
   const [isRecording, setIsRecording] = useState(false)
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
   const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : subtotal
@@ -209,6 +220,103 @@ export default function Sell() {
   }, [hasAccess, receipt])
 
   useEffect(() => {
+    if (!receipt) {
+      setReceiptSharePayload(prev => {
+        if (prev?.pdfUrl) {
+          URL.revokeObjectURL(prev.pdfUrl)
+        }
+        return null
+      })
+      return
+    }
+
+    const contactLine = user?.email ?? 'sales@sedifex.app'
+
+    const lines: string[] = []
+    lines.push('Sedifex POS')
+    lines.push(contactLine)
+    lines.push(receipt.createdAt.toLocaleString())
+
+    if (receipt.customer) {
+      lines.push('')
+      lines.push('Customer:')
+      lines.push(`  ${receipt.customer.name}`)
+      if (receipt.customer.phone) {
+        lines.push(`  ${receipt.customer.phone}`)
+      }
+      if (receipt.customer.email) {
+        lines.push(`  ${receipt.customer.email}`)
+      }
+    }
+
+    lines.push('')
+    lines.push('Items:')
+    receipt.items.forEach(line => {
+      lines.push(`  • ${line.qty} × ${line.name} — GHS ${(line.qty * line.price).toFixed(2)}`)
+    })
+
+    lines.push('')
+    lines.push(`Subtotal: GHS ${receipt.subtotal.toFixed(2)}`)
+    lines.push(`Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`)
+    lines.push(`Change: GHS ${receipt.payment.changeDue.toFixed(2)}`)
+    lines.push('')
+    lines.push(`Sale #${receipt.saleId}`)
+    lines.push('Thank you for shopping with us!')
+
+    const message = lines.join('\n')
+    const emailSubject = `Receipt for sale #${receipt.saleId}`
+
+    const encodedSubject = encodeURIComponent(emailSubject)
+    const encodedBody = encodeURIComponent(message)
+    const emailHref = `mailto:${receipt.customer?.email ?? ''}?subject=${encodedSubject}&body=${encodedBody}`
+    const smsHref = `sms:${receipt.customer?.phone ?? ''}?body=${encodedBody}`
+
+    const pdfLines = lines.slice(1)
+    const pdfBytes = buildSimplePdf('Sedifex POS', pdfLines)
+    const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' })
+    const pdfUrl = URL.createObjectURL(pdfBlob)
+    const pdfFileName = `receipt-${receipt.saleId}.pdf`
+
+    setReceiptSharePayload(prev => {
+      if (prev?.pdfUrl) {
+        URL.revokeObjectURL(prev.pdfUrl)
+      }
+      return { message, emailHref, smsHref, pdfBlob, pdfUrl, pdfFileName }
+    })
+
+    return () => {
+      URL.revokeObjectURL(pdfUrl)
+    }
+  }, [receipt, user?.email])
+
+  const handleDownloadPdf = useCallback(() => {
+    setReceiptSharePayload(prev => {
+      if (!prev) return prev
+
+      const url = prev.pdfUrl || URL.createObjectURL(prev.pdfBlob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = prev.pdfFileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      URL.revokeObjectURL(url)
+      const refreshedUrl = URL.createObjectURL(prev.pdfBlob)
+      return { ...prev, pdfUrl: refreshedUrl }
+    })
+  }, [])
+
+  useEffect(() => {
+    const url = receiptSharePayload?.pdfUrl
+    return () => {
+      if (url) {
+        URL.revokeObjectURL(url)
+      }
+    }
+  }, [receiptSharePayload?.pdfUrl])
+
+  useEffect(() => {
     if (paymentMethod !== 'cash') {
       setAmountTendered('')
     }
@@ -218,44 +326,6 @@ export default function Sell() {
     return <AccessDenied feature="sell" role={role ?? null} />
   }
 
-  const receiptSharePayload = useMemo(() => {
-    if (!receipt) return null
-
-    const lines: string[] = []
-    lines.push(`Sale #${receipt.saleId}`)
-    lines.push(receipt.createdAt.toLocaleString())
-
-    if (receipt.customer) {
-      lines.push('')
-      lines.push(`Customer: ${receipt.customer.name}`)
-      if (receipt.customer.phone) {
-        lines.push(`Phone: ${receipt.customer.phone}`)
-      }
-      if (receipt.customer.email) {
-        lines.push(`Email: ${receipt.customer.email}`)
-      }
-    }
-
-    lines.push('')
-    receipt.items.forEach(line => {
-      lines.push(`${line.qty} × ${line.name} — GHS ${(line.qty * line.price).toFixed(2)}`)
-    })
-
-    lines.push('')
-    lines.push(`Subtotal: GHS ${receipt.subtotal.toFixed(2)}`)
-    lines.push(`Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`)
-    lines.push(`Change due: GHS ${receipt.payment.changeDue.toFixed(2)}`)
-    lines.push('')
-    lines.push('Thank you for shopping with us!')
-
-    const message = lines.join('\n')
-    const emailSubject = `Receipt for sale #${receipt.saleId}`
-    const emailHref = `mailto:${receipt.customer?.email ?? ''}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(message)}`
-    const smsHref = `sms:${receipt.customer?.phone ?? ''}?body=${encodeURIComponent(message)}`
-    const whatsappHref = `https://wa.me/?text=${encodeURIComponent(message)}`
-
-    return { message, emailHref, smsHref, whatsappHref }
-  }, [receipt])
 
   function addToCart(p: Product) {
     setCart(cs => {
@@ -599,6 +669,13 @@ export default function Sell() {
                     Email, text, or WhatsApp the receipt so your customer has a digital copy right away.
                   </p>
                   <div className="sell-page__engagement-actions">
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={handleDownloadPdf}
+                    >
+                      Download PDF
+                    </button>
                     <a
                       className="button button--ghost button--small"
                       href={receiptSharePayload.whatsappHref}
