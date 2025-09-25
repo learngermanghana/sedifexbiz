@@ -8,6 +8,7 @@ import Products from './pages/Products'
 import Sell from './pages/Sell'
 import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
+import Customers from './pages/Customers'
 import Settings from './pages/Settings'
 import { ToastProvider } from './components/ToastProvider'
 
@@ -20,6 +21,7 @@ const router = createHashRouter([
       { path: 'products',  element: <Shell><Products /></Shell> },
       { path: 'sell',      element: <Shell><Sell /></Shell> },
       { path: 'receive',   element: <Shell><Receive /></Shell> },
+      { path: 'customers', element: <Shell><Customers /></Shell> },
       { path: 'close-day', element: <Shell><CloseDay /></Shell> },
       { path: 'settings',  element: <Shell><Settings /></Shell> },
     ],
