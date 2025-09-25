@@ -1,14 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   collection, onSnapshot, query, where, orderBy, limit,
-  doc, deleteDoc, deleteField, runTransaction
+  doc, deleteDoc, deleteField, runTransaction, serverTimestamp,
 } from 'firebase/firestore'
+import type { Timestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
 import './Products.css'
 import { loadCachedProducts, saveCachedProducts, PRODUCT_CACHE_LIMIT } from '../utils/offlineCache'
+
+type FirestoreDate = ReturnType<typeof serverTimestamp> | Timestamp | Date | number | null
 
 type Product = {
   id?: string
@@ -18,7 +21,8 @@ type Product = {
   stockCount?: number
   barcode?: string
   minStock?: number
-  updatedAt?: number
+  createdAt?: FirestoreDate
+  updatedAt?: FirestoreDate
 }
 
 /* ---------------- PDF helpers ---------------- */
@@ -310,7 +314,7 @@ export default function Products() {
     setBusy(true)
     try {
       const trimmedBarcode = barcode.trim()
-      const timestamp = Date.now()
+      const timestamp = serverTimestamp()
       const newProduct: Omit<Product, 'id'> = {
         storeId: STORE_ID,
         name,
@@ -364,7 +368,7 @@ export default function Products() {
     try {
       const trimmed = editBarcode.trim()
       const productRef = doc(db, 'products', id)
-      const timestamp = Date.now()
+      const timestamp = serverTimestamp()
       await runTransaction(db, async tx => {
         const productSnap = await tx.get(productRef)
         if (!productSnap.exists()) {
