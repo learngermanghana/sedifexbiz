@@ -1,15 +1,10 @@
 const CACHE_NAME = 'sedifex-static-v2'
 const SYNC_TAG = 'sync-pending-requests'
+const BASE_URL = new URL('./', self.location).pathname
 const PRECACHE_URLS = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/products',
-  '/sell',
-  '/receive',
-  '/customers',
-  '/close-day',
-  '/settings',
+  `${BASE_URL}index.html`,
+  `${BASE_URL}manifest.webmanifest`,
+  `${BASE_URL}heartbeat.json`,
 ]
 
 const DB_NAME = 'sedifex-offline'
@@ -40,13 +35,16 @@ self.addEventListener('activate', event => {
   )
 })
 
+const HEARTBEAT_PATH = `${BASE_URL}heartbeat.json`
+const OFFLINE_FALLBACK = `${BASE_URL}index.html`
+
 self.addEventListener('fetch', event => {
   const { request } = event
   if (request.method !== 'GET') return
 
   const url = new URL(request.url)
 
-  if (url.pathname === '/heartbeat.json') {
+  if (url.pathname === HEARTBEAT_PATH) {
     event.respondWith(
       fetch(new Request(request, { cache: 'no-store' }))
     )
@@ -55,7 +53,7 @@ self.addEventListener('fetch', event => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match('/index.html').then(cached => cached || fetch(request).catch(() => cached))
+      caches.match(OFFLINE_FALLBACK).then(cached => cached || fetch(request).catch(() => cached))
     )
     return
   }
