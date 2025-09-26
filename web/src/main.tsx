@@ -10,6 +10,7 @@ import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
 import Settings from './pages/Settings'
+import Onboarding from './pages/Onboarding'
 import { ToastProvider } from './components/ToastProvider'
 
 const router = createHashRouter([
@@ -24,6 +25,7 @@ const router = createHashRouter([
       { path: 'customers', element: <Shell><Customers /></Shell> },
       { path: 'close-day', element: <Shell><CloseDay /></Shell> },
       { path: 'settings',  element: <Shell><Settings /></Shell> },
+      { path: 'onboarding', element: <Shell><Onboarding /></Shell> },
     ],
   },
 ])

@@ -6,7 +6,7 @@ import {
   signInWithEmailAndPassword,
 } from 'firebase/auth'
 import { FirebaseError } from 'firebase/app'
-import { Link, Outlet } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { auth } from './firebase'
 import './App.css'
 import './pwa'
@@ -18,6 +18,7 @@ import {
 } from './controllers/sessionController'
 import { initializeStoreAccess } from './controllers/storeController'
 import { AuthUserContext } from './hooks/useAuthUser'
+import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 
 type AuthMode = 'login' | 'signup'
 
@@ -164,6 +165,8 @@ export default function App() {
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
   const isLoading = status.tone === 'loading'
   const { publish } = useToast()
+  const navigate = useNavigate()
+  const location = useLocation()
 
   const normalizedEmail = email.trim()
   const normalizedPassword = password.trim()
@@ -207,6 +210,17 @@ export default function App() {
       console.warn('[session] Unable to refresh session', error)
     })
   }, [user])
+
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    const status = getOnboardingStatus(user.uid)
+    if (status === 'pending' && location.pathname !== '/onboarding') {
+      navigate('/onboarding', { replace: true })
+    }
+  }, [location.pathname, navigate, user])
 
   useEffect(() => {
     // Small UX touch: show the current auth mode in the tab title
@@ -304,6 +318,7 @@ export default function App() {
         try {
           await initializeStoreAccess()
           await nextUser.getIdToken(true)
+          setOnboardingStatus(nextUser.uid, 'pending')
         } catch (error) {
           console.warn('[store] Unable to initialize store access after signup', error)
         }
