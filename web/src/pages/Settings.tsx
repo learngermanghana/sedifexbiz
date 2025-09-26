@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
@@ -41,6 +42,21 @@ type StoreSettings = {
 }
 
 type SettingsPanel = 'overview' | 'passwords' | 'roles' | 'store' | 'staff'
+
+const SETTINGS_PANEL_OPTIONS: ReadonlyArray<SettingsPanel> = ['overview', 'staff', 'passwords', 'roles', 'store']
+
+function normalizePanelParam(value: string | null): SettingsPanel {
+  if (!value) {
+    return 'store'
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (SETTINGS_PANEL_OPTIONS.includes(normalized as SettingsPanel)) {
+    return normalized as SettingsPanel
+  }
+
+  return 'store'
+}
 
 type StaffMember = {
   id: string
@@ -145,6 +161,8 @@ export default function Settings() {
   const hasAccess = canAccessFeature(role, 'settings')
   const { publish } = useToast()
 
+  const [searchParams, setSearchParams] = useSearchParams()
+
   const [settings, setSettings] = useState<StoreSettings>(() => createEmptySettings())
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [settingsError, setSettingsError] = useState<string | null>(null)
@@ -185,7 +203,28 @@ export default function Settings() {
   const [staffRoleDrafts, setStaffRoleDrafts] = useState<Record<string, string>>({})
   const [staffPasswordDrafts, setStaffPasswordDrafts] = useState<Record<string, string>>({})
 
-  const [activePanel, setActivePanel] = useState<SettingsPanel>('store')
+  const [activePanel, setActivePanelState] = useState<SettingsPanel>(() => normalizePanelParam(searchParams.get('panel')))
+
+  useEffect(() => {
+    setActivePanelState(current => {
+      const nextPanel = normalizePanelParam(searchParams.get('panel'))
+      return current === nextPanel ? current : nextPanel
+    })
+  }, [searchParams])
+
+  const setActivePanel = useCallback(
+    (panel: SettingsPanel) => {
+      setActivePanelState(panel)
+      const nextParams = new URLSearchParams(searchParams)
+      if (panel === 'store') {
+        nextParams.delete('panel')
+      } else {
+        nextParams.set('panel', panel)
+      }
+      setSearchParams(nextParams, { replace: true })
+    },
+    [searchParams, setSearchParams],
+  )
 
   const settingsRef = useMemo(() => {
     if (!STORE_ID || !hasAccess) return null

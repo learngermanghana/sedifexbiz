@@ -8,6 +8,7 @@ export type AppFeature =
   | 'customers'
   | 'close-day'
   | 'settings'
+  | 'onboarding'
 
 const FEATURE_LABELS: Record<AppFeature, string> = {
   'dashboard': 'Dashboard',
@@ -17,6 +18,7 @@ const FEATURE_LABELS: Record<AppFeature, string> = {
   'customers': 'Customers',
   'close-day': 'Close Day',
   'settings': 'Settings',
+  'onboarding': 'Owner onboarding',
 }
 
 const FEATURE_PERMISSIONS: Record<AppFeature, ReadonlyArray<StoreRole>> = {
@@ -27,6 +29,7 @@ const FEATURE_PERMISSIONS: Record<AppFeature, ReadonlyArray<StoreRole>> = {
   'customers': ['owner', 'manager'],
   'close-day': ['owner', 'manager'],
   'settings': ['owner'],
+  'onboarding': ['owner'],
 }
 
 const ROLE_LABELS: Record<string, string> = {
