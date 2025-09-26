@@ -52,6 +52,8 @@ type ProductRecord = {
   price?: number
   stockCount?: number
   minStock?: number
+  createdAt?: unknown
+  updatedAt?: unknown
 }
 
 type CustomerRecord = {

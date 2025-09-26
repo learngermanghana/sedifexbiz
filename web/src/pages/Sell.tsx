@@ -28,9 +28,25 @@ import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
 import { buildSimplePdf } from '../utils/pdf'
 
-type Product = { id: string; name: string; price: number; stockCount?: number; storeId: string }
+type Product = {
+  id: string
+  name: string
+  price: number
+  stockCount?: number
+  storeId: string
+  createdAt?: unknown
+  updatedAt?: unknown
+}
 type CartLine = { productId: string; name: string; price: number; qty: number }
-type Customer = { id: string; name: string; phone?: string; email?: string; notes?: string }
+type Customer = {
+  id: string
+  name: string
+  phone?: string
+  email?: string
+  notes?: string
+  createdAt?: unknown
+  updatedAt?: unknown
+}
 type ReceiptData = {
   saleId: string
   createdAt: Date
@@ -52,6 +68,7 @@ type ReceiptSharePayload = {
   message: string
   emailHref: string
   smsHref: string
+  whatsappHref: string
   pdfBlob: Blob
   pdfUrl: string
   pdfFileName: string
@@ -270,10 +287,12 @@ export default function Sell() {
     const encodedBody = encodeURIComponent(message)
     const emailHref = `mailto:${receipt.customer?.email ?? ''}?subject=${encodedSubject}&body=${encodedBody}`
     const smsHref = `sms:${receipt.customer?.phone ?? ''}?body=${encodedBody}`
+    const whatsappHref = `https://wa.me/?text=${encodedBody}`
 
     const pdfLines = lines.slice(1)
     const pdfBytes = buildSimplePdf('Sedifex POS', pdfLines)
-    const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' })
+    const pdfBuffer = pdfBytes.slice().buffer
+    const pdfBlob = new Blob([pdfBuffer], { type: 'application/pdf' })
     const pdfUrl = URL.createObjectURL(pdfBlob)
     const pdfFileName = `receipt-${receipt.saleId}.pdf`
 
@@ -281,7 +300,7 @@ export default function Sell() {
       if (prev?.pdfUrl) {
         URL.revokeObjectURL(prev.pdfUrl)
       }
-      return { message, emailHref, smsHref, pdfBlob, pdfUrl, pdfFileName }
+      return { message, emailHref, smsHref, whatsappHref, pdfBlob, pdfUrl, pdfFileName }
     })
 
     return () => {

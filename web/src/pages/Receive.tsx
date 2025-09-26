@@ -10,7 +10,14 @@ import { AccessDenied } from '../components/AccessDenied'
 import { canAccessFeature } from '../utils/permissions'
 import { loadCachedProducts, saveCachedProducts, PRODUCT_CACHE_LIMIT } from '../utils/offlineCache'
 
-type Product = { id: string; name: string; stockCount?: number; storeId: string }
+type Product = {
+  id: string
+  name: string
+  stockCount?: number
+  storeId: string
+  createdAt?: unknown
+  updatedAt?: unknown
+}
 
 function isOfflineError(error: unknown) {
   if (!navigator.onLine) return true

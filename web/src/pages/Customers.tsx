@@ -53,6 +53,15 @@ type CustomerStats = {
   lastVisit: Date | null
 }
 
+type CachedSaleRecord = {
+  id: string
+  customer?: { id?: string | null } | null
+  createdAt?: unknown
+  total?: unknown
+  payment?: { method?: unknown } | null
+  items?: unknown
+} & Record<string, unknown>
+
 const RECENT_VISIT_DAYS = 90
 const HIGH_VALUE_THRESHOLD = 1000
 
@@ -251,19 +260,31 @@ export default function Customers() {
     return null
   }
 
-  function applySalesData(records: Array<{ id: string } & Record<string, any>>) {
+  function applySalesData(records: CachedSaleRecord[]) {
     const statsMap: Record<string, CustomerStats> = {}
     const historyMap: Record<string, SaleHistoryEntry[]> = {}
 
     records.forEach(record => {
-      const data = record || {}
-      const customerId = data?.customer?.id
+      if (!record) return
+      const customer =
+        record.customer && typeof record.customer === 'object'
+          ? (record.customer as { id?: string | null })
+          : null
+      const customerId = customer?.id ?? null
       if (!customerId) return
 
-      const createdAt = normalizeSaleDate(data?.createdAt)
-      const total = Number(data?.total ?? 0) || 0
-      const paymentMethod = data?.payment?.method ?? null
-      const items = Array.isArray(data?.items) ? data.items : []
+      const createdAt = normalizeSaleDate(record.createdAt)
+      const total = Number(record.total ?? 0) || 0
+      const paymentMethod =
+        record.payment && typeof record.payment === 'object'
+          ? (record.payment as { method?: string | null }).method ?? null
+          : null
+      const itemsSource = Array.isArray(record.items) ? record.items : []
+      const items = itemsSource.map(item =>
+        item && typeof item === 'object'
+          ? (item as { name?: string | null; qty?: number | null })
+          : { name: null, qty: null },
+      )
 
       if (!statsMap[customerId]) {
         statsMap[customerId] = { visits: 0, totalSpend: 0, lastVisit: null }
@@ -305,7 +326,7 @@ export default function Customers() {
     if (!STORE_ID || !hasAccess) return
     let cancelled = false
 
-    loadCachedSales<{ id: string } & Record<string, any>>(STORE_ID)
+    loadCachedSales<CachedSaleRecord>(STORE_ID)
       .then(cached => {
         if (!cancelled && cached.length) {
           applySalesData(cached)
