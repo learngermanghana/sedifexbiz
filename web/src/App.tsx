@@ -16,9 +16,9 @@ import {
   persistSession,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
-import { initializeStoreAccess } from './controllers/storeController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
+import Gate from './pages/Gate' // ← new: self-serve bootstrap gate
 
 type AuthMode = 'login' | 'signup'
 
@@ -113,7 +113,6 @@ function getSignupValidationError(
   return null
 }
 
-
 type QueueCompletedMessage = {
   type: 'QUEUE_REQUEST_COMPLETED'
   requestType?: unknown
@@ -130,11 +129,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isQueueCompletedMessage(value: unknown): value is QueueCompletedMessage {
-  return isRecord(value) && value.type === 'QUEUE_REQUEST_COMPLETED'
+  return isRecord(value) && (value as any).type === 'QUEUE_REQUEST_COMPLETED'
 }
 
 function isQueueFailedMessage(value: unknown): value is QueueFailedMessage {
-  return isRecord(value) && value.type === 'QUEUE_REQUEST_FAILED'
+  return isRecord(value) && (value as any).type === 'QUEUE_REQUEST_FAILED'
 }
 
 function getQueueRequestLabel(requestType: unknown): string {
@@ -152,7 +151,6 @@ function normalizeQueueError(value: unknown): string | null {
     }
   }
   return null
-
 }
 
 export default function App() {
@@ -212,10 +210,7 @@ export default function App() {
   }, [user])
 
   useEffect(() => {
-    if (!user) {
-      return
-    }
-
+    if (!user) return
     const status = getOnboardingStatus(user.uid)
     if (status === 'pending' && location.pathname !== '/onboarding') {
       navigate('/onboarding', { replace: true })
@@ -228,23 +223,15 @@ export default function App() {
   }, [mode])
 
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) {
-      return
-    }
+    if (!('serviceWorker' in navigator)) return
 
     const handleMessage = (event: MessageEvent) => {
-
       const data = event.data
-      if (!data || typeof data !== 'object') {
-        return
-      }
+      if (!data || typeof data !== 'object') return
 
       if (isQueueCompletedMessage(data)) {
         const label = getQueueRequestLabel(data.requestType)
-        publish({
-          message: `Queued ${label} synced successfully.`,
-          tone: 'success',
-        })
+        publish({ message: `Queued ${label} synced successfully.`, tone: 'success' })
         return
       }
 
@@ -257,16 +244,12 @@ export default function App() {
             : `We couldn't sync the queued ${label}. Please try again.`,
           tone: 'error',
           duration: 8000,
-
         })
       }
     }
 
     navigator.serviceWorker.addEventListener('message', handleMessage)
-
-    return () => {
-      navigator.serviceWorker.removeEventListener('message', handleMessage)
-    }
+    return () => navigator.serviceWorker.removeEventListener('message', handleMessage)
   }, [publish])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -277,9 +260,7 @@ export default function App() {
 
     setEmail(sanitizedEmail)
     setPassword(sanitizedPassword)
-    if (mode === 'signup') {
-      setConfirmPassword(sanitizedConfirmPassword)
-    }
+    if (mode === 'signup') setConfirmPassword(sanitizedConfirmPassword)
 
     const validationError =
       mode === 'login'
@@ -295,6 +276,7 @@ export default function App() {
       tone: 'loading',
       message: mode === 'login' ? 'Signing you in…' : 'Creating your account…',
     })
+
     try {
       if (mode === 'login') {
         const { user: nextUser } = await signInWithEmailAndPassword(
@@ -315,26 +297,18 @@ export default function App() {
         } catch (error) {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
-        try {
-          await initializeStoreAccess()
-          await nextUser.getIdToken(true)
-          setOnboardingStatus(nextUser.uid, 'pending')
-        } catch (error) {
-          console.warn('[store] Unable to initialize store access after signup', error)
-        }
+        // No initializeStoreAccess here; Gate handles self-serve creation.
+        setOnboardingStatus(nextUser.uid, 'pending')
       }
+
       setStatus({
         tone: 'success',
         message: mode === 'login' ? 'Welcome back! Redirecting…' : 'All set! Your account is ready.',
       })
-      // Optional: clear the password field post-success
       setPassword('')
       setConfirmPassword('')
     } catch (err: unknown) {
-      setStatus({
-        tone: 'error',
-        message: getErrorMessage(err),
-      })
+      setStatus({ tone: 'error', message: getErrorMessage(err) })
     }
   }
 
@@ -523,17 +497,14 @@ export default function App() {
                 <Link className="app__visual-link" to="/sell">
                   Live sales
                 </Link>
-                ,
-                {' '}
+                ,{' '}
                 <Link className="app__visual-link" to="/products">
                   inventory alerts
                 </Link>
-                , and
-                {' '}
+                , and{' '}
                 <Link className="app__visual-link" to="/close-day">
                   smart counts
-                </Link>
-                {' '}
+                </Link>{' '}
                 help your whole team stay aligned from any device.
               </p>
             </div>
@@ -600,7 +571,10 @@ export default function App() {
 
   return (
     <AuthUserContext.Provider value={user}>
-      <Outlet />
+      {/* Gate shows “Create my store” when user has no memberships */}
+      <Gate>
+        <Outlet />
+      </Gate>
     </AuthUserContext.Provider>
   )
 }
@@ -623,7 +597,7 @@ function getErrorMessage(error: unknown): string {
       case 'auth/weak-password':
         return 'Please choose a stronger password (at least 6 characters).'
       default:
-        return error.message || 'Something went wrong. Please try again.'
+        return (error as any).message || 'Something went wrong. Please try again.'
     }
   }
 
