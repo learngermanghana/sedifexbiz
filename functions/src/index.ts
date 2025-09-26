@@ -266,15 +266,25 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
 })
 
 export const commitSale = functions.https.onCall(async (data, context) => {
-  const { storeId, branchId, items, totals, cashierId, saleId, payment, customer } = data || {}
+  const { storeId, branchId, items, totals, cashierId, saleId: saleIdRaw, payment, customer } = data || {}
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required')
   const claims = context.auth.token as any
   if (!claims?.stores?.includes?.(storeId)) throw new functions.https.HttpsError('permission-denied', 'No store access')
+
+  const saleId = typeof saleIdRaw === 'string' ? saleIdRaw.trim() : ''
+  if (!saleId) {
+    throw new functions.https.HttpsError('invalid-argument', 'A valid saleId is required')
+  }
 
   const saleRef = db.collection('sales').doc(saleId)
   const saleItemsRef = db.collection('saleItems')
 
   await db.runTransaction(async (tx) => {
+    const existingSale = await tx.get(saleRef)
+    if (existingSale.exists) {
+      throw new functions.https.HttpsError('already-exists', 'Sale has already been committed')
+    }
+
     const normalizedItems = Array.isArray(items)
       ? items.map((it: any) => {
           const productId = typeof it?.productId === 'string' ? it.productId : null
