@@ -29,10 +29,18 @@ const mockSaveCachedCustomers = vi.fn(async () => {})
 vi.mock('../utils/offlineCache', () => ({
   PRODUCT_CACHE_LIMIT: 200,
   CUSTOMER_CACHE_LIMIT: 200,
-  loadCachedProducts: (...args: unknown[]) => mockLoadCachedProducts(...args),
-  saveCachedProducts: (...args: unknown[]) => mockSaveCachedProducts(...args),
-  loadCachedCustomers: (...args: unknown[]) => mockLoadCachedCustomers(...args),
-  saveCachedCustomers: (...args: unknown[]) => mockSaveCachedCustomers(...args),
+  loadCachedProducts: (
+    ...args: Parameters<typeof mockLoadCachedProducts>
+  ) => mockLoadCachedProducts(...args),
+  saveCachedProducts: (
+    ...args: Parameters<typeof mockSaveCachedProducts>
+  ) => mockSaveCachedProducts(...args),
+  loadCachedCustomers: (
+    ...args: Parameters<typeof mockLoadCachedCustomers>
+  ) => mockLoadCachedCustomers(...args),
+  saveCachedCustomers: (
+    ...args: Parameters<typeof mockSaveCachedCustomers>
+  ) => mockSaveCachedCustomers(...args),
 }))
 
 vi.mock('../firebase', () => ({
@@ -63,18 +71,18 @@ const customerSnapshot = {
   ],
 }
 
-const collection = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
-const query = vi.fn((collectionRef: { path: string }, ...clauses: unknown[]) => ({
+const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
+const queryMock = vi.fn((collectionRef: { path: string }, ...clauses: unknown[]) => ({
   type: 'query',
   collection: collectionRef,
   clauses,
 }))
-const where = vi.fn((...args: unknown[]) => ({ type: 'where', args }))
-const orderBy = vi.fn((field: string, direction?: string) => ({ type: 'orderBy', field, direction }))
-const doc = vi.fn(() => ({ id: 'generated-sale-id' }))
-const limit = vi.fn((value: number) => ({ type: 'limit', value }))
+const whereMock = vi.fn((...args: unknown[]) => ({ type: 'where', args }))
+const orderByMock = vi.fn((field: string, direction?: string) => ({ type: 'orderBy', field, direction }))
+const docMock = vi.fn(() => ({ id: 'generated-sale-id' }))
+const limitMock = vi.fn((value: number) => ({ type: 'limit', value }))
 
-const onSnapshot = vi.fn((queryRef: { collection: { path: string } }, callback: (snap: unknown) => void) => {
+const onSnapshotMock = vi.fn((queryRef: { collection: { path: string } }, callback: (snap: unknown) => void) => {
   queueMicrotask(() => {
     if (queryRef.collection.path === 'products') {
       callback(productSnapshot)
@@ -89,13 +97,27 @@ const onSnapshot = vi.fn((queryRef: { collection: { path: string } }, callback: 
 })
 
 vi.mock('firebase/firestore', () => ({
-  collection: (...args: unknown[]) => collection(...args),
-  query: (...args: unknown[]) => query(...args as [any, ...unknown[]]),
-  where: (...args: unknown[]) => where(...args),
-  orderBy: (...args: unknown[]) => orderBy(...args as [string, string?]),
-  limit: (...args: unknown[]) => limit(...args as [number]),
-  doc: (...args: unknown[]) => doc(...args),
-  onSnapshot: (...args: unknown[]) => onSnapshot(...args as [any, any]),
+  collection: (
+    ...args: Parameters<typeof collectionMock>
+  ) => collectionMock(...args),
+  query: (
+    ...args: Parameters<typeof queryMock>
+  ) => queryMock(...args),
+  where: (
+    ...args: Parameters<typeof whereMock>
+  ) => whereMock(...args),
+  orderBy: (
+    ...args: Parameters<typeof orderByMock>
+  ) => orderByMock(...args),
+  limit: (
+    ...args: Parameters<typeof limitMock>
+  ) => limitMock(...args),
+  doc: (
+    ...args: Parameters<typeof docMock>
+  ) => docMock(...args),
+  onSnapshot: (
+    ...args: Parameters<typeof onSnapshotMock>
+  ) => onSnapshotMock(...args),
 }))
 
 function renderWithProviders(ui: ReactElement) {
@@ -135,13 +157,13 @@ describe('Sell page', () => {
     mockLoadCachedCustomers.mockResolvedValue([])
     mockSaveCachedProducts.mockResolvedValue(undefined)
     mockSaveCachedCustomers.mockResolvedValue(undefined)
-    collection.mockClear()
-    query.mockClear()
-    where.mockClear()
-    orderBy.mockClear()
-    limit.mockClear()
-    doc.mockClear()
-    onSnapshot.mockClear()
+    collectionMock.mockClear()
+    queryMock.mockClear()
+    whereMock.mockClear()
+    orderByMock.mockClear()
+    limitMock.mockClear()
+    docMock.mockClear()
+    onSnapshotMock.mockClear()
   })
 
   it('records a cash sale and shows a success message', async () => {

@@ -1,7 +1,8 @@
 // web/src/controllers/storeController.ts
 import { getAuth } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, functions } from '../firebase';
 
 export async function createMyFirstStore() {
   const auth = getAuth();
@@ -33,4 +34,30 @@ export async function createMyFirstStore() {
 
   // Optional: if any legacy code still checks custom claims, refresh token
   await user.getIdToken(true);
+}
+
+type ManageStaffAccountPayload = {
+  storeId: string;
+  email: string;
+  role: string;
+  password?: string;
+};
+
+type ManageStaffAccountResult = {
+  ok: boolean;
+  storeId: string;
+  role: string;
+  email: string;
+  uid: string;
+  created: boolean;
+  claims?: unknown;
+};
+
+export async function manageStaffAccount(payload: ManageStaffAccountPayload) {
+  const callable = httpsCallable<ManageStaffAccountPayload, ManageStaffAccountResult>(
+    functions,
+    'manageStaffAccount',
+  );
+  const response = await callable(payload);
+  return response.data;
 }
