@@ -595,7 +595,7 @@ function getErrorMessage(error: unknown): string {
       case 'auth/email-already-in-use':
         return 'An account already exists with this email.'
       case 'auth/weak-password':
-        return 'Please choose a stronger password (at least 6 characters).'
+        return 'Please choose a stronger password. It must be at least 8 characters and include uppercase, lowercase, number, and symbol.'
       default:
         return (error as any).message || 'Something went wrong. Please try again.'
     }
