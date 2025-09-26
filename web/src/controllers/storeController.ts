@@ -1,50 +1,36 @@
-import { httpsCallable } from 'firebase/functions'
-import { functions } from '../firebase'
+// web/src/controllers/storeController.ts
+import { getAuth } from 'firebase/auth';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
-type StoreClaims = {
-  stores: string[]
-  activeStoreId: string | null
-  roleByStore: Record<string, string>
-}
+export async function createMyFirstStore() {
+  const auth = getAuth();
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not signed in');
 
-type InitializeStoreResponse = {
-  ok: boolean
-  claims: StoreClaims
-}
+  const storeId = user.uid;
 
-type ManageStaffRequest = {
-  storeId: string
-  email: string
-  role: string
-  password?: string | null
-}
+  // 1) Create the store (id == uid)
+  await setDoc(doc(db, 'stores', storeId), {
+    storeId,
+    ownerId: user.uid,
+    ownerEmail: user.email ?? null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 
-type ManageStaffResponse = {
-  ok: boolean
-  storeId: string
-  role: string
-  email: string
-  uid: string
-  created: boolean
-  claims: StoreClaims
-}
+  // 2) Create the owner membership (members/{uid})
+  await setDoc(doc(db, 'stores', storeId, 'members', user.uid), {
+    storeId,
+    uid: user.uid,
+    role: 'owner',
+    email: user.email ?? null,
+    displayName: user.displayName ?? null,
+    photoURL: user.photoURL ?? null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
 
-const initializeStoreCallable = httpsCallable<unknown, InitializeStoreResponse>(functions, 'initializeStore')
-const manageStaffCallable = httpsCallable<ManageStaffRequest, ManageStaffResponse>(functions, 'manageStaffAccount')
-
-export async function initializeStoreAccess(): Promise<InitializeStoreResponse> {
-  const { data } = await initializeStoreCallable({})
-  return data
-}
-
-export async function manageStaffAccount(payload: ManageStaffRequest): Promise<ManageStaffResponse> {
-  const normalizedPayload: ManageStaffRequest = {
-    storeId: payload.storeId.trim(),
-    email: payload.email.trim(),
-    role: payload.role.trim(),
-    ...(payload.password ? { password: payload.password } : {}),
-  }
-
-  const { data } = await manageStaffCallable(normalizedPayload)
-  return data
+  // Optional: if any legacy code still checks custom claims, refresh token
+  await user.getIdToken(true);
 }
