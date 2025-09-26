@@ -198,6 +198,29 @@
   justify-content: flex-end;
 }
 
+.settings-staff__controls {
+  display: grid;
+  gap: 12px;
+  min-width: 260px;
+}
+
+.settings-staff__group {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-staff__row {
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 640px) {
+  .settings-staff__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+}
+
 .settings-message {
   margin: 0;
   font-size: 14px;

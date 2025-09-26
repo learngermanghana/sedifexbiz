@@ -77,6 +77,14 @@ service cloud.firestore {
       allow write: if hasRole(request.resource.data.storeId, ['owner','manager','cashier']);
     }
 
+    match /storeUsers/{id} {
+      allow read: if hasRole(resource.data.storeId, ['owner']);
+      allow create: if hasRole(request.resource.data.storeId, ['owner']);
+      allow update: if hasRole(resource.data.storeId, ['owner'])
+                    && request.resource.data.storeId == resource.data.storeId;
+      allow delete: if hasRole(resource.data.storeId, ['owner']);
+    }
+
     match /sessions/{id} {
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
       allow read, update, delete: if request.auth != null && resource.data.uid == request.auth.uid;

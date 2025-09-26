@@ -16,6 +16,7 @@ import {
   persistSession,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
+import { initializeStoreAccess } from './controllers/storeController'
 import { AuthUserContext } from './hooks/useAuthUser'
 
 type AuthMode = 'login' | 'signup'
@@ -295,6 +296,17 @@ export default function App() {
           sanitizedPassword,
         )
         await persistSession(nextUser)
+        try {
+          await nextUser.getIdToken(true)
+        } catch (error) {
+          console.warn('[auth] Unable to refresh ID token after signup', error)
+        }
+        try {
+          await initializeStoreAccess()
+          await nextUser.getIdToken(true)
+        } catch (error) {
+          console.warn('[store] Unable to initialize store access after signup', error)
+        }
       }
       setStatus({
         tone: 'success',
