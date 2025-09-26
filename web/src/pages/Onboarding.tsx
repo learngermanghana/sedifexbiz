@@ -19,7 +19,16 @@ export default function Onboarding() {
     setStatus(getOnboardingStatus(user?.uid ?? null))
   }, [user?.uid])
 
+  const userId = user?.uid ?? null
   const hasAccess = useMemo(() => canAccessFeature(role, 'onboarding'), [role])
+  const hasProvisionalAccess = useMemo(() => {
+    if (!userId || !storeId) {
+      return false
+    }
+
+    return role === null && storeId === userId
+  }, [role, storeId, userId])
+  const canViewOnboarding = hasAccess || hasProvisionalAccess
   const hasCompleted = status === 'completed'
 
   function handleComplete() {
@@ -54,7 +63,7 @@ export default function Onboarding() {
     )
   }
 
-  if (!hasAccess) {
+  if (!canViewOnboarding) {
     return <AccessDenied feature="onboarding" role={role} />
   }
 
@@ -75,6 +84,20 @@ export default function Onboarding() {
           </span>
         )}
       </header>
+
+      {hasProvisionalAccess && (
+        <section
+          className="card onboarding-page__provisional-banner"
+          role="status"
+          aria-live="polite"
+          aria-label="Owner permissions are finalizing"
+        >
+          <p>
+            We&apos;re finalizing your owner permissions for store {storeId}. You can continue onboarding while we finish
+            setting things up.
+          </p>
+        </section>
+      )}
 
       <section className="card onboarding-card" aria-labelledby="onboarding-step-1">
         <header className="onboarding-card__header">
