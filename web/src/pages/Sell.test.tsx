@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, beforeAll, afterAll } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -10,6 +10,19 @@ const mockUseAuthUser = vi.fn()
 vi.mock('../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
+
+const originalCreateObjectURL = globalThis.URL.createObjectURL
+const originalRevokeObjectURL = globalThis.URL.revokeObjectURL
+
+beforeAll(() => {
+  ;(globalThis.URL as any).createObjectURL = vi.fn(() => 'blob:mock-url')
+  ;(globalThis.URL as any).revokeObjectURL = vi.fn()
+})
+
+afterAll(() => {
+  ;(globalThis.URL as any).createObjectURL = originalCreateObjectURL
+  ;(globalThis.URL as any).revokeObjectURL = originalRevokeObjectURL
+})
 
 const mockUseActiveStore = vi.fn()
 vi.mock('../hooks/useActiveStore', () => ({
