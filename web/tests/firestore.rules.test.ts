@@ -10,13 +10,32 @@ const managerClaims = {
   },
 } as const;
 
-type Claims = typeof managerClaims;
+const ownerClaims = {
+  stores: [STORE_ID],
+  roleByStore: {
+    [STORE_ID]: 'owner',
+  },
+} as const;
+
+const outsiderOwnerClaims = {
+  stores: [OTHER_STORE_ID],
+  roleByStore: {
+    [OTHER_STORE_ID]: 'owner',
+  },
+} as const;
+
+type Claims = {
+  stores: readonly string[];
+  roleByStore: Record<string, string>;
+};
 
 type AuthContext = {
   token: Claims;
 };
 
 const managerAuth: AuthContext = { token: managerClaims };
+const ownerAuth: AuthContext = { token: ownerClaims };
+const outsiderOwnerAuth: AuthContext = { token: outsiderOwnerClaims };
 
 const DELETE_FIELD = Symbol('deleteField');
 const deleteField = () => DELETE_FIELD;
@@ -24,6 +43,12 @@ const deleteField = () => DELETE_FIELD;
 type StoreDoc = {
   storeId: string;
   [key: string]: unknown;
+};
+
+type StoreUserDoc = {
+  storeId: string;
+  uid: string;
+  role: string;
 };
 
 type ProductDoc = StoreDoc & {
@@ -101,6 +126,27 @@ function canUpdate(collection: Collection, resource: StoreDoc, update: UpdateDat
   }
 
   return canUpdateStoreDoc(resource, update, auth);
+}
+
+function canReadStoreUser(resource: StoreUserDoc, auth: AuthContext | null): boolean {
+  return hasRole(resource.storeId, ['owner'], auth);
+}
+
+function canCreateStoreUser(request: StoreUserDoc, auth: AuthContext | null): boolean {
+  return hasRole(request.storeId, ['owner'], auth);
+}
+
+function canUpdateStoreUser(resource: StoreUserDoc, update: UpdateData, auth: AuthContext | null): boolean {
+  if (!hasRole(resource.storeId, ['owner'], auth)) {
+    return false;
+  }
+
+  const storeIdValue = getMergedValue(resource.storeId, update, 'storeId');
+  return storeIdValue === resource.storeId;
+}
+
+function canDeleteStoreUser(resource: StoreUserDoc, auth: AuthContext | null): boolean {
+  return hasRole(resource.storeId, ['owner'], auth);
 }
 
 function canCreateProduct(request: Partial<ProductDoc> & StoreDoc, auth: AuthContext | null): boolean {
@@ -294,5 +340,57 @@ describe('Firestore security rules - product field validation', () => {
         stockCount: 0,
       }, managerAuth),
     ).toBe(true);
+  });
+});
+
+describe('Firestore security rules - storeUsers', () => {
+  const membership: StoreUserDoc = { storeId: STORE_ID, uid: 'staff-1', role: 'cashier' };
+
+  test('allows an owner to read memberships for their store', () => {
+    expect(canReadStoreUser(membership, ownerAuth)).toBe(true);
+  });
+
+  test('prevents non-owners from reading memberships', () => {
+    expect(canReadStoreUser(membership, managerAuth)).toBe(false);
+  });
+
+  test('prevents owners of other stores from reading memberships', () => {
+    expect(canReadStoreUser(membership, outsiderOwnerAuth)).toBe(false);
+  });
+
+  test('allows an owner to create a membership for their store', () => {
+    expect(canCreateStoreUser({ storeId: STORE_ID, uid: 'staff-2', role: 'manager' }, ownerAuth)).toBe(true);
+  });
+
+  test('prevents changing storeId on membership update', () => {
+    expect(
+      canUpdateStoreUser(
+        membership,
+        {
+          storeId: OTHER_STORE_ID,
+        },
+        ownerAuth,
+      ),
+    ).toBe(false);
+  });
+
+  test('allows owners to update other fields for memberships', () => {
+    expect(
+      canUpdateStoreUser(
+        membership,
+        {
+          role: 'manager',
+        },
+        ownerAuth,
+      ),
+    ).toBe(true);
+  });
+
+  test('allows owners to delete memberships for their store', () => {
+    expect(canDeleteStoreUser(membership, ownerAuth)).toBe(true);
+  });
+
+  test('prevents non-owners from deleting memberships', () => {
+    expect(canDeleteStoreUser(membership, managerAuth)).toBe(false);
   });
 });

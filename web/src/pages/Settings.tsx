@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
+import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { AccessDenied } from '../components/AccessDenied'
-import { canAccessFeature } from '../utils/permissions'
+import { useToast } from '../components/ToastProvider'
+import { manageStaffAccount } from '../controllers/storeController'
+import { canAccessFeature, formatRoleLabel } from '../utils/permissions'
 import './Settings.css'
 
 type TaxRate = {
@@ -38,7 +40,15 @@ type StoreSettings = {
   staffRoles: StaffRole[]
 }
 
-type SettingsPanel = 'overview' | 'passwords' | 'roles' | 'store'
+type SettingsPanel = 'overview' | 'passwords' | 'roles' | 'store' | 'staff'
+
+type StaffMember = {
+  id: string
+  uid: string
+  email: string
+  role: string
+  invitedBy?: string | null
+}
 
 function createEmptySettings(): StoreSettings {
   return {
@@ -133,6 +143,7 @@ export default function Settings() {
   const user = useAuthUser()
   const { storeId: STORE_ID, role, isLoading: storeLoading, error: storeError } = useActiveStore()
   const hasAccess = canAccessFeature(role, 'settings')
+  const { publish } = useToast()
 
   const [settings, setSettings] = useState<StoreSettings>(() => createEmptySettings())
   const [settingsLoading, setSettingsLoading] = useState(false)
@@ -162,11 +173,72 @@ export default function Settings() {
   const [roleErrorMessage, setRoleErrorMessage] = useState<string | null>(null)
   const [roleSuccessMessage, setRoleSuccessMessage] = useState<string | null>(null)
 
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>([])
+  const [staffLoading, setStaffLoading] = useState(false)
+  const [staffErrorMessage, setStaffErrorMessage] = useState<string | null>(null)
+  const [staffSuccessMessage, setStaffSuccessMessage] = useState<string | null>(null)
+  const [staffEmailInput, setStaffEmailInput] = useState('')
+  const [staffRoleInput, setStaffRoleInput] = useState('manager')
+  const [staffPasswordInput, setStaffPasswordInput] = useState('')
+  const [staffBusy, setStaffBusy] = useState(false)
+  const [staffActionBusyId, setStaffActionBusyId] = useState<string | null>(null)
+  const [staffRoleDrafts, setStaffRoleDrafts] = useState<Record<string, string>>({})
+  const [staffPasswordDrafts, setStaffPasswordDrafts] = useState<Record<string, string>>({})
+
   const [activePanel, setActivePanel] = useState<SettingsPanel>('store')
 
   const settingsRef = useMemo(() => {
     if (!STORE_ID || !hasAccess) return null
     return doc(db, 'storeSettings', STORE_ID)
+  }, [STORE_ID, hasAccess])
+
+  useEffect(() => {
+    if (!STORE_ID || !hasAccess) {
+      setStaffMembers([])
+      setStaffLoading(false)
+      return
+    }
+
+    setStaffLoading(true)
+    const staffQuery = query(
+      collection(db, 'storeUsers'),
+      where('storeId', '==', STORE_ID),
+      orderBy('email'),
+    )
+
+    const unsubscribe = onSnapshot(
+      staffQuery,
+      snapshot => {
+        const members = snapshot.docs.map(docSnapshot => {
+          const data = docSnapshot.data() as Record<string, unknown>
+          const email = typeof data.email === 'string' ? data.email : ''
+          const roleValue = typeof data.role === 'string' ? data.role : ''
+          const uid = typeof data.uid === 'string' ? data.uid : docSnapshot.id
+          const invitedBy = typeof data.invitedBy === 'string' ? data.invitedBy : null
+          const member: StaffMember = {
+            id: docSnapshot.id,
+            uid,
+            email,
+            role: roleValue,
+            invitedBy,
+          }
+          return member
+        })
+        setStaffMembers(members)
+        setStaffRoleDrafts({})
+        setStaffPasswordDrafts({})
+        setStaffErrorMessage(null)
+        setStaffLoading(false)
+      },
+      error => {
+        console.error('[settings] Unable to load staff list', error)
+        setStaffMembers([])
+        setStaffErrorMessage('We could not load staff access for this store.')
+        setStaffLoading(false)
+      },
+    )
+
+    return unsubscribe
   }, [STORE_ID, hasAccess])
 
   useEffect(() => {
@@ -201,6 +273,42 @@ export default function Settings() {
     return unsubscribe
   }, [settingsRef])
 
+  const staffRoleOptions = useMemo(() => {
+    const baseRoles = ['owner', 'manager', 'cashier']
+    const customRoles = settings.staffRoles
+      .map(item => (typeof item.name === 'string' ? item.name.trim() : ''))
+      .filter(name => name.length > 0)
+    const seen = new Set<string>()
+    const result: string[] = []
+    for (const roleName of [...baseRoles, ...customRoles]) {
+      const normalized = roleName.trim()
+      if (!normalized) continue
+      const key = normalized.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      result.push(normalized)
+    }
+    return result
+  }, [settings.staffRoles])
+
+  useEffect(() => {
+    if (staffRoleOptions.length === 0) {
+      setStaffRoleInput('')
+      return
+    }
+
+    setStaffRoleInput(current => {
+      if (current) {
+        const matched = staffRoleOptions.find(option => option.toLowerCase() === current.toLowerCase())
+        if (matched) {
+          return matched
+        }
+      }
+      const fallback = staffRoleOptions.find(option => option.toLowerCase() === 'manager') ?? staffRoleOptions[0]
+      return fallback
+    })
+  }, [staffRoleOptions])
+
   const isBusy = storeLoading || settingsLoading
 
   const navigationItems = useMemo(
@@ -209,6 +317,11 @@ export default function Settings() {
         id: 'overview' as const,
         label: 'Overview',
         description: 'Store snapshot and quick stats.',
+      },
+      {
+        id: 'staff' as const,
+        label: 'Staff access',
+        description: 'Invite teammates, assign roles, and rotate passwords.',
       },
       {
         id: 'passwords' as const,
@@ -228,6 +341,140 @@ export default function Settings() {
     ],
     []
   )
+
+  function getRoleDraft(member: StaffMember): string {
+    const draft = staffRoleDrafts[member.id]
+    if (typeof draft === 'string' && draft.trim().length > 0) {
+      return draft
+    }
+    return member.role
+  }
+
+  function updateStaffRoleDraft(memberId: string, value: string) {
+    setStaffRoleDrafts(prev => ({ ...prev, [memberId]: value }))
+  }
+
+  function updateStaffPasswordDraft(memberId: string, value: string) {
+    setStaffPasswordDrafts(prev => ({ ...prev, [memberId]: value }))
+  }
+
+  async function handleInviteStaff(event: React.FormEvent) {
+    event.preventDefault()
+    if (!STORE_ID) return
+
+    const normalizedEmail = staffEmailInput.trim()
+    const normalizedRole = staffRoleInput.trim()
+    const normalizedPassword = staffPasswordInput.trim()
+
+    setStaffErrorMessage(null)
+    setStaffSuccessMessage(null)
+
+    if (!normalizedEmail) {
+      setStaffErrorMessage('Enter the staff member’s email address before saving access.')
+      return
+    }
+
+    if (!normalizedRole) {
+      setStaffErrorMessage('Select a role before saving access for this staff member.')
+      return
+    }
+
+    setStaffBusy(true)
+
+    try {
+      await manageStaffAccount({
+        storeId: STORE_ID,
+        email: normalizedEmail,
+        role: normalizedRole,
+        ...(normalizedPassword ? { password: normalizedPassword } : {}),
+      })
+
+      setStaffSuccessMessage('Staff access saved.')
+      publish({ tone: 'success', message: 'Staff access saved.' })
+      setStaffEmailInput('')
+      setStaffPasswordInput('')
+      setStaffRoleDrafts({})
+      setStaffPasswordDrafts({})
+    } catch (error) {
+      console.error('[settings] Unable to manage staff account', error)
+      const message = 'We could not update this staff account. Please try again.'
+      setStaffErrorMessage(message)
+      publish({ tone: 'error', message })
+    } finally {
+      setStaffBusy(false)
+    }
+  }
+
+  async function handleUpdateStaffRole(member: StaffMember) {
+    if (!STORE_ID) return
+
+    const nextRole = getRoleDraft(member).trim()
+    if (!nextRole) {
+      setStaffErrorMessage('Choose a role before updating this staff member.')
+      return
+    }
+
+    setStaffErrorMessage(null)
+    setStaffSuccessMessage(null)
+    setStaffActionBusyId(member.id)
+
+    try {
+      await manageStaffAccount({ storeId: STORE_ID, email: member.email, role: nextRole })
+      setStaffSuccessMessage('Staff role updated.')
+      publish({ tone: 'success', message: 'Staff role updated.' })
+      setStaffRoleDrafts(prev => {
+        const next = { ...prev }
+        delete next[member.id]
+        return next
+      })
+    } catch (error) {
+      console.error('[settings] Unable to update staff role', error)
+      const message = 'We could not update this staff role right now.'
+      setStaffErrorMessage(message)
+      publish({ tone: 'error', message })
+    } finally {
+      setStaffActionBusyId(null)
+    }
+  }
+
+  async function handleRotateStaffPassword(member: StaffMember) {
+    if (!STORE_ID) return
+
+    const roleValue = getRoleDraft(member).trim() || member.role
+    const passwordDraft = (staffPasswordDrafts[member.id] ?? '').trim()
+
+    if (!passwordDraft) {
+      setStaffErrorMessage('Enter a new password to rotate this staff member’s credentials.')
+      return
+    }
+
+    setStaffErrorMessage(null)
+    setStaffSuccessMessage(null)
+    setStaffActionBusyId(member.id)
+
+    try {
+      await manageStaffAccount({
+        storeId: STORE_ID,
+        email: member.email,
+        role: roleValue,
+        password: passwordDraft,
+      })
+      setStaffSuccessMessage('Staff password updated.')
+      publish({ tone: 'success', message: 'Staff password updated.' })
+      setStaffPasswordDrafts(prev => {
+        const next = { ...prev }
+        delete next[member.id]
+        return next
+      })
+    } catch (error) {
+      console.error('[settings] Unable to rotate staff password', error)
+      const message = 'We could not rotate that password right now.'
+      setStaffErrorMessage(message)
+      publish({ tone: 'error', message })
+    } finally {
+      setStaffActionBusyId(null)
+    }
+  }
 
   async function persist(partial: Partial<StoreSettings>) {
     if (!settingsRef || !STORE_ID) {
@@ -493,6 +740,180 @@ export default function Settings() {
   if (!STORE_ID) {
     return <div className="page">We were unable to determine your store access. Please sign out and back in.</div>
   }
+
+  const staffPanel = (
+    <div className="settings-panel">
+      <section className="card" aria-label="Team access">
+        <div className="settings-section__header">
+          <h3 className="card__title">Team access</h3>
+          <p className="card__subtitle">Keep store access current by inviting staff, changing roles, and rotating credentials.</p>
+        </div>
+
+        <form className="settings-form" onSubmit={handleInviteStaff}>
+          <div className="settings-form__row">
+            <div className="field">
+              <label className="field__label" htmlFor="staff-email">
+                Staff email
+              </label>
+              <input
+                id="staff-email"
+                type="email"
+                value={staffEmailInput}
+                onChange={event => setStaffEmailInput(event.target.value)}
+                placeholder="teammate@example.com"
+                autoComplete="email"
+                disabled={staffBusy || isBusy}
+                required
+              />
+            </div>
+            <div className="field">
+              <label className="field__label" htmlFor="staff-role">
+                Role
+              </label>
+              <select
+                id="staff-role"
+                value={staffRoleInput}
+                onChange={event => setStaffRoleInput(event.target.value)}
+                disabled={staffBusy || isBusy || staffRoleOptions.length === 0}
+                required
+              >
+                <option value="" disabled>
+                  {staffRoleOptions.length === 0 ? 'No roles available' : 'Select a role'}
+                </option>
+                {staffRoleOptions.map(option => (
+                  <option key={option} value={option}>
+                    {formatRoleLabel(option)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="staff-password">
+              Temporary password (optional)
+            </label>
+            <input
+              id="staff-password"
+              value={staffPasswordInput}
+              onChange={event => setStaffPasswordInput(event.target.value)}
+              placeholder="Set a first-time password or leave blank to send a reset later"
+              disabled={staffBusy || isBusy}
+            />
+          </div>
+
+          {staffErrorMessage && <p className="settings-message settings-message--error">{staffErrorMessage}</p>}
+          {staffSuccessMessage && !staffErrorMessage && (
+            <p className="settings-message settings-message--success" role="status">
+              {staffSuccessMessage}
+            </p>
+          )}
+
+          <div className="settings-list__actions">
+            <button
+              type="submit"
+              className="button button--primary button--small"
+              disabled={staffBusy || isBusy || staffRoleOptions.length === 0}
+            >
+              Save staff access
+            </button>
+          </div>
+        </form>
+
+        {staffLoading ? (
+          <p className="settings-page__loading" role="status">
+            Loading staff…
+          </p>
+        ) : staffMembers.length > 0 ? (
+          <ul className="settings-list" role="list">
+            {staffMembers.map(member => {
+              const roleDraft = getRoleDraft(member)
+              const passwordDraft = staffPasswordDrafts[member.id] ?? ''
+              const isMemberBusy = staffActionBusyId === member.id || staffBusy || isBusy
+              const roleOptionsAvailable = staffRoleOptions.length > 0
+              const roleMatches = roleDraft.trim().toLowerCase() === member.role.trim().toLowerCase()
+
+              return (
+                <li className="settings-list__item" key={member.id}>
+                  <div className="settings-list__content">
+                    <p className="settings-list__title">{member.email || 'Unknown staff'}</p>
+                    <p className="settings-list__description">
+                      {`Current role: ${formatRoleLabel(member.role)}`}
+                      {member.invitedBy ? `\nInvited by: ${member.invitedBy}` : ''}
+                    </p>
+                  </div>
+
+                  <div className="settings-staff__controls">
+                    <div className="settings-staff__group">
+                      <label className="field__label" htmlFor={`staff-role-${member.id}`}>
+                        Role assignment
+                      </label>
+                      <div className="settings-staff__row">
+                        <select
+                          id={`staff-role-${member.id}`}
+                          value={roleOptionsAvailable ? roleDraft : ''}
+                          onChange={event => updateStaffRoleDraft(member.id, event.target.value)}
+                          disabled={isMemberBusy || !roleOptionsAvailable}
+                        >
+                          {!roleOptionsAvailable && <option value="">No roles available</option>}
+                          {roleOptionsAvailable &&
+                            staffRoleOptions.map(option => (
+                              <option key={option} value={option}>
+                                {formatRoleLabel(option)}
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="button button--secondary button--small"
+                          onClick={() => handleUpdateStaffRole(member)}
+                          disabled={
+                            isMemberBusy ||
+                            !roleOptionsAvailable ||
+                            roleDraft.trim().length === 0 ||
+                            roleMatches
+                          }
+                        >
+                          Update role
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="settings-staff__group">
+                      <label className="field__label" htmlFor={`staff-password-${member.id}`}>
+                        Temporary password
+                      </label>
+                      <div className="settings-staff__row">
+                        <input
+                          id={`staff-password-${member.id}`}
+                          value={passwordDraft}
+                          onChange={event => updateStaffPasswordDraft(member.id, event.target.value)}
+                          placeholder="Enter a new password"
+                          disabled={isMemberBusy}
+                        />
+                        <button
+                          type="button"
+                          className="button button--secondary button--small"
+                          onClick={() => handleRotateStaffPassword(member)}
+                          disabled={isMemberBusy || passwordDraft.trim().length === 0}
+                        >
+                          Update password
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        ) : (
+          <div className="settings-empty">
+            <h4 className="settings-empty__title">No staff added yet</h4>
+            <p>Invite your team so they can log in, track sales, and support branches.</p>
+          </div>
+        )}
+      </section>
+    </div>
+  )
 
   const renderStoreOverviewCard = () => (
     <section className="card settings-page__summary" aria-label="Store overview">
@@ -905,6 +1326,9 @@ export default function Settings() {
   switch (activePanel) {
     case 'overview':
       panelContent = overviewPanel
+      break
+    case 'staff':
+      panelContent = staffPanel
       break
     case 'passwords':
       panelContent = passwordPanel
