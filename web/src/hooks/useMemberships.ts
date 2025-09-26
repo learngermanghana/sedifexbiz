@@ -22,8 +22,13 @@ export function useMemberships() {
     let cancelled = false;
     (async () => {
       try {
+        if (!cancelled) setError(null);
         if (!user) {
-          if (!cancelled) { setMemberships([]); setLoading(false); }
+          if (!cancelled) {
+            setMemberships([]);
+            setError(null);
+            setLoading(false);
+          }
           return;
         }
         // members docs should include 'uid' and 'storeId' fields (write them when creating)
@@ -43,6 +48,7 @@ export function useMemberships() {
           };
         });
         setMemberships(rows);
+        setError(null);
         setLoading(false);
       } catch (e) {
         if (!cancelled) { setError(e); setLoading(false); }
