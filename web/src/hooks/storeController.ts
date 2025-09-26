@@ -1,7 +1,8 @@
 // web/src/controllers/storeController.ts
 import { getAuth } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, functions } from '../firebase';
 
 export async function createMyFirstStore() {
   const auth = getAuth();
@@ -19,8 +20,7 @@ export async function createMyFirstStore() {
     updatedAt: serverTimestamp(),
   }, { merge: true });
 
-  // 2) Create the owner membership (members/{uid})
-  await setDoc(doc(db, 'stores', storeId, 'members', user.uid), {
+  const ownerMetadata = {
     storeId,
     uid: user.uid,
     role: 'owner',
@@ -29,7 +29,17 @@ export async function createMyFirstStore() {
     photoURL: user.photoURL ?? null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  }, { merge: true });
+  };
+
+  // 2) Create the owner membership (members/{uid})
+  await setDoc(doc(db, 'stores', storeId, 'members', user.uid), ownerMetadata, { merge: true });
+
+  // 3) Store owner lookup (storeUsers/{storeId}_{uid})
+  await setDoc(doc(db, 'storeUsers', `${storeId}_${user.uid}`), ownerMetadata, { merge: true });
+
+  // 4) Ensure backend initialization + refreshed claims
+  const initializeStore = httpsCallable(functions, 'initializeStore');
+  await initializeStore();
 
   // Optional: if any legacy code still checks custom claims, refresh token
   await user.getIdToken(true);
