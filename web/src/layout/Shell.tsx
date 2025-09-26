@@ -14,7 +14,6 @@ type NavItem = { to: string; label: string; end?: boolean; feature: AppFeature }
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Dashboard', end: true, feature: 'dashboard' },
-  { to: '/products', label: 'Products', feature: 'products' },
   { to: '/sell', label: 'Sell', feature: 'sell' },
   { to: '/receive', label: 'Receive', feature: 'receive' },
   { to: '/customers', label: 'Customers', feature: 'customers' },

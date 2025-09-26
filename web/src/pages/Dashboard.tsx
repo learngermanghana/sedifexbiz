@@ -76,12 +76,6 @@ const QUICK_LINKS: Array<{
   feature: AppFeature
 }> = [
   {
-    to: '/products',
-    title: 'Products',
-    description: 'Manage your catalogue, update prices, and keep stock levels accurate.',
-    feature: 'products',
-  },
-  {
     to: '/sell',
     title: 'Sell',
     description: 'Ring up a customer, track the cart, and record a sale in seconds.',

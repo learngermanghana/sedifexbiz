@@ -44,9 +44,9 @@
 
 .shell__nav {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   flex-grow: 1;
 }

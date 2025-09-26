@@ -525,8 +525,8 @@ export default function App() {
                 </Link>
                 ,
                 {' '}
-                <Link className="app__visual-link" to="/products">
-                  inventory alerts
+                <Link className="app__visual-link" to="/receive">
+                  inventory updates
                 </Link>
                 , and
                 {' '}
