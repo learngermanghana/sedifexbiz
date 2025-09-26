@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc",
     "serve": "firebase emulators:start --only functions",
-    "deploy": "npm run build && firebase deploy --only functions"
+    "deploy": "npm run build && firebase deploy --only functions",
+    "test": "npm run build && node ./test/commitSale.test.js"
   },
   "dependencies": {
     "firebase-admin": "^12.5.0",
