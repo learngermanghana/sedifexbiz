@@ -1,9 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AccessDenied } from '../components/AccessDenied'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
-import { canAccessFeature } from '../utils/permissions'
 import { getOnboardingStatus, setOnboardingStatus, type OnboardingStatus } from '../utils/onboarding'
 import './Onboarding.css'
 
@@ -12,23 +10,13 @@ const STAFF_ACCESS_PATH = '/settings?panel=staff'
 export default function Onboarding() {
   const user = useAuthUser()
   const navigate = useNavigate()
-  const { role, isLoading: storeLoading, error: storeError, storeId } = useActiveStore()
+  const { isLoading: storeLoading, error: storeError, storeId } = useActiveStore()
   const [status, setStatus] = useState<OnboardingStatus | null>(() => getOnboardingStatus(user?.uid ?? null))
 
   useEffect(() => {
     setStatus(getOnboardingStatus(user?.uid ?? null))
   }, [user?.uid])
 
-  const userId = user?.uid ?? null
-  const hasAccess = useMemo(() => canAccessFeature(role, 'onboarding'), [role])
-  const hasProvisionalAccess = useMemo(() => {
-    if (!userId || !storeId) {
-      return false
-    }
-
-    return role === null && storeId === userId
-  }, [role, storeId, userId])
-  const canViewOnboarding = hasAccess || hasProvisionalAccess
   const hasCompleted = status === 'completed'
 
   function handleComplete() {
@@ -46,7 +34,7 @@ export default function Onboarding() {
       <div className="page" role="status" aria-live="polite">
         <header className="page__header">
           <h1 className="page__title">Preparing your workspace…</h1>
-          <p className="page__subtitle">We&apos;re checking your permissions and store access.</p>
+          <p className="page__subtitle">We&apos;re getting your store workspace ready.</p>
         </header>
       </div>
     )
@@ -61,10 +49,6 @@ export default function Onboarding() {
         </header>
       </div>
     )
-  }
-
-  if (!canViewOnboarding) {
-    return <AccessDenied feature="onboarding" role={role} />
   }
 
   return (
@@ -84,20 +68,6 @@ export default function Onboarding() {
           </span>
         )}
       </header>
-
-      {hasProvisionalAccess && (
-        <section
-          className="card onboarding-page__provisional-banner"
-          role="status"
-          aria-live="polite"
-          aria-label="Owner permissions are finalizing"
-        >
-          <p>
-            We&apos;re finalizing your owner permissions for store {storeId}. You can continue onboarding while we finish
-            setting things up.
-          </p>
-        </section>
-      )}
 
       <section className="card onboarding-card" aria-labelledby="onboarding-step-1">
         <header className="onboarding-card__header">

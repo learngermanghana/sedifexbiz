@@ -36,7 +36,6 @@ describe('Onboarding page', () => {
     })
 
     mockUseActiveStore.mockReturnValue({
-      role: null,
       storeId: 'store-123',
       stores: ['store-123'],
       isLoading: false,
@@ -47,7 +46,7 @@ describe('Onboarding page', () => {
     mockGetOnboardingStatus.mockReturnValue('pending')
   })
 
-  it('renders onboarding content while owner permissions are finalizing', () => {
+  it('renders onboarding content when store access is ready', () => {
     render(
       <MemoryRouter>
         <Onboarding />
@@ -56,7 +55,6 @@ describe('Onboarding page', () => {
 
     expect(screen.getByRole('heading', { name: /welcome to sedifex/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /confirm your owner account/i })).toBeInTheDocument()
-    expect(screen.getByText(/we're finalizing your owner permissions/i)).toBeInTheDocument()
-    expect(screen.queryByText(/access restricted/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /open staff access settings/i })).toBeInTheDocument()
   })
 })
