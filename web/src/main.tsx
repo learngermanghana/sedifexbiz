@@ -4,7 +4,6 @@ import { createHashRouter, RouterProvider } from 'react-router-dom'
 import App from './App'
 import Shell from './layout/Shell'
 import Dashboard from './pages/Dashboard'
-import Products from './pages/Products'
 import Sell from './pages/Sell'
 import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
@@ -18,7 +17,6 @@ const router = createHashRouter([
     element: <App />,
     children: [
       { index: true, element: <Shell><Dashboard /></Shell> },
-      { path: 'products',  element: <Shell><Products /></Shell> },
       { path: 'sell',      element: <Shell><Sell /></Shell> },
       { path: 'receive',   element: <Shell><Receive /></Shell> },
       { path: 'customers', element: <Shell><Customers /></Shell> },

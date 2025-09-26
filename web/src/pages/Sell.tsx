@@ -517,7 +517,10 @@ export default function Sell() {
             ) : (
               <div className="empty-state">
                 <h3 className="empty-state__title">No products found</h3>
-                <p>Try a different search term or add new inventory from the products page.</p>
+                <p>
+                  Try a different search term or add new inventory from the{' '}
+                  <Link to="/receive">Receive workspace</Link>.
+                </p>
               </div>
             )}
           </div>
