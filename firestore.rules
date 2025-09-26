@@ -1,98 +1,132 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function inStore(storeId) {
-      return request.auth != null
-             && storeId in request.auth.token.stores;
+    /* ---------- Common helpers ---------- */
+
+    function isAuthed() {
+      return request.auth != null;
     }
 
-    function hasRole(storeId, allowed) {
-      return inStore(storeId)
-             && request.auth.token.roleByStore[storeId] in allowed;
+    // Members live at: stores/{storeId}/members/{uid}
+    function memberDoc(storeId) {
+      return get(/databases/$(database)/documents/stores/$(storeId)/members/$(request.auth.uid));
     }
+
+    function inStore(storeId) {
+      return isAuthed() && memberDoc(storeId).exists();
+    }
+
+    function hasRole(storeId, roles) {
+      return inStore(storeId) && roles.hasAny([memberDoc(storeId).data.role]);
+    }
+
+    // ❗ fixed
+    function storeIdUnchanged() {
+      return !request.resource.data.diff(resource.data).changedKeys().hasAny(['storeId']);
+    }
+
+    /* ---------- Store bootstrap & management ---------- */
+
+    // Allow a signed-in user to create their FIRST store with id == their uid,
+    // exactly once, and read/update it if they’re in the store.
+    match /stores/{storeId} {
+      // Self-bootstrap: create /stores/{uid} once, if no membership doc exists yet
+      allow create: if isAuthed()
+        && storeId == request.auth.uid
+        && !exists(/databases/$(database)/documents/stores/$(request.auth.uid)/members/$(request.auth.uid));
+
+      // Owners & managers can update/delete store metadata
+      allow update, delete: if hasRole(storeId, ['owner','manager']);
+
+      // Anyone in the store can read store metadata
+      allow read: if inStore(storeId);
+
+      // Members subcollection
+      match /members/{memberId} {
+
+        // Self-bootstrap owner membership:
+        // allow creating /stores/{uid}/members/{uid} with role 'owner' once.
+        allow create: if isAuthed()
+          && storeId == request.auth.uid
+          && memberId == request.auth.uid
+          && request.resource.data.role == 'owner'
+          && !exists(/databases/$(database)/documents/stores/$(request.auth.uid)/members/$(request.auth.uid));
+
+        // Read: anyone in the store can read members; always allow a user to read their own membership
+        allow read: if inStore(storeId) || (isAuthed() && memberId == request.auth.uid);
+
+        // Updates:
+        // - Owners can manage roles (add/remove/modify any member)
+        // - Optionally allow users to update a safe subset of their own profile fields (displayName, photoURL)
+        allow update: if hasRole(storeId, ['owner'])
+          || (
+            isAuthed() && memberId == request.auth.uid &&
+            // Only allow self-updates to non-privileged fields
+            request.resource.data.diff(resource.data).changedKeys().hasOnly(['displayName','photoURL'])
+          );
+
+        // Deletions: owners only
+        allow delete: if hasRole(storeId, ['owner']);
+      }
+    }
+
+    /* ---------- Store-scoped collections (top-level, keyed by storeId) ---------- */
 
     match /products/{id} {
-      function newProductPrice() {
-        return request.resource.data.keys().hasAny(['price'])
-               ? request.resource.data.price
-               : resource.data.price;
-      }
-
-      function newProductHasStockCount() {
-        return request.resource.data.keys().hasAny(['stockCount'])
-               || resource.data.keys().hasAny(['stockCount']);
-      }
-
-      function newProductStockCount() {
-        return request.resource.data.keys().hasAny(['stockCount'])
-               ? request.resource.data.stockCount
-               : resource.data.stockCount;
-      }
-
       allow read: if inStore(resource.data.storeId);
-      allow create: if hasRole(request.resource.data.storeId, ['owner','manager'])
-                    && request.resource.data.price is number
-                    && (!request.resource.data.keys().hasAny(['stockCount'])
-                        || (request.resource.data.stockCount is number
-                            && request.resource.data.stockCount >= 0));
-      allow update: if hasRole(resource.data.storeId, ['owner','manager'])
-                     && request.resource.data.storeId == resource.data.storeId
-                     && newProductPrice() is number
-                     && (!newProductHasStockCount()
-                         || (newProductStockCount() is number
-                             && newProductStockCount() >= 0));
-      allow delete: if hasRole(resource.data.storeId, ['owner']);
+      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
+      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
     }
 
-    match /ledger/{id} {
+    match /customers/{id} {
       allow read: if inStore(resource.data.storeId);
-      allow write: if false; // write via Cloud Function only
+      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
+      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
     }
 
     match /sales/{id} {
       allow read: if inStore(resource.data.storeId);
-      allow create: if hasRole(request.resource.data.storeId, ['owner','manager','cashier']);
-      allow update: if hasRole(resource.data.storeId, ['owner','manager'])
-                    && request.resource.data.storeId == resource.data.storeId;
-      allow delete: if hasRole(resource.data.storeId, ['owner','manager']);
-    }
-
-    match /saleItems/{id} {
-      allow read: if inStore(resource.data.storeId);
-      allow write: if false; // write via Cloud Function only
+      // cashiers/managers/owners: your existing inStore() covers who can create a sale
+      allow create: if inStore(request.resource.data.storeId);
+      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
     }
 
     match /expenses/{id} {
       allow read: if inStore(resource.data.storeId);
       allow create: if hasRole(request.resource.data.storeId, ['owner','manager','cashier']);
-      allow update: if hasRole(resource.data.storeId, ['owner','manager'])
-                    && request.resource.data.storeId == resource.data.storeId;
+      allow update: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
       allow delete: if hasRole(resource.data.storeId, ['owner','manager']);
     }
 
-    match /cashSessions/{id} {
-      allow read: if inStore(resource.data.storeId);
-      allow write: if hasRole(request.resource.data.storeId, ['owner','manager','cashier']);
+    match /storeSettings/{id} {
+      allow read: if hasRole(resource.data.storeId, ['owner','manager']);
+      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
+      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
     }
 
-    match /storeUsers/{id} {
-      allow read: if hasRole(resource.data.storeId, ['owner']);
-      allow create: if hasRole(request.resource.data.storeId, ['owner']);
-      allow update: if hasRole(resource.data.storeId, ['owner'])
-                    && request.resource.data.storeId == resource.data.storeId;
-      allow delete: if hasRole(resource.data.storeId, ['owner']);
+    match /storeGoals/{id} {
+      allow read: if inStore(resource.data.storeId);
+      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
+      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
     }
+
+    match /closeouts/{id} {
+      allow read: if inStore(resource.data.storeId);
+      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
+      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
+    }
+
+    /* ---------- User-scoped sessions ---------- */
 
     match /sessions/{id} {
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
-      allow read, update, delete: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow create: if isAuthed() && request.resource.data.uid == request.auth.uid;
+      allow read, update, delete: if isAuthed() && resource.data.uid == request.auth.uid;
     }
 
-    match /invites/{id} {
-      allow read, create: if hasRole(request.resource.data.storeId, ['owner','manager']);
-      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']);
+    /* ---------- Deny everything else ---------- */
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
