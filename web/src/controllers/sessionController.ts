@@ -80,7 +80,10 @@ function setSessionCookie(value: string) {
   if (typeof document === 'undefined') {
     return
   }
-  document.cookie = `${SESSION_COOKIE}=${encodeURIComponent(value)}; Max-Age=${SESSION_MAX_AGE_SECONDS}; Path=/; SameSite=Lax`
+  const isSecureContext =
+    typeof window !== 'undefined' && window.location?.protocol === 'https:'
+  const secureAttribute = isSecureContext ? '; Secure' : ''
+  document.cookie = `${SESSION_COOKIE}=${encodeURIComponent(value)}; Max-Age=${SESSION_MAX_AGE_SECONDS}; Path=/; SameSite=Lax${secureAttribute}`
 }
 
 function generateSessionId() {
