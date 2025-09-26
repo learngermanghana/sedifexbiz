@@ -826,6 +826,10 @@ export default function Dashboard() {
     },
   ]
 
+  if (!storeLoading && !hasAccess) {
+    return <AccessDenied feature="dashboard" role={role ?? null} />
+  }
+
   if (storeLoading) {
     return <div>Loading…</div>
   }
@@ -1424,6 +1428,4 @@ function Sparkline({
     </svg>
   )
 }
-  if (!storeLoading && !hasAccess) {
-    return <AccessDenied feature="dashboard" role={role ?? null} />
-  }
+
