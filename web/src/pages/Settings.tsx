@@ -38,6 +38,8 @@ type StoreSettings = {
   staffRoles: StaffRole[]
 }
 
+type SettingsPanel = 'overview' | 'passwords' | 'roles' | 'store'
+
 function createEmptySettings(): StoreSettings {
   return {
     taxRates: [],
@@ -160,6 +162,8 @@ export default function Settings() {
   const [roleErrorMessage, setRoleErrorMessage] = useState<string | null>(null)
   const [roleSuccessMessage, setRoleSuccessMessage] = useState<string | null>(null)
 
+  const [activePanel, setActivePanel] = useState<SettingsPanel>('store')
+
   const settingsRef = useMemo(() => {
     if (!STORE_ID || !hasAccess) return null
     return doc(db, 'storeSettings', STORE_ID)
@@ -198,6 +202,32 @@ export default function Settings() {
   }, [settingsRef])
 
   const isBusy = storeLoading || settingsLoading
+
+  const navigationItems = useMemo(
+    () => [
+      {
+        id: 'overview' as const,
+        label: 'Overview',
+        description: 'Store snapshot and quick stats.',
+      },
+      {
+        id: 'passwords' as const,
+        label: 'Password management',
+        description: 'Reset credentials and enforce policies.',
+      },
+      {
+        id: 'roles' as const,
+        label: 'Role assignments',
+        description: 'Track who can access which tools.',
+      },
+      {
+        id: 'store' as const,
+        label: 'Store configuration',
+        description: 'Branches, taxes, and checkout options.',
+      },
+    ],
+    []
+  )
 
   async function persist(partial: Partial<StoreSettings>) {
     if (!settingsRef || !STORE_ID) {
@@ -459,48 +489,85 @@ export default function Settings() {
     return <div className="page">Loading store access…</div>
   }
 
+
   if (!STORE_ID) {
     return <div className="page">We were unable to determine your store access. Please sign out and back in.</div>
   }
 
-  return (
-    <div className="page settings-page">
-      <header className="page__header">
-        <div>
-          <h2 className="page__title">Store settings</h2>
-          <p className="page__subtitle">
-            Configure the rules that keep your branches aligned — taxes, locations, tender options, and staff
-            responsibilities.
-          </p>
+  const renderStoreOverviewCard = () => (
+    <section className="card settings-page__summary" aria-label="Store overview">
+      <div className="settings-section__header">
+        <h3 className="card__title">Store overview</h3>
+        <p className="card__subtitle">Quick reference for your current workspace access.</p>
+      </div>
+
+      <dl className="settings-summary">
+        <div className="settings-summary__item">
+          <dt className="settings-summary__label">Store ID</dt>
+          <dd className="settings-summary__value">{STORE_ID}</dd>
         </div>
-      </header>
+        <div className="settings-summary__item">
+          <dt className="settings-summary__label">Role</dt>
+          <dd className="settings-summary__value">{role ?? 'Not assigned'}</dd>
+        </div>
+        <div className="settings-summary__item">
+          <dt className="settings-summary__label">Signed in as</dt>
+          <dd className="settings-summary__value">{user?.email ?? 'Unknown user'}</dd>
+        </div>
+      </dl>
+    </section>
+  )
 
-      {storeError && <p className="settings-message settings-message--error">{storeError}</p>}
-      {settingsError && <p className="settings-message settings-message--error">{settingsError}</p>}
-      {settingsLoading && <p className="settings-page__loading" role="status">Loading store settings…</p>}
+  const overviewPanel = (
+    <div className="settings-panel">
+      {renderStoreOverviewCard()}
+      <section className="card settings-placeholder" aria-label="Workspace overview">
+        <div className="settings-section__header">
+          <h3 className="card__title">Administration at a glance</h3>
+          <p className="card__subtitle">Surface the key activity and tasks for your store.</p>
+        </div>
+        <p className="settings-placeholder__description">
+          Use the navigation to drill into configuration, password resets, or role assignments as you expand your
+          operations. We&apos;ll continue to add more snapshot metrics here.
+        </p>
+      </section>
+    </div>
+  )
 
+  const passwordPanel = (
+    <div className="settings-panel">
+      <section className="card settings-placeholder" aria-label="Password management">
+        <div className="settings-section__header">
+          <h3 className="card__title">Password management</h3>
+          <p className="card__subtitle">Tools for securing staff accounts.</p>
+        </div>
+        <p className="settings-placeholder__description">
+          Centralised password reset workflows and multi-factor policies will live here. For now, reach out to Sedifex
+          support if a teammate is locked out of their account.
+        </p>
+      </section>
+    </div>
+  )
+
+  const rolesPanel = (
+    <div className="settings-panel">
+      <section className="card settings-placeholder" aria-label="Role assignments">
+        <div className="settings-section__header">
+          <h3 className="card__title">Role assignments</h3>
+          <p className="card__subtitle">Match staff to responsibilities.</p>
+        </div>
+        <p className="settings-placeholder__description">
+          Soon you&apos;ll be able to see which team members hold each permission set and adjust their access directly from
+          this screen.
+        </p>
+      </section>
+    </div>
+  )
+
+  const storePanel = (
+    <div className="settings-panel">
       <div className="settings-page__grid">
-        <section className="card settings-page__summary" aria-label="Store overview">
-          <div className="settings-section__header">
-            <h3 className="card__title">Store overview</h3>
-            <p className="card__subtitle">Quick reference for your current workspace access.</p>
-          </div>
-
-          <dl className="settings-summary">
-            <div className="settings-summary__item">
-              <dt className="settings-summary__label">Store ID</dt>
-              <dd className="settings-summary__value">{STORE_ID}</dd>
-            </div>
-            <div className="settings-summary__item">
-              <dt className="settings-summary__label">Role</dt>
-              <dd className="settings-summary__value">{role ?? 'Not assigned'}</dd>
-            </div>
-            <div className="settings-summary__item">
-              <dt className="settings-summary__label">Signed in as</dt>
-              <dd className="settings-summary__value">{user?.email ?? 'Unknown user'}</dd>
-            </div>
-          </dl>
-        </section>
+        {renderStoreOverviewCard()}
 
         <section className="card" aria-label="Tax rates">
           <div className="settings-section__header">
@@ -828,6 +895,68 @@ export default function Settings() {
               <p>Document the expectations for each position so new hires can hit the ground running.</p>
             </div>
           )}
+        </section>
+      </div>
+    </div>
+  )
+
+  let panelContent: React.ReactNode
+
+  switch (activePanel) {
+    case 'overview':
+      panelContent = overviewPanel
+      break
+    case 'passwords':
+      panelContent = passwordPanel
+      break
+    case 'roles':
+      panelContent = rolesPanel
+      break
+    case 'store':
+    default:
+      panelContent = storePanel
+      break
+  }
+
+  return (
+    <div className="page settings-page">
+      <div className="settings-layout">
+        <aside className="settings-sidebar" aria-label="Settings navigation">
+          <nav>
+            <ul className="settings-sidebar__list" role="list">
+              {navigationItems.map(item => (
+                <li key={item.id} className="settings-sidebar__list-item">
+                  <button
+                    type="button"
+                    className={`settings-sidebar__item${activePanel === item.id ? ' settings-sidebar__item--active' : ''}`}
+                    onClick={() => setActivePanel(item.id)}
+                    aria-current={activePanel === item.id ? 'page' : undefined}
+                  >
+                    <span className="settings-sidebar__item-label">{item.label}</span>
+                    <span className="settings-sidebar__item-description">{item.description}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </aside>
+
+        <section className="settings-content">
+          <header className="page__header">
+            <div>
+              <h2 className="page__title">Store settings</h2>
+              <p className="page__subtitle">
+                Configure the rules that keep your branches aligned — taxes, locations, tender options, and staff
+                responsibilities.
+              </p>
+            </div>
+          </header>
+
+          {storeError && <p className="settings-message settings-message--error">{storeError}</p>}
+          {settingsError && <p className="settings-message settings-message--error">{settingsError}</p>}
+          {settingsLoading && <p className="settings-page__loading" role="status">Loading store settings…</p>}
+
+          {panelContent}
         </section>
       </div>
     </div>
