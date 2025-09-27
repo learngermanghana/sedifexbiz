@@ -31,13 +31,13 @@ describe('Onboarding page', () => {
     mockSetOnboardingStatus.mockReset()
 
     mockUseAuthUser.mockReturnValue({
-      uid: 'store-123',
+      uid: 'user-123',
       email: 'owner@example.com',
     })
 
     mockUseActiveStore.mockReturnValue({
-      storeId: 'store-123',
-      stores: ['store-123'],
+      storeId: 'ORBITX',
+      stores: ['ORBITX'],
       isLoading: false,
       error: null,
       selectStore: vi.fn(),
@@ -56,5 +56,6 @@ describe('Onboarding page', () => {
     expect(screen.getByRole('heading', { name: /welcome to sedifex/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /confirm your owner account/i })).toBeInTheDocument()
     expect(screen.getByText(/need to update access later/i)).toBeInTheDocument()
+    expect(screen.getByText(/let's secure your store \(ORBITX\)/i)).toBeInTheDocument()
   })
 })

@@ -70,7 +70,6 @@ function resolveStoreId(
   stores: string[],
   activeClaim: string | null,
   persistedStoreId: string | null,
-  fallbackUid: string | null,
 ): string | null {
   if (activeClaim && stores.includes(activeClaim)) {
     return activeClaim
@@ -84,7 +83,7 @@ function resolveStoreId(
     return stores[0]
   }
 
-  return fallbackUid ?? null
+  return null
 }
 
 export function useActiveStore(): ActiveStoreState {
@@ -136,7 +135,7 @@ export function useActiveStore(): ActiveStoreState {
         const claims: StoreClaims = result.claims as StoreClaims
         const stores = normalizeStoreList(claims)
         const activeClaim = typeof claims.activeStoreId === 'string' ? claims.activeStoreId : null
-        const resolvedStoreId = resolveStoreId(stores, activeClaim, persistedStoreId, user.uid)
+        const resolvedStoreId = resolveStoreId(stores, activeClaim, persistedStoreId)
 
         if (resolvedStoreId && stores.includes(resolvedStoreId)) {
           persistStoreId(user.uid, resolvedStoreId)
@@ -155,7 +154,7 @@ export function useActiveStore(): ActiveStoreState {
         console.warn('[store] Unable to resolve store from auth claims', error)
         if (cancelled) return
         setState({
-          storeId: user.uid ?? null,
+          storeId: null,
           stores: [],
           isLoading: false,
           error: 'We could not determine your store access. Some actions may fail.',

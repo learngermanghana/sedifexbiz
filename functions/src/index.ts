@@ -16,6 +16,8 @@ type StoreClaims = {
   roleByStore: Record<string, string>
 }
 
+const STORE_CODE_PATTERN = /^[A-Z]{6}$/
+
 async function listStoreMemberships(uid: string) {
   const snapshot = await db.collection('storeUsers').where('uid', '==', uid).get()
   return snapshot.docs
@@ -23,7 +25,7 @@ async function listStoreMemberships(uid: string) {
     .filter(doc => typeof doc.storeId === 'string' && typeof doc.role === 'string')
 }
 
-async function applyStoreClaims(uid: string): Promise<StoreClaims> {
+async function applyStoreClaims(uid: string, preferredActiveStoreId?: string | null): Promise<StoreClaims> {
   const [memberships, userRecord] = await Promise.all([
     listStoreMemberships(uid),
     admin
@@ -44,8 +46,16 @@ async function applyStoreClaims(uid: string): Promise<StoreClaims> {
   }, {})
 
   const existingClaims = (userRecord?.customClaims ?? {}) as Record<string, unknown>
-  const preferredActive = typeof existingClaims.activeStoreId === 'string' ? existingClaims.activeStoreId : null
-  let activeStoreId: string | null = preferredActive && stores.includes(preferredActive) ? preferredActive : null
+  const preferredActive =
+    typeof preferredActiveStoreId === 'string' && stores.includes(preferredActiveStoreId)
+      ? preferredActiveStoreId
+      : null
+  const existingActiveClaim =
+    typeof existingClaims.activeStoreId === 'string' && stores.includes(existingClaims.activeStoreId)
+      ? (existingClaims.activeStoreId as string)
+      : null
+
+  let activeStoreId: string | null = preferredActive ?? existingActiveClaim
   if (!activeStoreId) {
     activeStoreId = stores.length > 0 ? stores[0] : null
   }
@@ -69,36 +79,34 @@ type OwnerBootstrapMetadata = {
   membershipPhone?: string | null
 }
 
-async function ensureDefaultStoreForUser(uid: string, metadata: OwnerBootstrapMetadata = {}) {
-  const existingMemberships = await listStoreMemberships(uid)
-  if (existingMemberships.length > 0) {
+async function ensureDefaultStoreForUser(
+  uid: string,
+  metadata: OwnerBootstrapMetadata = {},
+  preferredStoreId?: string | null,
+) {
+  const storeId = typeof preferredStoreId === 'string' ? preferredStoreId.trim() : ''
+  if (!storeId) {
     return
   }
 
-  const anyMembership = await db.collection('storeUsers').limit(1).get()
-  if (!anyMembership.empty) {
-    return
-  }
-
-  const storeId = uid
   const storeRef = db.collection('stores').doc(storeId)
-  const membershipId = `${storeId}_${uid}`
-  const membershipRef = db.collection('storeUsers').doc(membershipId)
 
-  const shouldCreateMembership = await db.runTransaction(async tx => {
-    const membershipSnap = await tx.get(membershipRef)
-    if (membershipSnap.exists) {
-      return false
-    }
-
+  await db.runTransaction(async tx => {
     const storeSnap = await tx.get(storeRef)
-
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
     const storeData: admin.firestore.DocumentData = {
       storeId,
-      ownerId: uid,
+      id: storeId,
+      ownerId: storeSnap.exists && storeSnap.get('ownerId') ? storeSnap.get('ownerId') : uid,
       updatedAt: timestamp,
+    }
+
+    if (storeSnap.exists) {
+      const existingOwnerId = storeSnap.get('ownerId')
+      if (existingOwnerId && existingOwnerId !== uid) {
+        throw new functions.https.HttpsError('already-exists', 'Store code already assigned to another account')
+      }
     }
 
     if (!storeSnap.exists) {
@@ -114,7 +122,7 @@ async function ensureDefaultStoreForUser(uid: string, metadata: OwnerBootstrapMe
     }
 
     const existingFirstSignupEmail = storeSnap.exists ? storeSnap.get('firstSignupEmail') : undefined
-    if ((existingFirstSignupEmail === undefined || existingFirstSignupEmail === null)) {
+    if (existingFirstSignupEmail === undefined || existingFirstSignupEmail === null) {
       if (metadata.firstSignupEmail !== undefined) {
         storeData.firstSignupEmail = metadata.firstSignupEmail
       } else if (!storeSnap.exists && metadata.ownerEmail !== undefined) {
@@ -123,31 +131,31 @@ async function ensureDefaultStoreForUser(uid: string, metadata: OwnerBootstrapMe
     }
 
     tx.set(storeRef, storeData, { merge: true })
-
-    return true
   })
 
-  if (shouldCreateMembership) {
-    await upsertStoreMembership(
-      storeId,
-      uid,
-      metadata.ownerEmail ?? null,
-      'owner',
-      null,
-      {
-        phone: metadata.membershipPhone ?? metadata.ownerPhone ?? null,
-        firstSignupEmail:
-          metadata.firstSignupEmail !== undefined
-            ? metadata.firstSignupEmail
-            : metadata.ownerEmail ?? null,
-      },
-    )
-  }
+  await upsertStoreMembership(
+    storeId,
+    uid,
+    metadata.ownerEmail ?? null,
+    'owner',
+    null,
+    {
+      phone: metadata.membershipPhone ?? metadata.ownerPhone ?? null,
+      firstSignupEmail:
+        metadata.firstSignupEmail !== undefined
+          ? metadata.firstSignupEmail
+          : metadata.ownerEmail ?? null,
+    },
+  )
 }
 
-async function refreshUserClaims(uid: string, metadata: OwnerBootstrapMetadata = {}) {
-  await ensureDefaultStoreForUser(uid, metadata)
-  return applyStoreClaims(uid)
+async function refreshUserClaims(
+  uid: string,
+  metadata: OwnerBootstrapMetadata = {},
+  preferredStoreId?: string | null,
+) {
+  await ensureDefaultStoreForUser(uid, metadata, preferredStoreId)
+  return applyStoreClaims(uid, preferredStoreId)
 }
 
 export const handleUserCreate = functions.auth.user().onCreate(async user => {
@@ -162,19 +170,46 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
 })
 
 type InitializeStorePayload = {
+  storeCode?: unknown
   contact?: {
     phone?: unknown
     firstSignupEmail?: unknown
   }
 }
 
-function normalizeInitializeStorePayload(data: InitializeStorePayload | null | undefined) {
+function normalizeStoreCode(value: unknown) {
+  if (typeof value !== 'string') {
+    return ''
+  }
+
+  const trimmed = value.trim().toUpperCase()
+  if (!trimmed) {
+    return ''
+  }
+
+  if (!STORE_CODE_PATTERN.test(trimmed)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Store code must be exactly six letters.')
+  }
+
+  return trimmed
+}
+
+function normalizeInitializeStorePayload(
+  data: InitializeStorePayload | null | undefined,
+  { requireStoreCode }: { requireStoreCode: boolean },
+) {
   const contact = data?.contact ?? {}
   const rawPhone = typeof contact.phone === 'string' ? contact.phone.trim() : ''
   const phone = rawPhone ? rawPhone : null
   const rawFirstSignupEmail = typeof contact.firstSignupEmail === 'string' ? contact.firstSignupEmail.trim().toLowerCase() : ''
   const firstSignupEmail = rawFirstSignupEmail ? rawFirstSignupEmail : null
-  return { phone, firstSignupEmail }
+  const storeCode = normalizeStoreCode(data?.storeCode)
+
+  if (requireStoreCode && !storeCode) {
+    throw new functions.https.HttpsError('invalid-argument', 'A valid store code is required.')
+  }
+
+  return { phone, firstSignupEmail, storeCode }
 }
 
 export const initializeStore = functions.https.onCall(async (data, context) => {
@@ -185,15 +220,18 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   const uid = context.auth.uid
   const email = typeof context.auth.token.email === 'string' ? context.auth.token.email : null
 
-  const { phone, firstSignupEmail } = normalizeInitializeStorePayload((data ?? {}) as InitializeStorePayload)
+  const { phone, firstSignupEmail, storeCode } = normalizeInitializeStorePayload(
+    (data ?? {}) as InitializeStorePayload,
+    { requireStoreCode: true },
+  )
 
   const claims = await refreshUserClaims(uid, {
     ownerEmail: email,
     ownerPhone: phone,
     firstSignupEmail: firstSignupEmail ?? email ?? null,
     membershipPhone: phone,
-  })
-  return { ok: true, claims }
+  }, storeCode)
+  return { ok: true, claims, storeId: storeCode ?? null }
 })
 
 type ManageStaffPayload = {
