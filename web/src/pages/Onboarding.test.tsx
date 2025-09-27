@@ -55,6 +55,6 @@ describe('Onboarding page', () => {
 
     expect(screen.getByRole('heading', { name: /welcome to sedifex/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /confirm your owner account/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /open staff access settings/i })).toBeInTheDocument()
+    expect(screen.getByText(/need to update access later/i)).toBeInTheDocument()
   })
 })

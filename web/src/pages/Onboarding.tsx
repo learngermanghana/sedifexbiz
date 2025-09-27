@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { getOnboardingStatus, setOnboardingStatus, type OnboardingStatus } from '../utils/onboarding'
 import './Onboarding.css'
-
-const STAFF_ACCESS_PATH = '/settings?panel=staff'
 
 export default function Onboarding() {
   const user = useAuthUser()
@@ -78,7 +76,7 @@ export default function Onboarding() {
         </header>
         <p>
           You&apos;re signed in as the store owner. We recommend keeping this login private and using it only for
-          high-impact settings like payouts, data exports, and staff access. Add a recovery email in case you ever
+          high-impact controls like payouts, data exports, and staff access. Add a recovery email in case you ever
           need to reset your password.
         </p>
         <ul className="onboarding-card__list">
@@ -102,11 +100,11 @@ export default function Onboarding() {
         <ul className="onboarding-card__list">
           <li>Managers can run inventory and day-close workflows.</li>
           <li>Cashiers can sell, receive stock, and view customer history.</li>
-          <li>Owners always retain full settings and billing access.</li>
+          <li>Owners always retain full admin and billing access.</li>
         </ul>
-        <Link className="primary-button onboarding-card__cta" to={STAFF_ACCESS_PATH}>
-          Open staff access settings
-        </Link>
+        <p className="onboarding-card__cta">
+          Need to update access later? Your Sedifex account manager can help tailor roles for your team.
+        </p>
       </section>
 
       <section className="card onboarding-card" aria-labelledby="onboarding-step-3">
@@ -117,8 +115,8 @@ export default function Onboarding() {
           </h2>
         </header>
         <p>
-          Once you&apos;ve added your teammates, you&apos;re ready to jump into the dashboard. You can always return to
-          staff access from Settings to make changes later.
+          Once you&apos;ve added your teammates, you&apos;re ready to jump into the dashboard. You can always revisit
+          staff access later to make changes.
         </p>
         <button
           type="button"
