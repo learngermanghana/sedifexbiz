@@ -1,11 +1,16 @@
 // web/src/controllers/storeController.ts
 import { getAuth } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db, functions } from '../firebase';
 
+type ContactPayload = {
+  phone?: string | null;
+  firstSignupEmail?: string | null;
+};
+
 type CreateMyFirstStoreOptions = {
-  phone: string;
+  contact: ContactPayload;
 };
 
 export async function createMyFirstStore(options: CreateMyFirstStoreOptions) {
@@ -14,17 +19,35 @@ export async function createMyFirstStore(options: CreateMyFirstStoreOptions) {
   if (!user) throw new Error('Not signed in');
 
   const storeId = user.uid;
-  const ownerPhone = options.phone;
+  const contact = options.contact ?? {};
+  const ownerPhone = contact.phone ?? null;
+  const firstSignupEmail = contact.firstSignupEmail ?? user.email ?? null;
 
-  // 1) Create the store (id == uid)
-  await setDoc(doc(db, 'stores', storeId), {
+  const storeRef = doc(db, 'stores', storeId);
+  const existingStore = await getDoc(storeRef);
+
+  const storePayload: Record<string, unknown> = {
     storeId,
     ownerId: user.uid,
     ownerEmail: user.email ?? null,
-    ownerPhone,
-    createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  }, { merge: true });
+  };
+
+  if (ownerPhone !== undefined) {
+    storePayload.ownerPhone = ownerPhone;
+  }
+
+  const currentFirstSignupEmail = existingStore.exists() ? existingStore.data()?.firstSignupEmail : undefined;
+  if (!currentFirstSignupEmail && firstSignupEmail !== undefined) {
+    storePayload.firstSignupEmail = firstSignupEmail;
+  }
+
+  if (!existingStore.exists()) {
+    storePayload.createdAt = serverTimestamp();
+  }
+
+  // 1) Create the store (id == uid)
+  await setDoc(storeRef, storePayload, { merge: true });
 
   const ownerMetadata = {
     storeId,
@@ -32,6 +55,7 @@ export async function createMyFirstStore(options: CreateMyFirstStoreOptions) {
     role: 'owner',
     email: user.email ?? null,
     phone: ownerPhone,
+    firstSignupEmail,
     displayName: user.displayName ?? null,
     photoURL: user.photoURL ?? null,
     createdAt: serverTimestamp(),
@@ -46,7 +70,12 @@ export async function createMyFirstStore(options: CreateMyFirstStoreOptions) {
 
   // 4) Ensure backend initialization + refreshed claims
   const initializeStore = httpsCallable(functions, 'initializeStore');
-  await initializeStore();
+  await initializeStore({
+    contact: {
+      phone: ownerPhone,
+      firstSignupEmail,
+    },
+  });
 
   // Optional: if any legacy code still checks custom claims, refresh token
   await user.getIdToken(true);

@@ -325,7 +325,12 @@ export default function App() {
           sanitizedEmail,
           sanitizedPassword,
         )
-        await createMyFirstStore({ phone: sanitizedPhone })
+        await createMyFirstStore({
+          contact: {
+            phone: sanitizedPhone,
+            firstSignupEmail: sanitizedEmail,
+          },
+        })
         await persistSession(nextUser)
         try {
           await nextUser.getIdToken(true)
