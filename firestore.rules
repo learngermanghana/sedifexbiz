@@ -1,80 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    /* ---------- Common helpers ---------- */
-
-    function isAuthed() {
-      return request.auth != null;
-    }
-
-    function hasAnyRole(roles) {
-      return isAuthed() && roles.hasAny([request.auth.token.role]);
-    }
-
-    function ownerOrSelf(uid) {
-      return hasAnyRole(['owner']) || (isAuthed() && request.auth.uid == uid);
-    }
-
-    /* ---------- Team members & roles ---------- */
-
-    match /teamMembers/{uid} {
-      allow read: if ownerOrSelf(uid);
-      allow create, update, delete: if hasAnyRole(['owner']);
-    }
-
-    /* ---------- Business resources (single-tenant) ---------- */
-
-    function staffAccess() {
-      return hasAnyRole(['owner', 'staff']);
-    }
-
-    match /products/{id} {
-      allow read, create, update, delete: if staffAccess();
-    }
-
-    match /customers/{id} {
-      allow read, create, update, delete: if staffAccess();
-    }
-
-    match /sales/{id} {
-      allow read, create, update, delete: if staffAccess();
-    }
-
-    match /expenses/{id} {
-      allow read, create, update, delete: if staffAccess();
-    }
-
-    match /storeGoals/{id} {
-      allow read, create, update, delete: if staffAccess();
-    }
-
-    match /closeouts/{id} {
-      allow read, create, update, delete: if staffAccess();
-    }
-
-    match /receipts/{id} {
-      allow read, create, update, delete: if staffAccess();
-    }
-
-    match /ledger/{id} {
-      allow read, create, update, delete: if staffAccess();
-    }
-
-    match /saleItems/{id} {
-      allow read, create, update, delete: if staffAccess();
-    }
-
-    /* ---------- User-scoped sessions ---------- */
-
-    match /sessions/{id} {
-      allow create: if isAuthed() && request.resource.data.uid == request.auth.uid;
-      allow read, update, delete: if isAuthed() && resource.data.uid == request.auth.uid;
-    }
-
-    /* ---------- Deny everything else ---------- */
+    // TEMP for development: allow any signed-in user
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if request.auth != null;
     }
   }
 }
