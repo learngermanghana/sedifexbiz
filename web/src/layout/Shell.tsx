@@ -4,7 +4,6 @@ import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
-import { useActiveStore } from '../hooks/useActiveStore'
 import './Shell.css'
 import './Workspace.css'
 
@@ -71,11 +70,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const user = useAuthUser()
   const userEmail = user?.email ?? 'Account'
   const connectivity = useConnectivityStatus()
-  const {
-    storeId: activeStoreId,
-    isLoading: storeLoading,
-    error: storeError,
-  } = useActiveStore()
 
   const { isOnline, isReachable, queue } = connectivity
 
@@ -113,8 +107,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return null
   }, [isOnline, isReachable, queue.lastError, queue.pending, queue.status])
 
-  const storeErrorId = storeError ? 'shell-store-error' : undefined
-  const storeStatus = storeLoading ? 'Loading store…' : activeStoreId ?? 'No store access'
+  const workspaceStatus = 'Workspace ready'
 
   return (
     <div className="shell">
@@ -140,10 +133,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
           <div className="shell__controls">
             <div className="shell__store-switcher" role="status" aria-live="polite">
-              <span className="shell__store-label">Store</span>
-              <span className="shell__store-select" data-readonly>
-                {storeStatus}
-              </span>
+              <span className="shell__store-label">Workspace</span>
+              <span className="shell__store-select" data-readonly>{workspaceStatus}</span>
             </div>
 
             {banner && (
@@ -173,12 +164,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 Sign out
               </button>
             </div>
-          </div>
-          {storeError ? (
-            <div className="shell__store-error" role="alert" id={storeErrorId}>
-              {storeError}
             </div>
-          ) : null}
         </div>
       </header>
 

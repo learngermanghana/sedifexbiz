@@ -135,51 +135,41 @@ async function saveCachedList<T>(key: string, items: T[], limit: number): Promis
   }
 }
 
-function cacheKey(prefix: string, storeId: string) {
-  return `${prefix}:${storeId}`
-}
-
 export async function loadCachedProducts<T extends { updatedAt?: unknown; createdAt?: unknown }>(
-  storeId: string,
   limit = PRODUCT_CACHE_LIMIT,
 ): Promise<T[]> {
-  return loadCachedList<T>(cacheKey('products', storeId), limit)
+  return loadCachedList<T>('products', limit)
 }
 
 export async function saveCachedProducts<T extends { updatedAt?: unknown; createdAt?: unknown }>(
-  storeId: string,
   items: T[],
   limit = PRODUCT_CACHE_LIMIT,
 ): Promise<void> {
-  await saveCachedList(cacheKey('products', storeId), items, limit)
+  await saveCachedList('products', items, limit)
 }
 
 export async function loadCachedCustomers<T extends { updatedAt?: unknown; createdAt?: unknown }>(
-  storeId: string,
   limit = CUSTOMER_CACHE_LIMIT,
 ): Promise<T[]> {
-  return loadCachedList<T>(cacheKey('customers', storeId), limit)
+  return loadCachedList<T>('customers', limit)
 }
 
 export async function saveCachedCustomers<T extends { updatedAt?: unknown; createdAt?: unknown }>(
-  storeId: string,
   items: T[],
   limit = CUSTOMER_CACHE_LIMIT,
 ): Promise<void> {
-  await saveCachedList(cacheKey('customers', storeId), items, limit)
+  await saveCachedList('customers', items, limit)
 }
 
 export async function loadCachedSales<T extends { createdAt?: unknown }>(
-  storeId: string,
   limit = SALES_CACHE_LIMIT,
 ): Promise<T[]> {
-  return loadCachedList<T>(cacheKey('sales', storeId), limit)
+  return loadCachedList<T>('sales', limit)
 }
 
 export async function saveCachedSales<T extends { createdAt?: unknown }>(
-  storeId: string,
   items: T[],
   limit = SALES_CACHE_LIMIT,
 ): Promise<void> {
-  await saveCachedList(cacheKey('sales', storeId), items, limit)
+  await saveCachedList('sales', items, limit)
 }

@@ -10,12 +10,10 @@ import {
   limit,
   serverTimestamp,
   updateDoc,
-  where,
 } from 'firebase/firestore'
 import { Timestamp } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
-import { useActiveStore } from '../hooks/useActiveStore'
 import './Customers.css'
 import {
   CUSTOMER_CACHE_LIMIT,
@@ -141,8 +139,6 @@ function buildCsvValue(value: string): string {
 }
 
 export default function Customers() {
-  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
-
   const [customers, setCustomers] = useState<Customer[]>([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -183,10 +179,9 @@ export default function Customers() {
   }
 
   useEffect(() => {
-    if (!STORE_ID) return
     let cancelled = false
 
-    loadCachedCustomers<Customer>(STORE_ID)
+    loadCachedCustomers<Customer>()
       .then(cached => {
         if (!cancelled && cached.length) {
           setCustomers(
@@ -200,7 +195,6 @@ export default function Customers() {
 
     const q = query(
       collection(db, 'customers'),
-      where('storeId', '==', STORE_ID),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(CUSTOMER_CACHE_LIMIT),
@@ -214,7 +208,7 @@ export default function Customers() {
           ...data,
         }
       })
-      saveCachedCustomers(STORE_ID, rows).catch(error => {
+      saveCachedCustomers(rows).catch(error => {
         console.warn('[customers] Failed to cache customers', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
@@ -227,7 +221,7 @@ export default function Customers() {
       cancelled = true
       unsubscribe()
     }
-  }, [STORE_ID])
+  }, [])
 
   function normalizeSaleDate(value: unknown): Date | null {
     if (!value) return null
@@ -319,10 +313,9 @@ export default function Customers() {
   }
 
   useEffect(() => {
-    if (!STORE_ID) return
     let cancelled = false
 
-    loadCachedSales<CachedSaleRecord>(STORE_ID)
+    loadCachedSales<CachedSaleRecord>()
       .then(cached => {
         if (!cancelled && cached.length) {
           applySalesData(cached)
@@ -334,7 +327,6 @@ export default function Customers() {
 
     const q = query(
       collection(db, 'sales'),
-      where('storeId', '==', STORE_ID),
       orderBy('createdAt', 'desc'),
       limit(SALES_CACHE_LIMIT),
     )
@@ -342,7 +334,7 @@ export default function Customers() {
     const unsubscribe = onSnapshot(q, snapshot => {
       const rows = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as any) }))
       applySalesData(rows)
-      saveCachedSales(STORE_ID, rows).catch(error => {
+      saveCachedSales(rows).catch(error => {
         console.warn('[customers] Failed to cache sales', error)
       })
     })
@@ -351,7 +343,7 @@ export default function Customers() {
       cancelled = true
       unsubscribe()
     }
-  }, [STORE_ID])
+  }, [])
 
   useEffect(() => {
     if (!selectedCustomerId) return
@@ -454,7 +446,6 @@ export default function Customers() {
 
   async function addCustomer(event: React.FormEvent) {
     event.preventDefault()
-    if (!STORE_ID) return
     const trimmedName = name.trim()
     if (!trimmedName) {
       setError('Customer name is required to save a record.')
@@ -478,7 +469,6 @@ export default function Customers() {
         showSuccess('Customer updated successfully.')
       } else {
         await addDoc(collection(db, 'customers'), {
-          storeId: STORE_ID,
           name: trimmedName,
           ...(phone.trim() ? { phone: phone.trim() } : {}),
           ...(email.trim() ? { email: email.trim() } : {}),
@@ -522,7 +512,6 @@ export default function Customers() {
   }
 
   async function handleCsvImport(event: React.ChangeEvent<HTMLInputElement>) {
-    if (!STORE_ID) return
     const file = event.target.files?.[0]
     if (!file) return
     setIsImporting(true)
@@ -599,7 +588,6 @@ export default function Customers() {
           updatedCount += 1
         } else {
           const payload: Record<string, unknown> = {
-            storeId: STORE_ID,
             name: rawName,
             createdAt: serverTimestamp(),
           }
@@ -697,10 +685,6 @@ export default function Customers() {
     { id: 'untagged', label: 'Untagged' },
   ]
 
-  if (storeLoading) {
-    return <div>Loading…</div>
-  }
-
   return (
     <div className="page customers-page">
       <header className="page__header">
@@ -791,10 +775,6 @@ export default function Customers() {
             {success && !error && (
               <p className="customers-page__message customers-page__message--success" role="status">{success}</p>
             )}
-            {storeError && (
-              <p className="customers-page__message customers-page__message--error" role="alert">{storeError}</p>
-            )}
-
             <div className="customers-page__form-actions">
               <button type="submit" className="button button--primary" disabled={isFormDisabled}>
                 {editingCustomerId ? 'Save changes' : 'Save customer'}

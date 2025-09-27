@@ -1,20 +1,8 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react'
-import {
-  addDoc,
-  collection,
-  doc,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-} from 'firebase/firestore'
+import { addDoc, collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
-import { useActiveStore } from '../hooks/useActiveStore'
 import {
   PRODUCT_CACHE_LIMIT,
   loadCachedProducts,
@@ -133,8 +121,6 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Products() {
-  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
-
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -149,13 +135,11 @@ export default function Products() {
   const [isUpdating, setIsUpdating] = useState(false)
 
   useEffect(() => {
-    if (!STORE_ID) return
-
     let cancelled = false
     setIsLoadingProducts(true)
     setLoadError(null)
 
-    loadCachedProducts<Omit<ProductRecord, '__optimistic'>>(STORE_ID)
+    loadCachedProducts<Omit<ProductRecord, '__optimistic'>>()
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(prev => {
@@ -172,7 +156,6 @@ export default function Products() {
 
     const q = query(
       collection(db, 'products'),
-      where('storeId', '==', STORE_ID),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -183,7 +166,7 @@ export default function Products() {
       snapshot => {
         if (cancelled) return
         const rows = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Record<string, unknown>) }))
-        saveCachedProducts(STORE_ID, rows).catch(error => {
+        saveCachedProducts(rows).catch(error => {
           console.warn('[products] Failed to cache products', error)
         })
         setProducts(prev => {
@@ -209,7 +192,7 @@ export default function Products() {
       cancelled = true
       unsubscribe()
     }
-  }, [STORE_ID])
+  }, [])
 
   useEffect(() => {
     if (!editingProductId) {
@@ -268,10 +251,6 @@ export default function Products() {
 
   async function handleCreateProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!STORE_ID) {
-      setCreateStatus({ tone: 'error', message: 'Store access is not ready. Please refresh and try again.' })
-      return
-    }
     const name = createForm.name.trim()
     const sku = createForm.sku.trim()
     const reorderThreshold = validateNumbers(createForm.reorderThreshold)
@@ -308,7 +287,6 @@ export default function Products() {
 
     try {
       const ref = await addDoc(collection(db, 'products'), {
-        storeId: STORE_ID,
         name,
         sku: sku || null,
         reorderThreshold: reorderThreshold ?? null,
@@ -349,8 +327,8 @@ export default function Products() {
 
   async function handleUpdateProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!STORE_ID || !editingProductId) {
-      setEditStatus({ tone: 'error', message: 'Store access is not ready. Please refresh and try again.' })
+    if (!editingProductId) {
+      setEditStatus({ tone: 'error', message: 'Select a product to edit before saving.' })
       return
     }
     const name = editForm.name.trim()
@@ -433,14 +411,6 @@ export default function Products() {
     )
   }
 
-  if (storeLoading) {
-    return <div>Loading…</div>
-  }
-
-  if (!STORE_ID) {
-    return <div>We were unable to determine your store access. Please sign out and back in.</div>
-  }
-
   return (
     <div className="page products-page">
       <header className="page__header">
@@ -449,7 +419,6 @@ export default function Products() {
           <p className="page__subtitle">
             Review inventory, monitor low stock alerts, and keep your catalogue tidy.
           </p>
-          {storeError ? <p className="products-page__warning">{storeError}</p> : null}
         </div>
         <Link to="/receive" className="products-page__receive-link">
           Receive stock

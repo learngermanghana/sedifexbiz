@@ -5,11 +5,6 @@ import userEvent from '@testing-library/user-event'
 
 import Products from '../Products'
 
-const mockUseActiveStore = vi.fn()
-vi.mock('../../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
-}))
-
 const mockLoadCachedProducts = vi.fn(async () => [] as unknown[])
 const mockSaveCachedProducts = vi.fn(async () => {})
 
@@ -30,7 +25,6 @@ const queryMock = vi.fn((collectionRef: { path: string }, ...clauses: unknown[])
   collection: collectionRef,
   clauses,
 }))
-const whereMock = vi.fn((...args: unknown[]) => ({ type: 'where', args }))
 const orderByMock = vi.fn((field: string, direction?: string) => ({ type: 'orderBy', field, direction }))
 const limitMock = vi.fn((value: number) => ({ type: 'limit', value }))
 const onSnapshotMock = vi.fn(
@@ -55,7 +49,6 @@ const docMock = vi.fn((collectionRef: { path: string }, id: string) => ({
 vi.mock('firebase/firestore', () => ({
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
-  where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   orderBy: (...args: Parameters<typeof orderByMock>) => orderByMock(...args),
   limit: (...args: Parameters<typeof limitMock>) => limitMock(...args),
   onSnapshot: (
@@ -69,12 +62,10 @@ vi.mock('firebase/firestore', () => ({
 
 describe('Products page', () => {
   beforeEach(() => {
-    mockUseActiveStore.mockReset()
     mockLoadCachedProducts.mockReset()
     mockSaveCachedProducts.mockReset()
     collectionMock.mockClear()
     queryMock.mockClear()
-    whereMock.mockClear()
     orderByMock.mockClear()
     limitMock.mockClear()
     onSnapshotMock.mockClear()
@@ -82,14 +73,6 @@ describe('Products page', () => {
     updateDocMock.mockClear()
     serverTimestampMock.mockClear()
     docMock.mockClear()
-
-    mockUseActiveStore.mockReturnValue({
-      storeId: 'store-1',
-      stores: ['store-1'],
-      isLoading: false,
-      error: null,
-      selectStore: vi.fn(),
-    })
 
     mockLoadCachedProducts.mockResolvedValue([])
     mockSaveCachedProducts.mockResolvedValue(undefined)
@@ -99,24 +82,6 @@ describe('Products page', () => {
       })
       return () => {}
     })
-  })
-
-  it('renders store loading state', () => {
-    mockUseActiveStore.mockReturnValue({
-      storeId: null,
-      stores: [],
-      isLoading: true,
-      error: null,
-      selectStore: vi.fn(),
-    })
-
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
-
-    expect(screen.getByText('Loading…')).toBeInTheDocument()
   })
 
   it('shows an empty state when no products are available', async () => {
@@ -220,7 +185,6 @@ describe('Products page', () => {
     expect(addDocMock).toHaveBeenCalledWith(
       expect.objectContaining({ path: 'products' }),
       expect.objectContaining({
-        storeId: 'store-1',
         name: 'New Blend',
         sku: 'NB-01',
         reorderThreshold: 4,
