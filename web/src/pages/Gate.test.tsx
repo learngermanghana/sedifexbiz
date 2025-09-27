@@ -21,12 +21,13 @@ describe('Gate', () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 
-  it('renders an error message when memberships fail to load', () => {
+  it("renders an error message when memberships can't be fetched", () => {
     const error = new Error('Failed to load memberships');
     mockUseMemberships.mockReturnValue({ loading: false, error });
 
     render(<Gate />);
 
+    expect(screen.getByRole('heading', { name: /couldn't load your workspace/i })).toBeInTheDocument();
     expect(screen.getByText(/failed to load memberships/i)).toBeInTheDocument();
   });
 
