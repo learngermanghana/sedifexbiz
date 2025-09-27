@@ -635,3 +635,5 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
 
   return { ok: true, receiptId: receiptRef.id }
 })
+
+export { onAuthCreate } from './onAuthCreate';
