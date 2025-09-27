@@ -1,4 +1,5 @@
 // web/src/hooks/useEnsureOnboarded.ts
+import React from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { getAuth, onIdTokenChanged } from 'firebase/auth';
 import { functions } from '../firebase';
