@@ -74,6 +74,8 @@ describe('Products page', () => {
     serverTimestampMock.mockClear()
     docMock.mockClear()
 
+
+
     mockLoadCachedProducts.mockResolvedValue([])
     mockSaveCachedProducts.mockResolvedValue(undefined)
     onSnapshotMock.mockImplementation((queryRef, onNext) => {
@@ -83,6 +85,8 @@ describe('Products page', () => {
       return () => {}
     })
   })
+
+
 
   it('shows an empty state when no products are available', async () => {
     let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null

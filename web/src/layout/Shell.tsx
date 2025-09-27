@@ -107,7 +107,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return null
   }, [isOnline, isReachable, queue.lastError, queue.pending, queue.status])
 
+
   const workspaceStatus = 'Workspace ready'
+
 
   return (
     <div className="shell">
@@ -132,10 +134,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="shell__controls">
+
             <div className="shell__store-switcher" role="status" aria-live="polite">
               <span className="shell__store-label">Workspace</span>
               <span className="shell__store-select" data-readonly>{workspaceStatus}</span>
             </div>
+
 
             {banner && (
               <div
@@ -164,7 +168,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 Sign out
               </button>
             </div>
+
             </div>
+
         </div>
       </header>
 

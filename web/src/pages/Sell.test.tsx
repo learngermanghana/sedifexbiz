@@ -136,6 +136,8 @@ describe('Sell page', () => {
       uid: 'cashier-123',
       email: 'cashier@example.com',
     })
+
+
     mockCommitSale.mockResolvedValue({
       data: {
         ok: true,

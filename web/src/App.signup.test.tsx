@@ -50,10 +50,6 @@ vi.mock('./components/ToastProvider', () => ({
   useToast: () => ({ publish: mocks.publish }),
 }))
 
-vi.mock('./hooks/useEnsureOnboarded', () => ({
-  useEnsureOnboarded: () => {},
-}))
-
 import App from './App'
 
 function createTestUser() {

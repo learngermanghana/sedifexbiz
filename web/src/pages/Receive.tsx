@@ -156,6 +156,8 @@ export default function Receive() {
     }
   }
 
+
+
   return (
     <div className="page receive-page">
       <header className="page__header">

@@ -147,6 +147,8 @@ export default function CloseDay() {
     }
   }
 
+
+
   return (
     <div className="print-summary" style={{ maxWidth: 760 }}>
       <h2 style={{ color: '#4338CA' }}>Close Day</h2>

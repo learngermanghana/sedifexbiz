@@ -165,7 +165,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
 async function run() {
   currentDb = new MockFirestore({
-    'products/prod-1': { storeId: 'store-1', stockCount: 5 },
+    'products/prod-1': { stockCount: 5 },
   })
 
   delete require.cache[require.resolve('../lib/index.js')]
@@ -174,12 +174,11 @@ async function run() {
   const context = {
     auth: {
       uid: 'cashier-1',
-      token: { stores: ['store-1'] },
+      token: { role: 'staff' },
     },
   }
 
   const payload = {
-    storeId: 'store-1',
     branchId: 'branch-1',
     cashierId: 'cashier-1',
     saleId: 'sale-123',
@@ -195,7 +194,7 @@ async function run() {
 
   const saleDoc = currentDb.getDoc('sales/sale-123')
   assert.ok(saleDoc)
-  assert.strictEqual(saleDoc.storeId, 'store-1')
+  assert.strictEqual(saleDoc.branchId, 'branch-1')
 
   const saleItems = currentDb.listCollection('saleItems')
   assert.strictEqual(saleItems.length, 1)

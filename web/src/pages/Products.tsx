@@ -411,6 +411,7 @@ export default function Products() {
     )
   }
 
+
   return (
     <div className="page products-page">
       <header className="page__header">

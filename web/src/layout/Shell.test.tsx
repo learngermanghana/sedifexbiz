@@ -53,5 +53,6 @@ describe('Shell', () => {
     renderShell()
 
     expect(screen.getByText('Workspace ready')).toBeInTheDocument()
+
   })
 })

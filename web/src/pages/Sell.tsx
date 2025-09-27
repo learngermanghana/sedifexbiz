@@ -447,6 +447,8 @@ export default function Sell() {
     }
   }
 
+
+
   const filtered = products.filter(p => p.name.toLowerCase().includes(queryText.toLowerCase()))
 
   return (
