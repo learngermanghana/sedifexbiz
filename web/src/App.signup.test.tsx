@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => {
     },
     createUserWithEmailAndPassword: vi.fn(),
     signInWithEmailAndPassword: vi.fn(),
-    createMyFirstStore: vi.fn(),
     configureAuthPersistence: vi.fn(async () => {}),
     persistSession: vi.fn(async () => {}),
     refreshSessionHeartbeat: vi.fn(async () => {}),
@@ -39,10 +38,6 @@ vi.mock('firebase/auth', () => ({
     callback(mocks.auth.currentUser)
     return () => {}
   },
-}))
-
-vi.mock('./controllers/storeController', () => ({
-  createMyFirstStore: (...args: unknown[]) => mocks.createMyFirstStore(...args),
 }))
 
 vi.mock('./controllers/sessionController', () => ({
@@ -79,7 +74,7 @@ describe('App signup cleanup', () => {
     mocks.listeners.splice(0, mocks.listeners.length)
   })
 
-  it('removes a newly created user when the store code is already in use', async () => {
+  it('surfaces signup errors without deleting the new account', async () => {
     const user = userEvent.setup()
     const { user: createdUser, deleteFn } = createTestUser()
 
@@ -89,7 +84,7 @@ describe('App signup cleanup', () => {
       return { user: createdUser }
     })
 
-    mocks.createMyFirstStore.mockRejectedValueOnce(new Error('Store code already in use'))
+    mocks.persistSession.mockRejectedValueOnce(new Error('Unable to persist session'))
 
     render(
       <MemoryRouter>
@@ -105,27 +100,18 @@ describe('App signup cleanup', () => {
     await user.click(screen.getByRole('tab', { name: /Sign up/i }))
     await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
     await user.type(screen.getByLabelText(/Phone/i), '5551234567')
-    await user.type(screen.getByLabelText(/Store code/i), 'ORBITX')
     await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
     await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
 
     await user.click(screen.getByRole('button', { name: /Create account/i }))
 
-    await waitFor(() => expect(mocks.createMyFirstStore).toHaveBeenCalled())
-    await waitFor(() => expect(deleteFn).toHaveBeenCalled())
-    await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
 
-    expect(mocks.auth.currentUser).toBeNull()
-
-    await waitFor(() =>
-      expect(screen.getByText('Store code already in use')).toBeVisible(),
-    )
-
-    const signUpTab = screen.getByRole('tab', { name: /Sign up/i })
-    expect(signUpTab).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByLabelText(/Store code/i)).toBeInTheDocument()
+    expect(deleteFn).not.toHaveBeenCalled()
+    expect(mocks.auth.signOut).not.toHaveBeenCalled()
+    expect(mocks.auth.currentUser).toBe(createdUser)
     expect(mocks.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ tone: 'error', message: 'Store code already in use' }),
+      expect.objectContaining({ tone: 'error', message: 'Unable to persist session' }),
     )
   })
 })

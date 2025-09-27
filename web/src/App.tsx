@@ -19,7 +19,6 @@ import {
 } from './controllers/sessionController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
-import { createMyFirstStore } from './controllers/storeController'
 import { useEnsureOnboarded } from './hooks/useEnsureOnboarded'
 
 type AuthMode = 'login' | 'signup'
@@ -40,9 +39,6 @@ function isQueueRequestType(value: unknown): value is QueueRequestType {
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
-const STORE_CODE_LENGTH = 6
-const STORE_CODE_PATTERN = /^[A-Z]{6}$/
-
 function sanitizePhone(value: string): string {
   return value.replace(/\D+/g, '')
 }
@@ -83,7 +79,6 @@ function getSignupValidationError(
   password: string,
   confirmPassword: string,
   phone: string,
-  storeCode: string,
 ): string | null {
   if (!email) {
     return 'Enter your email.'
@@ -121,13 +116,6 @@ function getSignupValidationError(
   }
   if (password !== confirmPassword) {
     return 'Passwords do not match.'
-  }
-
-  if (!storeCode) {
-    return 'Choose a store code to continue.'
-  }
-  if (!STORE_CODE_PATTERN.test(storeCode)) {
-    return `Store code must be exactly ${STORE_CODE_LENGTH} letters.`
   }
 
   return null
@@ -184,7 +172,6 @@ export default function App() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [phone, setPhone] = useState('')
-  const [storeCode, setStoreCode] = useState('')
   const [normalizedPhone, setNormalizedPhone] = useState('')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
   const isLoading = status.tone === 'loading'
@@ -195,7 +182,6 @@ export default function App() {
   const normalizedEmail = email.trim()
   const normalizedPassword = password.trim()
   const normalizedConfirmPassword = confirmPassword.trim()
-  const normalizedStoreCode = storeCode.trim().toUpperCase()
   const hasPhone = normalizedPhone.length > 0
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
   const passwordChecklist = [
@@ -213,8 +199,7 @@ export default function App() {
     doesPasswordMeetAllChecks &&
     hasConfirmedPassword &&
     hasPhone &&
-    normalizedPassword === normalizedConfirmPassword &&
-    STORE_CODE_PATTERN.test(normalizedStoreCode)
+    normalizedPassword === normalizedConfirmPassword
   const isLoginFormValid =
     EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
@@ -287,12 +272,10 @@ export default function App() {
     const sanitizedEmail = email.trim()
     const sanitizedPassword = password.trim()
     const sanitizedConfirmPassword = confirmPassword.trim()
-    const sanitizedStoreCode = storeCode.replace(/[^A-Za-z]/g, '').toUpperCase()
 
     setEmail(sanitizedEmail)
     setPassword(sanitizedPassword)
     if (mode === 'signup') setConfirmPassword(sanitizedConfirmPassword)
-    if (mode === 'signup') setStoreCode(sanitizedStoreCode)
 
     const sanitizedPhone = sanitizePhone(phone)
 
@@ -304,7 +287,6 @@ export default function App() {
             sanitizedPassword,
             sanitizedConfirmPassword,
             sanitizedPhone,
-            sanitizedStoreCode,
           )
 
     if (mode === 'signup') {
@@ -327,8 +309,6 @@ export default function App() {
       message: mode === 'login' ? 'Signing you in…' : 'Creating your account…',
     })
 
-    let createdUser: User | null = null
-
     try {
       if (mode === 'login') {
         const { user: nextUser } = await signInWithEmailAndPassword(
@@ -343,14 +323,6 @@ export default function App() {
           sanitizedEmail,
           sanitizedPassword,
         )
-        createdUser = nextUser
-        await createMyFirstStore({
-          storeCode: sanitizedStoreCode,
-          contact: {
-            phone: sanitizedPhone,
-            firstSignupEmail: sanitizedEmail,
-          },
-        })
         await persistSession(nextUser)
         try {
           await nextUser.getIdToken(true)
@@ -368,33 +340,7 @@ export default function App() {
       setConfirmPassword('')
       setPhone('')
       setNormalizedPhone('')
-      setStoreCode('')
     } catch (err: unknown) {
-      if (mode === 'signup') {
-        const userToDelete = createdUser ?? auth.currentUser
-
-        if (userToDelete) {
-          try {
-            await userToDelete.delete()
-          } catch (deleteError) {
-            const isRecentLoginError =
-              deleteError instanceof FirebaseError && deleteError.code === 'auth/requires-recent-login'
-
-            if (!isRecentLoginError) {
-              console.warn('[auth] Unable to delete user after failed signup', deleteError)
-            }
-          }
-
-          try {
-            await auth.signOut()
-          } catch (signOutError) {
-            console.warn('[auth] Unable to sign out after failed signup', signOutError)
-          }
-
-          setUser(null)
-        }
-      }
-
       setStatus({ tone: 'error', message: getErrorMessage(err) })
     }
   }
@@ -412,7 +358,6 @@ export default function App() {
     setConfirmPassword('')
     setPhone('')
     setNormalizedPhone('')
-    setStoreCode('')
   }
 
   // Inline minHeight is just a safety net; CSS already uses dvh/svh.
@@ -553,39 +498,6 @@ export default function App() {
                   />
                   <p className="form__hint" id="phone-hint">
                     We’ll use this to tailor your onboarding.
-                  </p>
-                </div>
-              )}
-              {mode === 'signup' && (
-                <div className="form__field">
-                  <label htmlFor="store-code">Store code</label>
-                  <input
-                    id="store-code"
-                    value={storeCode}
-                    onChange={event => {
-                      const nextValue = event.target.value.toUpperCase()
-                      const sanitized = nextValue.replace(/[^A-Z]/g, '').slice(0, STORE_CODE_LENGTH)
-                      setStoreCode(sanitized)
-                    }}
-                    onBlur={() =>
-                      setStoreCode(current =>
-                        current
-                          .toUpperCase()
-                          .replace(/[^A-Z]/g, '')
-                          .slice(0, STORE_CODE_LENGTH),
-                      )
-                    }
-                    type="text"
-                    inputMode="text"
-                    autoComplete="off"
-                    placeholder="e.g. ORBITX"
-                    required
-                    disabled={isLoading}
-                    aria-invalid={storeCode.length > 0 && !STORE_CODE_PATTERN.test(normalizedStoreCode)}
-                    aria-describedby="store-code-hint"
-                  />
-                  <p className="form__hint" id="store-code-hint">
-                    Use exactly {STORE_CODE_LENGTH} letters to create a memorable code.
                   </p>
                 </div>
               )}
