@@ -9,6 +9,9 @@ export const onAuthCreate = functions.auth.user().onCreate(async (user) => {
   const db = getFirestore();
   const uid = user.uid;
   const storeId = uid; // simple 1:1 default
+  const ownerEmail = user.email ?? null;
+  const ownerPhone = user.phoneNumber ?? null;
+  const firstSignupEmail = ownerEmail;
 
   const storeRef = db.doc(`stores/${storeId}`);
   const memberRef = db.doc(`stores/${storeId}/members/${uid}`);
@@ -22,6 +25,9 @@ export const onAuthCreate = functions.auth.user().onCreate(async (user) => {
     batch.set(storeRef, {
       id: storeId,
       ownerId: uid,
+      ownerEmail,
+      ownerPhone,
+      firstSignupEmail,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       plan: 'free',
@@ -33,7 +39,11 @@ export const onAuthCreate = functions.auth.user().onCreate(async (user) => {
     batch.set(memberRef, {
       uid,
       role: 'owner',
+      email: ownerEmail,
+      phone: ownerPhone,
+      firstSignupEmail,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
   }
 
@@ -41,7 +51,11 @@ export const onAuthCreate = functions.auth.user().onCreate(async (user) => {
     uid,
     storeId,
     role: 'owner',
+    email: ownerEmail,
+    phone: ownerPhone,
+    firstSignupEmail,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
   await batch.commit();

@@ -62,7 +62,14 @@ async function applyStoreClaims(uid: string): Promise<StoreClaims> {
   return { stores, activeStoreId, roleByStore }
 }
 
-async function ensureDefaultStoreForUser(uid: string, email?: string | null) {
+type OwnerBootstrapMetadata = {
+  ownerEmail?: string | null
+  ownerPhone?: string | null
+  firstSignupEmail?: string | null
+  membershipPhone?: string | null
+}
+
+async function ensureDefaultStoreForUser(uid: string, metadata: OwnerBootstrapMetadata = {}) {
   const existingMemberships = await listStoreMemberships(uid)
   if (existingMemberships.length > 0) {
     return
@@ -84,36 +91,93 @@ async function ensureDefaultStoreForUser(uid: string, email?: string | null) {
       return false
     }
 
+    const storeSnap = await tx.get(storeRef)
+
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
-    tx.set(storeRef, {
+    const storeData: admin.firestore.DocumentData = {
       storeId,
       ownerId: uid,
-      ownerEmail: email ?? null,
-      createdAt: timestamp,
       updatedAt: timestamp,
-    })
+    }
+
+    if (!storeSnap.exists) {
+      storeData.createdAt = timestamp
+    }
+
+    if (metadata.ownerEmail !== undefined) {
+      storeData.ownerEmail = metadata.ownerEmail
+    }
+
+    if (metadata.ownerPhone !== undefined) {
+      storeData.ownerPhone = metadata.ownerPhone
+    }
+
+    const existingFirstSignupEmail = storeSnap.exists ? storeSnap.get('firstSignupEmail') : undefined
+    if ((existingFirstSignupEmail === undefined || existingFirstSignupEmail === null)) {
+      if (metadata.firstSignupEmail !== undefined) {
+        storeData.firstSignupEmail = metadata.firstSignupEmail
+      } else if (!storeSnap.exists && metadata.ownerEmail !== undefined) {
+        storeData.firstSignupEmail = metadata.ownerEmail
+      }
+    }
+
+    tx.set(storeRef, storeData, { merge: true })
 
     return true
   })
 
   if (shouldCreateMembership) {
-    await upsertStoreMembership(storeId, uid, email ?? null, 'owner', null)
+    await upsertStoreMembership(
+      storeId,
+      uid,
+      metadata.ownerEmail ?? null,
+      'owner',
+      null,
+      {
+        phone: metadata.membershipPhone ?? metadata.ownerPhone ?? null,
+        firstSignupEmail:
+          metadata.firstSignupEmail !== undefined
+            ? metadata.firstSignupEmail
+            : metadata.ownerEmail ?? null,
+      },
+    )
   }
 }
 
-async function refreshUserClaims(uid: string, email?: string | null) {
-  await ensureDefaultStoreForUser(uid, email)
+async function refreshUserClaims(uid: string, metadata: OwnerBootstrapMetadata = {}) {
+  await ensureDefaultStoreForUser(uid, metadata)
   return applyStoreClaims(uid)
 }
 
 export const handleUserCreate = functions.auth.user().onCreate(async user => {
   const uid = user.uid
   const email = user.email ?? null
-  await refreshUserClaims(uid, email)
+  await refreshUserClaims(uid, {
+    ownerEmail: email,
+    ownerPhone: user.phoneNumber ?? null,
+    firstSignupEmail: email,
+    membershipPhone: user.phoneNumber ?? null,
+  })
 })
 
-export const initializeStore = functions.https.onCall(async (_data, context) => {
+type InitializeStorePayload = {
+  contact?: {
+    phone?: unknown
+    firstSignupEmail?: unknown
+  }
+}
+
+function normalizeInitializeStorePayload(data: InitializeStorePayload | null | undefined) {
+  const contact = data?.contact ?? {}
+  const rawPhone = typeof contact.phone === 'string' ? contact.phone.trim() : ''
+  const phone = rawPhone ? rawPhone : null
+  const rawFirstSignupEmail = typeof contact.firstSignupEmail === 'string' ? contact.firstSignupEmail.trim().toLowerCase() : ''
+  const firstSignupEmail = rawFirstSignupEmail ? rawFirstSignupEmail : null
+  return { phone, firstSignupEmail }
+}
+
+export const initializeStore = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Login required')
   }
@@ -121,7 +185,14 @@ export const initializeStore = functions.https.onCall(async (_data, context) => 
   const uid = context.auth.uid
   const email = typeof context.auth.token.email === 'string' ? context.auth.token.email : null
 
-  const claims = await refreshUserClaims(uid, email)
+  const { phone, firstSignupEmail } = normalizeInitializeStorePayload((data ?? {}) as InitializeStorePayload)
+
+  const claims = await refreshUserClaims(uid, {
+    ownerEmail: email,
+    ownerPhone: phone,
+    firstSignupEmail: firstSignupEmail ?? email ?? null,
+    membershipPhone: phone,
+  })
   return { ok: true, claims }
 })
 
@@ -206,6 +277,7 @@ async function upsertStoreMembership(
   email: string | null,
   role: string,
   invitedBy: string | null,
+  contact: { phone?: string | null; firstSignupEmail?: string | null } = {},
 ) {
   const membershipRef = db.collection('storeUsers').doc(`${storeId}_${uid}`)
   const storeMemberRef = db.collection('stores').doc(storeId).collection('members').doc(uid)
@@ -223,6 +295,8 @@ async function upsertStoreMembership(
     email: email ?? null,
     role,
     invitedBy,
+    phone: contact.phone ?? null,
+    firstSignupEmail: contact.firstSignupEmail ?? null,
     updatedAt: timestamp,
   }
 
