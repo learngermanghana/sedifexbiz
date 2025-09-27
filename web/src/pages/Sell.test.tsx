@@ -153,6 +153,10 @@ describe('Sell page', () => {
       isLoading: false,
       error: null,
       selectStore: selectStoreMock,
+      resolveStoreAccess: vi.fn().mockResolvedValue({ ok: false, error: null }),
+      needsStoreResolution: false,
+      isResolvingStoreAccess: false,
+      resolutionError: null,
     })
     mockCommitSale.mockResolvedValue({
       data: {
