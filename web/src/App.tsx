@@ -298,7 +298,6 @@ export default function App() {
         } catch (error) {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
-        // No initializeStoreAccess here; Gate handles self-serve creation.
         setOnboardingStatus(nextUser.uid, 'pending')
       }
 
