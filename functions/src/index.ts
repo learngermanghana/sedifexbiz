@@ -234,6 +234,106 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   return { ok: true, claims, storeId: storeCode ?? null }
 })
 
+type ResolveStoreAccessPayload = {
+  storeCode?: unknown
+}
+
+export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Login required')
+  }
+
+  const uid = context.auth.uid
+  const email = typeof context.auth.token.email === 'string' ? context.auth.token.email : null
+  const phone = typeof context.auth.token.phone_number === 'string' ? context.auth.token.phone_number : null
+
+  const payload = (data ?? {}) as ResolveStoreAccessPayload
+  const storeCode = normalizeStoreCode(payload.storeCode)
+  if (!storeCode) {
+    throw new functions.https.HttpsError('invalid-argument', 'A valid store code is required.')
+  }
+
+  const storeRef = db.collection('stores').doc(storeCode)
+  const membershipRef = db.collection('storeUsers').doc(`${storeCode}_${uid}`)
+  const storeMemberRef = storeRef.collection('members').doc(uid)
+
+  const [storeSnap, membershipSnap, storeMemberSnap] = await Promise.all([
+    storeRef.get(),
+    membershipRef.get(),
+    storeMemberRef.get(),
+  ])
+
+  if (!storeSnap.exists) {
+    throw new functions.https.HttpsError('not-found', 'No store matches the provided code.')
+  }
+
+  const timestamp = admin.firestore.FieldValue.serverTimestamp()
+  const ownerId = storeSnap.get('ownerId')
+
+  const resolveExistingString = (value: unknown): string | null => {
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      return trimmed ? trimmed : null
+    }
+    return null
+  }
+
+  const existingRole =
+    resolveExistingString(membershipSnap.get('role')) ??
+    resolveExistingString(storeMemberSnap.get('role')) ??
+    null
+
+  let role = existingRole ?? 'staff'
+  if (!existingRole && resolveExistingString(ownerId) === uid) {
+    role = 'owner'
+  }
+
+  const existingPhone =
+    resolveExistingString(membershipSnap.get('phone')) ??
+    resolveExistingString(storeMemberSnap.get('phone')) ??
+    null
+  const membershipPhone = existingPhone ?? (phone ?? null)
+
+  const existingFirstSignupEmail =
+    resolveExistingString(membershipSnap.get('firstSignupEmail')) ??
+    resolveExistingString(storeMemberSnap.get('firstSignupEmail')) ??
+    null
+  const membershipFirstSignupEmail =
+    existingFirstSignupEmail ?? (email ? email.toLowerCase() : null)
+
+  const invitedBy = resolveExistingString(membershipSnap.get('invitedBy'))
+
+  const baseMembership = {
+    storeId: storeCode,
+    uid,
+    email: email ?? null,
+    role,
+    invitedBy,
+    phone: membershipPhone,
+    firstSignupEmail: membershipFirstSignupEmail,
+    updatedAt: timestamp,
+  }
+
+  const membershipData = {
+    ...baseMembership,
+    ...(membershipSnap.exists ? {} : { createdAt: timestamp }),
+  }
+
+  const storeMemberData = {
+    ...baseMembership,
+    ...(storeMemberSnap.exists ? {} : { createdAt: timestamp }),
+  }
+
+  await Promise.all([
+    membershipRef.set(membershipData, { merge: true }),
+    storeMemberRef.set(storeMemberData, { merge: true }),
+  ])
+
+  const claims = await applyStoreClaims(uid, storeCode)
+
+  return { ok: true, storeId: storeCode, claims }
+})
+
 type ManageStaffPayload = {
   storeId?: unknown
   email?: unknown

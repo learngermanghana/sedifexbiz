@@ -89,6 +89,10 @@ describe('Products page', () => {
       isLoading: false,
       error: null,
       selectStore: vi.fn(),
+      resolveStoreAccess: vi.fn().mockResolvedValue({ ok: false, error: null }),
+      needsStoreResolution: false,
+      isResolvingStoreAccess: false,
+      resolutionError: null,
     })
 
     mockLoadCachedProducts.mockResolvedValue([])
@@ -108,6 +112,10 @@ describe('Products page', () => {
       isLoading: true,
       error: null,
       selectStore: vi.fn(),
+      resolveStoreAccess: vi.fn().mockResolvedValue({ ok: false, error: null }),
+      needsStoreResolution: false,
+      isResolvingStoreAccess: false,
+      resolutionError: null,
     })
 
     render(

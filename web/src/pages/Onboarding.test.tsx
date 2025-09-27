@@ -41,6 +41,10 @@ describe('Onboarding page', () => {
       isLoading: false,
       error: null,
       selectStore: vi.fn(),
+      resolveStoreAccess: vi.fn().mockResolvedValue({ ok: false, error: null }),
+      needsStoreResolution: false,
+      isResolvingStoreAccess: false,
+      resolutionError: null,
     })
 
     mockGetOnboardingStatus.mockReturnValue('pending')
