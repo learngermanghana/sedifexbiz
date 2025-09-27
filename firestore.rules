@@ -76,40 +76,46 @@ service cloud.firestore {
 
     match /products/{id} {
       allow read: if inStore(resource.data.storeId);
-      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
-      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
+      // TEMP: Relaxed for staging/testing so any store member can write; revert to role checks before production hardening.
+      allow create: if inStore(request.resource.data.storeId);
+      allow update, delete: if inStore(resource.data.storeId) && storeIdUnchanged();
     }
 
     match /customers/{id} {
       allow read: if inStore(resource.data.storeId);
-      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
-      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
+      // TEMP: Relaxed for staging/testing so any store member can write; revert to role checks before production hardening.
+      allow create: if inStore(request.resource.data.storeId);
+      allow update, delete: if inStore(resource.data.storeId) && storeIdUnchanged();
     }
 
     match /sales/{id} {
       allow read: if inStore(resource.data.storeId);
       // cashiers/managers/owners: your existing inStore() covers who can create a sale
       allow create: if inStore(request.resource.data.storeId);
-      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
+      // TEMP: Relaxed for staging/testing so any store member can write; revert to role checks before production hardening.
+      allow update, delete: if inStore(resource.data.storeId) && storeIdUnchanged();
     }
 
     match /expenses/{id} {
       allow read: if inStore(resource.data.storeId);
-      allow create: if hasRole(request.resource.data.storeId, ['owner','manager','cashier']);
-      allow update: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
-      allow delete: if hasRole(resource.data.storeId, ['owner','manager']);
+      // TEMP: Relaxed for staging/testing so any store member can write; revert to role checks before production hardening.
+      allow create: if inStore(request.resource.data.storeId);
+      allow update: if inStore(resource.data.storeId) && storeIdUnchanged();
+      allow delete: if inStore(resource.data.storeId);
     }
 
     match /storeGoals/{id} {
       allow read: if inStore(resource.data.storeId);
-      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
-      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
+      // TEMP: Relaxed for staging/testing so any store member can write; revert to role checks before production hardening.
+      allow create: if inStore(request.resource.data.storeId);
+      allow update, delete: if inStore(resource.data.storeId) && storeIdUnchanged();
     }
 
     match /closeouts/{id} {
       allow read: if inStore(resource.data.storeId);
-      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
-      allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
+      // TEMP: Relaxed for staging/testing so any store member can write; revert to role checks before production hardening.
+      allow create: if inStore(request.resource.data.storeId);
+      allow update, delete: if inStore(resource.data.storeId) && storeIdUnchanged();
     }
 
     match /storeUsers/{membershipId} {
