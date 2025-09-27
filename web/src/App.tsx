@@ -382,6 +382,34 @@ export default function App() {
   }
 
   if (!user) {
+    const PAGE_FEATURES = [
+      {
+        path: '/products',
+        name: 'Products',
+        description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.',
+      },
+      {
+        path: '/sell',
+        name: 'Sell',
+        description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.',
+      },
+      {
+        path: '/receive',
+        name: 'Receive',
+        description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.',
+      },
+      {
+        path: '/customers',
+        name: 'Customers',
+        description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.',
+      },
+      {
+        path: '/close-day',
+        name: 'Close Day',
+        description: 'Tie out cash, settle registers, and share end-of-day reports with finance in one view.',
+      },
+    ] as const
+
     return (
       <main className="app" style={appStyle}>
         <div className="app__layout">
@@ -586,6 +614,36 @@ export default function App() {
             </div>
           </aside>
         </div>
+
+        <section className="app__features" aria-label="Sedifex workspace pages">
+          <header className="app__features-header">
+            <h2>Explore the workspace</h2>
+            <p>
+              Every Sedifex page is built to keep retail operations synchronized—from the sales
+              floor to finance.
+            </p>
+          </header>
+
+          <div className="app__features-grid" role="list">
+            {PAGE_FEATURES.map(feature => (
+              <Link
+                key={feature.path}
+                className="feature-card"
+                to={feature.path}
+                role="listitem"
+                aria-label={`Open the ${feature.name} page`}
+              >
+                <div className="feature-card__body">
+                  <h3>{feature.name}</h3>
+                  <p>{feature.description}</p>
+                </div>
+                <span className="feature-card__cta" aria-hidden="true">
+                  Visit {feature.name}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
 
         <section className="app__info-grid" aria-label="Sedifex company information">
           <article className="info-card">
