@@ -468,7 +468,7 @@ export default function Sell() {
 
   if (storeLoading) return <div>Loading…</div>
   if (!STORE_ID) {
-    return <div>We were unable to determine your store access. Please sign out and back in.</div>
+    return <div>We were unable to confirm your workspace access. Please sign out and back in.</div>
   }
 
   const filtered = products.filter(p => p.name.toLowerCase().includes(queryText.toLowerCase()))

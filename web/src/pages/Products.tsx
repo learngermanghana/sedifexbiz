@@ -438,7 +438,7 @@ export default function Products() {
   }
 
   if (!STORE_ID) {
-    return <div>We were unable to determine your store access. Please sign out and back in.</div>
+    return <div>We were unable to confirm your workspace access. Please sign out and back in.</div>
   }
 
   return (

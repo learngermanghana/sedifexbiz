@@ -19,7 +19,6 @@ import {
 } from './controllers/sessionController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
-import { useEnsureOnboarded } from './hooks/useEnsureOnboarded'
 
 type AuthMode = 'login' | 'signup'
 
@@ -162,9 +161,6 @@ function normalizeQueueError(value: unknown): string | null {
 }
 
 export default function App() {
-  // Ensure the user always has a store, membership, and custom claims
-  useEnsureOnboarded()
-
   const [user, setUser] = useState<User | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
   const [mode, setMode] = useState<AuthMode>('login')

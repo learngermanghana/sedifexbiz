@@ -9,11 +9,6 @@ vi.mock('../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-const mockUseActiveStore = vi.fn()
-vi.mock('../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
-}))
-
 const mockGetOnboardingStatus = vi.fn()
 const mockSetOnboardingStatus = vi.fn()
 vi.mock('../utils/onboarding', () => ({
@@ -26,7 +21,6 @@ vi.mock('../utils/onboarding', () => ({
 describe('Onboarding page', () => {
   beforeEach(() => {
     mockUseAuthUser.mockReset()
-    mockUseActiveStore.mockReset()
     mockGetOnboardingStatus.mockReset()
     mockSetOnboardingStatus.mockReset()
 
@@ -35,18 +29,10 @@ describe('Onboarding page', () => {
       email: 'owner@example.com',
     })
 
-    mockUseActiveStore.mockReturnValue({
-      storeId: 'ORBITX',
-      stores: ['ORBITX'],
-      isLoading: false,
-      error: null,
-      selectStore: vi.fn(),
-    })
-
     mockGetOnboardingStatus.mockReturnValue('pending')
   })
 
-  it('renders onboarding content when store access is ready', () => {
+  it('renders onboarding content when workspace access is ready', () => {
     render(
       <MemoryRouter>
         <Onboarding />
@@ -56,6 +42,6 @@ describe('Onboarding page', () => {
     expect(screen.getByRole('heading', { name: /welcome to sedifex/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /confirm your owner account/i })).toBeInTheDocument()
     expect(screen.getByText(/need to update access later/i)).toBeInTheDocument()
-    expect(screen.getByText(/let's secure your store \(ORBITX\)/i)).toBeInTheDocument()
+    expect(screen.getByText(/let's get your workspace ready/i)).toBeInTheDocument()
   })
 })
