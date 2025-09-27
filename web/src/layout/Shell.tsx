@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useMemo } from 'react'
 import { NavLink } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
@@ -73,34 +73,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const connectivity = useConnectivityStatus()
   const {
     storeId: activeStoreId,
-    stores: availableStores,
     isLoading: storeLoading,
     error: storeError,
-    selectStore,
-    needsStoreResolution,
-    resolveStoreAccess,
-    isResolvingStoreAccess,
-    resolutionError,
   } = useActiveStore()
-
-  const [manualStoreCode, setManualStoreCode] = useState('')
-  const [manualStoreError, setManualStoreError] = useState<string | null>(null)
-  const manualInputRef = useRef<HTMLInputElement | null>(null)
-
-  useEffect(() => {
-    if (needsStoreResolution) {
-      manualInputRef.current?.focus()
-    } else {
-      setManualStoreCode('')
-      setManualStoreError(null)
-    }
-  }, [needsStoreResolution])
-
-  useEffect(() => {
-    if (resolutionError) {
-      setManualStoreError(resolutionError)
-    }
-  }, [resolutionError])
 
   const { isOnline, isReachable, queue } = connectivity
 
@@ -138,48 +113,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return null
   }, [isOnline, isReachable, queue.lastError, queue.pending, queue.status])
 
-  const storeSelectId = 'shell-store-select'
   const storeErrorId = storeError ? 'shell-store-error' : undefined
-  const storeSelectDisabled = storeLoading || availableStores.length === 0
-  const storePlaceholder = storeLoading
-    ? 'Loading stores…'
-    : availableStores.length === 0
-      ? 'No store access'
-      : 'Select a store'
-
-  const manualCodeErrorId = manualStoreError ? 'shell-store-code-error' : undefined
-
-  function handleStoreChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    const { value } = event.target
-    if (value) {
-      selectStore(value)
-    }
-  }
-
-  function handleManualCodeChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const rawValue = event.target.value.toUpperCase()
-    const sanitized = rawValue.replace(/[^A-Z]/g, '').slice(0, 6)
-    setManualStoreCode(sanitized)
-    setManualStoreError(null)
-  }
-
-  async function handleManualSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const normalized = manualStoreCode.trim().toUpperCase()
-    if (!/^[A-Z]{6}$/.test(normalized)) {
-      setManualStoreError('Enter a valid six-letter store code.')
-      manualInputRef.current?.focus()
-      return
-    }
-
-    setManualStoreError(null)
-    const result = await resolveStoreAccess(normalized)
-    if (result.ok) {
-      setManualStoreCode('')
-    } else {
-      setManualStoreError(result.error ?? 'We could not verify that store code. Try again.')
-    }
-  }
+  const storeStatus = storeLoading ? 'Loading store…' : activeStoreId ?? 'No store access'
 
   return (
     <div className="shell">
@@ -204,29 +139,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="shell__controls">
-            <div className="shell__store-switcher">
-              <label className="shell__store-label" htmlFor={storeSelectId}>
-                Store
-              </label>
-              <select
-                id={storeSelectId}
-                aria-label="Select active store"
-                aria-describedby={storeErrorId}
-                className="shell__store-select"
-                value={activeStoreId ?? ''}
-                onChange={handleStoreChange}
-                disabled={storeSelectDisabled}
-              >
-                <option value="" disabled>
-                  {storePlaceholder}
-                </option>
-                {availableStores.map(store => (
-                  <option key={store} value={store}>
-                    {store}
-                  </option>
-                ))}
-            </select>
-          </div>
+            <div className="shell__store-switcher" role="status" aria-live="polite">
+              <span className="shell__store-label">Store</span>
+              <span className="shell__store-select" data-readonly>
+                {storeStatus}
+              </span>
+            </div>
 
             {banner && (
               <div
@@ -260,41 +178,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <div className="shell__store-error" role="alert" id={storeErrorId}>
               {storeError}
             </div>
-          ) : null}
-          {needsStoreResolution ? (
-            <form className="shell__store-recovery" onSubmit={handleManualSubmit} noValidate>
-              <label className="shell__store-recovery-label" htmlFor="shell-store-code">
-                Enter your store code to restore access
-              </label>
-              <div className="shell__store-recovery-controls">
-                <input
-                  id="shell-store-code"
-                  ref={manualInputRef}
-                  className="shell__store-recovery-input"
-                  type="text"
-                  inputMode="text"
-                  autoComplete="off"
-                  aria-describedby={manualCodeErrorId}
-                  aria-invalid={manualStoreError ? 'true' : 'false'}
-                  value={manualStoreCode}
-                  onChange={handleManualCodeChange}
-                  placeholder="ABCDEF"
-                  maxLength={6}
-                />
-                <button
-                  type="submit"
-                  className="button button--primary button--small"
-                  disabled={isResolvingStoreAccess}
-                >
-                  {isResolvingStoreAccess ? 'Linking…' : 'Link store'}
-                </button>
-              </div>
-              {manualStoreError ? (
-                <p className="shell__store-recovery-error" role="alert" id={manualCodeErrorId}>
-                  {manualStoreError}
-                </p>
-              ) : null}
-            </form>
           ) : null}
         </div>
       </header>
