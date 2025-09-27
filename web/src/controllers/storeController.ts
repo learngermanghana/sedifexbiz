@@ -1,7 +1,7 @@
 // web/src/controllers/storeController.ts
 import { getAuth } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db, functions } from '../firebase';
 
 type ContactPayload = {
@@ -32,36 +32,6 @@ export async function createMyFirstStore(options: CreateMyFirstStoreOptions) {
   const ownerPhone = contact.phone ?? null;
   const firstSignupEmail = contact.firstSignupEmail ?? user.email ?? null;
 
-  const storeRef = doc(db, 'stores', storeId);
-  const existingStore = await getDoc(storeRef);
-
-  if (existingStore.exists() && existingStore.data()?.ownerId !== user.uid) {
-    throw new Error('That store code is already taken. Try another one.');
-  }
-
-  const storePayload: Record<string, unknown> = {
-    storeId,
-    ownerId: user.uid,
-    ownerEmail: user.email ?? null,
-    updatedAt: serverTimestamp(),
-  };
-
-  if (ownerPhone !== undefined) {
-    storePayload.ownerPhone = ownerPhone;
-  }
-
-  const currentFirstSignupEmail = existingStore.exists() ? existingStore.data()?.firstSignupEmail : undefined;
-  if (!currentFirstSignupEmail && firstSignupEmail !== undefined) {
-    storePayload.firstSignupEmail = firstSignupEmail;
-  }
-
-  if (!existingStore.exists()) {
-    storePayload.createdAt = serverTimestamp();
-  }
-
-  // 1) Create the store (id == uid)
-  await setDoc(storeRef, storePayload, { merge: true });
-
   const ownerMetadata = {
     storeId,
     uid: user.uid,
@@ -71,25 +41,33 @@ export async function createMyFirstStore(options: CreateMyFirstStoreOptions) {
     firstSignupEmail,
     displayName: user.displayName ?? null,
     photoURL: user.photoURL ?? null,
-    createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
 
-  // 2) Create the owner membership (members/{uid})
+  const initializeStore = httpsCallable(functions, 'initializeStore');
+  try {
+    await initializeStore({
+      storeCode: storeId,
+      contact: {
+        phone: ownerPhone,
+        firstSignupEmail,
+      },
+    });
+  } catch (error: unknown) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code === 'functions/already-exists') {
+      throw new Error('That store code is already taken. Try another one.');
+    }
+    throw error;
+  }
+
+  // After the callable succeeds the membership exists, so local writes comply with rules.
+
+  // 1) Ensure owner membership metadata is up to date (members/{uid})
   await setDoc(doc(db, 'stores', storeId, 'members', user.uid), ownerMetadata, { merge: true });
 
-  // 3) Store owner lookup (storeUsers/{storeId}_{uid})
+  // 2) Store owner lookup (storeUsers/{storeId}_{uid})
   await setDoc(doc(db, 'storeUsers', `${storeId}_${user.uid}`), ownerMetadata, { merge: true });
-
-  // 4) Ensure backend initialization + refreshed claims
-  const initializeStore = httpsCallable(functions, 'initializeStore');
-  await initializeStore({
-    storeCode: storeId,
-    contact: {
-      phone: ownerPhone,
-      firstSignupEmail,
-    },
-  });
 
   // Optional: if any legacy code still checks custom claims, refresh token
   await user.getIdToken(true);
