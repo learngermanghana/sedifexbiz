@@ -1,7 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen } from '@testing-library/react'
 
 import Shell from './Shell'
 
@@ -39,7 +38,7 @@ function renderShell() {
   )
 }
 
-describe('Shell manual store recovery', () => {
+describe('Shell', () => {
   beforeEach(() => {
     mockUseAuthUser.mockReset()
     mockUseActiveStore.mockReset()
@@ -54,85 +53,47 @@ describe('Shell manual store recovery', () => {
       heartbeatError: null,
       queue: { status: 'idle', pending: 0, lastError: null, updatedAt: null },
     })
-
-    mockUseActiveStore.mockReturnValue({
-      storeId: null,
-      stores: [],
-      isLoading: false,
-      error: 'We could not find any stores linked to your account. Enter your store code to restore access.',
-      selectStore: vi.fn(),
-      needsStoreResolution: true,
-      resolveStoreAccess: vi.fn().mockResolvedValue({ ok: false, error: null }),
-      isResolvingStoreAccess: false,
-      resolutionError: null,
-    })
   })
 
-  it('shows a manual store code form when no stores are linked', () => {
-    renderShell()
-
-    expect(screen.getByLabelText(/store code/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /link store/i })).toBeInTheDocument()
-  })
-
-  it('validates six-letter codes before submitting to the backend', async () => {
-    const resolveMock = vi.fn().mockResolvedValue({ ok: false, error: null })
+  it('shows the resolved store identifier', () => {
     mockUseActiveStore.mockReturnValue({
-      storeId: null,
-      stores: [],
+      storeId: 'store-1',
+      stores: ['store-1'],
       isLoading: false,
-      error: 'Missing store',
+      error: null,
       selectStore: vi.fn(),
-      needsStoreResolution: true,
-      resolveStoreAccess: resolveMock,
-      isResolvingStoreAccess: false,
-      resolutionError: null,
     })
 
     renderShell()
 
-    const user = userEvent.setup()
-    await user.type(screen.getByLabelText(/store code/i), 'abc')
-    await user.click(screen.getByRole('button', { name: /link store/i }))
-
-    expect(resolveMock).not.toHaveBeenCalled()
-    expect(
-      await screen.findByText(/enter a valid six-letter store code/i),
-    ).toBeInTheDocument()
+    expect(screen.getByText('store-1')).toBeInTheDocument()
   })
 
-  it('submits a normalized code and surfaces backend errors', async () => {
-    const resolveMock = vi.fn(async () => ({
-      ok: false,
-      error: 'We could not find a store with that code.',
-    }))
-
+  it('indicates when store details are loading', () => {
     mockUseActiveStore.mockReturnValue({
       storeId: null,
       stores: [],
-      isLoading: false,
-      error: 'Missing store',
+      isLoading: true,
+      error: null,
       selectStore: vi.fn(),
-      needsStoreResolution: true,
-      resolveStoreAccess: resolveMock,
-      isResolvingStoreAccess: false,
-      resolutionError: null,
     })
 
     renderShell()
 
-    const user = userEvent.setup()
-    const input = screen.getByLabelText(/store code/i)
-    await user.clear(input)
-    await user.type(input, 'abcxyz')
-    await user.click(screen.getByRole('button', { name: /link store/i }))
+    expect(screen.getByText(/loading store/i)).toBeInTheDocument()
+  })
 
-    await waitFor(() => {
-      expect(resolveMock).toHaveBeenCalledWith('ABCXYZ')
+  it('surfaces store resolution errors', () => {
+    mockUseActiveStore.mockReturnValue({
+      storeId: null,
+      stores: [],
+      isLoading: false,
+      error: 'Unable to determine store access.',
+      selectStore: vi.fn(),
     })
 
-    expect(
-      await screen.findByText(/we could not find a store with that code/i),
-    ).toBeInTheDocument()
+    renderShell()
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Unable to determine store access.')
   })
 })
