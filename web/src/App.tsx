@@ -19,7 +19,6 @@ import {
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 import { createMyFirstStore } from './controllers/storeController'
-import Gate from './pages/Gate' // ← new: self-serve bootstrap gate
 
 type AuthMode = 'login' | 'signup'
 
@@ -573,10 +572,7 @@ export default function App() {
 
   return (
     <AuthUserContext.Provider value={user}>
-      {/* Gate shows “Create my store” when user has no memberships */}
-      <Gate>
-        <Outlet />
-      </Gate>
+      <Outlet />
     </AuthUserContext.Provider>
   )
 }
