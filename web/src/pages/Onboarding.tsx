@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthUser } from '../hooks/useAuthUser'
-import { useActiveStore } from '../hooks/useActiveStore'
 import { getOnboardingStatus, setOnboardingStatus, type OnboardingStatus } from '../utils/onboarding'
 import './Onboarding.css'
 
 export default function Onboarding() {
   const user = useAuthUser()
   const navigate = useNavigate()
-  const { isLoading: storeLoading, error: storeError, storeId } = useActiveStore()
   const [status, setStatus] = useState<OnboardingStatus | null>(() => getOnboardingStatus(user?.uid ?? null))
 
   useEffect(() => {
@@ -27,28 +25,6 @@ export default function Onboarding() {
     navigate('/', { replace: true })
   }
 
-  if (storeLoading) {
-    return (
-      <div className="page" role="status" aria-live="polite">
-        <header className="page__header">
-          <h1 className="page__title">Preparing your workspace…</h1>
-          <p className="page__subtitle">We&apos;re getting your store workspace ready.</p>
-        </header>
-      </div>
-    )
-  }
-
-  if (storeError) {
-    return (
-      <div className="page" role="alert">
-        <header className="page__header">
-          <h1 className="page__title">We couldn&apos;t load your store details</h1>
-          <p className="page__subtitle">{storeError}</p>
-        </header>
-      </div>
-    )
-  }
-
   return (
     <div className="page onboarding-page" role="region" aria-labelledby="onboarding-title">
       <header className="page__header onboarding-page__header">
@@ -57,7 +33,7 @@ export default function Onboarding() {
             Welcome to Sedifex
           </h1>
           <p className="page__subtitle">
-            Let&apos;s secure your store{storeId ? ` (${storeId})` : ''} before you invite the rest of your team.
+            Let&apos;s get your workspace ready before you invite the rest of your team.
           </p>
         </div>
         {hasCompleted && (
@@ -75,8 +51,8 @@ export default function Onboarding() {
           </h2>
         </header>
         <p>
-          You&apos;re signed in as the store owner. We recommend keeping this login private and using it only for
-          high-impact controls like payouts, data exports, and staff access. Add a recovery email in case you ever
+          You&apos;re signed in as the workspace owner. We recommend keeping this login private and using it only for
+          high-impact controls like payouts, data exports, and team access. Add a recovery email in case you ever
           need to reset your password.
         </p>
         <ul className="onboarding-card__list">
@@ -94,7 +70,7 @@ export default function Onboarding() {
           </h2>
         </header>
         <p>
-          Use the staff access workspace to create login credentials for every teammate who needs Sedifex. Assign
+          Use the team access workspace to create login credentials for every teammate who needs Sedifex. Assign
           each person a role so they only see the tools they need.
         </p>
         <ul className="onboarding-card__list">

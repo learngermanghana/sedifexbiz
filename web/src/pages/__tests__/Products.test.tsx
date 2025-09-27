@@ -85,10 +85,8 @@ describe('Products page', () => {
 
     mockUseActiveStore.mockReturnValue({
       storeId: 'store-1',
-      stores: ['store-1'],
       isLoading: false,
       error: null,
-      selectStore: vi.fn(),
     })
 
     mockLoadCachedProducts.mockResolvedValue([])
@@ -104,10 +102,8 @@ describe('Products page', () => {
   it('renders store loading state', () => {
     mockUseActiveStore.mockReturnValue({
       storeId: null,
-      stores: [],
       isLoading: true,
       error: null,
-      selectStore: vi.fn(),
     })
 
     render(

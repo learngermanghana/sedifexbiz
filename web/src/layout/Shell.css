@@ -91,56 +91,6 @@
   justify-content: flex-end;
 }
 
-.shell__store-switcher {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
-  background: #eef2ff;
-  border-radius: 999px;
-}
-
-.shell__store-label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #4338ca;
-}
-
-.shell .shell__store-select {
-  min-width: 160px;
-  border: none;
-  background: transparent;
-  font-size: 14px;
-  font-weight: 600;
-  color: #312e81;
-  padding: 0;
-  margin: 0;
-  appearance: none;
-  cursor: pointer;
-}
-
-.shell .shell__store-select[data-readonly] {
-  cursor: default;
-}
-
-.shell .shell__store-select:focus {
-  border: none;
-  box-shadow: none;
-}
-
-.shell .shell__store-select:disabled {
-  cursor: not-allowed;
-  color: #94a3b8;
-}
-
-.shell__store-role {
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 500;
-}
-
 .shell__account {
   display: flex;
   align-items: center;
@@ -148,14 +98,6 @@
   padding: 6px 10px;
   background: #eef2ff;
   border-radius: 999px;
-}
-
-.shell__store-error {
-  width: 100%;
-  text-align: right;
-  font-size: 12px;
-  color: #b91c1c;
-  font-weight: 500;
 }
 
 .shell__account-email {
