@@ -33,8 +33,8 @@ service cloud.firestore {
     match /stores/{storeId} {
       // Self-bootstrap: create /stores/{uid} once, if no membership doc exists yet
       allow create: if isAuthed()
-        && storeId == request.auth.uid
-        && !exists(/databases/$(database)/documents/stores/$(request.auth.uid)/members/$(request.auth.uid));
+        && request.resource.data.ownerId == request.auth.uid
+        && !exists(/databases/$(database)/documents/stores/$(storeId)/members/$(request.auth.uid));
 
       // Owners & managers can update/delete store metadata
       allow update, delete: if hasRole(storeId, ['owner','manager']);
@@ -48,10 +48,11 @@ service cloud.firestore {
         // Self-bootstrap owner membership:
         // allow creating /stores/{uid}/members/{uid} with role 'owner' once.
         allow create: if isAuthed()
-          && storeId == request.auth.uid
           && memberId == request.auth.uid
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.storeId == storeId
           && request.resource.data.role == 'owner'
-          && !exists(/databases/$(database)/documents/stores/$(request.auth.uid)/members/$(request.auth.uid));
+          && !exists(/databases/$(database)/documents/stores/$(storeId)/members/$(request.auth.uid));
 
         // Read: anyone in the store can read members; always allow a user to read their own membership
         allow read: if inStore(storeId)
