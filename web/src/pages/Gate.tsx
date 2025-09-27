@@ -56,7 +56,7 @@ export default function Gate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (loading) return;
-    if (error) return;
+    if (error && !isRecoverableMembershipError(error)) return;
     if (memberships.length !== 0) return;
     if (autoCreateTriggered.current) return;
 
@@ -70,7 +70,8 @@ export default function Gate({ children }: { children: ReactNode }) {
   const irrecoverableMembershipError = error && !recoverableMembershipError ? error : null;
   const membershipErrorMessage = toErrorMessage(error);
 
-  const shouldAutoCreateStore = !error && memberships.length === 0;
+  const shouldAutoCreateStore =
+    memberships.length === 0 && (!error || isRecoverableMembershipError(error));
 
   // No memberships → show self-serve bootstrap
   if (memberships.length === 0 || error) {
