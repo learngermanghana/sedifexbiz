@@ -76,13 +76,13 @@ service cloud.firestore {
 
     match /products/{id} {
       allow read: if inStore(resource.data.storeId);
-      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
+      allow create: if hasRole(request.resource.data.storeId, ['owner','manager','cashier']);
       allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
     }
 
     match /customers/{id} {
       allow read: if inStore(resource.data.storeId);
-      allow create: if hasRole(request.resource.data.storeId, ['owner','manager']);
+      allow create: if hasRole(request.resource.data.storeId, ['owner','manager','cashier']);
       allow update, delete: if hasRole(resource.data.storeId, ['owner','manager']) && storeIdUnchanged();
     }
 
