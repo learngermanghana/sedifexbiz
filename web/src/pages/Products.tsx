@@ -19,6 +19,7 @@ interface ReceiptDetails {
 export type ProductRecord = {
   id: string
   name: string
+  price: number | null
   sku?: string | null
   stockCount?: number | null
   reorderThreshold?: number | null
@@ -35,9 +36,17 @@ interface StatusState {
   message: string
 }
 
+function sanitizePrice(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value
+  }
+  return null
+}
+
 const DEFAULT_CREATE_FORM = {
   name: '',
   sku: '',
+  price: '',
   reorderThreshold: '',
   initialStock: '',
 }
@@ -45,6 +54,7 @@ const DEFAULT_CREATE_FORM = {
 const DEFAULT_EDIT_FORM = {
   name: '',
   sku: '',
+  price: '',
   reorderThreshold: '',
 }
 
@@ -144,7 +154,11 @@ export default function Products() {
         if (!cancelled && cached.length) {
           setProducts(prev => {
             const optimistic = prev.filter(item => item.__optimistic)
-            const sanitized = cached.map(item => ({ ...item, __optimistic: false }))
+            const sanitized = cached.map(item => ({
+              ...(item as ProductRecord),
+              price: sanitizePrice((item as ProductRecord).price),
+              __optimistic: false,
+            }))
             return sortProducts([...sanitized, ...optimistic])
           })
           setIsLoadingProducts(false)
@@ -165,13 +179,20 @@ export default function Products() {
       q,
       snapshot => {
         if (cancelled) return
-        const rows = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Record<string, unknown>) }))
-        saveCachedProducts(rows).catch(error => {
+        const rows = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Record<string, unknown>),
+        }))
+        const sanitizedRows = rows.map(row => ({
+          ...(row as ProductRecord),
+          price: sanitizePrice((row as ProductRecord).price),
+        }))
+        saveCachedProducts(sanitizedRows).catch(error => {
           console.warn('[products] Failed to cache products', error)
         })
         setProducts(prev => {
           const optimistic = prev.filter(product => product.__optimistic)
-          const merged = rows.map(row => ({
+          const merged = sanitizedRows.map(row => ({
             ...(row as ProductRecord),
             __optimistic: false,
           }))
@@ -204,6 +225,10 @@ export default function Products() {
     setEditForm({
       name: product.name ?? '',
       sku: product.sku ?? '',
+      price:
+        typeof product.price === 'number' && Number.isFinite(product.price)
+          ? String(product.price)
+          : '',
       reorderThreshold:
         typeof product.reorderThreshold === 'number' && Number.isFinite(product.reorderThreshold)
           ? String(product.reorderThreshold)
@@ -249,15 +274,28 @@ export default function Products() {
     return parsed
   }
 
+  function parsePriceInput(value: string) {
+    if (!value.trim()) return null
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return null
+    if (parsed < 0) return null
+    return parsed
+  }
+
   async function handleCreateProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const name = createForm.name.trim()
     const sku = createForm.sku.trim()
+    const price = parsePriceInput(createForm.price)
     const reorderThreshold = validateNumbers(createForm.reorderThreshold)
     const initialStock = validateNumbers(createForm.initialStock)
 
     if (!name) {
       setCreateStatus({ tone: 'error', message: 'Name your product so the team recognises it on the shelf.' })
+      return
+    }
+    if (price === null) {
+      setCreateStatus({ tone: 'error', message: 'Enter a valid price that is zero or greater.' })
       return
     }
     if (createForm.reorderThreshold && reorderThreshold === null) {
@@ -272,6 +310,7 @@ export default function Products() {
     const optimisticProduct: ProductRecord = {
       id: `optimistic-${Date.now()}`,
       name,
+      price,
       sku: sku || null,
       reorderThreshold: reorderThreshold ?? null,
       stockCount: initialStock ?? 0,
@@ -288,6 +327,7 @@ export default function Products() {
     try {
       const ref = await addDoc(collection(db, 'products'), {
         name,
+        price,
         sku: sku || null,
         reorderThreshold: reorderThreshold ?? null,
         stockCount: initialStock ?? 0,
@@ -333,10 +373,15 @@ export default function Products() {
     }
     const name = editForm.name.trim()
     const sku = editForm.sku.trim()
+    const price = parsePriceInput(editForm.price)
     const reorderThreshold = validateNumbers(editForm.reorderThreshold)
 
     if (!name) {
       setEditStatus({ tone: 'error', message: 'Name your product so staff know what to pick.' })
+      return
+    }
+    if (price === null) {
+      setEditStatus({ tone: 'error', message: 'Enter a valid price that is zero or greater.' })
       return
     }
     if (editForm.reorderThreshold && reorderThreshold === null) {
@@ -352,6 +397,7 @@ export default function Products() {
 
     const updatedValues: Partial<ProductRecord> = {
       name,
+      price,
       sku: sku || null,
       reorderThreshold: reorderThreshold ?? null,
       updatedAt: new Date(),
@@ -370,6 +416,7 @@ export default function Products() {
     try {
       await updateDoc(doc(collection(db, 'products'), editingProductId), {
         name,
+        price,
         sku: sku || null,
         reorderThreshold: reorderThreshold ?? null,
         updatedAt: serverTimestamp(),
@@ -460,6 +507,7 @@ export default function Products() {
                 <tr>
                   <th scope="col">Product</th>
                   <th scope="col">SKU</th>
+                  <th scope="col">Price</th>
                   <th scope="col">On hand</th>
                   <th scope="col">Reorder point</th>
                   <th scope="col">Last receipt</th>
@@ -486,6 +534,11 @@ export default function Products() {
                         </div>
                       </th>
                       <td>{product.sku || '—'}</td>
+                      <td>{
+                        typeof product.price === 'number' && Number.isFinite(product.price)
+                          ? `GHS ${product.price.toFixed(2)}`
+                          : '—'
+                      }</td>
                       <td>{stockCount}</td>
                       <td>{reorderThreshold ?? '—'}</td>
                       <td>{formatReceiptDetails(product.lastReceipt)}</td>
@@ -533,6 +586,17 @@ export default function Products() {
             />
           </label>
           <label className="field">
+            <span className="field__label">Price</span>
+            <input
+              name="price"
+              value={createForm.price}
+              onChange={handleCreateFieldChange}
+              placeholder="How much you sell it for"
+              inputMode="decimal"
+              required
+            />
+          </label>
+          <label className="field">
             <span className="field__label">Reorder point</span>
             <input
               name="reorderThreshold"
@@ -576,6 +640,16 @@ export default function Products() {
               <label className="field">
                 <span className="field__label">SKU</span>
                 <input name="sku" value={editForm.sku} onChange={handleEditFieldChange} />
+              </label>
+              <label className="field">
+                <span className="field__label">Price</span>
+                <input
+                  name="price"
+                  value={editForm.price}
+                  onChange={handleEditFieldChange}
+                  inputMode="decimal"
+                  required
+                />
               </label>
               <label className="field">
                 <span className="field__label">Reorder point</span>

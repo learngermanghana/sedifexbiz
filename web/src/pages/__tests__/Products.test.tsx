@@ -137,6 +137,7 @@ describe('Products page', () => {
             data: () => ({
               name: 'Iced Coffee',
               sku: 'COF-01',
+              price: 12,
               stockCount: 2,
               reorderThreshold: 5,
               lastReceipt: { qty: 12, supplier: 'ACME' },
@@ -149,7 +150,73 @@ describe('Products page', () => {
     const productRow = await screen.findByTestId('product-row-product-1')
     expect(productRow).toHaveTextContent('Iced Coffee')
     expect(within(productRow).getByText(/low stock/i)).toBeInTheDocument()
+    expect(within(productRow).getByText(/GHS 12\.00/)).toBeInTheDocument()
     expect(mockSaveCachedProducts).toHaveBeenCalled()
+  })
+
+  it('shows a placeholder when a product is missing a price', async () => {
+    let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null
+    onSnapshotMock.mockImplementation((queryRef, onNext) => {
+      snapshotHandler = onNext
+      return () => {}
+    })
+
+    render(
+      <MemoryRouter>
+        <Products />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      snapshotHandler?.({
+        docs: [
+          {
+            id: 'product-3',
+            data: () => ({
+              name: 'Unpriced Item',
+              sku: 'UNP-01',
+            }),
+          },
+        ],
+      })
+    })
+
+    const productRow = await screen.findByTestId('product-row-product-3')
+    const cells = within(productRow).getAllByRole('cell')
+    expect(cells[1]).toHaveTextContent('—')
+  })
+
+  it('requires a valid price when creating a product', async () => {
+    const user = userEvent.setup()
+    let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null
+    onSnapshotMock.mockImplementation((queryRef, onNext) => {
+      snapshotHandler = onNext
+      return () => {}
+    })
+
+    render(
+      <MemoryRouter>
+        <Products />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      snapshotHandler?.({ docs: [] })
+    })
+
+    await user.type(screen.getByLabelText('Name'), 'Incomplete Product')
+    await user.type(screen.getByLabelText('Price'), '-5')
+
+    await user.click(screen.getByRole('button', { name: /add product/i }))
+
+    expect(addDocMock).not.toHaveBeenCalled()
+    expect(
+      await screen.findByText(/enter a valid price that is zero or greater/i),
+    ).toBeInTheDocument()
   })
 
   it('optimistically renders a newly created product', async () => {
@@ -180,6 +247,7 @@ describe('Products page', () => {
 
     await user.type(screen.getByLabelText('Name'), 'New Blend')
     await user.type(screen.getByLabelText('SKU'), 'NB-01')
+    await user.type(screen.getByLabelText('Price'), '18')
     await user.type(screen.getByLabelText('Reorder point'), '4')
     await user.type(screen.getByLabelText('Opening stock'), '10')
 
@@ -191,6 +259,7 @@ describe('Products page', () => {
       expect.objectContaining({
         name: 'New Blend',
         sku: 'NB-01',
+        price: 18,
         reorderThreshold: 4,
         stockCount: 10,
       }),
@@ -213,6 +282,7 @@ describe('Products page', () => {
             data: () => ({
               name: 'New Blend',
               sku: 'NB-01',
+              price: 18,
               stockCount: 10,
               reorderThreshold: 4,
             }),
@@ -225,6 +295,57 @@ describe('Products page', () => {
       expect(screen.queryByText('Syncing…')).not.toBeInTheDocument()
       expect(screen.getByText('New Blend')).toBeInTheDocument()
     })
+  })
+
+  it('saves price updates when editing a product', async () => {
+    const user = userEvent.setup()
+    let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null
+    onSnapshotMock.mockImplementation((queryRef, onNext) => {
+      snapshotHandler = onNext
+      return () => {}
+    })
+
+    render(
+      <MemoryRouter>
+        <Products />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      snapshotHandler?.({
+        docs: [
+          {
+            id: 'product-9',
+            data: () => ({
+              name: 'Legacy Item',
+              sku: 'LEG-01',
+              price: 10,
+              stockCount: 5,
+            }),
+          },
+        ],
+      })
+    })
+
+    const editButton = await screen.findByRole('button', { name: /edit/i })
+    await user.click(editButton)
+
+    const dialog = await screen.findByRole('dialog')
+    const priceInput = within(dialog).getByLabelText('Price')
+    await user.clear(priceInput)
+    await user.type(priceInput, '20')
+
+    const saveButton = within(dialog).getByRole('button', { name: /save changes/i })
+    await user.click(saveButton)
+
+    await waitFor(() => expect(updateDocMock).toHaveBeenCalledTimes(1))
+
+    expect(updateDocMock).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'products/product-9' }),
+      expect.objectContaining({ price: 20 }),
+    )
   })
 })
 
