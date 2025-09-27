@@ -327,6 +327,8 @@ export default function App() {
       message: mode === 'login' ? 'Signing you in…' : 'Creating your account…',
     })
 
+    let createdUser: User | null = null
+
     try {
       if (mode === 'login') {
         const { user: nextUser } = await signInWithEmailAndPassword(
@@ -341,6 +343,7 @@ export default function App() {
           sanitizedEmail,
           sanitizedPassword,
         )
+        createdUser = nextUser
         await createMyFirstStore({
           storeCode: sanitizedStoreCode,
           contact: {
@@ -367,6 +370,31 @@ export default function App() {
       setNormalizedPhone('')
       setStoreCode('')
     } catch (err: unknown) {
+      if (mode === 'signup') {
+        const userToDelete = createdUser ?? auth.currentUser
+
+        if (userToDelete) {
+          try {
+            await userToDelete.delete()
+          } catch (deleteError) {
+            const isRecentLoginError =
+              deleteError instanceof FirebaseError && deleteError.code === 'auth/requires-recent-login'
+
+            if (!isRecentLoginError) {
+              console.warn('[auth] Unable to delete user after failed signup', deleteError)
+            }
+          }
+
+          try {
+            await auth.signOut()
+          } catch (signOutError) {
+            console.warn('[auth] Unable to sign out after failed signup', signOutError)
+          }
+
+          setUser(null)
+        }
+      }
+
       setStatus({ tone: 'error', message: getErrorMessage(err) })
     }
   }
