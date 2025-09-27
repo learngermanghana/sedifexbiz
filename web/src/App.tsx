@@ -41,6 +41,10 @@ const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
 
+function sanitizePhone(value: string): string {
+  return value.replace(/\D+/g, '')
+}
+
 interface PasswordStrength {
   isLongEnough: boolean
   hasUppercase: boolean
@@ -76,6 +80,7 @@ function getSignupValidationError(
   email: string,
   password: string,
   confirmPassword: string,
+  phone: string,
 ): string | null {
   if (!email) {
     return 'Enter your email.'
@@ -85,6 +90,9 @@ function getSignupValidationError(
   }
   if (!password) {
     return 'Create a password to continue.'
+  }
+  if (!phone) {
+    return 'Enter your phone number.'
   }
 
   const { isLongEnough, hasUppercase, hasLowercase, hasNumber, hasSymbol } =
@@ -165,6 +173,8 @@ export default function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [phone, setPhone] = useState('')
+  const [normalizedPhone, setNormalizedPhone] = useState('')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
   const isLoading = status.tone === 'loading'
   const { publish } = useToast()
@@ -174,6 +184,7 @@ export default function App() {
   const normalizedEmail = email.trim()
   const normalizedPassword = password.trim()
   const normalizedConfirmPassword = confirmPassword.trim()
+  const hasPhone = normalizedPhone.length > 0
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
   const passwordChecklist = [
     { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: passwordStrength.isLongEnough },
@@ -189,6 +200,7 @@ export default function App() {
     normalizedPassword.length > 0 &&
     doesPasswordMeetAllChecks &&
     hasConfirmedPassword &&
+    hasPhone &&
     normalizedPassword === normalizedConfirmPassword
   const isLoginFormValid =
     EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
@@ -267,10 +279,27 @@ export default function App() {
     setPassword(sanitizedPassword)
     if (mode === 'signup') setConfirmPassword(sanitizedConfirmPassword)
 
+    const sanitizedPhone = sanitizePhone(phone)
+
     const validationError =
       mode === 'login'
         ? getLoginValidationError(sanitizedEmail, sanitizedPassword)
-        : getSignupValidationError(sanitizedEmail, sanitizedPassword, sanitizedConfirmPassword)
+        : getSignupValidationError(
+            sanitizedEmail,
+            sanitizedPassword,
+            sanitizedConfirmPassword,
+            sanitizedPhone,
+          )
+
+    if (mode === 'signup') {
+      setPhone(sanitizedPhone)
+      setNormalizedPhone(sanitizedPhone)
+
+      if (!sanitizedPhone) {
+        setStatus({ tone: 'error', message: 'Enter your phone number.' })
+        return
+      }
+    }
 
     if (validationError) {
       setStatus({ tone: 'error', message: validationError })
@@ -296,7 +325,7 @@ export default function App() {
           sanitizedEmail,
           sanitizedPassword,
         )
-        await createMyFirstStore()
+        await createMyFirstStore({ phone: sanitizedPhone })
         await persistSession(nextUser)
         try {
           await nextUser.getIdToken(true)
@@ -312,6 +341,8 @@ export default function App() {
       })
       setPassword('')
       setConfirmPassword('')
+      setPhone('')
+      setNormalizedPhone('')
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
     }
@@ -328,6 +359,8 @@ export default function App() {
     setMode(nextMode)
     setStatus({ tone: 'idle', message: '' })
     setConfirmPassword('')
+    setPhone('')
+    setNormalizedPhone('')
   }
 
   // Inline minHeight is just a safety net; CSS already uses dvh/svh.
@@ -410,6 +443,39 @@ export default function App() {
                   aria-invalid={email.length > 0 && !EMAIL_PATTERN.test(normalizedEmail)}
                 />
               </div>
+              {mode === 'signup' && (
+                <div className="form__field">
+                  <label htmlFor="phone">Phone</label>
+                  <input
+                    id="phone"
+                    value={phone}
+                    onChange={event => {
+                      const nextValue = event.target.value
+                      setPhone(nextValue)
+                      setNormalizedPhone(sanitizePhone(nextValue))
+                    }}
+                    onBlur={() =>
+                      setPhone(current => {
+                        const trimmed = current.trim()
+                        const sanitized = sanitizePhone(trimmed)
+                        setNormalizedPhone(sanitized)
+                        return sanitized
+                      })
+                    }
+                    type="tel"
+                    autoComplete="tel"
+                    inputMode="tel"
+                    placeholder="(555) 123-4567"
+                    required
+                    disabled={isLoading}
+                    aria-invalid={phone.length > 0 && normalizedPhone.length === 0}
+                    aria-describedby="phone-hint"
+                  />
+                  <p className="form__hint" id="phone-hint">
+                    We’ll use this to tailor your onboarding.
+                  </p>
+                </div>
+              )}
               <div className="form__field">
                 <label htmlFor="password">Password</label>
                 <input

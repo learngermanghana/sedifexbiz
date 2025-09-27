@@ -4,18 +4,24 @@ import { httpsCallable } from 'firebase/functions';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db, functions } from '../firebase';
 
-export async function createMyFirstStore() {
+type CreateMyFirstStoreOptions = {
+  phone: string;
+};
+
+export async function createMyFirstStore(options: CreateMyFirstStoreOptions) {
   const auth = getAuth();
   const user = auth.currentUser;
   if (!user) throw new Error('Not signed in');
 
   const storeId = user.uid;
+  const ownerPhone = options.phone;
 
   // 1) Create the store (id == uid)
   await setDoc(doc(db, 'stores', storeId), {
     storeId,
     ownerId: user.uid,
     ownerEmail: user.email ?? null,
+    ownerPhone,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
@@ -25,6 +31,7 @@ export async function createMyFirstStore() {
     uid: user.uid,
     role: 'owner',
     email: user.email ?? null,
+    phone: ownerPhone,
     displayName: user.displayName ?? null,
     photoURL: user.photoURL ?? null,
     createdAt: serverTimestamp(),
