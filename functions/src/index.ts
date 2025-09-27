@@ -1,8 +1,12 @@
 import * as functions from 'firebase-functions'
 import * as admin from 'firebase-admin'
+
 admin.initializeApp()
 const db = admin.firestore()
 
+// -----------------------------
+// Types
+// -----------------------------
 type StoreUserDoc = {
   storeId: string
   uid: string
@@ -16,7 +20,41 @@ type StoreClaims = {
   roleByStore: Record<string, string>
 }
 
+type OwnerBootstrapMetadata = {
+  ownerEmail?: string | null
+  ownerPhone?: string | null
+  firstSignupEmail?: string | null
+  membershipPhone?: string | null
+}
+
+type InitializeStorePayload = {
+  storeCode?: unknown
+  contact?: {
+    phone?: unknown
+    firstSignupEmail?: unknown
+  }
+}
+
+type ResolveStoreAccessPayload = {
+  storeCode?: unknown
+}
+
+type ManageStaffPayload = {
+  storeId?: unknown
+  email?: unknown
+  role?: unknown
+  password?: unknown
+}
+
+// -----------------------------
+// Constants & helpers
+// -----------------------------
 const STORE_CODE_PATTERN = /^[A-Z]{6}$/
+
+function genStoreCode(): string {
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+  return Array.from({ length: 6 }, () => A[Math.floor(Math.random() * A.length)]).join('')
+}
 
 async function listStoreMemberships(uid: string) {
   const snapshot = await db.collection('storeUsers').where('uid', '==', uid).get()
@@ -28,20 +66,13 @@ async function listStoreMemberships(uid: string) {
 async function applyStoreClaims(uid: string, preferredActiveStoreId?: string | null): Promise<StoreClaims> {
   const [memberships, userRecord] = await Promise.all([
     listStoreMemberships(uid),
-    admin
-      .auth()
-      .getUser(uid)
-      .catch(() => null),
+    admin.auth().getUser(uid).catch(() => null),
   ])
 
-  const stores = Array.from(
-    new Set(memberships.map(membership => membership.storeId).filter(Boolean)),
-  )
+  const stores = Array.from(new Set(memberships.map(m => m.storeId).filter(Boolean)))
 
-  const roleByStore = memberships.reduce<Record<string, string>>((acc, membership) => {
-    if (membership.storeId && membership.role) {
-      acc[membership.storeId] = membership.role
-    }
+  const roleByStore = memberships.reduce<Record<string, string>>((acc, m) => {
+    if (m.storeId && m.role) acc[m.storeId] = m.role
     return acc
   }, {})
 
@@ -51,32 +82,53 @@ async function applyStoreClaims(uid: string, preferredActiveStoreId?: string | n
       ? preferredActiveStoreId
       : null
   const existingActiveClaim =
-    typeof existingClaims.activeStoreId === 'string' && stores.includes(existingClaims.activeStoreId)
+    typeof existingClaims.activeStoreId === 'string' && stores.includes(existingClaims.activeStoreId as string)
       ? (existingClaims.activeStoreId as string)
       : null
 
   let activeStoreId: string | null = preferredActive ?? existingActiveClaim
-  if (!activeStoreId) {
-    activeStoreId = stores.length > 0 ? stores[0] : null
-  }
+  if (!activeStoreId) activeStoreId = stores.length > 0 ? stores[0] : null
 
-  const nextClaims = {
-    ...existingClaims,
-    stores,
-    activeStoreId,
-    roleByStore,
-  }
-
+  const nextClaims = { ...existingClaims, stores, activeStoreId, roleByStore }
   await admin.auth().setCustomUserClaims(uid, nextClaims)
 
   return { stores, activeStoreId, roleByStore }
 }
 
-type OwnerBootstrapMetadata = {
-  ownerEmail?: string | null
-  ownerPhone?: string | null
-  firstSignupEmail?: string | null
-  membershipPhone?: string | null
+async function upsertStoreMembership(
+  storeId: string,
+  uid: string,
+  email: string | null,
+  role: string,
+  invitedBy: string | null,
+  contact: { phone?: string | null; firstSignupEmail?: string | null } = {},
+) {
+  const membershipRef = db.collection('storeUsers').doc(`${storeId}_${uid}`)
+  const storeMemberRef = db.collection('stores').doc(storeId).collection('members').doc(uid)
+
+  const [membershipSnap, storeMemberSnap] = await Promise.all([membershipRef.get(), storeMemberRef.get()])
+  const timestamp = admin.firestore.FieldValue.serverTimestamp()
+
+  const baseData = {
+    storeId,
+    uid,
+    email: email ?? null,
+    role,
+    invitedBy,
+    phone: contact.phone ?? null,
+    firstSignupEmail: contact.firstSignupEmail ?? null,
+    updatedAt: timestamp,
+  }
+
+  const membershipData = { ...baseData, ...(membershipSnap.exists ? {} : { createdAt: timestamp }) }
+  const storeMemberData = { ...baseData, ...(storeMemberSnap.exists ? {} : { createdAt: timestamp }) }
+
+  await Promise.all([
+    membershipRef.set(membershipData, { merge: true }),
+    storeMemberRef.set(storeMemberData, { merge: true }),
+  ])
+
+  return membershipData
 }
 
 async function ensureDefaultStoreForUser(
@@ -85,9 +137,7 @@ async function ensureDefaultStoreForUser(
   preferredStoreId?: string | null,
 ) {
   const storeId = typeof preferredStoreId === 'string' ? preferredStoreId.trim() : ''
-  if (!storeId) {
-    return
-  }
+  if (!storeId) return
 
   const storeRef = db.collection('stores').doc(storeId)
 
@@ -107,19 +157,12 @@ async function ensureDefaultStoreForUser(
       if (existingOwnerId && existingOwnerId !== uid) {
         throw new functions.https.HttpsError('already-exists', 'Store code already assigned to another account')
       }
-    }
-
-    if (!storeSnap.exists) {
+    } else {
       storeData.createdAt = timestamp
     }
 
-    if (metadata.ownerEmail !== undefined) {
-      storeData.ownerEmail = metadata.ownerEmail
-    }
-
-    if (metadata.ownerPhone !== undefined) {
-      storeData.ownerPhone = metadata.ownerPhone
-    }
+    if (metadata.ownerEmail !== undefined) storeData.ownerEmail = metadata.ownerEmail
+    if (metadata.ownerPhone !== undefined) storeData.ownerPhone = metadata.ownerPhone
 
     const existingFirstSignupEmail = storeSnap.exists ? storeSnap.get('firstSignupEmail') : undefined
     if (existingFirstSignupEmail === undefined || existingFirstSignupEmail === null) {
@@ -142,9 +185,7 @@ async function ensureDefaultStoreForUser(
     {
       phone: metadata.membershipPhone ?? metadata.ownerPhone ?? null,
       firstSignupEmail:
-        metadata.firstSignupEmail !== undefined
-          ? metadata.firstSignupEmail
-          : metadata.ownerEmail ?? null,
+        metadata.firstSignupEmail !== undefined ? metadata.firstSignupEmail : metadata.ownerEmail ?? null,
     },
   )
 }
@@ -158,39 +199,13 @@ async function refreshUserClaims(
   return applyStoreClaims(uid, preferredStoreId)
 }
 
-export const handleUserCreate = functions.auth.user().onCreate(async user => {
-  const uid = user.uid
-  const email = user.email ?? null
-  await refreshUserClaims(uid, {
-    ownerEmail: email,
-    ownerPhone: user.phoneNumber ?? null,
-    firstSignupEmail: email,
-    membershipPhone: user.phoneNumber ?? null,
-  })
-})
-
-type InitializeStorePayload = {
-  storeCode?: unknown
-  contact?: {
-    phone?: unknown
-    firstSignupEmail?: unknown
-  }
-}
-
 function normalizeStoreCode(value: unknown) {
-  if (typeof value !== 'string') {
-    return ''
-  }
-
+  if (typeof value !== 'string') return ''
   const trimmed = value.trim().toUpperCase()
-  if (!trimmed) {
-    return ''
-  }
-
+  if (!trimmed) return ''
   if (!STORE_CODE_PATTERN.test(trimmed)) {
     throw new functions.https.HttpsError('invalid-argument', 'Store code must be exactly six letters.')
   }
-
   return trimmed
 }
 
@@ -201,7 +216,8 @@ function normalizeInitializeStorePayload(
   const contact = data?.contact ?? {}
   const rawPhone = typeof contact.phone === 'string' ? contact.phone.trim() : ''
   const phone = rawPhone ? rawPhone : null
-  const rawFirstSignupEmail = typeof contact.firstSignupEmail === 'string' ? contact.firstSignupEmail.trim().toLowerCase() : ''
+  const rawFirstSignupEmail =
+    typeof contact.firstSignupEmail === 'string' ? contact.firstSignupEmail.trim().toLowerCase() : ''
   const firstSignupEmail = rawFirstSignupEmail ? rawFirstSignupEmail : null
   const storeCode = normalizeStoreCode(data?.storeCode)
 
@@ -212,6 +228,82 @@ function normalizeInitializeStorePayload(
   return { phone, firstSignupEmail, storeCode }
 }
 
+function assertOwnerAccess(context: functions.https.CallableContext, storeId: string) {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required')
+
+  const claims = context.auth.token as Record<string, unknown>
+  const stores = Array.isArray(claims.stores) ? claims.stores : []
+  if (!stores.includes(storeId)) throw new functions.https.HttpsError('permission-denied', 'No store access')
+
+  const roleByStore = (claims.roleByStore ?? {}) as Record<string, unknown>
+  const role = typeof roleByStore[storeId] === 'string' ? (roleByStore[storeId] as string) : null
+  if (role !== 'owner') throw new functions.https.HttpsError('permission-denied', 'Owner access required')
+}
+
+function normalizeManageStaffPayload(data: ManageStaffPayload) {
+  const storeId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
+  const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : ''
+  const role = typeof data.role === 'string' ? data.role.trim() : ''
+  const passwordRaw = data.password
+  let password: string | undefined
+  if (passwordRaw === null || passwordRaw === undefined || passwordRaw === '') {
+    password = undefined
+  } else if (typeof passwordRaw === 'string') {
+    password = passwordRaw
+  } else {
+    throw new functions.https.HttpsError('invalid-argument', 'Password must be a string when provided')
+  }
+
+  if (!storeId) throw new functions.https.HttpsError('invalid-argument', 'A valid storeId is required')
+  if (!email) throw new functions.https.HttpsError('invalid-argument', 'A valid email is required')
+  if (!role) throw new functions.https.HttpsError('invalid-argument', 'A role is required')
+
+  return { storeId, email, role, password }
+}
+
+async function ensureAuthUser(email: string, password?: string) {
+  try {
+    const record = await admin.auth().getUserByEmail(email)
+    if (password) await admin.auth().updateUser(record.uid, { password })
+    return { record, created: false }
+  } catch (error: any) {
+    if (error?.code === 'auth/user-not-found') {
+      if (!password) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'A password is required when creating a new staff account',
+        )
+      }
+      const record = await admin.auth().createUser({ email, password, emailVerified: false })
+      return { record, created: true }
+    }
+    throw error
+  }
+}
+
+// -----------------------------
+// Auth trigger: create default store on sign-up
+// -----------------------------
+export const handleUserCreate = functions.auth.user().onCreate(async user => {
+  const uid = user.uid
+  const email = user.email ?? null
+  const storeCode = genStoreCode() // create a default store id like "ABCDEF"
+
+  await refreshUserClaims(
+    uid,
+    {
+      ownerEmail: email,
+      ownerPhone: user.phoneNumber ?? null,
+      firstSignupEmail: email,
+      membershipPhone: user.phoneNumber ?? null,
+    },
+    storeCode, // pass it so Firestore docs are actually written
+  )
+})
+
+// -----------------------------
+// Callable: initializeStore
+// -----------------------------
 export const initializeStore = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Login required')
@@ -225,19 +317,23 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
     { requireStoreCode: true },
   )
 
-  const claims = await refreshUserClaims(uid, {
-    ownerEmail: email,
-    ownerPhone: phone,
-    firstSignupEmail: firstSignupEmail ?? email ?? null,
-    membershipPhone: phone,
-  }, storeCode)
+  const claims = await refreshUserClaims(
+    uid,
+    {
+      ownerEmail: email,
+      ownerPhone: phone,
+      firstSignupEmail: firstSignupEmail ?? email ?? null,
+      membershipPhone: phone,
+    },
+    storeCode,
+  )
+
   return { ok: true, claims, storeId: storeCode ?? null }
 })
 
-type ResolveStoreAccessPayload = {
-  storeCode?: unknown
-}
-
+// -----------------------------
+// Callable: resolveStoreAccess
+// -----------------------------
 export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Login required')
@@ -249,9 +345,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
 
   const payload = (data ?? {}) as ResolveStoreAccessPayload
   const storeCode = normalizeStoreCode(payload.storeCode)
-  if (!storeCode) {
-    throw new functions.https.HttpsError('invalid-argument', 'A valid store code is required.')
-  }
+  if (!storeCode) throw new functions.https.HttpsError('invalid-argument', 'A valid store code is required.')
 
   const storeRef = db.collection('stores').doc(storeCode)
   const membershipRef = db.collection('storeUsers').doc(`${storeCode}_${uid}`)
@@ -263,9 +357,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     storeMemberRef.get(),
   ])
 
-  if (!storeSnap.exists) {
-    throw new functions.https.HttpsError('not-found', 'No store matches the provided code.')
-  }
+  if (!storeSnap.exists) throw new functions.https.HttpsError('not-found', 'No store matches the provided code.')
 
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
   const ownerId = storeSnap.get('ownerId')
@@ -284,9 +376,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     null
 
   let role = existingRole ?? 'staff'
-  if (!existingRole && resolveExistingString(ownerId) === uid) {
-    role = 'owner'
-  }
+  if (!existingRole && resolveExistingString(ownerId) === uid) role = 'owner'
 
   const existingPhone =
     resolveExistingString(membershipSnap.get('phone')) ??
@@ -298,8 +388,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     resolveExistingString(membershipSnap.get('firstSignupEmail')) ??
     resolveExistingString(storeMemberSnap.get('firstSignupEmail')) ??
     null
-  const membershipFirstSignupEmail =
-    existingFirstSignupEmail ?? (email ? email.toLowerCase() : null)
+  const membershipFirstSignupEmail = existingFirstSignupEmail ?? (email ? email.toLowerCase() : null)
 
   const invitedBy = resolveExistingString(membershipSnap.get('invitedBy'))
 
@@ -314,15 +403,8 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     updatedAt: timestamp,
   }
 
-  const membershipData = {
-    ...baseMembership,
-    ...(membershipSnap.exists ? {} : { createdAt: timestamp }),
-  }
-
-  const storeMemberData = {
-    ...baseMembership,
-    ...(storeMemberSnap.exists ? {} : { createdAt: timestamp }),
-  }
+  const membershipData = { ...baseMembership, ...(membershipSnap.exists ? {} : { createdAt: timestamp }) }
+  const storeMemberData = { ...baseMembership, ...(storeMemberSnap.exists ? {} : { createdAt: timestamp }) }
 
   await Promise.all([
     membershipRef.set(membershipData, { merge: true }),
@@ -330,132 +412,12 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   ])
 
   const claims = await applyStoreClaims(uid, storeCode)
-
   return { ok: true, storeId: storeCode, claims }
 })
 
-type ManageStaffPayload = {
-  storeId?: unknown
-  email?: unknown
-  role?: unknown
-  password?: unknown
-}
-
-function assertOwnerAccess(context: functions.https.CallableContext, storeId: string) {
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Login required')
-  }
-
-  const claims = context.auth.token as Record<string, unknown>
-  const stores = Array.isArray(claims.stores) ? claims.stores : []
-  if (!stores.includes(storeId)) {
-    throw new functions.https.HttpsError('permission-denied', 'No store access')
-  }
-
-  const roleByStore = (claims.roleByStore ?? {}) as Record<string, unknown>
-  const role = typeof roleByStore[storeId] === 'string' ? roleByStore[storeId] : null
-  if (role !== 'owner') {
-    throw new functions.https.HttpsError('permission-denied', 'Owner access required')
-  }
-}
-
-function normalizeManageStaffPayload(data: ManageStaffPayload) {
-  const storeId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
-  const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : ''
-  const role = typeof data.role === 'string' ? data.role.trim() : ''
-  const passwordRaw = data.password
-  let password: string | undefined
-  if (passwordRaw === null || passwordRaw === undefined || passwordRaw === '') {
-    password = undefined
-  } else if (typeof passwordRaw === 'string') {
-    password = passwordRaw
-  } else {
-    throw new functions.https.HttpsError('invalid-argument', 'Password must be a string when provided')
-  }
-
-  if (!storeId) {
-    throw new functions.https.HttpsError('invalid-argument', 'A valid storeId is required')
-  }
-  if (!email) {
-    throw new functions.https.HttpsError('invalid-argument', 'A valid email is required')
-  }
-  if (!role) {
-    throw new functions.https.HttpsError('invalid-argument', 'A role is required')
-  }
-
-  return { storeId, email, role, password }
-}
-
-async function ensureAuthUser(email: string, password?: string) {
-  try {
-    const record = await admin.auth().getUserByEmail(email)
-    if (password) {
-      await admin.auth().updateUser(record.uid, { password })
-    }
-    return { record, created: false }
-  } catch (error: any) {
-    if (error?.code === 'auth/user-not-found') {
-      if (!password) {
-        throw new functions.https.HttpsError(
-          'invalid-argument',
-          'A password is required when creating a new staff account',
-        )
-      }
-
-      const record = await admin.auth().createUser({ email, password, emailVerified: false })
-      return { record, created: true }
-    }
-    throw error
-  }
-}
-
-async function upsertStoreMembership(
-  storeId: string,
-  uid: string,
-  email: string | null,
-  role: string,
-  invitedBy: string | null,
-  contact: { phone?: string | null; firstSignupEmail?: string | null } = {},
-) {
-  const membershipRef = db.collection('storeUsers').doc(`${storeId}_${uid}`)
-  const storeMemberRef = db.collection('stores').doc(storeId).collection('members').doc(uid)
-
-  const [membershipSnap, storeMemberSnap] = await Promise.all([
-    membershipRef.get(),
-    storeMemberRef.get(),
-  ])
-
-  const timestamp = admin.firestore.FieldValue.serverTimestamp()
-
-  const baseData = {
-    storeId,
-    uid,
-    email: email ?? null,
-    role,
-    invitedBy,
-    phone: contact.phone ?? null,
-    firstSignupEmail: contact.firstSignupEmail ?? null,
-    updatedAt: timestamp,
-  }
-
-  const membershipData = {
-    ...baseData,
-    ...(membershipSnap.exists ? {} : { createdAt: timestamp }),
-  }
-
-  const storeMemberData = {
-    ...baseData,
-    ...(storeMemberSnap.exists ? {} : { createdAt: timestamp }),
-  }
-
-  await Promise.all([
-    membershipRef.set(membershipData, { merge: true }),
-    storeMemberRef.set(storeMemberData, { merge: true }),
-  ])
-
-  return membershipData
-}
-
+// -----------------------------
+// Callable: manageStaffAccount
+// -----------------------------
 export const manageStaffAccount = functions.https.onCall(async (data, context) => {
   const { storeId, email, role, password } = normalizeManageStaffPayload(data as ManageStaffPayload)
   assertOwnerAccess(context, storeId)
@@ -477,6 +439,9 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   }
 })
 
+// -----------------------------
+// Callable: commitSale
+// -----------------------------
 export const commitSale = functions.https.onCall(async (data, context) => {
   const { storeId, branchId, items, totals, cashierId, saleId: saleIdRaw, payment, customer } = data || {}
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required')
@@ -484,18 +449,14 @@ export const commitSale = functions.https.onCall(async (data, context) => {
   if (!claims?.stores?.includes?.(storeId)) throw new functions.https.HttpsError('permission-denied', 'No store access')
 
   const saleId = typeof saleIdRaw === 'string' ? saleIdRaw.trim() : ''
-  if (!saleId) {
-    throw new functions.https.HttpsError('invalid-argument', 'A valid saleId is required')
-  }
+  if (!saleId) throw new functions.https.HttpsError('invalid-argument', 'A valid saleId is required')
 
   const saleRef = db.collection('sales').doc(saleId)
   const saleItemsRef = db.collection('saleItems')
 
-  await db.runTransaction(async (tx) => {
+  await db.runTransaction(async tx => {
     const existingSale = await tx.get(saleRef)
-    if (existingSale.exists) {
-      throw new functions.https.HttpsError('already-exists', 'Sale has already been committed')
-    }
+    if (existingSale.exists) throw new functions.https.HttpsError('already-exists', 'Sale has already been committed')
 
     const normalizedItems = Array.isArray(items)
       ? items.map((it: any) => {
@@ -517,7 +478,7 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       payment: payment ?? null,
       customer: customer ?? null,
       items: normalizedItems,
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
     })
 
     for (const it of normalizedItems) {
@@ -526,7 +487,12 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       }
       const itemId = db.collection('_').doc().id
       tx.set(saleItemsRef.doc(itemId), {
-        storeId, saleId, productId: it.productId, qty: it.qty, price: it.price, taxRate: it.taxRate
+        storeId,
+        saleId,
+        productId: it.productId,
+        qty: it.qty,
+        price: it.price,
+        taxRate: it.taxRate,
       })
 
       const pRef = db.collection('products').doc(it.productId)
@@ -540,8 +506,13 @@ export const commitSale = functions.https.onCall(async (data, context) => {
 
       const ledgerId = db.collection('_').doc().id
       tx.set(db.collection('ledger').doc(ledgerId), {
-        storeId, branchId, productId: it.productId, qtyChange: -Math.abs(it.qty || 0),
-        type: 'sale', refId: saleId, createdAt: admin.firestore.FieldValue.serverTimestamp()
+        storeId,
+        branchId,
+        productId: it.productId,
+        qtyChange: -Math.abs(it.qty || 0),
+        type: 'sale',
+        refId: saleId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
       })
     }
   })
@@ -549,6 +520,9 @@ export const commitSale = functions.https.onCall(async (data, context) => {
   return { ok: true, saleId }
 })
 
+// -----------------------------
+// Callable: receiveStock
+// -----------------------------
 export const receiveStock = functions.https.onCall(async (data, context) => {
   const { storeId, productId, qty, supplier, reference, unitCost } = data || {}
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required')
@@ -558,9 +532,7 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
   }
 
   const productIdStr = typeof productId === 'string' ? productId : null
-  if (!productIdStr) {
-    throw new functions.https.HttpsError('invalid-argument', 'A product must be selected')
-  }
+  if (!productIdStr) throw new functions.https.HttpsError('invalid-argument', 'A product must be selected')
 
   const amount = Number(qty)
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -568,14 +540,10 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
   }
 
   const normalizedSupplier = typeof supplier === 'string' ? supplier.trim() : ''
-  if (!normalizedSupplier) {
-    throw new functions.https.HttpsError('invalid-argument', 'Supplier is required')
-  }
+  if (!normalizedSupplier) throw new functions.https.HttpsError('invalid-argument', 'Supplier is required')
 
   const normalizedReference = typeof reference === 'string' ? reference.trim() : ''
-  if (!normalizedReference) {
-    throw new functions.https.HttpsError('invalid-argument', 'Reference number is required')
-  }
+  if (!normalizedReference) throw new functions.https.HttpsError('invalid-argument', 'Reference number is required')
 
   let normalizedUnitCost: number | null = null
   if (unitCost !== undefined && unitCost !== null && unitCost !== '') {
@@ -590,7 +558,7 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
   const receiptRef = db.collection('receipts').doc()
   const ledgerRef = db.collection('ledger').doc()
 
-  await db.runTransaction(async (tx) => {
+  await db.runTransaction(async tx => {
     const pSnap = await tx.get(productRef)
     if (!pSnap.exists || pSnap.get('storeId') !== storeId) {
       throw new functions.https.HttpsError('failed-precondition', 'Bad product')
@@ -605,7 +573,7 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
       updatedAt: timestamp,
       lastReceivedAt: timestamp,
       lastReceivedQty: amount,
-      lastReceivedCost: normalizedUnitCost
+      lastReceivedCost: normalizedUnitCost,
     })
 
     const totalCost =
@@ -620,7 +588,7 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
       unitCost: normalizedUnitCost,
       totalCost,
       receivedBy: context.auth?.uid ?? null,
-      createdAt: timestamp
+      createdAt: timestamp,
     })
 
     tx.set(ledgerRef, {
@@ -629,11 +597,9 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
       qtyChange: amount,
       type: 'receipt',
       refId: receiptRef.id,
-      createdAt: timestamp
+      createdAt: timestamp,
     })
   })
 
   return { ok: true, receiptId: receiptRef.id }
 })
-
-export { onAuthCreate } from './onAuthCreate';
