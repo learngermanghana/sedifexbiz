@@ -10,6 +10,7 @@ type ContactPayload = {
 };
 
 type CreateMyFirstStoreOptions = {
+  storeCode: string;
   contact: ContactPayload;
 };
 
@@ -18,13 +19,25 @@ export async function createMyFirstStore(options: CreateMyFirstStoreOptions) {
   const user = auth.currentUser;
   if (!user) throw new Error('Not signed in');
 
-  const storeId = user.uid;
+  const rawStoreCode = options.storeCode?.trim().toUpperCase();
+  if (!rawStoreCode) {
+    throw new Error('Enter a store code before continuing.');
+  }
+  if (!/^[A-Z]{6}$/.test(rawStoreCode)) {
+    throw new Error('Store code must be six letters.');
+  }
+
+  const storeId = rawStoreCode;
   const contact = options.contact ?? {};
   const ownerPhone = contact.phone ?? null;
   const firstSignupEmail = contact.firstSignupEmail ?? user.email ?? null;
 
   const storeRef = doc(db, 'stores', storeId);
   const existingStore = await getDoc(storeRef);
+
+  if (existingStore.exists() && existingStore.data()?.ownerId !== user.uid) {
+    throw new Error('That store code is already taken. Try another one.');
+  }
 
   const storePayload: Record<string, unknown> = {
     storeId,
@@ -71,6 +84,7 @@ export async function createMyFirstStore(options: CreateMyFirstStoreOptions) {
   // 4) Ensure backend initialization + refreshed claims
   const initializeStore = httpsCallable(functions, 'initializeStore');
   await initializeStore({
+    storeCode: storeId,
     contact: {
       phone: ownerPhone,
       firstSignupEmail,
