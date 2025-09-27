@@ -17,7 +17,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/receive', label: 'Receive' },
   { to: '/customers', label: 'Customers' },
   { to: '/close-day', label: 'Close Day' },
-  { to: '/settings', label: 'Settings' },
 ]
 
 function navLinkClass(isActive: boolean) {

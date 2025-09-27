@@ -94,9 +94,9 @@ const QUICK_LINKS: Array<{
     description: 'Balance the till, review totals, and lock in a clean daily report.',
   },
   {
-    to: '/settings',
-    title: 'Settings',
-    description: 'Configure staff, taxes, and other controls that keep your shop running.',
+    to: '/customers',
+    title: 'Customers',
+    description: 'Look up purchase history, reward loyal shoppers, and keep profiles up to date.',
   },
 ]
 
