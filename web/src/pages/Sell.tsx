@@ -1,18 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  limit,
-  onSnapshot,
-  doc,
-} from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot, doc } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions as cloudFunctions } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
-import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'
 import { Link } from 'react-router-dom'
 import { queueCallableRequest } from '../utils/offlineQueue'
@@ -31,7 +22,6 @@ type Product = {
   name: string
   price: number
   stockCount?: number
-  storeId: string
   createdAt?: unknown
   updatedAt?: unknown
 }
@@ -73,7 +63,6 @@ type ReceiptSharePayload = {
 }
 
 type CommitSalePayload = {
-  storeId: string
   branchId: string | null
   saleId: string
   cashierId: string
@@ -120,7 +109,6 @@ function isOfflineError(error: unknown) {
 
 export default function Sell() {
   const user = useAuthUser()
-  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -141,11 +129,9 @@ export default function Sell() {
   const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0
 
   useEffect(() => {
-    if (!STORE_ID) return
-
     let cancelled = false
 
-    loadCachedProducts<Product>(STORE_ID)
+    loadCachedProducts<Product>()
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(
@@ -159,7 +145,6 @@ export default function Sell() {
 
     const q = query(
       collection(db, 'products'),
-      where('storeId', '==', STORE_ID),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -167,7 +152,7 @@ export default function Sell() {
 
     const unsubscribe = onSnapshot(q, snap => {
       const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
-      saveCachedProducts(STORE_ID, rows).catch(error => {
+      saveCachedProducts(rows).catch(error => {
         console.warn('[sell] Failed to cache products', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
@@ -180,14 +165,12 @@ export default function Sell() {
       cancelled = true
       unsubscribe()
     }
-  }, [STORE_ID])
+  }, [])
 
   useEffect(() => {
-    if (!STORE_ID) return
-
     let cancelled = false
 
-    loadCachedCustomers<Customer>(STORE_ID)
+    loadCachedCustomers<Customer>()
       .then(cached => {
         if (!cancelled && cached.length) {
           setCustomers(
@@ -201,7 +184,6 @@ export default function Sell() {
 
     const q = query(
       collection(db, 'customers'),
-      where('storeId', '==', STORE_ID),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(CUSTOMER_CACHE_LIMIT),
@@ -209,7 +191,7 @@ export default function Sell() {
 
     const unsubscribe = onSnapshot(q, snap => {
       const rows = snap.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Customer) }))
-      saveCachedCustomers(STORE_ID, rows).catch(error => {
+      saveCachedCustomers(rows).catch(error => {
         console.warn('[sell] Failed to cache customers', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
@@ -222,7 +204,7 @@ export default function Sell() {
       cancelled = true
       unsubscribe()
     }
-  }, [STORE_ID])
+  }, [])
 
   useEffect(() => {
     if (!receipt) return
@@ -351,7 +333,7 @@ export default function Sell() {
     setCart(cs => cs.map(l => l.productId === id ? { ...l, qty: Math.max(0, qty) } : l).filter(l => l.qty > 0))
   }
   async function recordSale() {
-    if (!STORE_ID || cart.length === 0) return
+    if (cart.length === 0) return
     if (!user) {
       setSaleError('You must be signed in to record a sale.')
       return
@@ -367,7 +349,6 @@ export default function Sell() {
     const saleId = doc(collection(db, 'sales')).id
     const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
     const payload: CommitSalePayload = {
-      storeId: STORE_ID,
       branchId: null,
       saleId,
       cashierId: user.uid,
@@ -466,10 +447,7 @@ export default function Sell() {
     }
   }
 
-  if (storeLoading) return <div>Loading…</div>
-  if (!STORE_ID) {
-    return <div>We were unable to confirm your workspace access. Please sign out and back in.</div>
-  }
+
 
   const filtered = products.filter(p => p.name.toLowerCase().includes(queryText.toLowerCase()))
 
@@ -498,10 +476,6 @@ export default function Sell() {
           <p className="field__hint">Tip: start typing and tap a product to add it to the cart.</p>
         </div>
       </section>
-
-      {storeError && (
-        <p className="sell-page__message sell-page__message--error" role="alert">{storeError}</p>
-      )}
 
       <div className="sell-page__grid">
         <section className="card sell-page__catalog" aria-label="Product list">

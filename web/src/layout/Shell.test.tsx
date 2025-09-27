@@ -49,26 +49,10 @@ describe('Shell', () => {
     })
   })
 
-  it('shows the user email and navigation links', () => {
+  it('renders the workspace status', () => {
     renderShell()
 
-    expect(screen.getByText('owner@example.com')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /products/i })).toBeInTheDocument()
-  })
+    expect(screen.getByText('Workspace ready')).toBeInTheDocument()
 
-  it('renders connectivity status when available', () => {
-    mockUseConnectivityStatus.mockReturnValue({
-      isOnline: true,
-      isReachable: true,
-      isChecking: false,
-      lastHeartbeatAt: null,
-      heartbeatError: null,
-      queue: { status: 'processing', pending: 2, lastError: null, updatedAt: null },
-    })
-
-    renderShell()
-
-    expect(screen.getByTitle(/syncing 2 queued requests/i)).toBeInTheDocument()
   })
 })

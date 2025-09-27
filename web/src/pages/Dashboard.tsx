@@ -1,20 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  collection,
-  doc,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  setDoc,
-  where,
-  type Timestamp,
-} from 'firebase/firestore'
+import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, type Timestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 
 import { useAuthUser } from '../hooks/useAuthUser'
-import { useActiveStore } from '../hooks/useActiveStore'
 import { useToast } from '../components/ToastProvider'
 import {
   CUSTOMER_CACHE_LIMIT,
@@ -273,7 +262,7 @@ function parseDateInput(value: string) {
 }
 
 export default function Dashboard() {
-  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
+  const authUser = useAuthUser()
 
   const [sales, setSales] = useState<SaleRecord[]>([])
   const [products, setProducts] = useState<ProductRecord[]>([])
@@ -289,12 +278,12 @@ export default function Dashboard() {
   const [isSavingGoals, setIsSavingGoals] = useState(false)
   const [selectedRangeId, setSelectedRangeId] = useState<PresetRangeId>('today')
   const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: '', end: '' })
+  const goalDocumentId = authUser?.uid ?? 'default'
 
   useEffect(() => {
-    if (!STORE_ID) return
     let cancelled = false
 
-    loadCachedSales<SaleRecord>(STORE_ID)
+    loadCachedSales<SaleRecord>()
       .then(cached => {
         if (!cancelled && cached.length) {
           setSales(cached)
@@ -304,12 +293,7 @@ export default function Dashboard() {
         console.warn('[dashboard] Failed to load cached sales', error)
       })
 
-    const q = query(
-      collection(db, 'sales'),
-      where('storeId', '==', STORE_ID),
-      orderBy('createdAt', 'desc'),
-      limit(SALES_CACHE_LIMIT),
-    )
+    const q = query(collection(db, 'sales'), orderBy('createdAt', 'desc'), limit(SALES_CACHE_LIMIT))
 
     const unsubscribe = onSnapshot(q, snapshot => {
       const rows: SaleRecord[] = snapshot.docs.map(docSnap => ({
@@ -317,7 +301,7 @@ export default function Dashboard() {
         ...(docSnap.data() as Omit<SaleRecord, 'id'>),
       }))
       setSales(rows)
-      saveCachedSales(STORE_ID, rows).catch(error => {
+      saveCachedSales(rows).catch(error => {
         console.warn('[dashboard] Failed to cache sales', error)
       })
     })
@@ -326,13 +310,12 @@ export default function Dashboard() {
       cancelled = true
       unsubscribe()
     }
-  }, [STORE_ID])
+  }, [])
 
   useEffect(() => {
-    if (!STORE_ID) return
     let cancelled = false
 
-    loadCachedProducts<ProductRecord>(STORE_ID)
+    loadCachedProducts<ProductRecord>()
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(cached)
@@ -344,7 +327,6 @@ export default function Dashboard() {
 
     const q = query(
       collection(db, 'products'),
-      where('storeId', '==', STORE_ID),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -356,7 +338,7 @@ export default function Dashboard() {
         ...(docSnap.data() as Omit<ProductRecord, 'id'>),
       }))
       setProducts(rows)
-      saveCachedProducts(STORE_ID, rows).catch(error => {
+      saveCachedProducts(rows).catch(error => {
         console.warn('[dashboard] Failed to cache products', error)
       })
     })
@@ -365,13 +347,12 @@ export default function Dashboard() {
       cancelled = true
       unsubscribe()
     }
-  }, [STORE_ID])
+  }, [])
 
   useEffect(() => {
-    if (!STORE_ID) return
     let cancelled = false
 
-    loadCachedCustomers<CustomerRecord>(STORE_ID)
+    loadCachedCustomers<CustomerRecord>()
       .then(cached => {
         if (!cancelled && cached.length) {
           setCustomers(cached)
@@ -383,7 +364,6 @@ export default function Dashboard() {
 
     const q = query(
       collection(db, 'customers'),
-      where('storeId', '==', STORE_ID),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(CUSTOMER_CACHE_LIMIT),
@@ -395,7 +375,7 @@ export default function Dashboard() {
         ...(docSnap.data() as Omit<CustomerRecord, 'id'>),
       }))
       setCustomers(rows)
-      saveCachedCustomers(STORE_ID, rows).catch(error => {
+      saveCachedCustomers(rows).catch(error => {
         console.warn('[dashboard] Failed to cache customers', error)
       })
     })
@@ -404,11 +384,10 @@ export default function Dashboard() {
       cancelled = true
       unsubscribe()
     }
-  }, [STORE_ID])
+  }, [])
 
   useEffect(() => {
-    if (!STORE_ID) return
-    const ref = doc(db, 'storeGoals', STORE_ID)
+    const ref = doc(db, 'storeGoals', goalDocumentId)
     return onSnapshot(ref, snapshot => {
       const data = snapshot.data() as MonthlyGoalDocument | undefined
       if (!data?.monthly) {
@@ -426,7 +405,7 @@ export default function Dashboard() {
       })
       setMonthlyGoals(parsed)
     })
-  }, [STORE_ID])
+  }, [goalDocumentId])
 
   useEffect(() => {
     setGoalFormTouched(false)
@@ -750,7 +729,6 @@ export default function Dashboard() {
 
   async function handleGoalSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (!STORE_ID) return
     setIsSavingGoals(true)
     try {
       const revenueValue = Number(goalFormValues.revenueTarget)
@@ -760,9 +738,8 @@ export default function Dashboard() {
       const monthKey = selectedGoalMonth || defaultMonthKey
 
       await setDoc(
-        doc(db, 'storeGoals', STORE_ID),
+        doc(db, 'storeGoals', goalDocumentId),
         {
-          storeId: STORE_ID,
           monthly: {
             [monthKey]: {
               revenueTarget,
@@ -813,18 +790,11 @@ export default function Dashboard() {
     },
   ]
 
-  if (storeLoading) {
-    return <div>Loading…</div>
-  }
 
-  if (!STORE_ID) {
-    return <div>We were unable to confirm your workspace access. Please sign out and back in.</div>
-  }
 
   return (
     <div>
       <h2 style={{ color: '#4338CA', marginBottom: 8 }}>Dashboard</h2>
-      {storeError && <p style={{ color: '#b91c1c', marginBottom: 12 }}>{storeError}</p>}
       <p style={{ color: '#475569', marginBottom: 24 }}>
         Welcome back! Choose what you’d like to work on — the most important Sedifex pages are just one tap away.
       </p>

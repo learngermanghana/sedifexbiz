@@ -24,11 +24,6 @@ afterAll(() => {
   ;(globalThis.URL as any).revokeObjectURL = originalRevokeObjectURL
 })
 
-const mockUseActiveStore = vi.fn()
-vi.mock('../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
-}))
-
 const mockQueueCallableRequest = vi.fn()
 vi.mock('../utils/offlineQueue', () => ({
   queueCallableRequest: (...args: unknown[]) => mockQueueCallableRequest(...args),
@@ -70,7 +65,7 @@ const productSnapshot = {
   docs: [
     {
       id: 'product-1',
-      data: () => ({ id: 'product-1', name: 'Iced Coffee', price: 12, storeId: 'store-1' }),
+      data: () => ({ id: 'product-1', name: 'Iced Coffee', price: 12 }),
     },
   ],
 }
@@ -90,7 +85,6 @@ const queryMock = vi.fn((collectionRef: { path: string }, ...clauses: unknown[])
   collection: collectionRef,
   clauses,
 }))
-const whereMock = vi.fn((...args: unknown[]) => ({ type: 'where', args }))
 const orderByMock = vi.fn((field: string, direction?: string) => ({ type: 'orderBy', field, direction }))
 const docMock = vi.fn(() => ({ id: 'generated-sale-id' }))
 const limitMock = vi.fn((value: number) => ({ type: 'limit', value }))
@@ -116,9 +110,6 @@ vi.mock('firebase/firestore', () => ({
   query: (
     ...args: Parameters<typeof queryMock>
   ) => queryMock(...args),
-  where: (
-    ...args: Parameters<typeof whereMock>
-  ) => whereMock(...args),
   orderBy: (
     ...args: Parameters<typeof orderByMock>
   ) => orderByMock(...args),
@@ -140,17 +131,13 @@ function renderWithProviders(ui: ReactElement) {
 describe('Sell page', () => {
   beforeEach(() => {
     mockUseAuthUser.mockReset()
-    mockUseActiveStore.mockReset()
     mockCommitSale.mockReset()
     mockUseAuthUser.mockReturnValue({
       uid: 'cashier-123',
       email: 'cashier@example.com',
     })
-    mockUseActiveStore.mockReturnValue({
-      storeId: 'store-1',
-      isLoading: false,
-      error: null,
-    })
+
+
     mockCommitSale.mockResolvedValue({
       data: {
         ok: true,
@@ -168,7 +155,6 @@ describe('Sell page', () => {
     mockSaveCachedCustomers.mockResolvedValue(undefined)
     collectionMock.mockClear()
     queryMock.mockClear()
-    whereMock.mockClear()
     orderByMock.mockClear()
     limitMock.mockClear()
     docMock.mockClear()
@@ -196,7 +182,6 @@ describe('Sell page', () => {
 
     expect(mockCommitSale).toHaveBeenCalledWith(
       expect.objectContaining({
-        storeId: 'store-1',
         totals: expect.objectContaining({ total: 12 }),
         payment: expect.objectContaining({ method: 'cash', amountPaid: 15, changeDue: 3 }),
         items: [

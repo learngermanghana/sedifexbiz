@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../firebase'
-import { useActiveStore } from '../hooks/useActiveStore'
 import './Receive.css'
 import { queueCallableRequest } from '../utils/offlineQueue'
 import { loadCachedProducts, saveCachedProducts, PRODUCT_CACHE_LIMIT } from '../utils/offlineCache'
@@ -12,7 +11,6 @@ type Product = {
   id: string
   name: string
   stockCount?: number
-  storeId: string
   createdAt?: unknown
   updatedAt?: unknown
 }
@@ -30,8 +28,6 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Receive() {
-  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
-
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string>('')
   const [qty, setQty] = useState<string>('')
@@ -63,11 +59,9 @@ export default function Receive() {
   }
 
   useEffect(() => {
-    if (!STORE_ID) return
-
     let cancelled = false
 
-    loadCachedProducts<Product>(STORE_ID)
+    loadCachedProducts<Product>()
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(
@@ -81,7 +75,6 @@ export default function Receive() {
 
     const q = query(
       collection(db, 'products'),
-      where('storeId', '==', STORE_ID),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -89,7 +82,7 @@ export default function Receive() {
 
     const unsubscribe = onSnapshot(q, snap => {
       const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
-      saveCachedProducts(STORE_ID, rows).catch(error => {
+      saveCachedProducts(rows).catch(error => {
         console.warn('[receive] Failed to cache products', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
@@ -102,13 +95,9 @@ export default function Receive() {
       cancelled = true
       unsubscribe()
     }
-  }, [STORE_ID])
+  }, [])
 
   async function receive() {
-    if (!STORE_ID) {
-      showStatus('error', 'Store access is not ready. Please refresh and try again.')
-      return
-    }
     if (!selected || qty === '') return
     const p = products.find(x=>x.id===selected); if (!p) return
     const amount = Number(qty)
@@ -134,7 +123,6 @@ export default function Receive() {
     }
     setBusy(true)
     const payload = {
-      storeId: STORE_ID,
       productId: selected,
       qty: amount,
       supplier: supplierName,
@@ -168,8 +156,7 @@ export default function Receive() {
     }
   }
 
-  if (storeLoading) return <div>Loading…</div>
-  if (!STORE_ID) return <div>We were unable to confirm your workspace access. Please sign out and back in.</div>
+
 
   return (
     <div className="page receive-page">
@@ -257,9 +244,6 @@ export default function Receive() {
             >
               {status.message}
             </p>
-          )}
-          {storeError && (
-            <p className="receive-page__message receive-page__message--error" role="alert">{storeError}</p>
           )}
         </div>
       </section>

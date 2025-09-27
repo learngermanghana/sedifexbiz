@@ -1,16 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  Timestamp,
-  addDoc,
-  serverTimestamp,
-} from 'firebase/firestore'
+import { collection, query, where, orderBy, onSnapshot, Timestamp, addDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
-import { useActiveStore } from '../hooks/useActiveStore'
 import { useAuthUser } from '../hooks/useAuthUser'
 
 const DENOMINATIONS = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1] as const
@@ -39,7 +29,6 @@ function parseQuantity(input: string): number {
 }
 
 export default function CloseDay() {
-  const { storeId: STORE_ID, isLoading: storeLoading, error: storeError } = useActiveStore()
   const user = useAuthUser()
 
   const [total, setTotal] = useState(0)
@@ -54,20 +43,19 @@ export default function CloseDay() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!STORE_ID) return
-    const start = new Date(); start.setHours(0,0,0,0)
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
     const q = query(
-      collection(db,'sales'),
-      where('storeId','==',STORE_ID),
-      where('createdAt','>=', Timestamp.fromDate(start)),
-      orderBy('createdAt','desc')
+      collection(db, 'sales'),
+      where('createdAt', '>=', Timestamp.fromDate(start)),
+      orderBy('createdAt', 'desc')
     )
     return onSnapshot(q, snap => {
       let sum = 0
       snap.forEach(d => sum += (d.data().total || 0))
       setTotal(sum)
     })
-  }, [STORE_ID])
+  }, [])
 
   useEffect(() => {
     const style = document.createElement('style')
@@ -108,8 +96,6 @@ export default function CloseDay() {
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async event => {
     event.preventDefault()
-    if (!STORE_ID) return
-
     setSubmitError(null)
     setSubmitSuccess(false)
     setIsSubmitting(true)
@@ -117,7 +103,6 @@ export default function CloseDay() {
     try {
       const start = new Date(); start.setHours(0, 0, 0, 0)
       const closePayload = {
-        storeId: STORE_ID,
         businessDay: Timestamp.fromDate(start),
         salesTotal: total,
         expectedCash,
@@ -162,13 +147,11 @@ export default function CloseDay() {
     }
   }
 
-  if (storeLoading) return <div>Loading…</div>
-  if (!STORE_ID) return <div>We were unable to confirm your workspace access. Please sign out and back in.</div>
+
 
   return (
     <div className="print-summary" style={{ maxWidth: 760 }}>
       <h2 style={{ color: '#4338CA' }}>Close Day</h2>
-      {storeError && <p style={{ color: '#b91c1c' }}>{storeError}</p>}
 
       <form onSubmit={handleSubmit}>
         <section style={{ marginTop: 24 }}>
