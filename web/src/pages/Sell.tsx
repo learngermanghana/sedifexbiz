@@ -20,7 +20,7 @@ import { buildSimplePdf } from '../utils/pdf'
 type Product = {
   id: string
   name: string
-  price: number
+  price: number | null
   stockCount?: number
   createdAt?: unknown
   updatedAt?: unknown
@@ -107,6 +107,13 @@ function isOfflineError(error: unknown) {
   return false
 }
 
+function sanitizePrice(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value
+  }
+  return null
+}
+
 export default function Sell() {
   const user = useAuthUser()
 
@@ -134,8 +141,12 @@ export default function Sell() {
     loadCachedProducts<Product>()
       .then(cached => {
         if (!cancelled && cached.length) {
+          const sanitized = cached.map(item => ({
+            ...(item as Product),
+            price: sanitizePrice((item as Product).price),
+          }))
           setProducts(
-            [...cached].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+            sanitized.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
           )
         }
       })
@@ -151,11 +162,18 @@ export default function Sell() {
     )
 
     const unsubscribe = onSnapshot(q, snap => {
-      const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
-      saveCachedProducts(rows).catch(error => {
+      const rows = snap.docs.map(d => ({
+        id: d.id,
+        ...(d.data() as Record<string, unknown>),
+      }))
+      const sanitizedRows = rows.map(row => ({
+        ...(row as Product),
+        price: sanitizePrice((row as Product).price),
+      }))
+      saveCachedProducts(sanitizedRows).catch(error => {
         console.warn('[sell] Failed to cache products', error)
       })
-      const sortedRows = [...rows].sort((a, b) =>
+      const sortedRows = [...sanitizedRows].sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
       )
       setProducts(sortedRows)
@@ -321,6 +339,9 @@ export default function Sell() {
 
 
   function addToCart(p: Product) {
+    if (typeof p.price !== 'number' || !Number.isFinite(p.price)) {
+      return
+    }
     setCart(cs => {
       const i = cs.findIndex(x => x.productId === p.id)
       if (i >= 0) {
@@ -485,20 +506,29 @@ export default function Sell() {
           </div>
           <div className="sell-page__catalog-list">
             {filtered.length ? (
-              filtered.map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="sell-page__product"
-                  onClick={() => addToCart(p)}
-                >
-                  <div>
-                    <span className="sell-page__product-name">{p.name}</span>
-                    <span className="sell-page__product-meta">GHS {p.price.toFixed(2)} • Stock {p.stockCount ?? 0}</span>
-                  </div>
-                  <span className="sell-page__product-action">Add</span>
-                </button>
-              ))
+              filtered.map(p => {
+                const hasPrice = typeof p.price === 'number' && Number.isFinite(p.price)
+                const priceText = hasPrice
+                  ? `GHS ${p.price.toFixed(2)}`
+                  : 'Price unavailable'
+                const actionLabel = hasPrice ? 'Add' : 'Set price to sell'
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="sell-page__product"
+                    onClick={() => addToCart(p)}
+                    disabled={!hasPrice}
+                    title={hasPrice ? undefined : 'Update the price before selling this product.'}
+                  >
+                    <div>
+                      <span className="sell-page__product-name">{p.name}</span>
+                      <span className="sell-page__product-meta">{priceText} • Stock {p.stockCount ?? 0}</span>
+                    </div>
+                    <span className="sell-page__product-action">{actionLabel}</span>
+                  </button>
+                )
+              })
             ) : (
               <div className="empty-state">
                 <h3 className="empty-state__title">No products found</h3>

@@ -67,6 +67,10 @@ const productSnapshot = {
       id: 'product-1',
       data: () => ({ id: 'product-1', name: 'Iced Coffee', price: 12 }),
     },
+    {
+      id: 'product-2',
+      data: () => ({ id: 'product-2', name: 'Mystery Item' }),
+    },
   ],
 }
 
@@ -191,5 +195,20 @@ describe('Sell page', () => {
     )
 
     // Skip UI assertion to avoid flakiness in headless environment.
+  })
+
+  it('disables products that do not have a valid price', async () => {
+    const user = userEvent.setup()
+
+    renderWithProviders(<Sell />)
+
+    const unavailableButton = await screen.findByRole('button', { name: /mystery item/i })
+    expect(unavailableButton).toBeDisabled()
+    expect(unavailableButton).toHaveTextContent(/price unavailable/i)
+    expect(unavailableButton).toHaveTextContent(/set price to sell/i)
+
+    await user.click(unavailableButton)
+
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
   })
 })
