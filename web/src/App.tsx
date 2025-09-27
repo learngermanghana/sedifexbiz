@@ -1,3 +1,4 @@
+// web/src/App.tsx
 import React, { useEffect, useState } from 'react'
 import type { User } from 'firebase/auth'
 import {
@@ -19,6 +20,7 @@ import {
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 import { createMyFirstStore } from './controllers/storeController'
+import { useEnsureOnboarded } from './hooks/useEnsureOnboarded'
 
 type AuthMode = 'login' | 'signup'
 
@@ -154,6 +156,9 @@ function normalizeQueueError(value: unknown): string | null {
 }
 
 export default function App() {
+  // Ensure the user always has a store, membership, and custom claims
+  useEnsureOnboarded()
+
   const [user, setUser] = useState<User | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
   const [mode, setMode] = useState<AuthMode>('login')
