@@ -210,21 +210,44 @@ describe('App signup cleanup', () => {
     const ownerDocRef = firestore.docRefByPath.get(ownerDocKey)
     expect(ownerDocRef).toBeDefined()
 
-    const timestampValues = firestore.serverTimestampMock.mock.results.map(result => result.value)
-    expect(timestampValues.length).toBeGreaterThanOrEqual(4)
-    const [createdTimestamp, updatedTimestamp] = timestampValues.slice(-2)
+    const customerDocKey = `customers/${createdUser.uid}`
 
-    expect(firestore.setDocMock).toHaveBeenCalledWith(
-      ownerDocRef,
+    const customerDocRef = firestore.docRefByPath.get(customerDocKey)
+    expect(customerDocRef).toBeDefined()
+
+    const setDocCalls = firestore.setDocMock.mock.calls
+
+    const ownerCall = setDocCalls.find(([ref]) => ref === ownerDocRef)
+    expect(ownerCall).toBeDefined()
+    const [, ownerPayload, ownerOptions] = ownerCall!
+    expect(ownerPayload).toEqual(
       expect.objectContaining({
         storeId: createdUser.uid,
         name: 'Owner account',
         phone: '5551234567',
         email: 'owner@example.com',
-        createdAt: createdTimestamp,
-        updatedAt: updatedTimestamp,
+        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
       }),
-      { merge: true },
     )
+    expect(ownerOptions).toEqual({ merge: true })
+
+    const customerCall = setDocCalls.find(([ref]) => ref === customerDocRef)
+    expect(customerCall).toBeDefined()
+    const [, customerPayload, customerOptions] = customerCall!
+    expect(customerPayload).toEqual(
+      expect.objectContaining({
+        storeId: createdUser.uid,
+        name: 'owner@example.com',
+        displayName: 'owner@example.com',
+        email: 'owner@example.com',
+        phone: '5551234567',
+        status: 'active',
+        role: 'client',
+        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+      }),
+    )
+    expect(customerOptions).toEqual({ merge: true })
   })
 })

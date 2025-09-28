@@ -29,6 +29,7 @@ import {
 type Customer = {
   id: string
   name: string
+  displayName?: string
   phone?: string
   email?: string
   notes?: string
@@ -62,6 +63,54 @@ type CachedSaleRecord = {
 
 const RECENT_VISIT_DAYS = 90
 const HIGH_VALUE_THRESHOLD = 1000
+
+function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
+  const displayName = customer.displayName?.trim()
+  if (displayName) {
+    return displayName
+  }
+  const legacyName = customer.name?.trim()
+  if (legacyName) {
+    return legacyName
+  }
+  return ''
+}
+
+function getCustomerSortKey(
+  customer: Pick<Customer, 'displayName' | 'name' | 'email' | 'phone'>,
+): string {
+  const primary = getCustomerPrimaryName(customer)
+  if (primary) {
+    return primary
+  }
+  const email = customer.email?.trim()
+  if (email) {
+    return email
+  }
+  const phone = customer.phone?.trim()
+  if (phone) {
+    return phone
+  }
+  return ''
+}
+
+function getCustomerDisplayName(
+  customer: Pick<Customer, 'displayName' | 'name' | 'email' | 'phone'>,
+): string {
+  const primary = getCustomerPrimaryName(customer)
+  if (primary) {
+    return primary
+  }
+  const email = customer.email?.trim()
+  if (email) {
+    return email
+  }
+  const phone = customer.phone?.trim()
+  if (phone) {
+    return phone
+  }
+  return '—'
+}
 
 function normalizeTags(input: string): string[] {
   return Array.from(
@@ -195,7 +244,11 @@ export default function Customers() {
       .then(cached => {
         if (!cancelled && cached.length) {
           setCustomers(
-            [...cached].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+            [...cached].sort((a, b) =>
+              getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
+                sensitivity: 'base',
+              }),
+            ),
           )
         }
       })
@@ -223,7 +276,9 @@ export default function Customers() {
         console.warn('[customers] Failed to cache customers', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+        getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
+          sensitivity: 'base',
+        }),
       )
       setCustomers(sortedRows)
     })
@@ -405,8 +460,13 @@ export default function Customers() {
     const search = searchTerm.trim().toLowerCase()
     return customers.filter(customer => {
       const matchesSearch = search
-        ? [customer.name, customer.email, customer.phone, customer.notes]
-            .filter(Boolean)
+        ? [
+            getCustomerPrimaryName(customer),
+            customer.email,
+            customer.phone,
+            customer.notes,
+          ]
+            .filter(value => typeof value === 'string' && value.trim().length > 0)
             .some(value => value!.toLowerCase().includes(search))
         : true
 
@@ -445,6 +505,10 @@ export default function Customers() {
   const selectedCustomer = selectedCustomerId
     ? customers.find(customer => customer.id === selectedCustomerId) ?? null
     : null
+
+  const selectedCustomerName = selectedCustomer
+    ? getCustomerDisplayName(selectedCustomer)
+    : '—'
 
   const selectedCustomerHistory = selectedCustomerId
     ? salesHistory[selectedCustomerId] ?? []
@@ -668,7 +732,7 @@ export default function Customers() {
       const totalSpend = stats?.totalSpend ?? 0
       const tags = (customer.tags ?? []).join(', ')
       const cells = [
-        customer.name ?? '',
+        getCustomerPrimaryName(customer) || '',
         customer.phone ?? '',
         customer.email ?? '',
         customer.notes ?? '',
@@ -695,7 +759,7 @@ export default function Customers() {
 
   function beginEdit(customer: Customer) {
     setEditingCustomerId(customer.id)
-    setName(customer.name)
+    setName(getCustomerPrimaryName(customer))
     setPhone(customer.phone ?? '')
     setEmail(customer.email ?? '')
     setNotes(customer.notes ?? '')
@@ -938,17 +1002,18 @@ export default function Customers() {
                     const lastVisit = stats?.lastVisit ?? null
                     const totalSpend = stats?.totalSpend ?? 0
                     const isSelected = selectedCustomerId === customer.id
+                    const customerName = getCustomerDisplayName(customer)
                     return (
                       <tr
                         key={customer.id}
                         className={`customers-page__row${isSelected ? ' customers-page__row--selected' : ''}`}
                         onClick={() => beginView(customer)}
                       >
-                        <td>{customer.name}</td>
+                        <td>{customerName}</td>
                         <td>{contactBits || '—'}</td>
                         <td>
                           {customer.tags?.length ? (
-                            <div className="customers-page__tag-list" aria-label={`Tags for ${customer.name}`}>
+                            <div className="customers-page__tag-list" aria-label={`Tags for ${customerName}`}>
                               {customer.tags.map(tag => (
                                 <span key={tag} className="customers-page__tag-chip">#{tag}</span>
                               ))}
@@ -1012,7 +1077,7 @@ export default function Customers() {
           {selectedCustomer ? (
             <div className="customers-page__details-content">
               <div className="customers-page__section-header">
-                <h3 className="card__title">{selectedCustomer.name}</h3>
+                <h3 className="card__title">{selectedCustomerName}</h3>
                 <p className="card__subtitle">Deep dive into visits, spend, and notes.</p>
               </div>
               <dl className="customers-page__detail-list">

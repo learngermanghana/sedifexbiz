@@ -357,13 +357,17 @@ export default function App() {
         await persistSession(nextUser)
         await persistOwnerMetadata(nextUser, sanitizedEmail, sanitizedPhone)
         try {
+          const preferredDisplayName = nextUser.displayName?.trim() || sanitizedEmail
           await setDoc(
             doc(db, 'customers', nextUser.uid),
             {
               storeId: nextUser.uid,
-              name: nextUser.displayName?.trim() || sanitizedEmail,
+              name: preferredDisplayName,
+              displayName: preferredDisplayName,
               email: sanitizedEmail,
               phone: sanitizedPhone,
+              status: 'active',
+              role: 'client',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             },

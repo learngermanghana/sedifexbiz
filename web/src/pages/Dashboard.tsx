@@ -48,6 +48,7 @@ type ProductRecord = {
 type CustomerRecord = {
   id: string
   name: string
+  displayName?: string
   createdAt?: Timestamp | Date | null
   storeId?: string | null
 }
