@@ -8,6 +8,7 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'
 import { Link } from 'react-router-dom'
 import { queueCallableRequest } from '../utils/offlineQueue'
+import BarcodeScanner, { ScanResult } from '../components/BarcodeScanner'
 import {
   CUSTOMER_CACHE_LIMIT,
   PRODUCT_CACHE_LIMIT,
@@ -22,6 +23,7 @@ type Product = {
   id: string
   name: string
   price: number | null
+  sku?: string | null
   stockCount?: number
   createdAt?: unknown
   updatedAt?: unknown
@@ -135,6 +137,10 @@ export default function Sell() {
   const [saleError, setSaleError] = useState<string | null>(null)
   const [saleSuccess, setSaleSuccess] = useState<string | null>(null)
   const [isRecording, setIsRecording] = useState(false)
+  const [scannerStatus, setScannerStatus] = useState<{
+    tone: 'success' | 'error'
+    message: string
+  } | null>(null)
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
@@ -362,18 +368,62 @@ export default function Sell() {
   }, [paymentMethod])
 
 
-  function addToCart(p: Product) {
+  const addToCart = useCallback((p: Product) => {
     if (typeof p.price !== 'number' || !Number.isFinite(p.price)) {
       return
     }
     setCart(cs => {
       const i = cs.findIndex(x => x.productId === p.id)
       if (i >= 0) {
-        const copy = [...cs]; copy[i] = { ...copy[i], qty: copy[i].qty + 1 }; return copy
+        const copy = [...cs]
+        copy[i] = { ...copy[i], qty: copy[i].qty + 1 }
+        return copy
       }
       return [...cs, { productId: p.id, name: p.name, price: p.price, qty: 1 }]
     })
-  }
+  }, [])
+
+  const handleScannerError = useCallback((message: string) => {
+    setScannerStatus({ tone: 'error', message })
+  }, [])
+
+  const handleScanResult = useCallback(
+    (result: ScanResult) => {
+      const normalized = result.code.trim()
+      if (!normalized) return
+      const match = products.find(product => {
+        if (!product.sku) return false
+        return product.sku.trim().toLowerCase() === normalized.toLowerCase()
+      })
+      if (!match) {
+        setScannerStatus({
+          tone: 'error',
+          message: `We couldn't find a product for code ${normalized}.`,
+        })
+        return
+      }
+      if (typeof match.price !== 'number' || !Number.isFinite(match.price)) {
+        setScannerStatus({
+          tone: 'error',
+          message: `${match.name} needs a price before it can be sold.`,
+        })
+        return
+      }
+
+      addToCart(match)
+      const friendlySource =
+        result.source === 'manual'
+          ? 'manual entry'
+          : result.source === 'camera'
+            ? 'the camera'
+            : 'the scanner'
+      setScannerStatus({
+        tone: 'success',
+        message: `Added ${match.name} via ${friendlySource}.`,
+      })
+    },
+    [addToCart, products],
+  )
   function setQty(id: string, qty: number) {
     setCart(cs => cs.map(l => l.productId === id ? { ...l, qty: Math.max(0, qty) } : l).filter(l => l.qty > 0))
   }
@@ -522,8 +572,26 @@ export default function Sell() {
             value={queryText}
             onChange={e => setQueryText(e.target.value)}
           />
-          <p className="field__hint">Tip: start typing and tap a product to add it to the cart.</p>
+          <p className="field__hint">
+            Tip: search or scan a barcode to add products to the cart instantly.
+          </p>
         </div>
+        <BarcodeScanner
+          className="sell-page__scanner"
+          enableCameraFallback
+          onScan={handleScanResult}
+          onError={handleScannerError}
+          manualEntryLabel="Scan or type a barcode"
+        />
+        {scannerStatus && (
+          <div
+            className={`sell-page__scanner-status sell-page__scanner-status--${scannerStatus.tone}`}
+            role="status"
+            aria-live="polite"
+          >
+            {scannerStatus.message}
+          </div>
+        )}
       </section>
 
       <div className="sell-page__grid">

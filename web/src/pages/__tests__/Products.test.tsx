@@ -224,6 +224,7 @@ describe('Products page', () => {
     })
 
     await user.type(screen.getByLabelText('Name'), 'Incomplete Product')
+    await user.type(screen.getByLabelText('SKU'), 'INC-01')
     await user.type(screen.getByLabelText('Price'), '-5')
 
     await user.click(screen.getByRole('button', { name: /add product/i }))
