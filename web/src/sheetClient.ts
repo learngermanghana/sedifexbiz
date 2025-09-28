@@ -24,8 +24,15 @@ export async function fetchSheetRows(): Promise<SheetRow[]> {
   const res = await fetch(GVIZ_URL, { cache: 'no-store' })
   if (!res.ok) throw new Error(`Sheet fetch failed: ${res.status}`)
   const txt = await res.text()
-  const json = txt.replace(/^[^{]+/, '').replace(/;?\s*$/, '')
-  const payload = JSON.parse(json)
+  const start = txt.indexOf('{')
+  const end = txt.lastIndexOf('}')
+  if (start === -1 || end === -1 || end < start)
+    throw new Error('Sheet response did not contain valid JSON object')
+  const json = txt.slice(start, end + 1)
+  const trimmed = json.trim()
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}'))
+    throw new Error('Sheet response JSON is malformed')
+  const payload = JSON.parse(trimmed)
   const table = payload.table as { cols: { label: string }[]; rows: { c: { v: any }[] }[] }
   const headers = table.cols.map(c => norm(c.label || ''))
   const out: SheetRow[] = []
