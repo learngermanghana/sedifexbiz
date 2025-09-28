@@ -18,7 +18,13 @@ import {
   persistSession,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
-import { resolveStoreAccess, type ResolveStoreAccessResult, type SeededDocument } from './controllers/accessController'
+import {
+  resolveStoreAccess,
+  type ResolveStoreAccessResult,
+  type SeededDocument,
+  extractCallableErrorMessage,
+  INACTIVE_WORKSPACE_MESSAGE,
+} from './controllers/accessController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 
@@ -878,6 +884,11 @@ function getErrorMessage(error: unknown): string {
         return 'An account already exists with this email.'
       case 'auth/weak-password':
         return 'Please choose a stronger password. It must be at least 8 characters and include uppercase, lowercase, number, and symbol.'
+      case 'functions/permission-denied': {
+        const callableMessage =
+          extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
+        return callableMessage
+      }
       default:
         return (error as any).message || 'Something went wrong. Please try again.'
     }

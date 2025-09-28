@@ -21,6 +21,8 @@ type ManageStaffPayload = {
 }
 
 const VALID_ROLES = new Set(['owner', 'staff'])
+const INACTIVE_WORKSPACE_MESSAGE =
+  'Your Sedifex workspace contract is not active. Reach out to your Sedifex administrator to restore access.'
 
 function normalizeContactPayload(contact: ContactPayload | undefined) {
   let hasPhone = false
@@ -188,6 +190,29 @@ function getEmailFromRecord(record: SheetRecord, keys: string[]): string | null 
     if (resolved) return resolved
   }
   return null
+}
+
+function isInactiveContractStatus(value: string | null): boolean {
+  if (!value) return false
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return false
+  const tokens = normalized.split(/[^a-z0-9]+/).filter(Boolean)
+  const tokenSet = new Set(tokens)
+  const inactiveTokens = [
+    'inactive',
+    'terminated',
+    'termination',
+    'cancelled',
+    'canceled',
+    'suspended',
+    'paused',
+    'hold',
+    'closed',
+    'ended',
+    'deactivated',
+    'disabled',
+  ]
+  return inactiveTokens.some(token => tokenSet.has(token))
 }
 
 function parseNumberValue(value: unknown): number | null {
@@ -538,6 +563,10 @@ export const resolveStoreAccess = functions.https.onCall(async (_data, context) 
   const storeStatus =
     getValueFromRecord(record, ['store_status', 'status']) ??
     (typeof existingStore.status === 'string' ? existingStore.status : null)
+
+  if (isInactiveContractStatus(storeStatus)) {
+    throw new functions.https.HttpsError('permission-denied', INACTIVE_WORKSPACE_MESSAGE)
+  }
   const storeAddressLine1 =
     getValueFromRecord(record, ['store_address_line1', 'address_line1', 'address_1']) ??
     (typeof existingStore.addressLine1 === 'string' ? existingStore.addressLine1 : null)
