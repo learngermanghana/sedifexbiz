@@ -52,6 +52,18 @@ function sanitizePhone(value: string): string {
 
 const OWNER_NAME_FALLBACK = 'Owner account'
 
+function persistActiveStoreId(storeId: string) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem('activeStoreId', storeId)
+  } catch (error) {
+    console.warn('[auth] Failed to persist active store ID', error)
+  }
+}
+
 function resolveOwnerName(user: User): string {
   const displayName = user.displayName?.trim()
   if (displayName && displayName.length > 0) {
@@ -450,6 +462,7 @@ export default function App() {
         await persistSession(nextUser)
         try {
           const resolution = await resolveStoreAccess()
+          persistActiveStoreId(resolution.storeId)
           await persistStoreSeedData(resolution)
         } catch (error) {
           console.warn('[auth] Failed to resolve workspace access', error)
@@ -474,6 +487,7 @@ export default function App() {
           return
         }
 
+        persistActiveStoreId(resolution.storeId)
         await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution)
 
         try {
