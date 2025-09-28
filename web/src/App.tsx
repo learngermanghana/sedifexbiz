@@ -7,8 +7,9 @@ import {
   signInWithEmailAndPassword,
 } from 'firebase/auth'
 import { FirebaseError } from 'firebase/app'
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { auth } from './firebase'
+import { auth, db } from './firebase'
 import './App.css'
 import './pwa'
 import { useToast } from './components/ToastProvider'
@@ -320,6 +321,22 @@ export default function App() {
           sanitizedPassword,
         )
         await persistSession(nextUser)
+        try {
+          await setDoc(
+            doc(db, 'customers', nextUser.uid),
+            {
+              storeId: nextUser.uid,
+              name: nextUser.displayName?.trim() || sanitizedEmail,
+              email: sanitizedEmail,
+              phone: sanitizedPhone,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true },
+          )
+        } catch (error) {
+          console.warn('[customers] Unable to upsert customer record', error)
+        }
         try {
           await nextUser.getIdToken(true)
         } catch (error) {
