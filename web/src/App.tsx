@@ -54,14 +54,19 @@ function resolveOwnerName(user: User): string {
   return OWNER_NAME_FALLBACK
 }
 
-async function persistOwnerMetadata(user: User, email: string, phone: string) {
+async function persistTeamMemberMetadata(
+  user: User,
+  email: string,
+  phone: string,
+  resolution: ResolveStoreAccessResult,
+) {
   try {
     await setDoc(
       doc(db, 'teamMembers', user.uid),
       {
         uid: user.uid,
-        role: 'owner',
-        storeId: user.uid,
+        role: resolution.role,
+        storeId: resolution.storeId,
         name: resolveOwnerName(user),
         phone,
         email,
@@ -73,7 +78,21 @@ async function persistOwnerMetadata(user: User, email: string, phone: string) {
       { merge: true },
     )
   } catch (error) {
-    console.warn('[signup] Failed to persist owner metadata', error)
+    console.warn('[signup] Failed to persist team member metadata', error)
+  }
+}
+
+async function cleanupFailedSignup(user: User) {
+  try {
+    await user.delete()
+  } catch (error) {
+    console.warn('[signup] Unable to delete rejected signup account', error)
+  }
+
+  try {
+    await auth.signOut()
+  } catch (error) {
+    console.warn('[signup] Unable to sign out after rejected signup', error)
   }
 }
 
@@ -423,13 +442,33 @@ export default function App() {
           sanitizedPassword,
         )
         await persistSession(nextUser)
-        await persistOwnerMetadata(nextUser, sanitizedEmail, sanitizedPhone)
+
+        let resolution: ResolveStoreAccessResult
+        try {
+          resolution = await resolveStoreAccess()
+        } catch (error) {
+          console.warn('[signup] Failed to resolve workspace access', error)
+          setStatus({ tone: 'error', message: getErrorMessage(error) })
+          await cleanupFailedSignup(nextUser)
+          return
+        }
+
+        await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution)
+
+        try {
+          await persistStoreSeedData(resolution)
+        } catch (error) {
+          console.warn('[signup] Failed to seed workspace data', error)
+          setStatus({ tone: 'error', message: getErrorMessage(error) })
+          return
+        }
+
         try {
           const preferredDisplayName = nextUser.displayName?.trim() || sanitizedEmail
           await setDoc(
             doc(db, 'customers', nextUser.uid),
             {
-              storeId: nextUser.uid,
+              storeId: resolution.storeId,
               name: preferredDisplayName,
               displayName: preferredDisplayName,
               email: sanitizedEmail,
