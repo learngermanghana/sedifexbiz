@@ -11,12 +11,12 @@ import {
   type DocumentSnapshot,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { getFunctions, httpsCallable } from 'firebase/functions'   // SHEET: add
-import { db } from '../firebase'
+import { auth, db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
 import { manageStaffAccount } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
+import { fetchSheetRows, findUserRow } from '../sheetClient'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -163,22 +163,47 @@ export default function AccountOverview() {
     setSheetLoading(true)
     setSheetError(null)
 
-    const fn = httpsCallable(getFunctions(), 'getAccountSheetInfo')
-    fn({})
-      .then((res: any) => {
-        if (cancelled) return
-        setSheetInfo(res?.data ?? null)
-      })
-      .catch((err: any) => {
-        if (cancelled) return
-        console.error('Failed to load sheet info', err)
-        setSheetInfo(null)
-        setSheetError('We could not load your Google Sheet account info.')
-        publish({ message: 'Unable to load sheet info.', tone: 'error' })
-      })
-      .finally(() => {
-        if (!cancelled) setSheetLoading(false)
-      })
+    const userEmail = auth.currentUser?.email?.trim()
+    if (!userEmail) {
+      setSheetInfo(null)
+      setSheetLoading(false)
+    } else {
+      fetchSheetRows()
+        .then(rows => {
+          if (cancelled) return
+          const row = findUserRow(rows, userEmail)
+          if (!row) {
+            setSheetInfo({ ok: true, existsOnSheet: false, email: userEmail })
+            return
+          }
+
+          const normalizedRole = row.role === 'owner' ? 'owner' : row.role === 'staff' ? 'staff' : undefined
+
+          setSheetInfo({
+            ok: true,
+            existsOnSheet: true,
+            email: row.email,
+            storeId: toNullableString(row.storeId),
+            role: normalizedRole,
+            company: toNullableString(row.company),
+            contractStart: toNullableString(row.contractStart),
+            contractEnd: toNullableString(row.contractEnd),
+            paymentStatus: toNullableString(row.paymentStatus),
+            amountPaid: toNullableString(row.amountPaid),
+            name: toNullableString(row.name),
+          })
+        })
+        .catch((err: any) => {
+          if (cancelled) return
+          console.error('Failed to load sheet info', err)
+          setSheetInfo(null)
+          setSheetError('We could not load your Google Sheet account info.')
+          publish({ message: 'Unable to load sheet info.', tone: 'error' })
+        })
+        .finally(() => {
+          if (!cancelled) setSheetLoading(false)
+        })
+    }
 
     return () => {
       cancelled = true
