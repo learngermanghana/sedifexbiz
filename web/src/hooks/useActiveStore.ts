@@ -16,6 +16,7 @@ export function useActiveStore(): ActiveStoreState {
 
   useEffect(() => {
     if (typeof window === 'undefined') {
+      setIsPersistedLoading(false)
       return
     }
 
