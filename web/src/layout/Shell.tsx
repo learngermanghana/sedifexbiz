@@ -11,6 +11,7 @@ type NavItem = { to: string; label: string; end?: boolean }
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Dashboard', end: true },
+  { to: '/metrics', label: 'KPI & Metrics' },
   { to: '/products', label: 'Products' },
   { to: '/sell', label: 'Sell' },
   { to: '/receive', label: 'Receive' },
