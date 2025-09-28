@@ -46,7 +46,9 @@ const setDocMock = vi.fn(async () => {})
 const updateDocMock = vi.fn(async () => {})
 
 let snapshotData: any = null
+let latestSnapshotListener: ((snapshot: any) => void) | null = null
 const onSnapshotMock = vi.fn((ref: { path: string }, onNext: (snapshot: any) => void) => {
+  latestSnapshotListener = onNext
   queueMicrotask(() => {
     onNext({
       data: () => snapshotData,
@@ -109,6 +111,7 @@ describe('Goal planner page', () => {
     setDocMock.mockClear()
     updateDocMock.mockClear()
     onSnapshotMock.mockClear()
+    latestSnapshotListener = null
 
     const now = new Date()
     dayKey = formatIsoDate(now)
@@ -198,7 +201,26 @@ describe('Goal planner page', () => {
     const [, togglePayload, toggleOptions] = updateDocMock.mock.calls[0]
 
     expect(togglePayload.daily[dayKey][0].completed).toBe(true)
-    expect(toggleOptions).toEqual({ merge: true })
+    expect(toggleOptions).toBeUndefined()
+
+    snapshotData = {
+      ...snapshotData,
+      daily: {
+        ...snapshotData.daily,
+        [dayKey]: [
+          {
+            ...snapshotData.daily[dayKey][0],
+            completed: true,
+          },
+        ],
+      },
+    }
+
+    latestSnapshotListener?.({ data: () => snapshotData })
+
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: /call supplier/i })).toBeChecked(),
+    )
 
     updateDocMock.mockClear()
 
@@ -209,6 +231,20 @@ describe('Goal planner page', () => {
     const [, deletePayload, deleteOptions] = updateDocMock.mock.calls[0]
 
     expect(deletePayload.daily[dayKey]).toEqual([])
-    expect(deleteOptions).toEqual({ merge: true })
+    expect(deleteOptions).toBeUndefined()
+
+    snapshotData = {
+      ...snapshotData,
+      daily: {
+        ...snapshotData.daily,
+        [dayKey]: [],
+      },
+    }
+
+    latestSnapshotListener?.({ data: () => snapshotData })
+
+    await waitFor(() =>
+      expect(screen.queryByRole('checkbox', { name: /call supplier/i })).not.toBeInTheDocument(),
+    )
   })
 })
