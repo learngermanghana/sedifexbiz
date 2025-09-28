@@ -20,6 +20,11 @@ vi.mock('../../firebase', () => ({
   db: {},
 }))
 
+const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
+vi.mock('../../hooks/useActiveStore', () => ({
+  useActiveStore: () => mockUseActiveStore(),
+}))
+
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
 const queryMock = vi.fn((collectionRef: { path: string }, ...clauses: unknown[]) => ({
   collection: collectionRef,
@@ -27,6 +32,12 @@ const queryMock = vi.fn((collectionRef: { path: string }, ...clauses: unknown[])
 }))
 const orderByMock = vi.fn((field: string, direction?: string) => ({ type: 'orderBy', field, direction }))
 const limitMock = vi.fn((value: number) => ({ type: 'limit', value }))
+const whereMock = vi.fn((field: string, op: string, value: unknown) => ({
+  type: 'where',
+  field,
+  op,
+  value,
+}))
 const onSnapshotMock = vi.fn(
   (
     queryRef: { collection: { path: string } },
@@ -58,6 +69,7 @@ vi.mock('firebase/firestore', () => ({
   updateDoc: (...args: Parameters<typeof updateDocMock>) => updateDocMock(...args),
   serverTimestamp: (...args: Parameters<typeof serverTimestampMock>) => serverTimestampMock(...args),
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
+  where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
 }))
 
 describe('Products page', () => {
@@ -73,6 +85,9 @@ describe('Products page', () => {
     updateDocMock.mockClear()
     serverTimestampMock.mockClear()
     docMock.mockClear()
+    whereMock.mockClear()
+    mockUseActiveStore.mockReset()
+    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
 
 
 

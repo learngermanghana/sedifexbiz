@@ -308,6 +308,12 @@ export const commitSale = functions.https.onCall(async (data, context) => {
   const saleId = typeof saleIdRaw === 'string' ? saleIdRaw.trim() : ''
   if (!saleId) throw new functions.https.HttpsError('invalid-argument', 'A valid saleId is required')
 
+  const normalizedBranchIdRaw = typeof branchId === 'string' ? branchId.trim() : ''
+  if (!normalizedBranchIdRaw) {
+    throw new functions.https.HttpsError('invalid-argument', 'A valid branch identifier is required')
+  }
+  const normalizedBranchId = normalizedBranchIdRaw
+
   const saleRef = db.collection('sales').doc(saleId)
   const saleItemsRef = db.collection('saleItems')
 
@@ -329,7 +335,8 @@ export const commitSale = functions.https.onCall(async (data, context) => {
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
     tx.set(saleRef, {
-      branchId: branchId ?? null,
+      branchId: normalizedBranchId,
+      storeId: normalizedBranchId,
       cashierId,
       total: totals?.total ?? 0,
       taxTotal: totals?.taxTotal ?? 0,
@@ -351,6 +358,7 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         qty: it.qty,
         price: it.price,
         taxRate: it.taxRate,
+        storeId: normalizedBranchId,
         createdAt: timestamp,
       })
 
@@ -369,6 +377,7 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         qtyChange: -Math.abs(it.qty || 0),
         type: 'sale',
         refId: saleId,
+        storeId: normalizedBranchId,
         createdAt: timestamp,
       })
     }
@@ -415,6 +424,9 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError('failed-precondition', 'Bad product')
     }
 
+    const productStoreIdRaw = pSnap.get('storeId')
+    const productStoreId = typeof productStoreIdRaw === 'string' ? productStoreIdRaw.trim() : null
+
     const currentStock = Number(pSnap.get('stockCount') || 0)
     const nextStock = currentStock + amount
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
@@ -439,6 +451,7 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
       totalCost,
       receivedBy: context.auth?.uid ?? null,
       createdAt: timestamp,
+      storeId: productStoreId,
     })
 
     tx.set(ledgerRef, {
@@ -446,6 +459,7 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
       qtyChange: amount,
       type: 'receipt',
       refId: receiptRef.id,
+      storeId: productStoreId,
       createdAt: timestamp,
     })
   })

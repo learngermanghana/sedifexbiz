@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { collection, query, orderBy, limit, onSnapshot, doc } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot, doc, where } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions as cloudFunctions } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
+import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'
 import { Link } from 'react-router-dom'
 import { queueCallableRequest } from '../utils/offlineQueue'
@@ -122,6 +123,7 @@ function sanitizePrice(value: unknown): number | null {
 
 export default function Sell() {
   const user = useAuthUser()
+  const { storeId: activeStoreId } = useActiveStore()
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -144,7 +146,14 @@ export default function Sell() {
   useEffect(() => {
     let cancelled = false
 
-    loadCachedProducts<Product>()
+    if (!activeStoreId) {
+      setProducts([])
+      return () => {
+        cancelled = true
+      }
+    }
+
+    loadCachedProducts<Product>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
           const sanitized = cached.map(item => ({
@@ -162,6 +171,7 @@ export default function Sell() {
 
     const q = query(
       collection(db, 'products'),
+      where('storeId', '==', activeStoreId),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -176,7 +186,7 @@ export default function Sell() {
         ...(row as Product),
         price: sanitizePrice((row as Product).price),
       }))
-      saveCachedProducts(sanitizedRows).catch(error => {
+      saveCachedProducts(sanitizedRows, { storeId: activeStoreId }).catch(error => {
         console.warn('[sell] Failed to cache products', error)
       })
       const sortedRows = [...sanitizedRows].sort((a, b) =>
@@ -189,12 +199,19 @@ export default function Sell() {
       cancelled = true
       unsubscribe()
     }
-  }, [])
+  }, [activeStoreId])
 
   useEffect(() => {
     let cancelled = false
 
-    loadCachedCustomers<Customer>()
+    if (!activeStoreId) {
+      setCustomers([])
+      return () => {
+        cancelled = true
+      }
+    }
+
+    loadCachedCustomers<Customer>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
           setCustomers(
@@ -208,6 +225,7 @@ export default function Sell() {
 
     const q = query(
       collection(db, 'customers'),
+      where('storeId', '==', activeStoreId),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(CUSTOMER_CACHE_LIMIT),
@@ -215,7 +233,7 @@ export default function Sell() {
 
     const unsubscribe = onSnapshot(q, snap => {
       const rows = snap.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Customer) }))
-      saveCachedCustomers(rows).catch(error => {
+      saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[sell] Failed to cache customers', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
@@ -228,7 +246,7 @@ export default function Sell() {
       cancelled = true
       unsubscribe()
     }
-  }, [])
+  }, [activeStoreId])
 
   useEffect(() => {
     if (!receipt) return
@@ -361,6 +379,10 @@ export default function Sell() {
   }
   async function recordSale() {
     if (cart.length === 0) return
+    if (!activeStoreId) {
+      setSaleError('Select a workspace before recording a sale.')
+      return
+    }
     if (!user) {
       setSaleError('You must be signed in to record a sale.')
       return
@@ -376,7 +398,7 @@ export default function Sell() {
     const saleId = doc(collection(db, 'sales')).id
     const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
     const payload: CommitSalePayload = {
-      branchId: null,
+      branchId: activeStoreId,
       saleId,
       cashierId: user.uid,
       totals: {

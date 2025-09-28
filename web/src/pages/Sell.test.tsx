@@ -12,6 +12,11 @@ vi.mock('../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
+const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
+vi.mock('../hooks/useActiveStore', () => ({
+  useActiveStore: () => mockUseActiveStore(),
+}))
+
 const originalCreateObjectURL = globalThis.URL.createObjectURL
 const originalRevokeObjectURL = globalThis.URL.revokeObjectURL
 
@@ -93,6 +98,7 @@ const queryMock = vi.fn((collectionRef: { path: string }, ...clauses: unknown[])
 const orderByMock = vi.fn((field: string, direction?: string) => ({ type: 'orderBy', field, direction }))
 const docMock = vi.fn(() => ({ id: 'generated-sale-id' }))
 const limitMock = vi.fn((value: number) => ({ type: 'limit', value }))
+const whereMock = vi.fn((field: string, op: string, value: unknown) => ({ type: 'where', field, op, value }))
 
 const onSnapshotMock = vi.fn((queryRef: { collection: { path: string } }, callback: (snap: unknown) => void) => {
   queueMicrotask(() => {
@@ -121,6 +127,9 @@ vi.mock('firebase/firestore', () => ({
   limit: (
     ...args: Parameters<typeof limitMock>
   ) => limitMock(...args),
+  where: (
+    ...args: Parameters<typeof whereMock>
+  ) => whereMock(...args),
   doc: (
     ...args: Parameters<typeof docMock>
   ) => docMock(...args),
@@ -136,11 +145,13 @@ function renderWithProviders(ui: ReactElement) {
 describe('Sell page', () => {
   beforeEach(() => {
     mockUseAuthUser.mockReset()
+    mockUseActiveStore.mockReset()
     mockCommitSale.mockReset()
     mockUseAuthUser.mockReturnValue({
       uid: 'cashier-123',
       email: 'cashier@example.com',
     })
+    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
 
 
     mockCommitSale.mockResolvedValue({
@@ -187,6 +198,7 @@ describe('Sell page', () => {
 
     expect(mockCommitSale).toHaveBeenCalledWith(
       expect.objectContaining({
+        branchId: 'store-1',
         totals: expect.objectContaining({ total: 12 }),
         payment: expect.objectContaining({ method: 'cash', amountPaid: 15, changeDue: 3 }),
         items: [

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../firebase'
+import { useActiveStore } from '../hooks/useActiveStore'
 import './Receive.css'
 import { queueCallableRequest } from '../utils/offlineQueue'
 import { loadCachedProducts, saveCachedProducts, PRODUCT_CACHE_LIMIT } from '../utils/offlineCache'
@@ -34,6 +35,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Receive() {
+  const { storeId: activeStoreId } = useActiveStore()
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string>('')
   const [qty, setQty] = useState<string>('')
@@ -67,7 +69,14 @@ export default function Receive() {
   useEffect(() => {
     let cancelled = false
 
-    loadCachedProducts<Product>()
+    if (!activeStoreId) {
+      setProducts([])
+      return () => {
+        cancelled = true
+      }
+    }
+
+    loadCachedProducts<Product>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(
@@ -81,6 +90,7 @@ export default function Receive() {
 
     const q = query(
       collection(db, 'products'),
+      where('storeId', '==', activeStoreId),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -88,7 +98,7 @@ export default function Receive() {
 
     const unsubscribe = onSnapshot(q, snap => {
       const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
-      saveCachedProducts(rows).catch(error => {
+      saveCachedProducts(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[receive] Failed to cache products', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
@@ -101,10 +111,14 @@ export default function Receive() {
       cancelled = true
       unsubscribe()
     }
-  }, [])
+  }, [activeStoreId])
 
   async function receive() {
     if (!selected || qty === '') return
+    if (!activeStoreId) {
+      showStatus('error', 'Select a workspace before receiving stock.')
+      return
+    }
     const p = products.find(x=>x.id===selected); if (!p) return
     const amount = Number(qty)
     if (!Number.isFinite(amount) || amount <= 0) {

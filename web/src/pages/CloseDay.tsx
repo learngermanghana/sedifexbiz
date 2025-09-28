@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { collection, query, where, orderBy, onSnapshot, Timestamp, addDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
+import { useActiveStore } from '../hooks/useActiveStore'
 
 const DENOMINATIONS = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1] as const
 
@@ -30,6 +31,7 @@ function parseQuantity(input: string): number {
 
 export default function CloseDay() {
   const user = useAuthUser()
+  const { storeId: activeStoreId } = useActiveStore()
 
   const [total, setTotal] = useState(0)
   const [cashCounts, setCashCounts] = useState<CashCountState>(() => createInitialCashCountState())
@@ -45,8 +47,16 @@ export default function CloseDay() {
   useEffect(() => {
     const start = new Date()
     start.setHours(0, 0, 0, 0)
+    if (!activeStoreId) {
+      setTotal(0)
+      return () => {
+        /* noop */
+      }
+    }
+
     const q = query(
       collection(db, 'sales'),
+      where('storeId', '==', activeStoreId),
       where('createdAt', '>=', Timestamp.fromDate(start)),
       orderBy('createdAt', 'desc')
     )
@@ -55,7 +65,7 @@ export default function CloseDay() {
       snap.forEach(d => sum += (d.data().total || 0))
       setTotal(sum)
     })
-  }, [])
+  }, [activeStoreId])
 
   useEffect(() => {
     const style = document.createElement('style')
@@ -101,6 +111,9 @@ export default function CloseDay() {
     setIsSubmitting(true)
 
     try {
+      if (!activeStoreId) {
+        throw new Error('Select a workspace before recording a close-out.')
+      }
       const start = new Date(); start.setHours(0, 0, 0, 0)
       const closePayload = {
         businessDay: Timestamp.fromDate(start),
@@ -129,6 +142,7 @@ export default function CloseDay() {
             }
           : null,
         closedAt: serverTimestamp(),
+        storeId: activeStoreId,
       }
 
       await addDoc(collection(db, 'closeouts'), closePayload)

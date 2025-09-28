@@ -1,8 +1,20 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react'
-import { addDoc, collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import {
+  addDoc,
+  collection,
+  doc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
+import { useActiveStore } from '../hooks/useActiveStore'
 import {
   PRODUCT_CACHE_LIMIT,
   loadCachedProducts,
@@ -26,6 +38,7 @@ export type ProductRecord = {
   lastReceipt?: ReceiptDetails | null
   createdAt?: unknown
   updatedAt?: unknown
+  storeId?: string | null
   __optimistic?: boolean
 }
 
@@ -137,6 +150,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Products() {
+  const { storeId: activeStoreId } = useActiveStore()
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -152,18 +166,30 @@ export default function Products() {
 
   useEffect(() => {
     let cancelled = false
-    setIsLoadingProducts(true)
     setLoadError(null)
 
-    loadCachedProducts<Omit<ProductRecord, '__optimistic'>>()
+    if (!activeStoreId) {
+      setProducts([])
+      setIsLoadingProducts(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setIsLoadingProducts(true)
+
+    loadCachedProducts<Omit<ProductRecord, '__optimistic'>>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(prev => {
-            const optimistic = prev.filter(item => item.__optimistic)
+            const optimistic = prev.filter(
+              item => item.__optimistic && item.storeId === activeStoreId,
+            )
             const sanitized = cached.map(item => ({
               ...(item as ProductRecord),
               price: sanitizePrice((item as ProductRecord).price),
               __optimistic: false,
+              storeId: activeStoreId,
             }))
             return sortProducts([...sanitized, ...optimistic])
           })
@@ -176,6 +202,7 @@ export default function Products() {
 
     const q = query(
       collection(db, 'products'),
+      where('storeId', '==', activeStoreId),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -192,18 +219,20 @@ export default function Products() {
         const sanitizedRows = rows.map(row => ({
           ...(row as ProductRecord),
           price: sanitizePrice((row as ProductRecord).price),
+          storeId: activeStoreId,
+          __optimistic: false,
         }))
-        saveCachedProducts(sanitizedRows).catch(error => {
+        saveCachedProducts(sanitizedRows, { storeId: activeStoreId }).catch(error => {
           console.warn('[products] Failed to cache products', error)
         })
         setProducts(prev => {
-          const optimistic = prev.filter(product => product.__optimistic)
-          const merged = sanitizedRows.map(row => ({
-            ...(row as ProductRecord),
-            __optimistic: false,
-          }))
-          const optimisticRemainders = optimistic.filter(item => !rows.some(row => row.id === item.id))
-          return sortProducts([...merged, ...optimisticRemainders])
+          const optimistic = prev.filter(
+            product => product.__optimistic && product.storeId === activeStoreId,
+          )
+          const optimisticRemainders = optimistic.filter(
+            item => !rows.some(row => row.id === item.id),
+          )
+          return sortProducts([...sanitizedRows, ...optimisticRemainders])
         })
         setIsLoadingProducts(false)
       },
@@ -219,7 +248,7 @@ export default function Products() {
       cancelled = true
       unsubscribe()
     }
-  }, [])
+  }, [activeStoreId])
 
   useEffect(() => {
     if (!editingProductId) {
@@ -313,6 +342,11 @@ export default function Products() {
       return
     }
 
+    if (!activeStoreId) {
+      setCreateStatus({ tone: 'error', message: 'Select a workspace before adding products.' })
+      return
+    }
+
     const optimisticProduct: ProductRecord = {
       id: `optimistic-${Date.now()}`,
       name,
@@ -323,6 +357,7 @@ export default function Products() {
       lastReceipt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
+      storeId: activeStoreId,
       __optimistic: true,
     }
 
@@ -337,6 +372,7 @@ export default function Products() {
         sku: sku || null,
         reorderThreshold: reorderThreshold ?? null,
         stockCount: initialStock ?? 0,
+        storeId: activeStoreId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
@@ -355,7 +391,9 @@ export default function Products() {
       if (isOfflineError(error)) {
         setProducts(prev =>
           prev.map(product =>
-            product.id === optimisticProduct.id ? { ...product, __optimistic: true } : product,
+            product.id === optimisticProduct.id
+              ? { ...product, __optimistic: true, storeId: activeStoreId }
+              : product,
           ),
         )
         setCreateStatus({
@@ -395,6 +433,11 @@ export default function Products() {
       return
     }
 
+    if (!activeStoreId) {
+      setEditStatus({ tone: 'error', message: 'Select a workspace before updating products.' })
+      return
+    }
+
     const previous = products.find(product => product.id === editingProductId)
     if (!previous) {
       setEditStatus({ tone: 'error', message: 'We could not find this product to update.' })
@@ -407,6 +450,7 @@ export default function Products() {
       sku: sku || null,
       reorderThreshold: reorderThreshold ?? null,
       updatedAt: new Date(),
+      storeId: activeStoreId,
     }
 
     setIsUpdating(true)
@@ -414,7 +458,9 @@ export default function Products() {
     setProducts(prev =>
       sortProducts(
         prev.map(product =>
-          product.id === editingProductId ? { ...product, ...updatedValues, __optimistic: true } : product,
+          product.id === editingProductId
+            ? { ...product, ...updatedValues, __optimistic: true }
+            : product,
         ),
       ),
     )
@@ -425,6 +471,7 @@ export default function Products() {
         price,
         sku: sku || null,
         reorderThreshold: reorderThreshold ?? null,
+        storeId: activeStoreId,
         updatedAt: serverTimestamp(),
       })
       setEditStatus({ tone: 'success', message: 'Product details updated.' })
