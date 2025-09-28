@@ -18,7 +18,13 @@ type Product = {
 function isOfflineError(error: unknown) {
   if (!navigator.onLine) return true
   if (error instanceof FirebaseError) {
-    return error.code === 'unavailable' || error.code === 'internal'
+    const code = (error.code || '').toLowerCase()
+    return (
+      code === 'unavailable' ||
+      code === 'internal' ||
+      code.endsWith('/unavailable') ||
+      code.endsWith('/internal')
+    )
   }
   if (error instanceof TypeError) {
     const message = error.message.toLowerCase()
