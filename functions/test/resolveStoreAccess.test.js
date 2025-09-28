@@ -200,10 +200,48 @@ async function runStoreIdMismatchTest() {
   )
 }
 
+async function runMissingStoreIdTest() {
+  currentDefaultDb = new MockFirestore()
+  currentRosterDb = new MockFirestore()
+  sheetRowMock = {
+    spreadsheetId: 'sheet-123',
+    headers: [],
+    normalizedHeaders: [],
+    values: [],
+    record: {
+      status: 'Active',
+      member_email: 'owner@example.com',
+    },
+  }
+
+  const { resolveStoreAccess } = loadFunctionsModule()
+  const context = {
+    auth: {
+      uid: 'user-4',
+      token: { email: 'owner@example.com' },
+    },
+  }
+
+  let error
+  try {
+    await resolveStoreAccess.run({ storeId: 'store-001' }, context)
+  } catch (err) {
+    error = err
+  }
+
+  assert.ok(error, 'Expected missing store ID to throw')
+  assert.strictEqual(error.code, 'failed-precondition')
+  assert.strictEqual(
+    error.message,
+    'We could not confirm the store ID assigned to your Sedifex workspace. Reach out to your Sedifex administrator.',
+  )
+}
+
 async function run() {
   await runActiveStatusTest()
   await runInactiveStatusTest()
   await runStoreIdMismatchTest()
+  await runMissingStoreIdTest()
   console.log('resolveStoreAccess tests passed')
 }
 
