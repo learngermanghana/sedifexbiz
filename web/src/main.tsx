@@ -10,6 +10,7 @@ import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
 import Onboarding from './pages/Onboarding'
+import KpiMetrics from './pages/KpiMetrics'
 import { ToastProvider } from './components/ToastProvider'
 
 const router = createHashRouter([
@@ -18,6 +19,7 @@ const router = createHashRouter([
     element: <App />,
     children: [
       { index: true, element: <Shell><Dashboard /></Shell> },
+      { path: 'metrics',   element: <Shell><KpiMetrics /></Shell> },
       { path: 'products',  element: <Shell><Products /></Shell> },
       { path: 'sell',      element: <Shell><Sell /></Shell> },
       { path: 'receive',   element: <Shell><Receive /></Shell> },
