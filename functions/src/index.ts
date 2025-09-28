@@ -559,12 +559,14 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   ])
   const normalizedSheetStoreId =
     typeof sheetStoreIdValue === 'string' ? sheetStoreIdValue.trim() : ''
-  const storeId = (normalizedSheetStoreId || existingStoreId || uid).trim()
-  if (!storeId) {
-    throw new functions.https.HttpsError('failed-precondition', 'The assigned workspace is missing a store identifier.')
-  }
 
-  if (requestedStoreId !== null && normalizedSheetStoreId) {
+  const missingStoreIdMessage =
+    'We could not confirm the store ID assigned to your Sedifex workspace. Reach out to your Sedifex administrator.'
+
+  if (requestedStoreId !== null) {
+    if (!normalizedSheetStoreId) {
+      throw new functions.https.HttpsError('failed-precondition', missingStoreIdMessage)
+    }
     if (requestedStoreId !== normalizedSheetStoreId) {
       throw new functions.https.HttpsError(
         'permission-denied',
@@ -572,6 +574,14 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
       )
     }
   }
+
+  const storeIdCandidate = normalizedSheetStoreId || existingStoreId || null
+
+  if (!storeIdCandidate) {
+    throw new functions.https.HttpsError('failed-precondition', missingStoreIdMessage)
+  }
+
+  const storeId = storeIdCandidate
 
   const resolvedRoleCandidate = getValueFromRecord(record, ['role', 'member_role', 'store_role', 'workspace_role'])
   let resolvedRole = 'staff'

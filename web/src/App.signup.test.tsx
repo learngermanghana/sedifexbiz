@@ -336,7 +336,9 @@ describe('App signup cleanup', () => {
     })
 
     mocks.resolveStoreAccess.mockRejectedValueOnce(
-      new Error('Your account is assigned to store store-999. Enter the correct store ID to continue.'),
+      new Error(
+        'We could not confirm the store ID assigned to your Sedifex workspace. Reach out to your Sedifex administrator.',
+      ),
     )
 
     render(
@@ -384,7 +386,8 @@ describe('App signup cleanup', () => {
       expect(mocks.publish).toHaveBeenCalledWith(
         expect.objectContaining({
           tone: 'error',
-          message: 'Your account is assigned to store store-999. Enter the correct store ID to continue.',
+          message:
+            'We could not confirm the store ID assigned to your Sedifex workspace. Reach out to your Sedifex administrator.',
         }),
       ),
     )
