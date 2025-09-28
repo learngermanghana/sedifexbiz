@@ -32,6 +32,7 @@ type CartLine = { productId: string; name: string; price: number; qty: number }
 type Customer = {
   id: string
   name: string
+  displayName?: string
   phone?: string
   email?: string
   notes?: string
@@ -98,6 +99,64 @@ type CommitSaleResponse = {
   saleId: string
 }
 
+function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
+  const displayName = customer.displayName?.trim()
+  if (displayName) {
+    return displayName
+  }
+  const legacyName = customer.name?.trim()
+  if (legacyName) {
+    return legacyName
+  }
+  return ''
+}
+
+function getCustomerFallbackContact(customer: Pick<Customer, 'email' | 'phone'>): string {
+  const email = customer.email?.trim()
+  if (email) {
+    return email
+  }
+  const phone = customer.phone?.trim()
+  if (phone) {
+    return phone
+  }
+  return ''
+}
+
+function getCustomerSortKey(
+  customer: Pick<Customer, 'displayName' | 'name' | 'email' | 'phone'>,
+): string {
+  const primary = getCustomerPrimaryName(customer)
+  if (primary) {
+    return primary
+  }
+  return getCustomerFallbackContact(customer)
+}
+
+function getCustomerDisplayName(
+  customer: Pick<Customer, 'displayName' | 'name' | 'email' | 'phone'>,
+): string {
+  const primary = getCustomerPrimaryName(customer)
+  if (primary) {
+    return primary
+  }
+  const fallback = getCustomerFallbackContact(customer)
+  if (fallback) {
+    return fallback
+  }
+  return '—'
+}
+
+function getCustomerNameForData(
+  customer: Pick<Customer, 'displayName' | 'name' | 'email' | 'phone'>,
+): string {
+  const primary = getCustomerPrimaryName(customer)
+  if (primary) {
+    return primary
+  }
+  return getCustomerFallbackContact(customer)
+}
+
 function isOfflineError(error: unknown) {
   if (!navigator.onLine) return true
   if (error instanceof FirebaseError) {
@@ -145,6 +204,12 @@ export default function Sell() {
   const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
+  const selectedCustomerDisplayName = selectedCustomer
+    ? getCustomerDisplayName(selectedCustomer)
+    : ''
+  const selectedCustomerDataName = selectedCustomer
+    ? getCustomerNameForData(selectedCustomer)
+    : ''
   const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : subtotal
   const changeDue = Math.max(0, amountPaid - subtotal)
   const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0
@@ -221,7 +286,11 @@ export default function Sell() {
       .then(cached => {
         if (!cancelled && cached.length) {
           setCustomers(
-            [...cached].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+            [...cached].sort((a, b) =>
+              getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
+                sensitivity: 'base',
+              }),
+            ),
           )
         }
       })
@@ -243,7 +312,9 @@ export default function Sell() {
         console.warn('[sell] Failed to cache customers', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+        getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
+          sensitivity: 'base',
+        }),
       )
       setCustomers(sortedRows)
     })
@@ -471,7 +542,7 @@ export default function Sell() {
     if (selectedCustomer) {
       payload.customer = {
         id: selectedCustomer.id,
-        name: selectedCustomer.name,
+        name: selectedCustomerDataName || selectedCustomer.id,
         ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
         ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
       }
@@ -497,7 +568,7 @@ export default function Sell() {
         },
         customer: selectedCustomer
           ? {
-              name: selectedCustomer.name,
+              name: selectedCustomerDataName || selectedCustomer.id,
               phone: selectedCustomer.phone,
               email: selectedCustomer.email,
             }
@@ -524,7 +595,7 @@ export default function Sell() {
             },
             customer: selectedCustomer
               ? {
-                  name: selectedCustomer.name,
+                  name: selectedCustomerDataName || selectedCustomer.id,
                   phone: selectedCustomer.phone,
                   email: selectedCustomer.email,
                 }
@@ -688,7 +759,7 @@ export default function Sell() {
                     <option value="">Walk-in customer</option>
                     {customers.map(customer => (
                       <option key={customer.id} value={customer.id}>
-                        {customer.name}
+                        {getCustomerDisplayName(customer)}
                       </option>
                     ))}
                   </select>
@@ -698,7 +769,7 @@ export default function Sell() {
               </p>
               {selectedCustomer && (
                 <div className="sell-page__loyalty" role="status" aria-live="polite">
-                  <strong className="sell-page__loyalty-title">Keep {selectedCustomer.name} coming back</strong>
+                  <strong className="sell-page__loyalty-title">Keep {selectedCustomerDisplayName} coming back</strong>
                   <p className="sell-page__loyalty-text">
                     Enroll them in your loyalty program or apply any available rewards before completing checkout.
                   </p>
