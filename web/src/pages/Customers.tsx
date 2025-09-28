@@ -501,6 +501,7 @@ export default function Customers() {
           ...(notes.trim() ? { notes: notes.trim() } : {}),
           ...(parsedTags.length ? { tags: parsedTags } : {}),
           createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         })
         showSuccess('Customer saved successfully.')
       }
