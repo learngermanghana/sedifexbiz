@@ -1,8 +1,21 @@
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isStoreUser(storeId) {
+      return request.auth != null &&
+        request.auth.token.storeId is string &&
+        request.auth.token.storeId == storeId;
+    }
+
+    match /stores/{storeId} {
+      allow read, write: if isStoreUser(storeId);
+
+      match /{document=**} {
+        allow read, write: if isStoreUser(storeId);
+      }
+    }
+
     match /{document=**} {
-      // Only allow authenticated users to read/write
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }
