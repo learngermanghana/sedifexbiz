@@ -333,6 +333,13 @@ export default function Products() {
       setCreateStatus({ tone: 'error', message: 'Enter a valid price that is zero or greater.' })
       return
     }
+    if (!sku) {
+      setCreateStatus({
+        tone: 'error',
+        message: 'Add a SKU that matches the barcode so you can scan it during checkout.',
+      })
+      return
+    }
     if (createForm.reorderThreshold && reorderThreshold === null) {
       setCreateStatus({ tone: 'error', message: 'Enter a valid reorder point that is zero or greater.' })
       return
@@ -351,7 +358,7 @@ export default function Products() {
       id: `optimistic-${Date.now()}`,
       name,
       price,
-      sku: sku || null,
+      sku,
       reorderThreshold: reorderThreshold ?? null,
       stockCount: initialStock ?? 0,
       lastReceipt: null,
@@ -369,7 +376,7 @@ export default function Products() {
       const ref = await addDoc(collection(db, 'products'), {
         name,
         price,
-        sku: sku || null,
+        sku,
         reorderThreshold: reorderThreshold ?? null,
         stockCount: initialStock ?? 0,
         storeId: activeStoreId,
@@ -428,6 +435,13 @@ export default function Products() {
       setEditStatus({ tone: 'error', message: 'Enter a valid price that is zero or greater.' })
       return
     }
+    if (!sku) {
+      setEditStatus({
+        tone: 'error',
+        message: 'Every product needs a SKU that matches its barcode for scanning.',
+      })
+      return
+    }
     if (editForm.reorderThreshold && reorderThreshold === null) {
       setEditStatus({ tone: 'error', message: 'Enter a valid reorder point that is zero or greater.' })
       return
@@ -447,7 +461,7 @@ export default function Products() {
     const updatedValues: Partial<ProductRecord> = {
       name,
       price,
-      sku: sku || null,
+      sku,
       reorderThreshold: reorderThreshold ?? null,
       updatedAt: new Date(),
       storeId: activeStoreId,
@@ -469,7 +483,7 @@ export default function Products() {
       await updateDoc(doc(collection(db, 'products'), editingProductId), {
         name,
         price,
-        sku: sku || null,
+        sku,
         reorderThreshold: reorderThreshold ?? null,
         storeId: activeStoreId,
         updatedAt: serverTimestamp(),
@@ -616,7 +630,8 @@ export default function Products() {
       <section className="card products-page__card">
         <h3 className="card__title">Add product</h3>
         <p className="card__subtitle">
-          Capture items you stock so sales and receipts stay accurate.
+          Capture items you stock so sales and receipts stay accurate. Give each one a SKU that
+          matches the barcode you plan to scan at checkout.
         </p>
         <form className="products-page__form" onSubmit={handleCreateProduct}>
           <label className="field">
@@ -635,9 +650,14 @@ export default function Products() {
               name="sku"
               value={createForm.sku}
               onChange={handleCreateFieldChange}
-              placeholder="Optional stock keeping unit"
+              placeholder="Barcode or SKU"
+              required
+              aria-describedby="create-sku-hint"
             />
           </label>
+          <p className="field__hint" id="create-sku-hint">
+            This must match the value encoded in your barcode so cashiers can scan products.
+          </p>
           <label className="field">
             <span className="field__label">Price</span>
             <input
@@ -692,8 +712,17 @@ export default function Products() {
               </label>
               <label className="field">
                 <span className="field__label">SKU</span>
-                <input name="sku" value={editForm.sku} onChange={handleEditFieldChange} />
+                <input
+                  name="sku"
+                  value={editForm.sku}
+                  onChange={handleEditFieldChange}
+                  required
+                  aria-describedby="edit-sku-hint"
+                />
               </label>
+              <p className="field__hint" id="edit-sku-hint">
+                Update the SKU to mirror the barcode if you need to reprint or relabel items.
+              </p>
               <label className="field">
                 <span className="field__label">Price</span>
                 <input
