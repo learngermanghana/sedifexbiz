@@ -1,9 +1,7 @@
 import * as functions from 'firebase-functions'
-import * as admin from 'firebase-admin'
+import { admin, defaultDb, rosterDb } from './firestore'
 
-if (!admin.apps.length) admin.initializeApp()
-
-const db = admin.firestore()
+const db = defaultDb
 
 const VALID_ROLES = new Set(['owner', 'staff'])
 
@@ -91,7 +89,7 @@ export const backfillMyStore = functions.https.onCall(async (data, context) => {
     ? contact.firstSignupEmail ?? null
     : email?.toLowerCase() ?? null
 
-  const memberRef = db.collection('teamMembers').doc(uid)
+  const memberRef = rosterDb.collection('teamMembers').doc(uid)
   const memberSnap = await memberRef.get()
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
   const existingData = memberSnap.data() ?? {}

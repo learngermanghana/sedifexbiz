@@ -1,8 +1,7 @@
 import * as functions from 'firebase-functions'
-import * as admin from 'firebase-admin'
+import { admin, defaultDb, rosterDb } from './firestore'
 
-admin.initializeApp()
-const db = admin.firestore()
+const db = defaultDb
 
 type ContactPayload = {
   phone?: unknown
@@ -157,7 +156,7 @@ async function ensureAuthUser(email: string, password?: string) {
 export const handleUserCreate = functions.auth.user().onCreate(async user => {
   const uid = user.uid
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
-  await db
+  await rosterDb
     .collection('teamMembers')
     .doc(uid)
     .set(
@@ -187,7 +186,7 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
     ? contact.firstSignupEmail ?? null
     : email?.toLowerCase() ?? null
 
-  const memberRef = db.collection('teamMembers').doc(uid)
+  const memberRef = rosterDb.collection('teamMembers').doc(uid)
   const memberSnap = await memberRef.get()
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
   const existingData = memberSnap.data() ?? {}
@@ -226,7 +225,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   const email = typeof token.email === 'string' ? (token.email as string) : null
   const tokenPhone = typeof token.phone_number === 'string' ? (token.phone_number as string) : null
 
-  const memberRef = db.collection('teamMembers').doc(uid)
+  const memberRef = rosterDb.collection('teamMembers').doc(uid)
   const memberSnap = await memberRef.get()
   if (!memberSnap.exists) {
     throw new functions.https.HttpsError('not-found', 'No team membership found for this account')
@@ -277,7 +276,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   const invitedBy = context.auth?.uid ?? null
   const { record, created } = await ensureAuthUser(email, password)
 
-  const memberRef = db.collection('teamMembers').doc(record.uid)
+  const memberRef = rosterDb.collection('teamMembers').doc(record.uid)
   const memberSnap = await memberRef.get()
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
