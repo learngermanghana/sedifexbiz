@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { onAuthStateChanged, signOut, User } from 'firebase/auth'
-import { auth } from '../firebase'
-import { fetchSheetRows, findUserRow, isContractActive } from '../sheetClient'
+import { auth } from './firebase'
+import { fetchSheetRows, findUserRow, isContractActive } from './sheetClient'
 
 export default function SheetAccessGuard({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false)
