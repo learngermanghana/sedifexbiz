@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
+import { FirebaseError } from 'firebase/app'
 
 import Sell from './Sell'
 
@@ -195,6 +196,40 @@ describe('Sell page', () => {
     )
 
     // Skip UI assertion to avoid flakiness in headless environment.
+  })
+
+  it('queues a sale offline when the callable returns an internal error', async () => {
+    const user = userEvent.setup()
+    const internalErrorMessage = 'Callable internal error should not leak'
+
+    mockCommitSale.mockRejectedValueOnce(new FirebaseError('functions/internal', internalErrorMessage))
+    mockQueueCallableRequest.mockResolvedValueOnce(true)
+
+    renderWithProviders(<Sell />)
+
+    const productButton = await screen.findByRole('button', { name: /iced coffee/i })
+    await user.click(productButton)
+
+    const cashInput = screen.getByLabelText(/cash received/i)
+    await user.clear(cashInput)
+    await user.type(cashInput, '15')
+
+    const recordButton = screen.getByRole('button', { name: /record sale/i })
+    await user.click(recordButton)
+
+    await waitFor(() => {
+      expect(mockQueueCallableRequest).toHaveBeenCalledWith(
+        'commitSale',
+        expect.objectContaining({ items: expect.any(Array) }),
+        'sale',
+      )
+    })
+
+    expect(await screen.findByText(/Sale #generated-sale-id/i)).toBeInTheDocument()
+    expect(screen.queryByText(internalErrorMessage)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/we were unable to record this sale/i),
+    ).not.toBeInTheDocument()
   })
 
   it('disables products that do not have a valid price', async () => {
