@@ -39,7 +39,7 @@ type ProductRecord = {
   name: string
   price?: number
   stockCount?: number
-  minStock?: number
+  reorderThreshold?: number
   createdAt?: unknown
   updatedAt?: unknown
   storeId?: string | null
@@ -555,7 +555,7 @@ export default function Dashboard() {
   const lowStock = products
     .map(product => {
       const stock = product.stockCount ?? 0
-      const minStock = product.minStock ?? 5
+      const minStock = product.reorderThreshold ?? 5
       if (stock > minStock) return null
       const severity: InventorySeverity = stock <= 0 ? 'critical' : stock <= minStock ? 'warning' : 'info'
       const status = stock <= 0 ? 'Out of stock' : `Low (${stock} remaining)`
