@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import type { User } from 'firebase/auth'
 import { MemoryRouter } from 'react-router-dom'
 import { act, render, screen, waitFor } from '@testing-library/react'
@@ -130,6 +130,8 @@ function createTestUser() {
   return { user: testUser, deleteFn }
 }
 
+let localStorageSetItemSpy: ReturnType<typeof vi.spyOn>
+
 describe('App signup cleanup', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -137,6 +139,12 @@ describe('App signup cleanup', () => {
     mocks.listeners.splice(0, mocks.listeners.length)
     firestore.reset()
     mocks.resolveStoreAccess.mockReset()
+    window.localStorage.clear()
+    localStorageSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+  })
+
+  afterEach(() => {
+    localStorageSetItemSpy.mockRestore()
   })
 
   it('surfaces signup errors without deleting the new account', async () => {
@@ -181,6 +189,7 @@ describe('App signup cleanup', () => {
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({ tone: 'error', message: 'Unable to persist session' }),
     )
+    expect(localStorageSetItemSpy).not.toHaveBeenCalled()
   })
 
   it('persists metadata and seeds the workspace after a successful signup', async () => {
@@ -323,6 +332,8 @@ describe('App signup cleanup', () => {
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({ tone: 'success', message: expect.stringMatching(/All set/i) }),
     )
+    expect(localStorageSetItemSpy).toHaveBeenCalledWith('activeStoreId', 'sheet-store-id')
+    expect(window.localStorage.getItem('activeStoreId')).toBe('sheet-store-id')
   })
 
   it('cleans up the account when store access resolution fails', async () => {
@@ -391,5 +402,6 @@ describe('App signup cleanup', () => {
         }),
       ),
     )
+    expect(localStorageSetItemSpy).not.toHaveBeenCalled()
   })
 })

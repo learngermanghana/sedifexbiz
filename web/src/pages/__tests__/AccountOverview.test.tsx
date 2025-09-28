@@ -25,6 +25,15 @@ vi.mock('../../controllers/storeController', () => ({
     mockManageStaffAccount(...args),
 }))
 
+const mockGetFunctions = vi.fn(() => ({}))
+const mockSheetCallable = vi.fn(async () => ({ data: null }))
+const mockHttpsCallable = vi.fn(() => mockSheetCallable)
+
+vi.mock('firebase/functions', () => ({
+  getFunctions: (...args: unknown[]) => mockGetFunctions(...args),
+  httpsCallable: (...args: unknown[]) => mockHttpsCallable(...args),
+}))
+
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
 const docMock = vi.fn((_db: unknown, path: string, id?: string) => ({
   type: 'doc',
@@ -79,6 +88,10 @@ describe('AccountOverview', () => {
     getDocsMock.mockReset()
     queryMock.mockClear()
     whereMock.mockClear()
+    mockGetFunctions.mockClear()
+    mockHttpsCallable.mockClear()
+    mockSheetCallable.mockClear()
+    mockSheetCallable.mockResolvedValue({ data: null })
 
     mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
     getDocMock.mockResolvedValue({
