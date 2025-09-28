@@ -6,9 +6,10 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
 } from 'firebase/auth'
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { auth } from './firebase'
+import { auth, db } from './firebase'
 import './App.css'
 import './pwa'
 import { useToast } from './components/ToastProvider'
@@ -40,6 +41,39 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
 function sanitizePhone(value: string): string {
   return value.replace(/\D+/g, '')
+}
+
+const OWNER_NAME_FALLBACK = 'Owner account'
+
+function resolveOwnerName(user: User): string {
+  const displayName = user.displayName?.trim()
+  if (displayName && displayName.length > 0) {
+    return displayName
+  }
+  return OWNER_NAME_FALLBACK
+}
+
+async function persistOwnerMetadata(user: User, email: string, phone: string) {
+  try {
+    await setDoc(
+      doc(db, 'teamMembers', user.uid),
+      {
+        uid: user.uid,
+        role: 'owner',
+        storeId: user.uid,
+        name: resolveOwnerName(user),
+        phone,
+        email,
+        firstSignupEmail: email,
+        invitedBy: user.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    )
+  } catch (error) {
+    console.warn('[signup] Failed to persist owner metadata', error)
+  }
 }
 
 interface PasswordStrength {
@@ -320,6 +354,7 @@ export default function App() {
           sanitizedPassword,
         )
         await persistSession(nextUser)
+        await persistOwnerMetadata(nextUser, sanitizedEmail, sanitizedPhone)
         try {
           await nextUser.getIdToken(true)
         } catch (error) {
