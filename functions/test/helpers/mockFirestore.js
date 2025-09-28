@@ -9,6 +9,10 @@ class MockTimestamp {
     return new MockTimestamp(Date.now())
   }
 
+  static fromMillis(millis) {
+    return new MockTimestamp(millis)
+  }
+
   toMillis() {
     return this._millis
   }

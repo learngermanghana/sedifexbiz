@@ -78,6 +78,11 @@ async function runActiveStatusTest() {
       role: 'Owner',
       member_email: 'owner@example.com',
       member_name: 'Owner One',
+      contractStart: '2024-01-15',
+      contract_end: '2024-12-31',
+      payment_status: 'Paid',
+      amount_paid: '$1,234.56',
+      company: 'Example Company',
     },
   }
 
@@ -95,6 +100,9 @@ async function runActiveStatusTest() {
   assert.strictEqual(result.storeId, 'store-001')
   assert.strictEqual(result.role, 'owner')
 
+  const expectedContractStart = Date.parse('2024-01-15T00:00:00.000Z')
+  const expectedContractEnd = Date.parse('2024-12-31T00:00:00.000Z')
+
   const rosterDoc = currentRosterDb.getDoc('teamMembers/user-1')
   assert.ok(rosterDoc)
   assert.strictEqual(rosterDoc.storeId, 'store-001')
@@ -102,6 +110,17 @@ async function runActiveStatusTest() {
   const storeDoc = currentDefaultDb.getDoc('stores/store-001')
   assert.ok(storeDoc)
   assert.strictEqual(storeDoc.status, 'Active')
+  assert.strictEqual(storeDoc.contractStart._millis, expectedContractStart)
+  assert.strictEqual(storeDoc.contractEnd._millis, expectedContractEnd)
+  assert.strictEqual(storeDoc.paymentStatus, 'Paid')
+  assert.strictEqual(storeDoc.amountPaid, 1234.56)
+  assert.strictEqual(storeDoc.company, 'Example Company')
+
+  assert.strictEqual(result.store.data.contractStart, expectedContractStart)
+  assert.strictEqual(result.store.data.contractEnd, expectedContractEnd)
+  assert.strictEqual(result.store.data.paymentStatus, 'Paid')
+  assert.strictEqual(result.store.data.amountPaid, 1234.56)
+  assert.strictEqual(result.store.data.company, 'Example Company')
 }
 
 async function runInactiveStatusTest() {
