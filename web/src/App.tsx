@@ -25,6 +25,7 @@ import {
   extractCallableErrorMessage,
   INACTIVE_WORKSPACE_MESSAGE,
 } from './controllers/accessController'
+import { fetchSheetRows, findUserRow, isContractActive } from './sheetClient'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 
@@ -52,6 +53,14 @@ function sanitizePhone(value: string): string {
 
 const OWNER_NAME_FALLBACK = 'Owner account'
 
+const SHEET_LOOKUP_GENERIC_ERROR_MESSAGE =
+  "We couldn't verify your workspace access. Please try again."
+const SHEET_ASSIGNMENT_MISSING_MESSAGE =
+  'We could not find a workspace assignment for this account.'
+const SHEET_STORE_ID_MISSING_MESSAGE = 'Your account is missing a workspace store ID.'
+const SHEET_STORE_ID_MISMATCH_MESSAGE =
+  'The provided store ID does not match your Sedifex workspace assignment.'
+
 function persistActiveStoreId(storeId: string) {
   if (typeof window === 'undefined') {
     return
@@ -62,6 +71,72 @@ function persistActiveStoreId(storeId: string) {
   } catch (error) {
     console.warn('[auth] Failed to persist active store ID', error)
   }
+}
+
+async function resolveWorkspaceAccessFromSheet(
+  email: string,
+  providedStoreId?: string,
+): Promise<ResolveStoreAccessResult> {
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!normalizedEmail) {
+    throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
+  }
+
+  let rows
+  try {
+    rows = await fetchSheetRows()
+  } catch (error) {
+    const fallbackError = new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
+    ;(fallbackError as Error & { cause?: unknown }).cause = error
+    throw fallbackError
+  }
+
+  const row = findUserRow(rows, normalizedEmail)
+  if (!row) {
+    throw new Error(SHEET_ASSIGNMENT_MISSING_MESSAGE)
+  }
+
+  const assignedStoreId = row.storeId?.trim()
+  if (!assignedStoreId) {
+    throw new Error(SHEET_STORE_ID_MISSING_MESSAGE)
+  }
+
+  if (providedStoreId) {
+    const normalizedProvided = providedStoreId.trim()
+    if (
+      normalizedProvided &&
+      normalizedProvided.toLowerCase() !== assignedStoreId.toLowerCase()
+    ) {
+      throw new Error(SHEET_STORE_ID_MISMATCH_MESSAGE)
+    }
+  }
+
+  if (!isContractActive(row)) {
+    throw new Error(INACTIVE_WORKSPACE_MESSAGE)
+  }
+
+  persistActiveStoreId(assignedStoreId)
+
+  const normalizedRole = row.role?.toLowerCase() === 'owner' ? 'owner' : 'staff'
+
+  return {
+    ok: true,
+    storeId: assignedStoreId,
+    role: normalizedRole,
+    teamMember: null,
+    store: null,
+    products: [],
+    customers: [],
+  }
+}
+
+function hasSeedData(resolution: ResolveStoreAccessResult): boolean {
+  return (
+    Boolean(resolution.teamMember) ||
+    Boolean(resolution.store) ||
+    resolution.products.length > 0 ||
+    resolution.customers.length > 0
+  )
 }
 
 function resolveOwnerName(user: User): string {
@@ -460,14 +535,27 @@ export default function App() {
           sanitizedPassword,
         )
         await persistSession(nextUser)
+        let resolution: ResolveStoreAccessResult | null = null
         try {
-          const resolution = await resolveStoreAccess()
-          persistActiveStoreId(resolution.storeId)
-          await persistStoreSeedData(resolution)
+          resolution = await resolveStoreAccess()
         } catch (error) {
           console.warn('[auth] Failed to resolve workspace access', error)
-          setStatus({ tone: 'error', message: getErrorMessage(error) })
-          return
+          try {
+            resolution = await resolveWorkspaceAccessFromSheet(sanitizedEmail)
+          } catch (sheetError) {
+            console.warn('[auth] Failed to resolve workspace access via sheet lookup', sheetError)
+            setStatus({ tone: 'error', message: getErrorMessage(sheetError) })
+            return
+          }
+        }
+
+        if (!resolution) {
+          throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
+        }
+
+        persistActiveStoreId(resolution.storeId)
+        if (hasSeedData(resolution)) {
+          await persistStoreSeedData(resolution)
         }
       } else {
         const { user: nextUser } = await createUserWithEmailAndPassword(
@@ -477,25 +565,42 @@ export default function App() {
         )
         await persistSession(nextUser)
 
-        let resolution: ResolveStoreAccessResult
+        let resolution: ResolveStoreAccessResult | null = null
         try {
           resolution = await resolveStoreAccess(sanitizedStoreId)
         } catch (error) {
           console.warn('[signup] Failed to resolve workspace access', error)
-          setStatus({ tone: 'error', message: getErrorMessage(error) })
-          await cleanupFailedSignup(nextUser)
-          return
+          try {
+            resolution = await resolveWorkspaceAccessFromSheet(
+              sanitizedEmail,
+              sanitizedStoreId,
+            )
+          } catch (sheetError) {
+            console.warn(
+              '[signup] Failed to resolve workspace access via sheet lookup',
+              sheetError,
+            )
+            setStatus({ tone: 'error', message: getErrorMessage(sheetError) })
+            await cleanupFailedSignup(nextUser)
+            return
+          }
+        }
+
+        if (!resolution) {
+          throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
         }
 
         persistActiveStoreId(resolution.storeId)
         await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution)
 
-        try {
-          await persistStoreSeedData(resolution)
-        } catch (error) {
-          console.warn('[signup] Failed to seed workspace data', error)
-          setStatus({ tone: 'error', message: getErrorMessage(error) })
-          return
+        if (hasSeedData(resolution)) {
+          try {
+            await persistStoreSeedData(resolution)
+          } catch (error) {
+            console.warn('[signup] Failed to seed workspace data', error)
+            setStatus({ tone: 'error', message: getErrorMessage(error) })
+            return
+          }
         }
 
         try {
