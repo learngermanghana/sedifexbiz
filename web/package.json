@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings=0",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:rules": "firebase emulators:exec --config ../firebase.json --project demo-sedifex --only firestore,auth \"npm run test:rules:vitest\"",
+    "test:rules:vitest": "vitest run tests/firestore.rules.emulator.test.ts"
   },
   "dependencies": {
     "firebase": "^10.13.0",
