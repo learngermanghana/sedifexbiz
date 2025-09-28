@@ -283,7 +283,10 @@ export default function Dashboard() {
   const [isSavingGoals, setIsSavingGoals] = useState(false)
   const [selectedRangeId, setSelectedRangeId] = useState<PresetRangeId>('today')
   const [customRange, setCustomRange] = useState<{ start: string; end: string }>({ start: '', end: '' })
-  const goalDocumentId = authUser?.uid ?? 'default'
+  const goalDocumentId = useMemo(
+    () => activeStoreId ?? `user-${authUser?.uid ?? 'default'}`,
+    [activeStoreId, authUser?.uid]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -420,6 +423,11 @@ export default function Dashboard() {
   }, [activeStoreId])
 
   useEffect(() => {
+    if (!activeStoreId) {
+      setMonthlyGoals({})
+      return () => {}
+    }
+
     const ref = doc(db, 'storeGoals', goalDocumentId)
     return onSnapshot(ref, snapshot => {
       const data = snapshot.data() as MonthlyGoalDocument | undefined
@@ -438,7 +446,7 @@ export default function Dashboard() {
       })
       setMonthlyGoals(parsed)
     })
-  }, [goalDocumentId])
+  }, [activeStoreId, goalDocumentId])
 
   useEffect(() => {
     setGoalFormTouched(false)
@@ -762,6 +770,11 @@ export default function Dashboard() {
 
   async function handleGoalSubmit(event: React.FormEvent) {
     event.preventDefault()
+    if (!activeStoreId) {
+      publish({ tone: 'error', message: 'Select a store to save goals.' })
+      return
+    }
+
     setIsSavingGoals(true)
     try {
       const revenueValue = Number(goalFormValues.revenueTarget)
