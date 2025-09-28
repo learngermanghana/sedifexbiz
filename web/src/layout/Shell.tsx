@@ -7,15 +7,16 @@ import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
 import './Shell.css'
 import './Workspace.css'
 
-type NavItem = { to: string; label: string; end?: boolean }
+type NavItem = { to: string; label: string; end?: boolean; icon?: string }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/products', label: 'Products' },
-  { to: '/sell', label: 'Sell' },
-  { to: '/receive', label: 'Receive' },
-  { to: '/customers', label: 'Customers' },
-  { to: '/close-day', label: 'Close Day' },
+  { to: '/', label: 'Dashboard', end: true, icon: '🏠' },
+  { to: '/metrics', label: 'Metrics', icon: '📈' },
+  { to: '/products', label: 'Products', icon: '📦' },
+  { to: '/sell', label: 'Sell', icon: '🛒' },
+  { to: '/receive', label: 'Receive', icon: '📥' },
+  { to: '/customers', label: 'Customers', icon: '👥' },
+  { to: '/close-day', label: 'Close Day', icon: '🗓️' },
 ]
 
 function navLinkClass(isActive: boolean) {
@@ -128,7 +129,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 end={item.end}
                 className={({ isActive }) => navLinkClass(isActive)}
               >
-                {item.label}
+                {item.icon && (
+                  <span className="shell__nav-icon" aria-hidden="true">
+                    {item.icon}
+                  </span>
+                )}
+                <span className="shell__nav-label">{item.label}</span>
               </NavLink>
             ))}
           </nav>

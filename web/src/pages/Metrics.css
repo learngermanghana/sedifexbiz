@@ -1,0 +1,239 @@
+.metrics-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  color: #0f172a;
+}
+
+.metrics-page__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metrics-page__title {
+  font-size: clamp(26px, 2.6vw, 34px);
+  font-weight: 700;
+  color: #1e1b4b;
+  margin: 0;
+}
+
+.metrics-page__subtitle {
+  margin: 0;
+  font-size: 15px;
+  color: #475569;
+  max-width: 640px;
+}
+
+.metrics-page__loading,
+.metrics-page__error {
+  padding: 16px 18px;
+  border-radius: 14px;
+  font-weight: 500;
+  border: 1px solid rgba(67, 56, 202, 0.18);
+  background: rgba(99, 102, 241, 0.08);
+  color: #312e81;
+}
+
+.metrics-page__error {
+  border-color: rgba(220, 38, 38, 0.25);
+  background: rgba(254, 226, 226, 0.6);
+  color: #7f1d1d;
+}
+
+.metrics-page__empty {
+  padding: 24px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(129, 140, 248, 0.1), rgba(59, 130, 246, 0.08));
+  border: 1px solid rgba(79, 70, 229, 0.18);
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+}
+
+.metrics-page__empty h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.metrics-page__empty p {
+  margin: 0;
+  font-size: 15px;
+  color: #475569;
+}
+
+.metrics-page__kpi-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.metrics-page__kpi-card {
+  padding: 18px;
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  box-shadow: 0 10px 30px -20px rgba(79, 70, 229, 0.35);
+  display: grid;
+  gap: 6px;
+}
+
+.metrics-page__kpi-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #312e81;
+}
+
+.metrics-page__kpi-value {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.metrics-page__kpi-value.is-negative {
+  color: #dc2626;
+}
+
+.metrics-page__kpi-meta {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.metrics-page__panel {
+  background: #ffffff;
+  border-radius: 20px;
+  border: 1px solid rgba(203, 213, 225, 0.7);
+  padding: 22px;
+  display: grid;
+  gap: 18px;
+  box-shadow: 0 18px 44px -28px rgba(15, 23, 42, 0.3);
+}
+
+.metrics-page__panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metrics-page__panel-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e1b4b;
+}
+
+.metrics-page__panel-header p {
+  margin: 0;
+  font-size: 14px;
+  color: #475569;
+}
+
+.metrics-page__trend {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.metrics-page__trend-point {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+}
+
+.metrics-page__trend-bar {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 140px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(224, 231, 255, 0.8), rgba(129, 140, 248, 0.15));
+  overflow: hidden;
+}
+
+.metrics-page__trend-bar-fill {
+  width: 80%;
+  border-radius: 12px 12px 4px 4px;
+  background: linear-gradient(180deg, #4338ca, #6366f1);
+  height: var(--trend-height, 0%);
+  transition: height 0.3s ease;
+}
+
+.metrics-page__trend-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4338ca;
+}
+
+.metrics-page__trend-value {
+  font-size: 13px;
+  color: #475569;
+}
+
+.metrics-page__top-products {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.metrics-page__top-product {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.metrics-page__top-product-name {
+  display: block;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.metrics-page__top-product-meta {
+  display: block;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.metrics-page__top-product-value {
+  font-weight: 600;
+  color: #4338ca;
+}
+
+@media (min-width: 960px) {
+  .metrics-page__header {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
+  .metrics-page__subtitle {
+    text-align: right;
+  }
+
+  .metrics-page__trend {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 599px) {
+  .metrics-page__trend-bar {
+    height: 120px;
+  }
+
+  .metrics-page__kpi-value {
+    font-size: 22px;
+  }
+}
