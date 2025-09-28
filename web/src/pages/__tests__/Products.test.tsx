@@ -313,6 +313,61 @@ describe('Products page', () => {
     })
   })
 
+  it('keeps a newly saved product visible when the cache resolves without it', async () => {
+    const user = userEvent.setup()
+    let resolveCache: ((value: unknown[]) => void) | null = null
+    mockLoadCachedProducts.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveCache = resolve
+        }),
+    )
+
+    let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null
+    onSnapshotMock.mockImplementation((queryRef, onNext) => {
+      snapshotHandler = onNext
+      return () => {}
+    })
+
+    let resolveAddDoc: ((value: { id: string }) => void) | null = null
+    addDocMock.mockImplementation(async () => {
+      return new Promise<{ id: string }>(resolve => {
+        resolveAddDoc = resolve
+      })
+    })
+
+    render(
+      <MemoryRouter>
+        <Products />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      snapshotHandler?.({ docs: [] })
+    })
+
+    await user.type(screen.getByLabelText('Name'), 'Cache Blend')
+    await user.type(screen.getByLabelText('SKU'), 'CB-01')
+    await user.type(screen.getByLabelText('Price'), '15')
+
+    await user.click(screen.getByRole('button', { name: /add product/i }))
+
+    await act(async () => {
+      resolveAddDoc?.({ id: 'product-cache' })
+    })
+
+    expect(await screen.findByText('Cache Blend')).toBeInTheDocument()
+
+    await act(async () => {
+      resolveCache?.([])
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText('Cache Blend')).toBeInTheDocument()
+  })
+
   it('saves price updates when editing a product', async () => {
     const user = userEvent.setup()
     let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null
