@@ -33,7 +33,9 @@ export async function fetchSheetRows(): Promise<SheetRow[]> {
     const obj: Record<string, any> = {}
     r.c.forEach((cell, i) => { obj[headers[i] || `col${i}`] = cell?.v ?? '' })
     const row: SheetRow = {
-      email: String((obj['email'] ?? '')).toLowerCase(),
+      email: String(obj['email'] ?? '')
+        .trim()
+        .toLowerCase(),
       name: obj['name'] || undefined,
       storeId: obj['storeid'] || obj['store'] || undefined,
       role: roleFix(obj['role']),
@@ -49,7 +51,7 @@ export async function fetchSheetRows(): Promise<SheetRow[]> {
 }
 
 export const findUserRow = (rows: SheetRow[], email: string) =>
-  rows.find(r => r.email === email.trim().toLowerCase()) ?? null
+  rows.find(r => r.email.trim().toLowerCase() === email.trim().toLowerCase()) ?? null
 
 export function isContractActive(row: SheetRow, now = new Date()): boolean {
   const s = row.contractStart ? Date.parse(row.contractStart) : NaN
