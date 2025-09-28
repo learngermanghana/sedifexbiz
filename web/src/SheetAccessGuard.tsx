@@ -9,8 +9,8 @@ export default function SheetAccessGuard({ children }: { children: React.ReactNo
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user: User | null) => {
-      setError(null)
       if (!user?.email) { setReady(true); return }
+      setError(null)
       try {
         const rows = await fetchSheetRows()
         const row = findUserRow(rows, user.email)
@@ -34,6 +34,10 @@ export default function SheetAccessGuard({ children }: { children: React.ReactNo
   }, [])
 
   if (!ready) return <p>Checking workspace access…</p>
-  if (error) return <div role="alert">{error}</div>
-  return <>{children}</>
+  return (
+    <>
+      {error ? <div role="alert">{error}</div> : null}
+      {children}
+    </>
+  )
 }
