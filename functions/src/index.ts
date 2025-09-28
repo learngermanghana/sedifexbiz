@@ -1,6 +1,6 @@
 import * as functions from 'firebase-functions'
 import { admin, defaultDb, rosterDb } from './firestore'
-import { fetchClientRowByEmail, getDefaultSpreadsheetId } from './googleSheets'
+import { fetchClientRowByEmail, getDefaultSpreadsheetId, normalizeHeader } from './googleSheets'
 
 const db = defaultDb
 
@@ -176,7 +176,9 @@ function getOptionalEmail(value: unknown): string | null {
 
 function getValueFromRecord(record: SheetRecord, keys: string[]): string | null {
   for (const key of keys) {
-    const value = record[key]
+    const normalizedKey = normalizeHeader(key)
+    if (!normalizedKey) continue
+    const value = record[normalizedKey]
     const resolved = getOptionalString(value)
     if (resolved) return resolved
   }
@@ -185,7 +187,9 @@ function getValueFromRecord(record: SheetRecord, keys: string[]): string | null 
 
 function getEmailFromRecord(record: SheetRecord, keys: string[]): string | null {
   for (const key of keys) {
-    const value = record[key]
+    const normalizedKey = normalizeHeader(key)
+    if (!normalizedKey) continue
+    const value = record[normalizedKey]
     const resolved = getOptionalEmail(value)
     if (resolved) return resolved
   }
@@ -267,7 +271,9 @@ function getTimestampFromRecord(
   keys: string[],
 ): admin.firestore.Timestamp | null {
   for (const key of keys) {
-    const raw = record[key]
+    const normalizedKey = normalizeHeader(key)
+    if (!normalizedKey) continue
+    const raw = record[normalizedKey]
     const parsed = parseDateValue(raw)
     if (parsed) return parsed
   }
@@ -276,7 +282,9 @@ function getTimestampFromRecord(
 
 function getNumberFromRecord(record: SheetRecord, keys: string[]): number | null {
   for (const key of keys) {
-    const raw = record[key]
+    const normalizedKey = normalizeHeader(key)
+    if (!normalizedKey) continue
+    const raw = record[normalizedKey]
     const parsed = parseNumberValue(raw)
     if (parsed !== null) return parsed
   }

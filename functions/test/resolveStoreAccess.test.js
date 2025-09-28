@@ -8,6 +8,15 @@ let currentRosterDb
 let sheetRowMock
 const apps = []
 
+function normalizeHeader(header) {
+  if (typeof header !== 'string') return ''
+  return header
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
 const originalLoad = Module._load
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === 'firebase-admin') {
@@ -50,6 +59,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
     return {
       fetchClientRowByEmail: async () => sheetRowMock,
       getDefaultSpreadsheetId: () => 'sheet-123',
+      normalizeHeader,
     }
   }
 
@@ -73,16 +83,16 @@ async function runActiveStatusTest() {
     normalizedHeaders: [],
     values: [],
     record: {
-      store_id: 'store-001',
-      store_status: 'Active',
-      role: 'Owner',
-      member_email: 'owner@example.com',
-      member_name: 'Owner One',
-      contractStart: '2024-01-15',
-      contract_end: '2024-12-31',
-      payment_status: 'Paid',
-      amount_paid: '$1,234.56',
-      company: 'Example Company',
+      [normalizeHeader('store_id')]: 'store-001',
+      [normalizeHeader('store_status')]: 'Active',
+      [normalizeHeader('role')]: 'Owner',
+      [normalizeHeader('member_email')]: 'owner@example.com',
+      [normalizeHeader('member_name')]: 'Owner One',
+      [normalizeHeader('contractStart')]: '2024-01-15',
+      [normalizeHeader('contract_end')]: '2024-12-31',
+      [normalizeHeader('paymentStatus')]: 'Paid',
+      [normalizeHeader('amountPaid')]: '$1,234.56',
+      [normalizeHeader('company')]: 'Example Company',
     },
   }
 
@@ -132,9 +142,9 @@ async function runInactiveStatusTest() {
     normalizedHeaders: [],
     values: [],
     record: {
-      store_id: 'store-002',
-      status: 'Contract Terminated',
-      member_email: 'owner@example.com',
+      [normalizeHeader('store_id')]: 'store-002',
+      [normalizeHeader('status')]: 'Contract Terminated',
+      [normalizeHeader('member_email')]: 'owner@example.com',
     },
   }
 
@@ -171,9 +181,9 @@ async function runStoreIdMismatchTest() {
     normalizedHeaders: [],
     values: [],
     record: {
-      store_id: 'store-777',
-      status: 'Active',
-      member_email: 'owner@example.com',
+      [normalizeHeader('store_id')]: 'store-777',
+      [normalizeHeader('status')]: 'Active',
+      [normalizeHeader('member_email')]: 'owner@example.com',
     },
   }
 

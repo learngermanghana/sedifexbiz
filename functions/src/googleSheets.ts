@@ -32,7 +32,7 @@ type SheetsConfig = {
   spreadsheet_id?: string
 }
 
-function normalizeHeader(header: unknown): string {
+export function normalizeHeader(header: unknown): string {
   if (typeof header !== 'string') return ''
   return header
     .trim()
