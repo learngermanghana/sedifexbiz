@@ -30,16 +30,10 @@ import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 
 type AuthMode = 'login' | 'signup'
-
 type StatusTone = 'idle' | 'loading' | 'success' | 'error'
-
-interface StatusState {
-  tone: StatusTone
-  message: string
-}
+interface StatusState { tone: StatusTone; message: string }
 
 type QueueRequestType = 'sale' | 'receipt'
-
 function isQueueRequestType(value: unknown): value is QueueRequestType {
   return value === 'sale' || value === 'receipt'
 }
@@ -47,9 +41,7 @@ function isQueueRequestType(value: unknown): value is QueueRequestType {
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
-function sanitizePhone(value: string): string {
-  return value.replace(/\D+/g, '')
-}
+function sanitizePhone(value: string): string { return value.replace(/\D+/g, '') }
 
 const OWNER_NAME_FALLBACK = 'Owner account'
 
@@ -62,25 +54,24 @@ const SHEET_STORE_ID_MISMATCH_MESSAGE =
   'The provided store ID does not match your Sedifex workspace assignment.'
 
 function persistActiveStoreId(storeId: string) {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  try {
-    window.localStorage.setItem('activeStoreId', storeId)
-  } catch (error) {
-    console.warn('[auth] Failed to persist active store ID', error)
-  }
+  if (typeof window === 'undefined') return
+  try { window.localStorage.setItem('activeStoreId', storeId) }
+  catch (error) { console.warn('[auth] Failed to persist active store ID', error) }
 }
 
+function clearActiveStoreId() {
+  if (typeof window === 'undefined') return
+  try { window.localStorage.removeItem('activeStoreId') }
+  catch (error) { console.warn('[auth] Failed to clear active store ID', error) }
+}
+
+/** Sheet-only fallback to resolve workspace & set activeStoreId */
 async function resolveWorkspaceAccessFromSheet(
   email: string,
   providedStoreId?: string,
 ): Promise<ResolveStoreAccessResult> {
   const normalizedEmail = email.trim().toLowerCase()
-  if (!normalizedEmail) {
-    throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
-  }
+  if (!normalizedEmail) throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
 
   let rows
   try {
@@ -92,31 +83,21 @@ async function resolveWorkspaceAccessFromSheet(
   }
 
   const row = findUserRow(rows, normalizedEmail)
-  if (!row) {
-    throw new Error(SHEET_ASSIGNMENT_MISSING_MESSAGE)
-  }
+  if (!row) throw new Error(SHEET_ASSIGNMENT_MISSING_MESSAGE)
 
   const assignedStoreId = row.storeId?.trim()
-  if (!assignedStoreId) {
-    throw new Error(SHEET_STORE_ID_MISSING_MESSAGE)
-  }
+  if (!assignedStoreId) throw new Error(SHEET_STORE_ID_MISSING_MESSAGE)
 
   if (providedStoreId) {
     const normalizedProvided = providedStoreId.trim()
-    if (
-      normalizedProvided &&
-      normalizedProvided.toLowerCase() !== assignedStoreId.toLowerCase()
-    ) {
+    if (normalizedProvided && normalizedProvided.toLowerCase() !== assignedStoreId.toLowerCase()) {
       throw new Error(SHEET_STORE_ID_MISMATCH_MESSAGE)
     }
   }
 
-  if (!isContractActive(row)) {
-    throw new Error(INACTIVE_WORKSPACE_MESSAGE)
-  }
+  if (!isContractActive(row)) throw new Error(INACTIVE_WORKSPACE_MESSAGE)
 
   persistActiveStoreId(assignedStoreId)
-
   const normalizedRole = row.role?.toLowerCase() === 'owner' ? 'owner' : 'staff'
 
   return {
@@ -141,10 +122,7 @@ function hasSeedData(resolution: ResolveStoreAccessResult): boolean {
 
 function resolveOwnerName(user: User): string {
   const displayName = user.displayName?.trim()
-  if (displayName && displayName.length > 0) {
-    return displayName
-  }
-  return OWNER_NAME_FALLBACK
+  return displayName && displayName.length > 0 ? displayName : OWNER_NAME_FALLBACK
 }
 
 async function persistTeamMemberMetadata(
@@ -176,77 +154,48 @@ async function persistTeamMemberMetadata(
 }
 
 async function cleanupFailedSignup(user: User) {
-  try {
-    await user.delete()
-  } catch (error) {
-    console.warn('[signup] Unable to delete rejected signup account', error)
-  }
-
-  try {
-    await auth.signOut()
-  } catch (error) {
-    console.warn('[signup] Unable to sign out after rejected signup', error)
-  }
+  try { await user.delete() } catch (error) { console.warn('[signup] Unable to delete rejected signup account', error) }
+  try { await auth.signOut() } catch (error) { console.warn('[signup] Unable to sign out after rejected signup', error) }
 }
 
 const TIMESTAMP_FIELD_KEYS = new Set(['createdAt', 'updatedAt', 'receivedAt'])
-
 function normalizeSeededDocumentData(data: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {}
-
   Object.entries(data).forEach(([key, value]) => {
-    if (value === undefined) {
-      return
-    }
-
-    if (value === null) {
-      result[key] = null
-      return
-    }
-
+    if (value === undefined) return
+    if (value === null) { result[key] = null; return }
     if (TIMESTAMP_FIELD_KEYS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
-      result[key] = Timestamp.fromMillis(value)
-      return
+      result[key] = Timestamp.fromMillis(value); return
     }
-
     if (Array.isArray(value)) {
-      result[key] = value.map(item => {
-        if (item && typeof item === 'object' && !Array.isArray(item)) {
-          return normalizeSeededDocumentData(item as Record<string, unknown>)
-        }
-        return item
-      })
+      result[key] = value.map(item =>
+        item && typeof item === 'object' && !Array.isArray(item)
+          ? normalizeSeededDocumentData(item as Record<string, unknown>)
+          : item,
+      )
       return
     }
-
     if (typeof value === 'object') {
       result[key] = normalizeSeededDocumentData(value as Record<string, unknown>)
       return
     }
-
     result[key] = value
   })
-
   return result
 }
 
 async function persistStoreSeedData(resolution: ResolveStoreAccessResult) {
   const writes: Promise<unknown>[] = []
-
   const enqueue = (collectionName: string, document: SeededDocument | null) => {
     if (!document) return
     const normalized = normalizeSeededDocumentData(document.data)
     writes.push(setDoc(doc(db, collectionName, document.id), normalized, { merge: true }))
   }
-
   enqueue('teamMembers', resolution.teamMember)
   enqueue('stores', resolution.store)
   resolution.products.forEach(product => enqueue('products', product))
   resolution.customers.forEach(customer => enqueue('customers', customer))
-
-  if (writes.length) {
-    await Promise.all(writes)
-  }
+  if (writes.length) await Promise.all(writes)
 }
 
 interface PasswordStrength {
@@ -256,7 +205,6 @@ interface PasswordStrength {
   hasNumber: boolean
   hasSymbol: boolean
 }
-
 function evaluatePasswordStrength(password: string): PasswordStrength {
   return {
     isLongEnough: password.length >= PASSWORD_MIN_LENGTH,
@@ -268,15 +216,9 @@ function evaluatePasswordStrength(password: string): PasswordStrength {
 }
 
 function getLoginValidationError(email: string, password: string): string | null {
-  if (!email) {
-    return 'Enter your email.'
-  }
-  if (!EMAIL_PATTERN.test(email)) {
-    return 'Enter a valid email address.'
-  }
-  if (!password) {
-    return 'Enter your password.'
-  }
+  if (!email) return 'Enter your email.'
+  if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
+  if (!password) return 'Enter your password.'
   return null
 }
 
@@ -287,86 +229,42 @@ function getSignupValidationError(
   storeId: string,
   phone: string,
 ): string | null {
-  if (!email) {
-    return 'Enter your email.'
-  }
-  if (!EMAIL_PATTERN.test(email)) {
-    return 'Enter a valid email address.'
-  }
-  if (!password) {
-    return 'Create a password to continue.'
-  }
-  if (!storeId) {
-    return 'Enter your store ID.'
-  }
-  if (!phone) {
-    return 'Enter your phone number.'
-  }
+  if (!email) return 'Enter your email.'
+  if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
+  if (!password) return 'Create a password to continue.'
+  if (!storeId) return 'Enter your store ID.'
+  if (!phone) return 'Enter your phone number.'
 
-  const { isLongEnough, hasUppercase, hasLowercase, hasNumber, hasSymbol } =
-    evaluatePasswordStrength(password)
-
-  if (!isLongEnough) {
-    return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`
-  }
-  if (!hasUppercase) {
-    return 'Password must include an uppercase letter.'
-  }
-  if (!hasLowercase) {
-    return 'Password must include a lowercase letter.'
-  }
-  if (!hasNumber) {
-    return 'Password must include a number.'
-  }
-  if (!hasSymbol) {
-    return 'Password must include a symbol.'
-  }
-  if (!confirmPassword) {
-    return 'Confirm your password.'
-  }
-  if (password !== confirmPassword) {
-    return 'Passwords do not match.'
-  }
-
+  const s = evaluatePasswordStrength(password)
+  if (!s.isLongEnough) return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`
+  if (!s.hasUppercase) return 'Password must include an uppercase letter.'
+  if (!s.hasLowercase) return 'Password must include a lowercase letter.'
+  if (!s.hasNumber) return 'Password must include a number.'
+  if (!s.hasSymbol) return 'Password must include a symbol.'
+  if (!confirmPassword) return 'Confirm your password.'
+  if (password !== confirmPassword) return 'Passwords do not match.'
   return null
 }
 
-type QueueCompletedMessage = {
-  type: 'QUEUE_REQUEST_COMPLETED'
-  requestType?: unknown
-}
-
-type QueueFailedMessage = {
-  type: 'QUEUE_REQUEST_FAILED'
-  requestType?: unknown
-  error?: unknown
-}
-
+type QueueCompletedMessage = { type: 'QUEUE_REQUEST_COMPLETED'; requestType?: unknown }
+type QueueFailedMessage = { type: 'QUEUE_REQUEST_FAILED'; requestType?: unknown; error?: unknown }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
-
 function isQueueCompletedMessage(value: unknown): value is QueueCompletedMessage {
   return isRecord(value) && (value as any).type === 'QUEUE_REQUEST_COMPLETED'
 }
-
 function isQueueFailedMessage(value: unknown): value is QueueFailedMessage {
   return isRecord(value) && (value as any).type === 'QUEUE_REQUEST_FAILED'
 }
-
 function getQueueRequestLabel(requestType: unknown): string {
-  if (!isQueueRequestType(requestType)) {
-    return 'request'
-  }
+  if (!isQueueRequestType(requestType)) return 'request'
   return requestType === 'receipt' ? 'stock receipt' : 'sale'
 }
-
 function normalizeQueueError(value: unknown): string | null {
   if (typeof value === 'string') {
     const trimmed = value.trim()
-    if (trimmed.length > 0) {
-      return trimmed
-    }
+    if (trimmed.length > 0) return trimmed
   }
   return null
 }
@@ -415,19 +313,42 @@ export default function App() {
     EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
 
+  /** Configure persistence and auth listener */
   useEffect(() => {
-    // Ensure persistence is configured before we react to auth changes
     configureAuthPersistence(auth).catch(error => {
       console.warn('[auth] Unable to configure persistence', error)
     })
-
-    const unsubscribe = onAuthStateChanged(auth, nextUser => {
+    const unsubscribe = onAuthStateChanged(auth, async nextUser => {
       setUser(nextUser)
       setIsAuthReady(true)
+
+      // 🔑 On session restore / refresh: ensure active store exists
+      if (nextUser?.email) {
+        const existing = typeof window !== 'undefined'
+          ? window.localStorage.getItem('activeStoreId')
+          : null
+        if (!existing) {
+          try {
+            // Try callable (if deployed); fallback to Sheet
+            const resolution = await resolveStoreAccess().catch(() => null)
+            if (resolution && (resolution as any).storeId) {
+              persistActiveStoreId((resolution as any).storeId)
+            } else {
+              const sheetRes = await resolveWorkspaceAccessFromSheet(nextUser.email!)
+              persistActiveStoreId(sheetRes.storeId)
+            }
+          } catch (err) {
+            console.warn('[auth] Could not resolve active store on restore', err)
+          }
+        }
+      } else {
+        clearActiveStoreId()
+      }
     })
     return unsubscribe
   }, [])
 
+  /** Keep session heartbeat alive */
   useEffect(() => {
     if (!user) return
     refreshSessionHeartbeat(user).catch(error => {
@@ -435,6 +356,7 @@ export default function App() {
     })
   }, [user])
 
+  /** Onboarding redirect (unchanged) */
   useEffect(() => {
     if (!user) return
     const status = getOnboardingStatus(user.uid)
@@ -443,24 +365,22 @@ export default function App() {
     }
   }, [location.pathname, navigate, user])
 
+  /** Tab title UX */
   useEffect(() => {
-    // Small UX touch: show the current auth mode in the tab title
     document.title = mode === 'login' ? 'Sedifex — Log in' : 'Sedifex — Sign up'
   }, [mode])
 
+  /** PWA queue status handling */
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
-
     const handleMessage = (event: MessageEvent) => {
       const data = event.data
       if (!data || typeof data !== 'object') return
-
       if (isQueueCompletedMessage(data)) {
         const label = getQueueRequestLabel(data.requestType)
         publish({ message: `Queued ${label} synced successfully.`, tone: 'success' })
         return
       }
-
       if (isQueueFailedMessage(data)) {
         const label = getQueueRequestLabel(data.requestType)
         const detail = normalizeQueueError(data.error)
@@ -473,7 +393,6 @@ export default function App() {
         })
       }
     }
-
     navigator.serviceWorker.addEventListener('message', handleMessage)
     return () => navigator.serviceWorker.removeEventListener('message', handleMessage)
   }, [publish])
@@ -506,15 +425,8 @@ export default function App() {
       setStoreId(sanitizedStoreId)
       setPhone(sanitizedPhone)
       setNormalizedPhone(sanitizedPhone)
-
-      if (!sanitizedStoreId) {
-        setStatus({ tone: 'error', message: 'Enter your store ID.' })
-        return
-      }
-      if (!sanitizedPhone) {
-        setStatus({ tone: 'error', message: 'Enter your phone number.' })
-        return
-      }
+      if (!sanitizedStoreId) { setStatus({ tone: 'error', message: 'Enter your store ID.' }); return }
+      if (!sanitizedPhone) { setStatus({ tone: 'error', message: 'Enter your phone number.' }); return }
     }
 
     if (validationError) {
@@ -529,74 +441,41 @@ export default function App() {
 
     try {
       if (mode === 'login') {
-        const { user: nextUser } = await signInWithEmailAndPassword(
-          auth,
-          sanitizedEmail,
-          sanitizedPassword,
-        )
+        const { user: nextUser } = await signInWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
+
         let resolution: ResolveStoreAccessResult | null = null
         try {
           resolution = await resolveStoreAccess()
         } catch (error) {
-          console.warn('[auth] Failed to resolve workspace access', error)
-          try {
-            resolution = await resolveWorkspaceAccessFromSheet(sanitizedEmail)
-          } catch (sheetError) {
-            console.warn('[auth] Failed to resolve workspace access via sheet lookup', sheetError)
-            setStatus({ tone: 'error', message: getErrorMessage(sheetError) })
-            return
-          }
+          console.warn('[auth] Failed callable; trying sheet fallback', error)
+          resolution = await resolveWorkspaceAccessFromSheet(sanitizedEmail)
         }
 
-        if (!resolution) {
-          throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
-        }
+        if (!resolution) throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
 
         persistActiveStoreId(resolution.storeId)
-        if (hasSeedData(resolution)) {
-          await persistStoreSeedData(resolution)
-        }
+        if (hasSeedData(resolution)) await persistStoreSeedData(resolution)
       } else {
-        const { user: nextUser } = await createUserWithEmailAndPassword(
-          auth,
-          sanitizedEmail,
-          sanitizedPassword,
-        )
+        const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
 
         let resolution: ResolveStoreAccessResult | null = null
         try {
           resolution = await resolveStoreAccess(sanitizedStoreId)
         } catch (error) {
-          console.warn('[signup] Failed to resolve workspace access', error)
-          try {
-            resolution = await resolveWorkspaceAccessFromSheet(
-              sanitizedEmail,
-              sanitizedStoreId,
-            )
-          } catch (sheetError) {
-            console.warn(
-              '[signup] Failed to resolve workspace access via sheet lookup',
-              sheetError,
-            )
-            setStatus({ tone: 'error', message: getErrorMessage(sheetError) })
-            await cleanupFailedSignup(nextUser)
-            return
-          }
+          console.warn('[signup] Failed callable; trying sheet fallback', error)
+          resolution = await resolveWorkspaceAccessFromSheet(sanitizedEmail, sanitizedStoreId)
         }
 
-        if (!resolution) {
-          throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
-        }
+        if (!resolution) throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
 
         persistActiveStoreId(resolution.storeId)
         await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution)
 
         if (hasSeedData(resolution)) {
-          try {
-            await persistStoreSeedData(resolution)
-          } catch (error) {
+          try { await persistStoreSeedData(resolution) }
+          catch (error) {
             console.warn('[signup] Failed to seed workspace data', error)
             setStatus({ tone: 'error', message: getErrorMessage(error) })
             return
@@ -623,11 +502,10 @@ export default function App() {
         } catch (error) {
           console.warn('[customers] Unable to upsert customer record', error)
         }
-        try {
-          await nextUser.getIdToken(true)
-        } catch (error) {
-          console.warn('[auth] Unable to refresh ID token after signup', error)
-        }
+
+        try { await nextUser.getIdToken(true) }
+        catch (error) { console.warn('[auth] Unable to refresh ID token after signup', error) }
+
         setOnboardingStatus(nextUser.uid, 'pending')
       }
 
@@ -676,31 +554,11 @@ export default function App() {
 
   if (!user) {
     const PAGE_FEATURES = [
-      {
-        path: '/products',
-        name: 'Products',
-        description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.',
-      },
-      {
-        path: '/sell',
-        name: 'Sell',
-        description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.',
-      },
-      {
-        path: '/receive',
-        name: 'Receive',
-        description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.',
-      },
-      {
-        path: '/customers',
-        name: 'Customers',
-        description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.',
-      },
-      {
-        path: '/close-day',
-        name: 'Close Day',
-        description: 'Tie out cash, settle registers, and share end-of-day reports with finance in one view.',
-      },
+      { path: '/products',  name: 'Products',  description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.' },
+      { path: '/sell',      name: 'Sell',      description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.' },
+      { path: '/receive',   name: 'Receive',   description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.' },
+      { path: '/customers', name: 'Customers', description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.' },
+      { path: '/close-day', name: 'Close Day', description: 'Tie out cash, settle registers, and share end-of-day reports with finance in one view.' },
     ] as const
 
     return (
@@ -769,6 +627,7 @@ export default function App() {
                   aria-invalid={email.length > 0 && !EMAIL_PATTERN.test(normalizedEmail)}
                 />
               </div>
+
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="store-id">Store ID</label>
@@ -786,6 +645,7 @@ export default function App() {
                   />
                 </div>
               )}
+
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="phone">Phone</label>
@@ -819,6 +679,7 @@ export default function App() {
                   </p>
                 </div>
               )}
+
               <div className="form__field">
                 <label htmlFor="password">Password</label>
                 <input
@@ -832,9 +693,7 @@ export default function App() {
                   required
                   disabled={isLoading}
                   aria-invalid={
-                    mode === 'signup' &&
-                    normalizedPassword.length > 0 &&
-                    !doesPasswordMeetAllChecks
+                    mode === 'signup' && normalizedPassword.length > 0 && !doesPasswordMeetAllChecks
                   }
                   aria-describedby={mode === 'signup' ? 'password-guidelines' : undefined}
                 />
@@ -851,6 +710,7 @@ export default function App() {
                   </ul>
                 )}
               </div>
+
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="confirm-password">Confirm password</label>
@@ -875,6 +735,7 @@ export default function App() {
                   </p>
                 </div>
               )}
+
               <button className="primary-button" type="submit" disabled={isSubmitDisabled}>
                 {isLoading
                   ? mode === 'login'
@@ -908,17 +769,9 @@ export default function App() {
               <span className="app__visual-pill">Operations snapshot</span>
               <h2>Stay synced from the floor to finance</h2>
               <p>
-                <Link className="app__visual-link" to="/sell">
-                  Live sales
-                </Link>
-                ,{' '}
-                <Link className="app__visual-link" to="/products">
-                  inventory alerts
-                </Link>
-                , and{' '}
-                <Link className="app__visual-link" to="/close-day">
-                  smart counts
-                </Link>{' '}
+                <Link className="app__visual-link" to="/sell">Live sales</Link>,{' '}
+                <Link className="app__visual-link" to="/products">inventory alerts</Link>, and{' '}
+                <Link className="app__visual-link" to="/close-day">smart counts</Link>{' '}
                 help your whole team stay aligned from any device.
               </p>
             </div>
@@ -928,10 +781,7 @@ export default function App() {
         <section className="app__features" aria-label="Sedifex workspace pages">
           <header className="app__features-header">
             <h2>Explore the workspace</h2>
-            <p>
-              Every Sedifex page is built to keep retail operations synchronized—from the sales
-              floor to finance.
-            </p>
+            <p>Every Sedifex page is built to keep retail operations synchronized—from the sales floor to finance.</p>
           </header>
 
           <div className="app__features-grid" role="list">
@@ -947,9 +797,7 @@ export default function App() {
                   <h3>{feature.name}</h3>
                   <p>{feature.description}</p>
                 </div>
-                <span className="feature-card__cta" aria-hidden="true">
-                  Visit {feature.name}
-                </span>
+                <span className="feature-card__cta" aria-hidden="true">Visit {feature.name}</span>
               </Link>
             ))}
           </div>
@@ -960,13 +808,12 @@ export default function App() {
             <h3>About Sedifex</h3>
             <p>
               Sedifex is the operations control tower for modern retail teams. We unite store
-              execution, warehouse visibility, and merchandising insights so every location
-              can act on the same live source of truth.
+              execution, warehouse visibility, and merchandising insights so every location can act on
+              the same live source of truth.
             </p>
             <p>
-              Connect your POS, ecommerce, and supplier systems in minutes to orchestrate the
-              entire product journey—from forecast to fulfillment—with less manual work and
-              far fewer stockouts.
+              Connect your POS, ecommerce, and supplier systems in minutes to orchestrate the entire
+              product journey—from forecast to fulfillment—with less manual work and far fewer stockouts.
             </p>
             <footer>
               <ul className="info-card__list">
@@ -995,15 +842,9 @@ export default function App() {
             <h3>Contact Sales</h3>
             <p>
               Partner with a retail operations strategist to tailor Sedifex to your fleet,
-              review pricing, and build an onboarding plan that keeps stores running while we
-              launch.
+              review pricing, and build an onboarding plan that keeps stores running while we launch.
             </p>
-            <a
-              className="info-card__cta"
-              href="https://calendly.com/sedifex/demo"
-              target="_blank"
-              rel="noreferrer noopener"
-            >
+            <a className="info-card__cta" href="https://calendly.com/sedifex/demo" target="_blank" rel="noreferrer noopener">
               Book a 30-minute consultation
             </a>
             <p className="info-card__caption">Prefer email? Reach us at sales@sedifex.com.</p>
@@ -1047,13 +888,7 @@ function getErrorMessage(error: unknown): string {
     }
   }
 
-  if (error instanceof Error) {
-    return error.message || 'Something went wrong. Please try again.'
-  }
-
-  if (typeof error === 'string') {
-    return error
-  }
-
+  if (error instanceof Error) return error.message || 'Something went wrong. Please try again.'
+  if (typeof error === 'string') return error
   return 'Something went wrong. Please try again.'
 }
