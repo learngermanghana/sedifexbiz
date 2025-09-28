@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMemberships } from './useMemberships'
 
 interface ActiveStoreState {
@@ -10,21 +10,34 @@ interface ActiveStoreState {
 const STORE_ERROR_MESSAGE = 'We could not load your workspace access. Some features may be limited.'
 
 export function useActiveStore(): ActiveStoreState {
-  const { memberships, loading, error } = useMemberships()
-  const persistedStoreId =
-    typeof window !== 'undefined' ? window.localStorage.getItem('activeStoreId') : null
+  const { memberships, loading: membershipLoading, error } = useMemberships()
+  const [persistedStoreId, setPersistedStoreId] = useState<string | null>(null)
+  const [isPersistedLoading, setIsPersistedLoading] = useState(true)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const storedId = window.localStorage.getItem('activeStoreId')
+    setPersistedStoreId(storedId)
+    setIsPersistedLoading(false)
+  }, [])
 
   const membershipStoreId = memberships.find(m => m.storeId)?.storeId ?? null
-  const activeStoreId =
-    persistedStoreId && persistedStoreId.trim() !== '' ? persistedStoreId : membershipStoreId
+  const normalizedPersistedStoreId =
+    persistedStoreId && persistedStoreId.trim() !== '' ? persistedStoreId : null
+  const activeStoreId = isPersistedLoading
+    ? membershipStoreId
+    : normalizedPersistedStoreId ?? membershipStoreId
   const hasError = error != null
 
   return useMemo(
     () => ({
       storeId: activeStoreId ?? null,
-      isLoading: loading,
+      isLoading: membershipLoading || isPersistedLoading,
       error: hasError ? STORE_ERROR_MESSAGE : null,
     }),
-    [activeStoreId, hasError, loading],
+    [activeStoreId, hasError, isPersistedLoading, membershipLoading],
   )
 }
