@@ -9,7 +9,7 @@
     "build": "tsc",
     "serve": "firebase emulators:start --only functions,firestore",
     "deploy": "npm run build && firebase deploy --only functions",
-    "test": "npm run build && node ./test/commitSale.test.js",
+    "test": "npm run build && node ./test/commitSale.test.js && node ./test/resolveStoreAccess.test.js",
     "backfill-store": "ts-node ./scripts/backfillStoreIds.ts"
   },
   "dependencies": {

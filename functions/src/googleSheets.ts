@@ -81,7 +81,11 @@ async function getSheetsClient(): Promise<sheets_v4.Sheets> {
       credentials,
       scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
     })
-    sheetsClientPromise = auth.getClient().then(authClient => google.sheets({ version: 'v4', auth: authClient }))
+    const authClientPromise = auth.getClient()
+    sheetsClientPromise = (async () => {
+      const authClient = await authClientPromise
+      return google.sheets({ version: 'v4', auth: authClient })
+    })()
   }
 
   return sheetsClientPromise
@@ -145,11 +149,13 @@ export async function fetchClientRowByEmail(sheetId: string | null | undefined, 
     majorDimension: 'ROWS',
   })
 
-  const rows = response.data.values ?? []
+  const rows = (response.data.values ?? []) as unknown[][]
   if (!rows.length) return null
 
-  const headerRow = rows[0]
-  const headers = headerRow.map(cell => (typeof cell === 'string' ? cell : cell === undefined || cell === null ? '' : String(cell)))
+  const headerRow = (rows[0] ?? []) as unknown[]
+  const headers = headerRow.map(cell =>
+    typeof cell === 'string' ? cell : cell === undefined || cell === null ? '' : String(cell),
+  )
   const normalizedHeaders = headers.map(normalizeHeader)
   const emailColumns = normalizedHeaders
     .map((header, index) => (isEmailHeader(header) ? index : -1))
