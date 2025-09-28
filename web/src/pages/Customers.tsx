@@ -10,10 +10,12 @@ import {
   limit,
   serverTimestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore'
 import { Timestamp } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
+import { useActiveStore } from '../hooks/useActiveStore'
 import './Customers.css'
 import {
   CUSTOMER_CACHE_LIMIT,
@@ -139,6 +141,7 @@ function buildCsvValue(value: string): string {
 }
 
 export default function Customers() {
+  const { storeId: activeStoreId } = useActiveStore()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -181,7 +184,14 @@ export default function Customers() {
   useEffect(() => {
     let cancelled = false
 
-    loadCachedCustomers<Customer>()
+    if (!activeStoreId) {
+      setCustomers([])
+      return () => {
+        cancelled = true
+      }
+    }
+
+    loadCachedCustomers<Customer>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
           setCustomers(
@@ -195,6 +205,7 @@ export default function Customers() {
 
     const q = query(
       collection(db, 'customers'),
+      where('storeId', '==', activeStoreId),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(CUSTOMER_CACHE_LIMIT),
@@ -208,7 +219,7 @@ export default function Customers() {
           ...data,
         }
       })
-      saveCachedCustomers(rows).catch(error => {
+      saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[customers] Failed to cache customers', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
@@ -221,7 +232,7 @@ export default function Customers() {
       cancelled = true
       unsubscribe()
     }
-  }, [])
+  }, [activeStoreId])
 
   function normalizeSaleDate(value: unknown): Date | null {
     if (!value) return null
@@ -315,7 +326,15 @@ export default function Customers() {
   useEffect(() => {
     let cancelled = false
 
-    loadCachedSales<CachedSaleRecord>()
+    if (!activeStoreId) {
+      setCustomerStats({})
+      setSalesHistory({})
+      return () => {
+        cancelled = true
+      }
+    }
+
+    loadCachedSales<CachedSaleRecord>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
           applySalesData(cached)
@@ -327,6 +346,7 @@ export default function Customers() {
 
     const q = query(
       collection(db, 'sales'),
+      where('storeId', '==', activeStoreId),
       orderBy('createdAt', 'desc'),
       limit(SALES_CACHE_LIMIT),
     )
@@ -334,7 +354,7 @@ export default function Customers() {
     const unsubscribe = onSnapshot(q, snapshot => {
       const rows = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as any) }))
       applySalesData(rows)
-      saveCachedSales(rows).catch(error => {
+      saveCachedSales(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[customers] Failed to cache sales', error)
       })
     })
@@ -343,7 +363,7 @@ export default function Customers() {
       cancelled = true
       unsubscribe()
     }
-  }, [])
+  }, [activeStoreId])
 
   useEffect(() => {
     if (!selectedCustomerId) return
@@ -451,6 +471,10 @@ export default function Customers() {
       setError('Customer name is required to save a record.')
       return
     }
+    if (!activeStoreId) {
+      setError('Select a workspace before saving customers.')
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -459,6 +483,7 @@ export default function Customers() {
         const updatePayload: Record<string, unknown> = {
           name: trimmedName,
           updatedAt: serverTimestamp(),
+          storeId: activeStoreId,
         }
         updatePayload.phone = phone.trim() ? phone.trim() : null
         updatePayload.email = email.trim() ? email.trim() : null
@@ -470,6 +495,7 @@ export default function Customers() {
       } else {
         await addDoc(collection(db, 'customers'), {
           name: trimmedName,
+          storeId: activeStoreId,
           ...(phone.trim() ? { phone: phone.trim() } : {}),
           ...(email.trim() ? { email: email.trim() } : {}),
           ...(notes.trim() ? { notes: notes.trim() } : {}),
@@ -517,6 +543,10 @@ export default function Customers() {
     setIsImporting(true)
     setError(null)
     try {
+      if (!activeStoreId) {
+        throw new Error('Select a workspace before importing customers.')
+      }
+
       const text = await file.text()
       const rows = parseCsv(text)
       if (!rows.length) {
@@ -571,6 +601,7 @@ export default function Customers() {
           const payload: Record<string, unknown> = {
             name: rawName,
             updatedAt: serverTimestamp(),
+            storeId: activeStoreId,
           }
           if (phoneIndex >= 0) {
             payload.phone = rawPhone ? rawPhone : null
@@ -590,6 +621,7 @@ export default function Customers() {
           const payload: Record<string, unknown> = {
             name: rawName,
             createdAt: serverTimestamp(),
+            storeId: activeStoreId,
           }
           if (rawPhone) {
             payload.phone = rawPhone

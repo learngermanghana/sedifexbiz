@@ -1,6 +1,7 @@
 const DB_NAME = 'sedifex-offline-cache'
 const DB_VERSION = 1
 const STORE_NAME = 'lists'
+const DEFAULT_PARTITION_KEY = '__global'
 
 export const PRODUCT_CACHE_LIMIT = 200
 export const CUSTOMER_CACHE_LIMIT = 200
@@ -94,6 +95,17 @@ function sortAndTrim<T>(items: T[], limit: number) {
     .slice(0, limit)
 }
 
+function resolvePartitionKey(baseKey: string, storeId?: string | null) {
+  const normalized = typeof storeId === 'string' ? storeId.trim() : ''
+  const suffix = normalized ? normalized : DEFAULT_PARTITION_KEY
+  return `${baseKey}:${suffix}`
+}
+
+type CacheOptions = {
+  limit?: number
+  storeId?: string | null
+}
+
 async function loadCachedList<T>(key: string, limit: number): Promise<T[]> {
   if (!isIndexedDbAvailable()) return []
   try {
@@ -136,40 +148,46 @@ async function saveCachedList<T>(key: string, items: T[], limit: number): Promis
 }
 
 export async function loadCachedProducts<T extends { updatedAt?: unknown; createdAt?: unknown }>(
-  limit = PRODUCT_CACHE_LIMIT,
+  options: CacheOptions = {},
 ): Promise<T[]> {
-  return loadCachedList<T>('products', limit)
+  const { limit = PRODUCT_CACHE_LIMIT, storeId } = options
+  return loadCachedList<T>(resolvePartitionKey('products', storeId), limit)
 }
 
 export async function saveCachedProducts<T extends { updatedAt?: unknown; createdAt?: unknown }>(
   items: T[],
-  limit = PRODUCT_CACHE_LIMIT,
+  options: CacheOptions = {},
 ): Promise<void> {
-  await saveCachedList('products', items, limit)
+  const { limit = PRODUCT_CACHE_LIMIT, storeId } = options
+  await saveCachedList(resolvePartitionKey('products', storeId), items, limit)
 }
 
 export async function loadCachedCustomers<T extends { updatedAt?: unknown; createdAt?: unknown }>(
-  limit = CUSTOMER_CACHE_LIMIT,
+  options: CacheOptions = {},
 ): Promise<T[]> {
-  return loadCachedList<T>('customers', limit)
+  const { limit = CUSTOMER_CACHE_LIMIT, storeId } = options
+  return loadCachedList<T>(resolvePartitionKey('customers', storeId), limit)
 }
 
 export async function saveCachedCustomers<T extends { updatedAt?: unknown; createdAt?: unknown }>(
   items: T[],
-  limit = CUSTOMER_CACHE_LIMIT,
+  options: CacheOptions = {},
 ): Promise<void> {
-  await saveCachedList('customers', items, limit)
+  const { limit = CUSTOMER_CACHE_LIMIT, storeId } = options
+  await saveCachedList(resolvePartitionKey('customers', storeId), items, limit)
 }
 
 export async function loadCachedSales<T extends { createdAt?: unknown }>(
-  limit = SALES_CACHE_LIMIT,
+  options: CacheOptions = {},
 ): Promise<T[]> {
-  return loadCachedList<T>('sales', limit)
+  const { limit = SALES_CACHE_LIMIT, storeId } = options
+  return loadCachedList<T>(resolvePartitionKey('sales', storeId), limit)
 }
 
 export async function saveCachedSales<T extends { createdAt?: unknown }>(
   items: T[],
-  limit = SALES_CACHE_LIMIT,
+  options: CacheOptions = {},
 ): Promise<void> {
-  await saveCachedList('sales', items, limit)
+  const { limit = SALES_CACHE_LIMIT, storeId } = options
+  await saveCachedList(resolvePartitionKey('sales', storeId), items, limit)
 }
