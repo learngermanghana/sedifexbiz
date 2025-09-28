@@ -94,11 +94,18 @@ export const backfillMyStore = functions.https.onCall(async (data, context) => {
   const memberRef = db.collection('teamMembers').doc(uid)
   const memberSnap = await memberRef.get()
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
+  const existingData = memberSnap.data() ?? {}
+  const existingStoreId =
+    typeof existingData.storeId === 'string' && existingData.storeId.trim() !== ''
+      ? (existingData.storeId as string)
+      : null
+  const storeId = existingStoreId ?? uid
 
   const memberData: admin.firestore.DocumentData = {
     uid,
     email,
     role: 'owner',
+    storeId,
     phone: resolvedPhone,
     firstSignupEmail: resolvedFirstSignupEmail,
     invitedBy: uid,
@@ -112,5 +119,5 @@ export const backfillMyStore = functions.https.onCall(async (data, context) => {
   await memberRef.set(memberData, { merge: true })
   const claims = await applyRoleClaim(uid, 'owner')
 
-  return { ok: true, claims }
+  return { ok: true, claims, storeId }
 })

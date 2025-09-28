@@ -11,7 +11,7 @@ const STORE_ERROR_MESSAGE = 'We could not load your workspace access. Some featu
 
 export function useActiveStore(): ActiveStoreState {
   const { memberships, loading, error } = useMemberships()
-  const activeStoreId = memberships[0]?.storeId ?? null
+  const activeStoreId = memberships.find(m => m.storeId)?.storeId ?? null
   const hasError = error != null
 
   return useMemo(

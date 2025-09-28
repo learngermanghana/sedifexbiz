@@ -18,6 +18,7 @@ type ResolveStoreAccessPayload = {
 }
 
 type ManageStaffPayload = {
+  storeId?: unknown
   email?: unknown
   role?: unknown
   password?: unknown
@@ -109,6 +110,8 @@ async function updateUserClaims(uid: string, role: string) {
 }
 
 function normalizeManageStaffPayload(data: ManageStaffPayload) {
+  const storeIdRaw = data.storeId
+  const storeId = typeof storeIdRaw === 'string' ? storeIdRaw.trim() : ''
   const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : ''
   const role = typeof data.role === 'string' ? data.role.trim() : ''
   const passwordRaw = data.password
@@ -121,13 +124,14 @@ function normalizeManageStaffPayload(data: ManageStaffPayload) {
     throw new functions.https.HttpsError('invalid-argument', 'Password must be a string when provided')
   }
 
+  if (!storeId) throw new functions.https.HttpsError('invalid-argument', 'A storeId is required')
   if (!email) throw new functions.https.HttpsError('invalid-argument', 'A valid email is required')
   if (!role) throw new functions.https.HttpsError('invalid-argument', 'A role is required')
   if (!VALID_ROLES.has(role)) {
     throw new functions.https.HttpsError('invalid-argument', 'Unsupported role requested')
   }
 
-  return { email, role, password }
+  return { storeId, email, role, password }
 }
 
 async function ensureAuthUser(email: string, password?: string) {
@@ -186,11 +190,18 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   const memberRef = db.collection('teamMembers').doc(uid)
   const memberSnap = await memberRef.get()
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
+  const existingData = memberSnap.data() ?? {}
+  const existingStoreId =
+    typeof existingData.storeId === 'string' && existingData.storeId.trim() !== ''
+      ? (existingData.storeId as string)
+      : null
+  const storeId = existingStoreId ?? uid
 
   const memberData: admin.firestore.DocumentData = {
     uid,
     email,
     role: 'owner',
+    storeId,
     phone: resolvedPhone,
     firstSignupEmail: resolvedFirstSignupEmail,
     invitedBy: uid,
@@ -204,7 +215,7 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   await memberRef.set(memberData, { merge: true })
   const claims = await updateUserClaims(uid, 'owner')
 
-  return { ok: true, claims }
+  return { ok: true, claims, storeId }
 })
 
 export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
@@ -226,6 +237,11 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   if (!VALID_ROLES.has(roleRaw)) {
     throw new functions.https.HttpsError('failed-precondition', 'This account does not have workspace access yet')
   }
+  const existingStoreId =
+    typeof memberData.storeId === 'string' && memberData.storeId.trim() !== ''
+      ? (memberData.storeId as string)
+      : null
+  const storeId = existingStoreId ?? uid
 
   const payload = (data ?? {}) as ResolveStoreAccessPayload
   const contact = normalizeContactPayload(payload.contact)
@@ -234,7 +250,12 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     ? contact.firstSignupEmail ?? null
     : email?.toLowerCase() ?? null
 
-  const updates: admin.firestore.DocumentData = { updatedAt: admin.firestore.FieldValue.serverTimestamp() }
+  const updates: admin.firestore.DocumentData = {
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }
+  if (!existingStoreId) {
+    updates.storeId = storeId
+  }
   if (contact.hasPhone) {
     updates.phone = resolvedPhone
   }
@@ -246,13 +267,13 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   }
 
   const claims = await updateUserClaims(uid, roleRaw)
-  return { ok: true, role: roleRaw, claims }
+  return { ok: true, role: roleRaw, claims, storeId }
 })
 
 export const manageStaffAccount = functions.https.onCall(async (data, context) => {
   assertOwnerAccess(context)
 
-  const { email, role, password } = normalizeManageStaffPayload(data as ManageStaffPayload)
+  const { storeId, email, role, password } = normalizeManageStaffPayload(data as ManageStaffPayload)
   const invitedBy = context.auth?.uid ?? null
   const { record, created } = await ensureAuthUser(email, password)
 
@@ -263,6 +284,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   const memberData: admin.firestore.DocumentData = {
     uid: record.uid,
     email,
+    storeId,
     role,
     invitedBy,
     updatedAt: timestamp,
@@ -275,7 +297,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   await memberRef.set(memberData, { merge: true })
   const claims = await updateUserClaims(record.uid, role)
 
-  return { ok: true, role, email, uid: record.uid, created, claims }
+  return { ok: true, role, email, uid: record.uid, created, storeId, claims }
 })
 
 export const commitSale = functions.https.onCall(async (data, context) => {
