@@ -76,7 +76,14 @@ function normalizeSeededCollection(value: RawSeededDocument[] | unknown): Seeded
     .filter((item): item is SeededDocument => item !== null)
 }
 
-const resolveStoreAccessCallable = httpsCallable<void, RawResolveStoreAccessResponse>(
+type ResolveStoreAccessPayload = {
+  storeId?: string
+}
+
+const resolveStoreAccessCallable = httpsCallable<
+  ResolveStoreAccessPayload,
+  RawResolveStoreAccessResponse
+>(
   functions,
   'resolveStoreAccess',
 )
@@ -112,10 +119,12 @@ export function extractCallableErrorMessage(error: FirebaseError): string | null
   return normalized || null
 }
 
-export async function resolveStoreAccess(): Promise<ResolveStoreAccessResult> {
+export async function resolveStoreAccess(storeId?: string): Promise<ResolveStoreAccessResult> {
   let response
   try {
-    response = await resolveStoreAccessCallable()
+    const trimmedStoreId = typeof storeId === 'string' ? storeId.trim() : ''
+    const payload = trimmedStoreId ? { storeId: trimmedStoreId } : undefined
+    response = await resolveStoreAccessCallable(payload)
   } catch (error) {
     if (error instanceof FirebaseError && error.code === 'functions/permission-denied') {
       const message = extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
@@ -126,15 +135,15 @@ export async function resolveStoreAccess(): Promise<ResolveStoreAccessResult> {
   const payload = response.data ?? {}
 
   const ok = payload.ok === true
-  const storeId = typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
+  const resolvedStoreId = typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
 
-  if (!ok || !storeId) {
+  if (!ok || !resolvedStoreId) {
     throw new Error('Unable to resolve store access for this account.')
   }
 
   return {
     ok,
-    storeId,
+    storeId: resolvedStoreId,
     role: normalizeRole(payload.role),
     claims: payload.claims,
     teamMember: normalizeSeededDocument(payload.teamMember ?? null),

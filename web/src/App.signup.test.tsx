@@ -165,6 +165,7 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/Store ID/i), 'store-001')
       await user.type(screen.getByLabelText(/Phone/i), '5551234567')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -230,6 +231,7 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/Store ID/i), '  sheet-store-id  ')
       await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -238,7 +240,9 @@ describe('App signup cleanup', () => {
     })
 
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
-    await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('sheet-store-id'),
+    )
 
     const ownerDocKey = `teamMembers/${createdUser.uid}`
     const customerDocKey = `customers/${createdUser.uid}`
@@ -331,7 +335,9 @@ describe('App signup cleanup', () => {
       return { user: createdUser }
     })
 
-    mocks.resolveStoreAccess.mockRejectedValueOnce(new Error('Missing store record'))
+    mocks.resolveStoreAccess.mockRejectedValueOnce(
+      new Error('Your account is assigned to store store-999. Enter the correct store ID to continue.'),
+    )
 
     render(
       <MemoryRouter>
@@ -347,6 +353,7 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/Store ID/i), 'store-001')
       await user.type(screen.getByLabelText(/Phone/i), '5551234567')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -354,7 +361,7 @@ describe('App signup cleanup', () => {
       await user.click(screen.getByRole('button', { name: /Create account/i }))
     })
 
-    await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('store-001'))
 
     await waitFor(() => expect(deleteFn).toHaveBeenCalled())
     expect(mocks.auth.signOut).toHaveBeenCalled()
@@ -375,7 +382,10 @@ describe('App signup cleanup', () => {
 
     await waitFor(() =>
       expect(mocks.publish).toHaveBeenCalledWith(
-        expect.objectContaining({ tone: 'error', message: 'Missing store record' }),
+        expect.objectContaining({
+          tone: 'error',
+          message: 'Your account is assigned to store store-999. Enter the correct store ID to continue.',
+        }),
       ),
     )
   })

@@ -94,7 +94,7 @@ async function runActiveStatusTest() {
     },
   }
 
-  const result = await resolveStoreAccess.run({}, context)
+  const result = await resolveStoreAccess.run({ storeId: 'store-001' }, context)
 
   assert.strictEqual(result.ok, true)
   assert.strictEqual(result.storeId, 'store-001')
@@ -148,7 +148,7 @@ async function runInactiveStatusTest() {
 
   let error
   try {
-    await resolveStoreAccess.run({}, context)
+    await resolveStoreAccess.run({ storeId: 'store-002' }, context)
   } catch (err) {
     error = err
   }
@@ -162,9 +162,48 @@ async function runInactiveStatusTest() {
   )
 }
 
+async function runStoreIdMismatchTest() {
+  currentDefaultDb = new MockFirestore()
+  currentRosterDb = new MockFirestore()
+  sheetRowMock = {
+    spreadsheetId: 'sheet-123',
+    headers: [],
+    normalizedHeaders: [],
+    values: [],
+    record: {
+      store_id: 'store-777',
+      status: 'Active',
+      member_email: 'owner@example.com',
+    },
+  }
+
+  const { resolveStoreAccess } = loadFunctionsModule()
+  const context = {
+    auth: {
+      uid: 'user-3',
+      token: { email: 'owner@example.com' },
+    },
+  }
+
+  let error
+  try {
+    await resolveStoreAccess.run({ storeId: 'store-abc' }, context)
+  } catch (err) {
+    error = err
+  }
+
+  assert.ok(error, 'Expected mismatch to throw')
+  assert.strictEqual(error.code, 'permission-denied')
+  assert.strictEqual(
+    error.message,
+    'Your account is assigned to store store-777. Enter the correct store ID to continue.',
+  )
+}
+
 async function run() {
   await runActiveStatusTest()
   await runInactiveStatusTest()
+  await runStoreIdMismatchTest()
   console.log('resolveStoreAccess tests passed')
 }
 

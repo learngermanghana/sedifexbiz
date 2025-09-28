@@ -490,12 +490,32 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   return { ok: true, claims, storeId }
 })
 
-export const resolveStoreAccess = functions.https.onCall(async (_data, context) => {
+export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
   assertAuthenticated(context)
 
   const uid = context.auth!.uid
   const token = context.auth!.token as Record<string, unknown>
   const emailFromToken = typeof token.email === 'string' ? (token.email as string).toLowerCase() : null
+
+  const rawPayload = (data ?? {}) as { storeId?: unknown } | unknown
+  let requestedStoreId: string | null = null
+  if (typeof rawPayload === 'object' && rawPayload !== null && 'storeId' in rawPayload) {
+    const candidate = (rawPayload as { storeId?: unknown }).storeId
+    if (typeof candidate !== 'string') {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Enter the store ID assigned to your Sedifex workspace.',
+      )
+    }
+    const trimmed = candidate.trim()
+    if (!trimmed) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'Enter the store ID assigned to your Sedifex workspace.',
+      )
+    }
+    requestedStoreId = trimmed
+  }
 
   if (!emailFromToken) {
     throw new functions.https.HttpsError(
@@ -531,10 +551,26 @@ export const resolveStoreAccess = functions.https.onCall(async (_data, context) 
       ? (existingMember.storeId as string).trim()
       : null
 
-  const sheetStoreId = getValueFromRecord(record, ['store_id', 'storeid', 'store_identifier', 'store'])
-  const storeId = (sheetStoreId ?? existingStoreId ?? uid).trim()
+  const sheetStoreIdValue = getValueFromRecord(record, [
+    'store_id',
+    'storeid',
+    'store_identifier',
+    'store',
+  ])
+  const normalizedSheetStoreId =
+    typeof sheetStoreIdValue === 'string' ? sheetStoreIdValue.trim() : ''
+  const storeId = (normalizedSheetStoreId || existingStoreId || uid).trim()
   if (!storeId) {
     throw new functions.https.HttpsError('failed-precondition', 'The assigned workspace is missing a store identifier.')
+  }
+
+  if (requestedStoreId !== null && normalizedSheetStoreId) {
+    if (requestedStoreId !== normalizedSheetStoreId) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        `Your account is assigned to store ${normalizedSheetStoreId}. Enter the correct store ID to continue.`,
+      )
+    }
   }
 
   const resolvedRoleCandidate = getValueFromRecord(record, ['role', 'member_role', 'store_role', 'workspace_role'])
