@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { createHashRouter, RouterProvider } from 'react-router-dom'
 import App from './App'
+import SheetAccessGuard from './SheetAccessGuard'
 import Shell from './layout/Shell'
 import Dashboard from './pages/Dashboard'
 import Products from './pages/Products'
@@ -17,7 +18,11 @@ import { ToastProvider } from './components/ToastProvider'
 const router = createHashRouter([
   {
     path: '/',
-    element: <App />,
+    element: (
+      <SheetAccessGuard>
+        <App />
+      </SheetAccessGuard>
+    ),
     children: [
       { index: true, element: <Shell><Dashboard /></Shell> },
       { path: 'goals',     element: <Shell><GoalPlannerPage /></Shell> },
