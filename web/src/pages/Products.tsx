@@ -182,16 +182,19 @@ export default function Products() {
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(prev => {
-            const optimistic = prev.filter(
-              item => item.__optimistic && item.storeId === activeStoreId,
-            )
             const sanitized = cached.map(item => ({
               ...(item as ProductRecord),
               price: sanitizePrice((item as ProductRecord).price),
               __optimistic: false,
               storeId: activeStoreId,
             }))
-            return sortProducts([...sanitized, ...optimistic])
+            const sanitizedIds = new Set(sanitized.map(item => item.id))
+            const preserved = prev.filter(
+              item =>
+                item.storeId === activeStoreId &&
+                (item.__optimistic || !sanitizedIds.has(item.id)),
+            )
+            return sortProducts([...sanitized, ...preserved])
           })
           setIsLoadingProducts(false)
         }
