@@ -269,6 +269,15 @@ function normalizeQueueError(value: unknown): string | null {
   return null
 }
 
+/** Hoisted so it's not rebuilt on each render */
+const PAGE_FEATURES = [
+  { path: '/products',  name: 'Products',  description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.' },
+  { path: '/sell',      name: 'Sell',      description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.' },
+  { path: '/receive',   name: 'Receive',   description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.' },
+  { path: '/customers', name: 'Customers', description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.' },
+  { path: '/close-day', name: 'Close Day', description: 'Tie out cash, settle registers, and share end-of-day reports with finance in one view.' },
+] as const
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
@@ -553,14 +562,6 @@ export default function App() {
   }
 
   if (!user) {
-    const PAGE_FEATURES = [
-      { path: '/products',  name: 'Products',  description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.' },
-      { path: '/sell',      name: 'Sell',      description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.' },
-      { path: '/receive',   name: 'Receive',   description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.' },
-      { path: '/customers', name: 'Customers', description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.' },
-      { path: '/close-day', name: 'Close Day', description: 'Tie out cash, settle registers, and share end-of-day reports with finance in one view.' },
-    ] as const
-
     return (
       <main className="app" style={appStyle}>
         <div className="app__layout">
