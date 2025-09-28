@@ -28,9 +28,7 @@ export function useActiveStore(): ActiveStoreState {
   const membershipStoreId = memberships.find(m => m.storeId)?.storeId ?? null
   const normalizedPersistedStoreId =
     persistedStoreId && persistedStoreId.trim() !== '' ? persistedStoreId : null
-  const activeStoreId = isPersistedLoading
-    ? membershipStoreId
-    : normalizedPersistedStoreId ?? membershipStoreId
+  const activeStoreId = membershipStoreId ?? (isPersistedLoading ? null : normalizedPersistedStoreId)
   const hasError = error != null
 
   return useMemo(
