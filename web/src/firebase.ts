@@ -34,7 +34,11 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 
-export const db = initializeFirestore(app, { ignoreUndefinedProperties: true })
+export const db = initializeFirestore(
+  app,
+  { ignoreUndefinedProperties: true },
+  'roster'
+)
 enableIndexedDbPersistence(db).catch(() => {/* multi-tab fallback handled */})
 
 export const storage = getStorage(app)
