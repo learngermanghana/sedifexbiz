@@ -6,9 +6,8 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
 } from 'firebase/auth'
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
+import { doc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { auth, db } from './firebase'
 import './App.css'
@@ -19,6 +18,7 @@ import {
   persistSession,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
+import { resolveStoreAccess, type ResolveStoreAccessResult, type SeededDocument } from './controllers/accessController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 
@@ -74,6 +74,66 @@ async function persistOwnerMetadata(user: User, email: string, phone: string) {
     )
   } catch (error) {
     console.warn('[signup] Failed to persist owner metadata', error)
+  }
+}
+
+const TIMESTAMP_FIELD_KEYS = new Set(['createdAt', 'updatedAt', 'receivedAt'])
+
+function normalizeSeededDocumentData(data: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+
+  Object.entries(data).forEach(([key, value]) => {
+    if (value === undefined) {
+      return
+    }
+
+    if (value === null) {
+      result[key] = null
+      return
+    }
+
+    if (TIMESTAMP_FIELD_KEYS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
+      result[key] = Timestamp.fromMillis(value)
+      return
+    }
+
+    if (Array.isArray(value)) {
+      result[key] = value.map(item => {
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          return normalizeSeededDocumentData(item as Record<string, unknown>)
+        }
+        return item
+      })
+      return
+    }
+
+    if (typeof value === 'object') {
+      result[key] = normalizeSeededDocumentData(value as Record<string, unknown>)
+      return
+    }
+
+    result[key] = value
+  })
+
+  return result
+}
+
+async function persistStoreSeedData(resolution: ResolveStoreAccessResult) {
+  const writes: Promise<unknown>[] = []
+
+  const enqueue = (collectionName: string, document: SeededDocument | null) => {
+    if (!document) return
+    const normalized = normalizeSeededDocumentData(document.data)
+    writes.push(setDoc(doc(db, collectionName, document.id), normalized, { merge: true }))
+  }
+
+  enqueue('teamMembers', resolution.teamMember)
+  enqueue('stores', resolution.store)
+  resolution.products.forEach(product => enqueue('products', product))
+  resolution.customers.forEach(customer => enqueue('customers', customer))
+
+  if (writes.length) {
+    await Promise.all(writes)
   }
 }
 
@@ -348,6 +408,14 @@ export default function App() {
           sanitizedPassword,
         )
         await persistSession(nextUser)
+        try {
+          const resolution = await resolveStoreAccess()
+          await persistStoreSeedData(resolution)
+        } catch (error) {
+          console.warn('[auth] Failed to resolve workspace access', error)
+          setStatus({ tone: 'error', message: getErrorMessage(error) })
+          return
+        }
       } else {
         const { user: nextUser } = await createUserWithEmailAndPassword(
           auth,
