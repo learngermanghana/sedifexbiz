@@ -11,6 +11,7 @@ import {
   type DocumentSnapshot,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'   // SHEET: add
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
@@ -47,6 +48,21 @@ type RosterMember = {
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
 }
+
+// SHEET: additional type for sheet info
+type SheetInfo = {
+  ok: boolean
+  existsOnSheet?: boolean
+  email?: string
+  storeId?: string | null
+  role?: 'owner' | 'staff'
+  company?: string | null
+  contractStart?: string | null
+  contractEnd?: string | null
+  paymentStatus?: string | null
+  amountPaid?: string | null
+  name?: string | null
+} | null
 
 function toNullableString(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' ? value : null
@@ -95,7 +111,7 @@ function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): Roste
   }
 }
 
-function formatValue(value: string | null) {
+function formatValue(value: string | null | undefined) {
   return value ?? '—'
 }
 
@@ -123,6 +139,11 @@ export default function AccountOverview() {
   const [rosterError, setRosterError] = useState<string | null>(null)
   const [rosterVersion, setRosterVersion] = useState(0)
 
+  // SHEET: state for sheet data
+  const [sheetInfo, setSheetInfo] = useState<SheetInfo>(null)
+  const [sheetLoading, setSheetLoading] = useState(false)
+  const [sheetError, setSheetError] = useState<string | null>(null)
+
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Membership['role']>('staff')
   const [password, setPassword] = useState('')
@@ -135,6 +156,34 @@ export default function AccountOverview() {
   }, [memberships, storeId])
 
   const isOwner = activeMembership?.role === 'owner'
+
+  // SHEET: fetch sheet info for the signed-in user
+  useEffect(() => {
+    let cancelled = false
+    setSheetLoading(true)
+    setSheetError(null)
+
+    const fn = httpsCallable(getFunctions(), 'getAccountSheetInfo')
+    fn({})
+      .then((res: any) => {
+        if (cancelled) return
+        setSheetInfo(res?.data ?? null)
+      })
+      .catch((err: any) => {
+        if (cancelled) return
+        console.error('Failed to load sheet info', err)
+        setSheetInfo(null)
+        setSheetError('We could not load your Google Sheet account info.')
+        publish({ message: 'Unable to load sheet info.', tone: 'error' })
+      })
+      .finally(() => {
+        if (!cancelled) setSheetLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [publish])
 
   useEffect(() => {
     if (!storeId) {
@@ -293,17 +342,18 @@ export default function AccountOverview() {
     )
   }
 
-  const isBusy = storeLoading || membershipsLoading || profileLoading || rosterLoading
+  const isBusy = storeLoading || membershipsLoading || profileLoading || rosterLoading || sheetLoading
 
   return (
     <div className="account-overview">
       <h1>Account overview</h1>
 
-      {(membershipsError || profileError || rosterError) && (
+      {(membershipsError || profileError || rosterError || sheetError) && (
         <div className="account-overview__error" role="alert">
           {membershipsError && <p>We could not load your memberships.</p>}
           {profileError && <p>{profileError}</p>}
           {rosterError && <p>{rosterError}</p>}
+          {sheetError && <p>{sheetError}</p>}
         </div>
       )}
 
@@ -311,6 +361,11 @@ export default function AccountOverview() {
         <p role="status" aria-live="polite">
           Loading account details…
         </p>
+      )}
+
+      {/* SHEET: show a quick sheet summary if present */}
+      {sheetInfo?.existsOnSheet === false && (
+        <p role="note">This account email isn’t on the Sedifex sheet.</p>
       )}
 
       {profile && (
@@ -364,6 +419,37 @@ export default function AccountOverview() {
       <section aria-labelledby="account-overview-contract">
         <h2 id="account-overview-contract">Contract &amp; billing</h2>
         <dl className="account-overview__grid">
+          {/* SHEET: new rows from the sheet */}
+          <div>
+            <dt>Store ID (from Sheet)</dt>
+            <dd>{formatValue(sheetInfo?.storeId)}</dd>
+          </div>
+          <div>
+            <dt>Role (from Sheet)</dt>
+            <dd>{formatValue(sheetInfo?.role ?? null)}</dd>
+          </div>
+          <div>
+            <dt>Company</dt>
+            <dd>{formatValue(sheetInfo?.company ?? null)}</dd>
+          </div>
+          <div>
+            <dt>Contract start</dt>
+            <dd>{formatValue(sheetInfo?.contractStart ?? null)}</dd>
+          </div>
+          <div>
+            <dt>Contract end</dt>
+            <dd>{formatValue(sheetInfo?.contractEnd ?? null)}</dd>
+          </div>
+          <div>
+            <dt>Payment status</dt>
+            <dd>{formatValue(sheetInfo?.paymentStatus ?? null)}</dd>
+          </div>
+          <div>
+            <dt>Amount paid</dt>
+            <dd>{formatValue(sheetInfo?.amountPaid ?? null)}</dd>
+          </div>
+
+          {/* existing Firestore billing/profile fields */}
           <div>
             <dt>Contract status</dt>
             <dd>{formatValue(profile?.status ?? null)}</dd>
