@@ -230,6 +230,59 @@ function parseNumberValue(value: unknown): number | null {
   return null
 }
 
+function parseDateValue(value: unknown): admin.firestore.Timestamp | null {
+  if (value instanceof admin.firestore.Timestamp) {
+    return value
+  }
+
+  let candidate: number | null = null
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const parsed = Date.parse(trimmed)
+    if (!Number.isNaN(parsed)) {
+      candidate = parsed
+    }
+  } else if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value > 10_000_000_000) {
+      candidate = value
+    } else if (value > 1_000_000_000) {
+      candidate = value * 1000
+    } else if (value > 0) {
+      const serialEpoch = Date.UTC(1899, 11, 30)
+      candidate = serialEpoch + value * 24 * 60 * 60 * 1000
+    }
+  }
+
+  if (candidate === null) {
+    return null
+  }
+
+  return admin.firestore.Timestamp.fromMillis(candidate)
+}
+
+function getTimestampFromRecord(
+  record: SheetRecord,
+  keys: string[],
+): admin.firestore.Timestamp | null {
+  for (const key of keys) {
+    const raw = record[key]
+    const parsed = parseDateValue(raw)
+    if (parsed) return parsed
+  }
+  return null
+}
+
+function getNumberFromRecord(record: SheetRecord, keys: string[]): number | null {
+  for (const key of keys) {
+    const raw = record[key]
+    const parsed = parseNumberValue(raw)
+    if (parsed !== null) return parsed
+  }
+  return null
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -563,6 +616,39 @@ export const resolveStoreAccess = functions.https.onCall(async (_data, context) 
   const storeStatus =
     getValueFromRecord(record, ['store_status', 'status']) ??
     (typeof existingStore.status === 'string' ? existingStore.status : null)
+  const contractStart =
+    getTimestampFromRecord(record, [
+      'contractStart',
+      'contract_start',
+      'contract_start_date',
+      'contract_start_at',
+      'start_date',
+    ]) ??
+    (existingStore.contractStart instanceof admin.firestore.Timestamp
+      ? existingStore.contractStart
+      : null)
+  const contractEnd =
+    getTimestampFromRecord(record, [
+      'contractEnd',
+      'contract_end',
+      'contract_end_date',
+      'contract_end_at',
+      'end_date',
+    ]) ??
+    (existingStore.contractEnd instanceof admin.firestore.Timestamp
+      ? existingStore.contractEnd
+      : null)
+  const paymentStatus =
+    getValueFromRecord(record, ['paymentStatus', 'payment_status', 'contract_payment_status']) ??
+    (typeof existingStore.paymentStatus === 'string' ? existingStore.paymentStatus : null)
+  const amountPaid =
+    getNumberFromRecord(record, ['amountPaid', 'amount_paid', 'payment_amount', 'contract_amount_paid']) ??
+    (typeof existingStore.amountPaid === 'number' && Number.isFinite(existingStore.amountPaid)
+      ? (existingStore.amountPaid as number)
+      : null)
+  const company =
+    getValueFromRecord(record, ['company', 'company_name', 'business_name']) ??
+    (typeof existingStore.company === 'string' ? existingStore.company : null)
 
   if (isInactiveContractStatus(storeStatus)) {
     throw new functions.https.HttpsError('permission-denied', INACTIVE_WORKSPACE_MESSAGE)
@@ -604,6 +690,11 @@ export const resolveStoreAccess = functions.https.onCall(async (_data, context) 
   if (storeRegion) storeData.region = storeRegion
   if (storePostalCode) storeData.postalCode = storePostalCode
   if (storeCountry) storeData.country = storeCountry
+  if (contractStart) storeData.contractStart = contractStart
+  if (contractEnd) storeData.contractEnd = contractEnd
+  if (paymentStatus) storeData.paymentStatus = paymentStatus
+  if (amountPaid !== null) storeData.amountPaid = amountPaid
+  if (company) storeData.company = company
 
   await storeRef.set(storeData, { merge: true })
 
