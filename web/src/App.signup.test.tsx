@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth'
 import { MemoryRouter } from 'react-router-dom'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { getActiveStoreStorageKey } from './utils/activeStoreStorage'
 
 /** ---------------- hoisted state/mocks ---------------- */
 const mocks = vi.hoisted(() => {
@@ -283,8 +284,9 @@ describe('App signup cleanup', () => {
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({ tone: 'success', message: expect.stringMatching(/All set/i) }),
     )
-    expect(localStorageSetItemSpy).toHaveBeenCalledWith('activeStoreId', storeId)
-    expect(window.localStorage.getItem('activeStoreId')).toBe(storeId)
+    const storageKey = getActiveStoreStorageKey(createdUser.uid)
+    expect(localStorageSetItemSpy).toHaveBeenCalledWith(storageKey, storeId)
+    expect(window.localStorage.getItem(storageKey)).toBe(storeId)
   })
 
   it('creates a team member profile when logging in without an existing doc', async () => {
@@ -340,8 +342,9 @@ describe('App signup cleanup', () => {
     expect(overrideCall).toBeDefined()
     expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
 
-    expect(localStorageSetItemSpy).toHaveBeenCalledWith('activeStoreId', storeId)
-    expect(window.localStorage.getItem('activeStoreId')).toBe(storeId)
+    const storageKey = getActiveStoreStorageKey(existingUser.uid)
+    expect(localStorageSetItemSpy).toHaveBeenCalledWith(storageKey, storeId)
+    expect(window.localStorage.getItem(storageKey)).toBe(storeId)
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({ tone: 'success', message: expect.stringMatching(/Welcome back/i) }),
     )
