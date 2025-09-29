@@ -18,6 +18,7 @@ import {
   persistSession,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
+import { afterSignupBootstrap } from './controllers/accessController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import {
   clearActiveStoreIdForUser,
@@ -394,6 +395,8 @@ export default function App() {
 
         // Optional additional doc for UX
         await persistOwnerSideDocs(nextUser, storeId, sanitizedPhone)
+
+        await afterSignupBootstrap(storeId)
 
         try { await nextUser.getIdToken(true) } catch {}
         setOnboardingStatus(nextUser.uid, 'pending')
