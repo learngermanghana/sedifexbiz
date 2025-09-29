@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   collection,
   query,
@@ -52,11 +52,8 @@ type ReceiptData = {
   createdAt: Date
   items: CartLine[]
   subtotal: number
-  payment: {
-    method: string
-    amountPaid: number
-    changeDue: number
-  }
+  tenders: Record<string, number>
+  changeDue: number
   customer?: {
     name: string
     phone?: string
@@ -157,6 +154,35 @@ function sanitizePrice(value: unknown): number | null {
   return null
 }
 
+type TenderEntry = { method: string; amount: number }
+
+function normalizeTenderEntries(tenders: Record<string, number>): TenderEntry[] {
+  return Object.entries(tenders)
+    .map(([method, amount]) => ({ method, amount }))
+    .filter(entry => Number.isFinite(entry.amount) && entry.amount > 0)
+}
+
+function getTenderTotal(tenders: Record<string, number>): number {
+  return normalizeTenderEntries(tenders).reduce((sum, entry) => sum + entry.amount, 0)
+}
+
+function formatTenderMethod(method: string): string {
+  const normalized = method.trim().toLowerCase()
+  if (!normalized) return 'Unknown'
+  if (normalized === 'cash') return 'Cash'
+  if (normalized === 'card') return 'Card'
+  if (normalized === 'mobile') return 'Mobile'
+  return method
+}
+
+function formatTenderBreakdown(tenders: Record<string, number>): string {
+  const entries = normalizeTenderEntries(tenders)
+  if (!entries.length) return ''
+  return entries
+    .map(entry => `${formatTenderMethod(entry.method)} GHS ${entry.amount.toFixed(2)}`)
+    .join(' • ')
+}
+
 export default function Sell() {
   const user = useAuthUser()
   const { storeId: activeStoreId } = useActiveStoreContext()
@@ -188,6 +214,15 @@ export default function Sell() {
   const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : subtotal
   const changeDue = Math.max(0, amountPaid - subtotal)
   const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0
+  const tenders = useMemo(() => {
+    const entries: Record<string, number> = {}
+    if (paymentMethod === 'card') entries.card = subtotal
+    if (paymentMethod === 'mobile') entries.mobile = subtotal
+    if (paymentMethod === 'cash') entries.cash = amountPaid
+    return entries
+  }, [amountPaid, paymentMethod, subtotal])
+  const tenderTotal = useMemo(() => getTenderTotal(tenders), [tenders])
+  const tenderBreakdown = useMemo(() => formatTenderBreakdown(tenders), [tenders])
 
   useEffect(() => {
     let cancelled = false
@@ -346,8 +381,12 @@ export default function Sell() {
 
     lines.push('')
     lines.push(`Subtotal: GHS ${receipt.subtotal.toFixed(2)}`)
-    lines.push(`Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`)
-    lines.push(`Change: GHS ${receipt.payment.changeDue.toFixed(2)}`)
+    const receiptTenderTotal = getTenderTotal(receipt.tenders)
+    lines.push(`Paid: GHS ${receiptTenderTotal.toFixed(2)}`)
+    normalizeTenderEntries(receipt.tenders).forEach(entry => {
+      lines.push(`  ${formatTenderMethod(entry.method)} — GHS ${entry.amount.toFixed(2)}`)
+    })
+    lines.push(`Change: GHS ${receipt.changeDue.toFixed(2)}`)
     lines.push('')
     lines.push(`Sale #${receipt.saleId}`)
     lines.push('Thank you for shopping with us!')
@@ -554,11 +593,8 @@ export default function Sell() {
           cashierId: user.uid,
           total: subtotal,
           taxTotal: 0,
-          payment: {
-            method: paymentMethod,
-            amountPaid,
-            changeDue,
-          },
+          tenders: { ...tenders },
+          changeDue,
           customer: saleCustomer,
           items: normalizedItems,
           createdBy: user.uid,
@@ -658,11 +694,8 @@ export default function Sell() {
         createdAt: new Date(),
         items: receiptItems,
         subtotal,
-        payment: {
-          method: paymentMethod,
-          amountPaid,
-          changeDue,
-        },
+        tenders: { ...tenders },
+        changeDue,
         customer: saleCustomer || undefined,
       })
       setCart([])
@@ -886,7 +919,10 @@ export default function Sell() {
                 </div>
                 <div>
                   <span className="sell-page__summary-label">Paid</span>
-                  <strong>GHS {amountPaid.toFixed(2)}</strong>
+                  <strong>GHS {tenderTotal.toFixed(2)}</strong>
+                  {tenderBreakdown && (
+                    <span className="sell-page__payment-breakdown">{tenderBreakdown}</span>
+                  )}
                 </div>
                 <div className={`sell-page__change${isCashShort ? ' is-short' : ''}`}>
                   <span className="sell-page__summary-label">{isCashShort ? 'Short' : 'Change due'}</span>
@@ -1010,12 +1046,15 @@ export default function Sell() {
                 <strong>GHS {receipt.subtotal.toFixed(2)}</strong>
               </div>
               <div>
-                <span>Paid ({receipt.payment.method})</span>
-                <strong>GHS {receipt.payment.amountPaid.toFixed(2)}</strong>
+                <span>Paid</span>
+                <strong>GHS {getTenderTotal(receipt.tenders).toFixed(2)}</strong>
+                {formatTenderBreakdown(receipt.tenders) && (
+                  <span className="receipt-print__tenders">{formatTenderBreakdown(receipt.tenders)}</span>
+                )}
               </div>
               <div>
                 <span>Change</span>
-                <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
+                <strong>GHS {receipt.changeDue.toFixed(2)}</strong>
               </div>
             </div>
 

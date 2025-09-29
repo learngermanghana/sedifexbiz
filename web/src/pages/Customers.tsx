@@ -42,7 +42,8 @@ type SaleHistoryEntry = {
   id: string
   total: number
   createdAt: Date | null
-  paymentMethod?: string | null
+  tenders: Record<string, number>
+  tenderSummary: string | null
   items: { name?: string | null; qty?: number | null }[]
 }
 
@@ -57,7 +58,7 @@ type CachedSaleRecord = {
   customer?: { id?: string | null } | null
   createdAt?: unknown
   total?: unknown
-  payment?: { method?: unknown } | null
+  tenders?: Record<string, unknown> | null
   items?: unknown
 } & Record<string, unknown>
 
@@ -122,6 +123,29 @@ function normalizeTags(input: string): string[] {
         .map(tag => tag.replace(/^#/, ''))
     )
   )
+}
+
+function normalizeTenderEntries(tenders: Record<string, unknown>): Array<{ method: string; amount: number }> {
+  return Object.entries(tenders)
+    .map(([method, value]) => ({ method, amount: typeof value === 'number' ? value : Number(value) }))
+    .filter(entry => Number.isFinite(entry.amount) && entry.amount > 0)
+}
+
+function formatTenderMethod(method: string): string {
+  const normalized = method.trim().toLowerCase()
+  if (!normalized) return 'Unknown'
+  if (normalized === 'cash') return 'Cash'
+  if (normalized === 'card') return 'Card'
+  if (normalized === 'mobile') return 'Mobile'
+  return method
+}
+
+function formatTenderSummary(tenders: Record<string, unknown>): string | null {
+  const entries = normalizeTenderEntries(tenders)
+  if (!entries.length) return null
+  return entries
+    .map(entry => `${formatTenderMethod(entry.method)} GHS ${entry.amount.toFixed(2)}`)
+    .join(' • ')
 }
 
 function formatDate(date: Date | null): string {
@@ -331,10 +355,18 @@ export default function Customers() {
 
       const createdAt = normalizeSaleDate(record.createdAt)
       const total = Number(record.total ?? 0) || 0
-      const paymentMethod =
-        record.payment && typeof record.payment === 'object'
-          ? (record.payment as { method?: string | null }).method ?? null
+      const tenderEntries =
+        record.tenders && typeof record.tenders === 'object'
+          ? normalizeTenderEntries(record.tenders as Record<string, unknown>)
+          : []
+      const tenderSummary =
+        record.tenders && typeof record.tenders === 'object'
+          ? formatTenderSummary(record.tenders as Record<string, unknown>)
           : null
+      const tenders = tenderEntries.reduce<Record<string, number>>((acc, entry) => {
+        acc[entry.method] = entry.amount
+        return acc
+      }, {})
       const itemsSource = Array.isArray(record.items) ? record.items : []
       const items = itemsSource.map(item =>
         item && typeof item === 'object'
@@ -356,7 +388,8 @@ export default function Customers() {
         id: record.id,
         total,
         createdAt,
-        paymentMethod,
+        tenders,
+        tenderSummary,
         items: items.map(item => ({
           name: item?.name ?? null,
           qty: item?.qty ?? null,
@@ -1138,7 +1171,9 @@ export default function Customers() {
                           <span className="customers-page__history-total">{currencyFormatter.format(entry.total)}</span>
                         </div>
                         <div className="customers-page__history-meta">
-                          {entry.paymentMethod ? `Paid via ${entry.paymentMethod}` : 'Payment method not recorded'}
+                          {entry.tenderSummary
+                            ? `Paid: ${entry.tenderSummary}`
+                            : 'Tender details not recorded'}
                         </div>
                         {entry.items?.length ? (
                           <div className="customers-page__history-items">

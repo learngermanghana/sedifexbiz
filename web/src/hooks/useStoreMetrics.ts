@@ -39,11 +39,8 @@ type SaleRecord = {
   total?: number
   createdAt?: Timestamp | Date | null
   items?: Array<{ productId: string; name?: string; price?: number; qty?: number }>
-  payment?: {
-    method?: string
-    amountPaid?: number
-    changeDue?: number
-  }
+  tenders?: Record<string, number> | null
+  changeDue?: number
   storeId?: string | null
 }
 

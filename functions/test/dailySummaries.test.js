@@ -71,7 +71,7 @@ async function runSalesAggregationTest() {
     createSnapshot('sale-1', {
       storeId: 'store-123',
       total: 120.5,
-      payment: { method: 'cash' },
+      tenders: { cash: 120.5 },
       createdAt: saleTimestamp,
     }),
     {
@@ -96,7 +96,7 @@ async function runSalesAggregationTest() {
     createSnapshot('sale-2', {
       storeId: 'store-123',
       total: 100,
-      payment: { method: 'card' },
+      tenders: { card: 100 },
       createdAt: secondSaleTimestamp,
     }),
     {
