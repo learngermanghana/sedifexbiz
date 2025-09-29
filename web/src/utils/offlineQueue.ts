@@ -5,7 +5,7 @@ const PROJECT_ID = import.meta.env.VITE_FB_PROJECT_ID
 
 const SYNC_TAG = 'sync-pending-requests'
 
-type QueueRequestType = 'receipt'
+export type QueueRequestType = 'sale' | 'receipt'
 
 type QueueMessage = {
   type: 'QUEUE_BACKGROUND_REQUEST'

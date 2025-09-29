@@ -26,6 +26,7 @@ import {
   persistActiveStoreIdForUser,
 } from './utils/activeStoreStorage'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
+import type { QueueRequestType } from './utils/offlineQueue'
 
 /* ------------------------------ config ------------------------------ */
 /** If you want to ALSO mirror the team member to a fixed doc id, put it here. */
@@ -36,8 +37,6 @@ const OVERRIDE_MEMBER_DOC_ID = 'l8Rbmym8aBVMwL6NpZHntjBHmCo2' // set '' to disab
 type AuthMode = 'login' | 'signup'
 type StatusTone = 'idle' | 'loading' | 'success' | 'error'
 interface StatusState { tone: StatusTone; message: string }
-
-type QueueRequestType = 'sale' | 'receipt'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
