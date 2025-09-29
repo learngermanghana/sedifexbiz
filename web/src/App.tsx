@@ -465,6 +465,9 @@ export default function App() {
 
         persistActiveStoreId(resolution.storeId)
         if (hasSeedData(resolution)) await persistStoreSeedData(resolution)
+
+        try { await nextUser.getIdToken(true) }
+        catch (error) { console.warn('[auth] Unable to refresh ID token after login', error) }
       } else {
         const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
