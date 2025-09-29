@@ -136,7 +136,11 @@ export function useGoalPlanner(): UseGoalPlannerResult {
       }
 
       try {
-        await (writer as typeof setDoc)(documentRef, data, { merge: true })
+        if (writer === setDoc) {
+          await setDoc(documentRef, data, { merge: true })
+        } else {
+          await updateDoc(documentRef, data)
+        }
       } catch (error) {
         publish({ tone: 'error', message: 'We could not update your goals. Please try again.' })
         throw error
