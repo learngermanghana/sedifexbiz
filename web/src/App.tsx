@@ -33,9 +33,9 @@ type AuthMode = 'login' | 'signup'
 type StatusTone = 'idle' | 'loading' | 'success' | 'error'
 interface StatusState { tone: StatusTone; message: string }
 
-type QueueRequestType = 'sale' | 'receipt'
+type QueueRequestType = 'receipt'
 function isQueueRequestType(value: unknown): value is QueueRequestType {
-  return value === 'sale' || value === 'receipt'
+  return value === 'receipt'
 }
 
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
@@ -259,7 +259,7 @@ function isQueueFailedMessage(value: unknown): value is QueueFailedMessage {
 }
 function getQueueRequestLabel(requestType: unknown): string {
   if (!isQueueRequestType(requestType)) return 'request'
-  return requestType === 'receipt' ? 'stock receipt' : 'sale'
+  return 'stock receipt'
 }
 function normalizeQueueError(value: unknown): string | null {
   if (typeof value === 'string') {

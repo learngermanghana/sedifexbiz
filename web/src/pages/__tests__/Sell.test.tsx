@@ -22,17 +22,12 @@ vi.mock('../../utils/offlineCache', () => ({
     mockSaveCachedCustomers(...args),
 }))
 
-vi.mock('../../utils/offlineQueue', () => ({
-  queueCallableRequest: vi.fn(async () => false),
-}))
-
 vi.mock('../../utils/pdf', () => ({
   buildSimplePdf: vi.fn(async () => ({ blob: new Blob(), url: 'blob:test' })),
 }))
 
 vi.mock('../../firebase', () => ({
   db: {},
-  functions: {},
 }))
 
 const mockUseAuthUser = vi.fn(() => ({ uid: 'user-1', email: 'cashier@example.com' }))
@@ -71,9 +66,11 @@ const onSnapshotMock = vi.fn(
 )
 const docMock = vi.fn((collectionRef: { path: string }, id?: string) => ({
   type: 'doc',
-  path: id ? `${collectionRef.path}/${id}` : collectionRef.path,
-  id,
+  path: id ? `${collectionRef.path}/${id}` : `${collectionRef.path}/auto-id`,
+  id: id ?? 'auto-id',
 }))
+const runTransactionMock = vi.fn(async () => {})
+const serverTimestampMock = vi.fn(() => 'server-timestamp')
 
 vi.mock('firebase/firestore', () => ({
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
@@ -83,10 +80,8 @@ vi.mock('firebase/firestore', () => ({
   onSnapshot: (...args: Parameters<typeof onSnapshotMock>) => onSnapshotMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
-}))
-
-vi.mock('firebase/functions', () => ({
-  httpsCallable: vi.fn(() => vi.fn(async () => ({ data: { ok: true, saleId: 'sale-1' } }))),
+  runTransaction: (...args: Parameters<typeof runTransactionMock>) => runTransactionMock(...args),
+  serverTimestamp: () => serverTimestampMock(),
 }))
 
 function createProductDoc(id: string, overrides: Record<string, unknown> = {}) {
