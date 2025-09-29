@@ -31,7 +31,7 @@ function parseQuantity(input: string): number {
 
 export default function CloseDay() {
   const user = useAuthUser()
-  const { storeId: activeStoreId } = useActiveStoreContext()
+  const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
 
   const [total, setTotal] = useState(0)
   const [cashCounts, setCashCounts] = useState<CashCountState>(() => createInitialCashCountState())
@@ -47,6 +47,7 @@ export default function CloseDay() {
   useEffect(() => {
     const start = new Date()
     start.setHours(0, 0, 0, 0)
+    setTotal(0)
     if (!activeStoreId) {
       setTotal(0)
       return () => {
@@ -65,7 +66,19 @@ export default function CloseDay() {
       snap.forEach(d => sum += (d.data().total || 0))
       setTotal(sum)
     })
-  }, [activeStoreId])
+  }, [activeStoreId, storeChangeToken])
+
+  useEffect(() => {
+    setCashCounts(createInitialCashCountState())
+    setLooseCash('')
+    setCardAndDigital('')
+    setCashRemoved('')
+    setCashAdded('')
+    setNotes('')
+    setSubmitError(null)
+    setSubmitSuccess(false)
+    setIsSubmitting(false)
+  }, [storeChangeToken])
 
   useEffect(() => {
     const style = document.createElement('style')

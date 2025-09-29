@@ -35,7 +35,15 @@ vi.mock('../../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-const mockUseActiveStoreContext = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
+const mockUseActiveStoreContext = vi.fn(() => ({
+  storeId: 'store-1',
+  isLoading: false,
+  error: null,
+  memberships: [],
+  membershipsLoading: false,
+  setActiveStoreId: vi.fn(),
+  storeChangeToken: 0,
+}))
 vi.mock('../../context/ActiveStoreProvider', () => ({
   useActiveStoreContext: () => mockUseActiveStoreContext(),
 }))
@@ -113,7 +121,15 @@ describe('Sell page barcode scanner', () => {
     mockUseAuthUser.mockReset()
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'cashier@example.com' })
     mockUseActiveStoreContext.mockReset()
-    mockUseActiveStoreContext.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockUseActiveStoreContext.mockReturnValue({
+      storeId: 'store-1',
+      isLoading: false,
+      error: null,
+      memberships: [],
+      membershipsLoading: false,
+      setActiveStoreId: vi.fn(),
+      storeChangeToken: 0,
+    })
 
     mockLoadCachedProducts.mockResolvedValue([])
     mockLoadCachedCustomers.mockResolvedValue([])

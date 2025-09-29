@@ -150,7 +150,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Products() {
-  const { storeId: activeStoreId } = useActiveStoreContext()
+  const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -165,8 +165,10 @@ export default function Products() {
   const [isUpdating, setIsUpdating] = useState(false)
 
   useEffect(() => {
-    let cancelled = false
+    setProducts([])
     setLoadError(null)
+
+    let cancelled = false
 
     if (!activeStoreId) {
       setProducts([])
@@ -251,7 +253,17 @@ export default function Products() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, storeChangeToken])
+
+  useEffect(() => {
+    setFilterText('')
+    setShowLowStockOnly(false)
+    setCreateForm(DEFAULT_CREATE_FORM)
+    setCreateStatus(null)
+    setEditForm(DEFAULT_EDIT_FORM)
+    setEditStatus(null)
+    setEditingProductId(null)
+  }, [storeChangeToken])
 
   useEffect(() => {
     if (!editingProductId) {
