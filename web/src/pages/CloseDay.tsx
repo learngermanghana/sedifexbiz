@@ -152,6 +152,8 @@ export default function CloseDay() {
               uid: user.uid,
               displayName: user.displayName || null,
               email: user.email || null,
+              phoneNumber: user.phoneNumber || null,
+              photoURL: user.photoURL || null,
             }
           : null,
         closedAt: serverTimestamp(),
