@@ -22,6 +22,13 @@ export function formatDateKey(date: Date) {
   return `${year}${month}${day}`
 }
 
+type TopProduct = {
+  id: string
+  name: string
+  unitsSold: number
+  salesTotal: number
+}
+
 type DailySummary = {
   salesTotal: number
   salesCount: number
@@ -30,6 +37,22 @@ type DailySummary = {
   receiptCount: number
   receiptUnits: number
   newCustomers: number
+  previousSalesTotal: number | null
+  previousSalesCount: number | null
+  topProducts: TopProduct[]
+}
+
+type MetricCard = {
+  type: 'metric'
+  title: string
+  primary: string
+  secondary: string
+}
+
+type ProductsCard = {
+  type: 'products'
+  title: string
+  products: TopProduct[]
 }
 
 type ActivityEntry = {
@@ -80,6 +103,46 @@ function toInteger(value: unknown) {
   return 0
 }
 
+function mapTopProducts(value: unknown): TopProduct[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((entry, index) => {
+      if (!entry || typeof entry !== 'object') {
+        return null
+      }
+
+      const record = entry as Record<string, unknown>
+      const rawId =
+        typeof record.id === 'string' && record.id.trim()
+          ? record.id.trim()
+          : typeof record.productId === 'string' && record.productId.trim()
+            ? record.productId.trim()
+            : null
+
+      const rawName =
+        typeof record.name === 'string' && record.name.trim()
+          ? record.name.trim()
+          : null
+
+      const unitsSold = toInteger(
+        record.unitsSold ?? record.quantity ?? record.qty ?? record.units ?? record.count,
+      )
+
+      const salesTotal = toNumber(
+        record.salesTotal ?? record.total ?? record.revenue ?? record.amount ?? record.value,
+      )
+
+      return {
+        id: rawId ?? `product-${index}`,
+        name: rawName ?? rawId ?? `Product ${index + 1}`,
+        unitsSold,
+        salesTotal,
+      }
+    })
+    .filter((product): product is TopProduct => Boolean(product))
+}
+
 function mapDailySummary(data: DocumentData | undefined): DailySummary {
   return {
     salesTotal: toNumber(data?.salesTotal),
@@ -89,6 +152,15 @@ function mapDailySummary(data: DocumentData | undefined): DailySummary {
     receiptCount: toInteger(data?.receiptCount),
     receiptUnits: toInteger(data?.receiptUnits),
     newCustomers: toInteger(data?.newCustomers),
+    previousSalesTotal:
+      data && Object.prototype.hasOwnProperty.call(data, 'previousSalesTotal')
+        ? toNumber((data as Record<string, unknown>).previousSalesTotal)
+        : null,
+    previousSalesCount:
+      data && Object.prototype.hasOwnProperty.call(data, 'previousSalesCount')
+        ? toInteger((data as Record<string, unknown>).previousSalesCount)
+        : null,
+    topProducts: mapTopProducts(data && (data as Record<string, unknown>).topProducts),
   }
 }
 
@@ -152,6 +224,17 @@ function formatNumber(value: number) {
   return value.toLocaleString()
 }
 
+function formatSignedCurrency(value: number) {
+  const formatted = formatCurrency(Math.abs(value))
+  const sign = value >= 0 ? '+' : '-'
+  return `${sign}${formatted}`
+}
+
+function formatSignedPercentage(value: number) {
+  const sign = value >= 0 ? '+' : '-'
+  return `${sign}${Math.abs(value).toFixed(1)}%`
+}
+
 function formatTime(value: Date | null) {
   if (!value) return '—'
   try {
@@ -167,6 +250,11 @@ export default function Today() {
 
   const today = useMemo(() => new Date(), [])
   const todayKey = useMemo(() => formatDateKey(today), [today])
+  const previousDayKey = useMemo(() => {
+    const previous = new Date(today)
+    previous.setDate(previous.getDate() - 1)
+    return formatDateKey(previous)
+  }, [today])
   const todayLabel = useMemo(
     () =>
       today.toLocaleDateString(undefined, {
@@ -178,6 +266,7 @@ export default function Today() {
   )
 
   const [summary, setSummary] = useState<DailySummary | null>(null)
+  const [previousSummary, setPreviousSummary] = useState<DailySummary | null>(null)
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryError, setSummaryError] = useState<string | null>(null)
 
@@ -188,6 +277,7 @@ export default function Today() {
   useEffect(() => {
     if (!storeId) {
       setSummary(null)
+      setPreviousSummary(null)
       setSummaryLoading(false)
       setSummaryError(null)
       return
@@ -197,20 +287,30 @@ export default function Today() {
     setSummaryLoading(true)
     setSummaryError(null)
 
-    const ref = doc(db, 'dailySummaries', `${storeId}_${todayKey}`)
-    getDoc(ref)
-      .then(snapshot => {
+    const todayRef = doc(db, 'dailySummaries', `${storeId}_${todayKey}`)
+    const previousRef = doc(db, 'dailySummaries', `${storeId}_${previousDayKey}`)
+
+    Promise.all([getDoc(todayRef), getDoc(previousRef)])
+      .then(([todaySnapshot, previousSnapshot]) => {
         if (cancelled) return
-        if (snapshot.exists()) {
-          setSummary(mapDailySummary(snapshot.data()))
+
+        if (todaySnapshot.exists()) {
+          setSummary(mapDailySummary(todaySnapshot.data()))
         } else {
           setSummary(mapDailySummary(undefined))
+        }
+
+        if (previousSnapshot.exists()) {
+          setPreviousSummary(mapDailySummary(previousSnapshot.data()))
+        } else {
+          setPreviousSummary(null)
         }
       })
       .catch(error => {
         if (cancelled) return
         console.error('[today] failed to load daily summary', error)
         setSummary(null)
+        setPreviousSummary(null)
         setSummaryError("We couldn't load today's summary.")
       })
       .finally(() => {
@@ -221,7 +321,7 @@ export default function Today() {
     return () => {
       cancelled = true
     }
-  }, [storeId, todayKey, storeChangeToken])
+  }, [storeId, todayKey, previousDayKey, storeChangeToken])
 
   useEffect(() => {
     if (!storeId) {
@@ -266,10 +366,25 @@ export default function Today() {
 
   useEffect(() => {
     setSummary(null)
+    setPreviousSummary(null)
     setSummaryError(null)
     setActivities([])
     setActivitiesError(null)
   }, [storeChangeToken])
+
+  const sortedTopProducts = useMemo(() => {
+    if (!summary) return []
+
+    return [...summary.topProducts]
+      .sort((a, b) => {
+        if (b.salesTotal !== a.salesTotal) {
+          return b.salesTotal - a.salesTotal
+        }
+
+        return b.unitsSold - a.unitsSold
+      })
+      .slice(0, 5)
+  }, [summary])
 
   if (storeLoading) {
     return (
@@ -289,32 +404,90 @@ export default function Today() {
     )
   }
 
-  const kpis = summary
+  const baselineSalesTotal =
+    summary?.previousSalesTotal ?? previousSummary?.salesTotal ?? null
+
+  const salesVarianceValue =
+    summary && baselineSalesTotal !== null ? summary.salesTotal - baselineSalesTotal : null
+
+  const salesVariancePercentage =
+    salesVarianceValue !== null && baselineSalesTotal && baselineSalesTotal !== 0
+      ? (salesVarianceValue / baselineSalesTotal) * 100
+      : null
+
+  const variancePrimary =
+    salesVarianceValue === null ? '—' : formatSignedCurrency(salesVarianceValue)
+
+  let varianceSecondary = 'No prior sales data'
+  if (baselineSalesTotal === null) {
+    varianceSecondary = 'No prior sales data'
+  } else if (baselineSalesTotal === 0) {
+    varianceSecondary =
+      summary && summary.salesTotal === 0
+        ? 'No sales recorded today or yesterday'
+        : 'No sales recorded yesterday'
+  } else if (salesVariancePercentage !== null) {
+    varianceSecondary = `${formatSignedPercentage(salesVariancePercentage)} vs ${formatCurrency(
+      baselineSalesTotal,
+    )} yesterday`
+  }
+
+  const averageBasketSize =
+    summary && summary.salesCount > 0 ? summary.salesTotal / summary.salesCount : 0
+
+  const averageBasketSecondary =
+    summary && summary.salesCount > 0
+      ? `Across ${formatNumber(summary.salesCount)} sale${summary.salesCount === 1 ? '' : 's'}`
+      : 'No sales recorded today'
+
+  const cards: Array<MetricCard | ProductsCard> = summary
     ? [
         {
+          type: 'metric',
           title: 'Sales',
           primary: formatCurrency(summary.salesTotal),
           secondary: `${formatNumber(summary.salesCount)} sale${summary.salesCount === 1 ? '' : 's'}`,
         },
         {
+          type: 'metric',
+          title: 'Sales variance',
+          primary: variancePrimary,
+          secondary: varianceSecondary,
+        },
+        {
+          type: 'metric',
+          title: 'Average basket size',
+          primary: formatCurrency(averageBasketSize),
+          secondary: averageBasketSecondary,
+        },
+        {
+          type: 'metric',
           title: 'Card payments',
           primary: formatCurrency(summary.cardTotal),
           secondary: 'Card & digital total',
         },
         {
+          type: 'metric',
           title: 'Cash payments',
           primary: formatCurrency(summary.cashTotal),
           secondary: 'Cash counted today',
         },
         {
+          type: 'metric',
           title: 'Receipts',
           primary: `${formatNumber(summary.receiptCount)} receipt${summary.receiptCount === 1 ? '' : 's'}`,
           secondary: `${formatNumber(summary.receiptUnits)} unit${summary.receiptUnits === 1 ? '' : 's'}`,
         },
         {
+          type: 'metric',
           title: 'New customers',
           primary: formatNumber(summary.newCustomers),
           secondary: 'Added to your CRM',
+        },
+        {
+          type: 'products',
+          title: 'Top products',
+          products: sortedTopProducts,
         },
       ]
     : []
@@ -346,36 +519,95 @@ export default function Today() {
           )}
         </div>
 
-        {summaryLoading && kpis.length === 0 ? (
+        {summaryLoading && cards.length === 0 ? (
           <p style={{ color: '#475569' }}>Loading today&apos;s summary…</p>
-        ) : summaryError && kpis.length === 0 ? (
+        ) : summaryError && cards.length === 0 ? (
           <p style={{ color: '#DC2626' }}>{summaryError}</p>
         ) : (
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
               gap: 16,
             }}
           >
-            {kpis.map(kpi => (
-              <article
-                key={kpi.title}
-                style={{
-                  background: '#FFFFFF',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: 16,
-                  padding: '16px 18px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 8,
-                }}
-              >
-                <span style={{ fontSize: 13, color: '#64748B' }}>{kpi.title}</span>
-                <strong style={{ fontSize: 24, color: '#0F172A' }}>{kpi.primary}</strong>
-                <span style={{ fontSize: 12, color: '#475569' }}>{kpi.secondary}</span>
-              </article>
-            ))}
+            {cards.map(card => {
+              if (card.type === 'metric') {
+                return (
+                  <article
+                    key={card.title}
+                    style={{
+                      background: '#FFFFFF',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: 16,
+                      padding: '16px 18px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{ fontSize: 13, color: '#64748B' }}>{card.title}</span>
+                    <strong style={{ fontSize: 24, color: '#0F172A' }}>{card.primary}</strong>
+                    <span style={{ fontSize: 12, color: '#475569' }}>{card.secondary}</span>
+                  </article>
+                )
+              }
+
+              const hasProducts = card.products.length > 0
+
+              return (
+                <article
+                  key={card.title}
+                  style={{
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: 16,
+                    padding: '16px 18px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12,
+                  }}
+                >
+                  <span style={{ fontSize: 13, color: '#64748B' }}>{card.title}</span>
+                  {hasProducts ? (
+                    <ol
+                      style={{
+                        listStyle: 'none',
+                        padding: 0,
+                        margin: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 10,
+                      }}
+                    >
+                      {card.products.map(product => (
+                        <li
+                          key={product.id}
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2,
+                          }}
+                        >
+                          <span style={{ fontSize: 14, color: '#0F172A', fontWeight: 600 }}>
+                            {product.name}
+                          </span>
+                          <span style={{ fontSize: 12, color: '#475569' }}>
+                            {formatCurrency(product.salesTotal)} ·{' '}
+                            {formatNumber(product.unitsSold)} unit
+                            {product.unitsSold === 1 ? '' : 's'} sold
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <span style={{ fontSize: 12, color: '#475569' }}>
+                      No product sales recorded today.
+                    </span>
+                  )}
+                </article>
+              )
+            })}
           </div>
         )}
       </section>
