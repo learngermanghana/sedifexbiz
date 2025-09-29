@@ -1,6 +1,7 @@
 import React from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import Today, { formatDateKey } from '../Today'
 
@@ -72,6 +73,20 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 describe('Today page', () => {
+  function mockEmptyFirestoreResponses() {
+    getDocMock
+      .mockResolvedValueOnce({
+        exists: () => false,
+        data: () => ({}),
+      })
+      .mockResolvedValueOnce({
+        exists: () => false,
+        data: () => ({}),
+      })
+
+    getDocsMock.mockResolvedValue({ docs: [] })
+  }
+
   beforeEach(() => {
     mockUseActiveStoreContext.mockReset()
     mockUseActiveStoreContext.mockReturnValue({
@@ -284,5 +299,98 @@ describe('Today page', () => {
     expect(screen.getAllByText('GHS 0.00').length).toBeGreaterThan(0)
     expect(screen.getByText('No sales recorded today')).toBeInTheDocument()
     expect(screen.getByText('No product sales recorded today.')).toBeInTheDocument()
+  })
+
+  it('renders quick action buttons with correct destinations', async () => {
+    mockEmptyFirestoreResponses()
+
+    render(
+      <MemoryRouter>
+        <Today />
+      </MemoryRouter>,
+    )
+
+    const newProduct = await screen.findByRole('link', {
+      name: /create a new product in your catalog/i,
+    })
+    const receiveStock = screen.getByRole('link', {
+      name: /record received stock items/i,
+    })
+    const startSale = screen.getByRole('link', {
+      name: /start a new point of sale session/i,
+    })
+
+    expect(newProduct).toHaveAttribute('href', '/products')
+    expect(receiveStock).toHaveAttribute('href', '/receive')
+    expect(startSale).toHaveAttribute('href', '/sell')
+    expect(newProduct).toHaveTextContent('New Product')
+    expect(receiveStock).toHaveTextContent('Receive Stock')
+    expect(startSale).toHaveTextContent('Start Sale')
+  })
+
+  it('navigates to the products page when using the New Product quick action', async () => {
+    mockEmptyFirestoreResponses()
+
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Today />} />
+          <Route path="/products" element={<p>Products workspace</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const newProduct = await screen.findByRole('link', {
+      name: /create a new product in your catalog/i,
+    })
+    await user.click(newProduct)
+
+    expect(await screen.findByText('Products workspace')).toBeInTheDocument()
+  })
+
+  it('navigates to the receive stock page when using the Receive Stock quick action', async () => {
+    mockEmptyFirestoreResponses()
+
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Today />} />
+          <Route path="/receive" element={<p>Receive stock workspace</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const receiveStock = await screen.findByRole('link', {
+      name: /record received stock items/i,
+    })
+    await user.click(receiveStock)
+
+    expect(await screen.findByText('Receive stock workspace')).toBeInTheDocument()
+  })
+
+  it('navigates to the sell page when using the Start Sale quick action', async () => {
+    mockEmptyFirestoreResponses()
+
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Today />} />
+          <Route path="/sell" element={<p>Point of sale</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    const startSale = await screen.findByRole('link', {
+      name: /start a new point of sale session/i,
+    })
+    await user.click(startSale)
+
+    expect(await screen.findByText('Point of sale')).toBeInTheDocument()
   })
 })
