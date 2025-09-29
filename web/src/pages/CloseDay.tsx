@@ -82,7 +82,35 @@ export default function CloseDay() {
 
   useEffect(() => {
     const style = document.createElement('style')
-    style.textContent = `@media print { .no-print { display: none !important; } .print-summary { max-width: 100% !important; } }`
+    style.textContent = `@page { size: A5 portrait; margin: 0.5in; }
+      @media print {
+        body {
+          margin: 0;
+        }
+        .no-print {
+          display: none !important;
+        }
+        .print-summary {
+          box-sizing: border-box;
+          width: 100% !important;
+          max-width: none !important;
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+        .print-summary h2 {
+          margin-bottom: 8px !important;
+          font-size: 20px !important;
+        }
+        .print-summary__section {
+          margin-top: 12px !important;
+          padding-top: 8px !important;
+          page-break-inside: avoid;
+        }
+        .print-summary__total {
+          font-size: 24px !important;
+          margin-bottom: 12px !important;
+        }
+      }`
     document.head.appendChild(style)
     return () => {
       document.head.removeChild(style)
@@ -184,11 +212,11 @@ export default function CloseDay() {
     <div className="print-summary" style={{ maxWidth: 760 }}>
       <h2 style={{ color: '#4338CA' }}>Close Day</h2>
 
-      <form onSubmit={handleSubmit}>
-        <section style={{ marginTop: 24 }}>
+      <form className="print-summary__form" onSubmit={handleSubmit}>
+        <section className="print-summary__section" style={{ marginTop: 24 }}>
           <h3 style={{ marginBottom: 8 }}>Sales Summary</h3>
           <p style={{ marginBottom: 8 }}>Today’s sales total</p>
-          <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 16 }}>GHS {total.toFixed(2)}</div>
+          <div className="print-summary__total" style={{ fontSize: 32, fontWeight: 800, marginBottom: 16 }}>GHS {total.toFixed(2)}</div>
           <div style={{ display: 'grid', gap: 12, maxWidth: 420 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span>Card &amp; digital payments</span>
