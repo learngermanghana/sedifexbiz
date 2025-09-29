@@ -317,6 +317,16 @@ function formatCustomerSummary(name: string | null): string {
   return name ? `Added new customer ${name}` : 'Added new customer'
 }
 
+function formatCloseoutSummary(countedCash: number, variance: number): string {
+  let varianceSummary = 'matched expected totals'
+  if (variance > 0) {
+    varianceSummary = `over by ${formatAmount(variance)}`
+  } else if (variance < 0) {
+    varianceSummary = `short by ${formatAmount(Math.abs(variance))}`
+  }
+  return `Closed day with counted cash of ${formatAmount(countedCash)} (${varianceSummary})`
+}
+
 async function recordActivityEntry(activity: {
   storeId: string
   dateKey: string
@@ -1571,5 +1581,73 @@ export const onCustomerCreate = functions.firestore
       refs: {
         customerId: snapshot.id,
       },
+    })
+  })
+
+export const onCloseoutCreate = functions.firestore
+  .document('closeouts/{closeoutId}')
+  .onCreate(async (snapshot, context) => {
+    const data = snapshot.data()
+    if (!data) return
+
+    const storeIdRaw = data.storeId as unknown
+    const storeId = typeof storeIdRaw === 'string' ? storeIdRaw.trim() : ''
+    if (!storeId) {
+      functions.logger.warn('[dailySummaries] Closeout created without storeId', {
+        closeoutId: snapshot.id,
+      })
+      return
+    }
+
+    const sourceTimestamp = data.closedAt ?? data.createdAt
+    const { dateKey, timestamp } = await resolveStoreDateKey(
+      storeId,
+      sourceTimestamp,
+      context.timestamp,
+    )
+
+    const countedCash = coerceNumber(data.countedCash)
+    const expectedCash = coerceNumber(data.expectedCash)
+    const hasVarianceField = Object.prototype.hasOwnProperty.call(data, 'variance')
+    const varianceValue = hasVarianceField
+      ? coerceNumber(data.variance)
+      : countedCash - expectedCash
+
+    const increments: Record<string, number> = { closeoutsCount: 1 }
+    if (countedCash !== 0) {
+      increments.closeoutCountedTotal = countedCash
+    }
+    if (expectedCash !== 0) {
+      increments.closeoutExpectedTotal = expectedCash
+    }
+    if (varianceValue !== 0) {
+      increments.closeoutVarianceTotal = varianceValue
+    }
+
+    await upsertDailySummaryDoc(storeId, dateKey, {
+      increments,
+      lastActivityAt: timestamp,
+    })
+
+    const refs: Record<string, unknown> = {
+      closeoutId: snapshot.id,
+    }
+
+    const closedBy = data.closedBy as Record<string, unknown> | undefined
+    const closedByUid =
+      closedBy && typeof closedBy.uid === 'string' ? closedBy.uid.trim() : ''
+    if (closedByUid) {
+      refs.userId = closedByUid
+    }
+
+    const summary = formatCloseoutSummary(countedCash, varianceValue)
+
+    await recordActivityEntry({
+      storeId,
+      dateKey,
+      at: timestamp,
+      type: 'closeout',
+      summary,
+      refs,
     })
   })
