@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
     refreshSessionHeartbeat: vi.fn(async () => {}),
     publish: vi.fn(),
     resolveStoreAccess: vi.fn(),
+    afterSignupBootstrap: vi.fn(async () => {}),
   }
   return state
 })
@@ -116,6 +117,7 @@ vi.mock('./components/ToastProvider', () => ({
 
 vi.mock('./controllers/accessController', () => ({
   resolveStoreAccess: (...args: unknown[]) => mocks.resolveStoreAccess(...args),
+  afterSignupBootstrap: (...args: unknown[]) => mocks.afterSignupBootstrap(...args),
 }))
 
 // IMPORTANT: mock the sheet fallback to be deterministic when a test expects cleanup
@@ -153,6 +155,8 @@ describe('App signup cleanup', () => {
     firestore.reset()
     mocks.resolveStoreAccess.mockReset()
     mocks.resolveStoreAccess.mockResolvedValue(null)
+    mocks.afterSignupBootstrap.mockReset()
+    mocks.afterSignupBootstrap.mockImplementation(async () => {})
     window.localStorage.clear()
     localStorageSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
   })
@@ -265,6 +269,7 @@ describe('App signup cleanup', () => {
     })
 
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.afterSignupBootstrap).toHaveBeenCalledWith('sheet-store-id'))
     await waitFor(() =>
       expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('sheet-store-id'),
     )

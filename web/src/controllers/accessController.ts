@@ -78,12 +78,21 @@ type ResolveStoreAccessPayload = {
   storeId?: string
 }
 
+type AfterSignupBootstrapPayload = {
+  storeId?: string
+}
+
 const resolveStoreAccessCallable = httpsCallable<
   ResolveStoreAccessPayload,
   RawResolveStoreAccessResponse
 >(
   functions,
   'resolveStoreAccess',
+)
+
+const afterSignupBootstrapCallable = httpsCallable<AfterSignupBootstrapPayload, void>(
+  functions,
+  'afterSignupBootstrap',
 )
 
 export const INACTIVE_WORKSPACE_MESSAGE =
@@ -148,4 +157,10 @@ export async function resolveStoreAccess(storeId?: string): Promise<ResolveStore
     products: normalizeSeededCollection(payload.products),
     customers: normalizeSeededCollection(payload.customers),
   }
+}
+
+export async function afterSignupBootstrap(storeId?: string): Promise<void> {
+  const trimmedStoreId = typeof storeId === 'string' ? storeId.trim() : ''
+  const payload = trimmedStoreId ? { storeId: trimmedStoreId } : undefined
+  await afterSignupBootstrapCallable(payload)
 }
