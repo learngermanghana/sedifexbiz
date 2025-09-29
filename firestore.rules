@@ -113,6 +113,12 @@ service cloud.firestore {
         && hasOwnerAccess(getRequesterMembership(), storeId);
     }
 
+    function isServiceAccountRequest() {
+      return request.auth != null
+        && request.auth.token != null
+        && request.auth.token.serviceAccount == true;
+    }
+
     match /teamMembers/{memberId} {
       allow read: if resource != null
         && dataHasStore(resource.data)
@@ -160,6 +166,16 @@ service cloud.firestore {
         allow read: if canReadStoreDocument(storeId);
         allow write: if canManageStoreDocument(storeId);
       }
+    }
+
+    match /dailySummaries/{docId} {
+      allow read: if canReadStoreResource() || isServiceAccountRequest();
+      allow create, update, delete: if isServiceAccountRequest();
+    }
+
+    match /activities/{activityId} {
+      allow read: if canReadStoreResource() || isServiceAccountRequest();
+      allow create, update, delete: if isServiceAccountRequest();
     }
 
     match /products/{productId} {
