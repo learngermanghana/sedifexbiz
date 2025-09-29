@@ -64,6 +64,30 @@ const firestore = vi.hoisted(() => {
   }
 })
 
+const sheet = vi.hoisted(() => {
+  const fetchSheetRowsMock = vi.fn(async () => {
+    throw new Error('sheet fetch failed')
+  })
+  const findUserRowMock = vi.fn(() => null)
+  const isContractActiveMock = vi.fn(() => false)
+
+  return {
+    fetchSheetRowsMock,
+    findUserRowMock,
+    isContractActiveMock,
+    reset() {
+      fetchSheetRowsMock.mockReset()
+      findUserRowMock.mockReset()
+      isContractActiveMock.mockReset()
+      fetchSheetRowsMock.mockImplementation(async () => {
+        throw new Error('sheet fetch failed')
+      })
+      findUserRowMock.mockReturnValue(null)
+      isContractActiveMock.mockReturnValue(false)
+    },
+  }
+})
+
 /** ---------------- module mocks ---------------- */
 vi.mock('./firebase', () => ({
   auth: mocks.auth,
@@ -122,12 +146,9 @@ vi.mock('./controllers/accessController', () => ({
 
 // IMPORTANT: mock the sheet fallback to be deterministic when a test expects cleanup
 vi.mock('./sheetClient', () => ({
-  fetchSheetRows: vi.fn(async () => {
-    // default to failing so tests that expect cleanup don't accidentally pass
-    throw new Error('sheet fetch failed')
-  }),
-  findUserRow: vi.fn(() => null),
-  isContractActive: vi.fn(() => false),
+  fetchSheetRows: (...args: unknown[]) => sheet.fetchSheetRowsMock(...args),
+  findUserRow: (...args: unknown[]) => sheet.findUserRowMock(...args),
+  isContractActive: (...args: unknown[]) => sheet.isContractActiveMock(...args),
 }))
 
 /** ---------------- imports after mocks ---------------- */
@@ -155,8 +176,10 @@ describe('App signup cleanup', () => {
     firestore.reset()
     mocks.resolveStoreAccess.mockReset()
     mocks.resolveStoreAccess.mockResolvedValue(null)
+
     mocks.afterSignupBootstrap.mockReset()
     mocks.afterSignupBootstrap.mockImplementation(async () => {})
+
     window.localStorage.clear()
     localStorageSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
   })
@@ -298,9 +321,24 @@ describe('App signup cleanup', () => {
 
     const setDocCalls = setDocMock.mock.calls
 
-    const ownerCall = setDocCalls.find(([ref]) => ref === ownerDocRef)
-    expect(ownerCall).toBeDefined()
-    const [, ownerPayload, ownerOptions] = ownerCall!
+    const ownerCalls = setDocCalls.filter(([ref]) => ref === ownerDocRef)
+    expect(ownerCalls).toHaveLength(2)
+
+    const [, ensurePayload, ensureOptions] = ownerCalls[0]!
+    expect(ensurePayload).toEqual(
+      expect.objectContaining({
+        uid: createdUser.uid,
+        storeId: 'sheet-store-id',
+        role: 'staff',
+      }),
+    )
+    expect(ensureOptions).toEqual({ merge: true })
+
+    const metadataCall = ownerCalls.find(([, payload]) =>
+      Object.prototype.hasOwnProperty.call(payload as Record<string, unknown>, 'phone'),
+    )
+    expect(metadataCall).toBeDefined()
+    const [, ownerPayload, ownerOptions] = metadataCall!
     expect(ownerPayload).toEqual(
       expect.objectContaining({
         storeId: 'sheet-store-id',
@@ -356,6 +394,79 @@ describe('App signup cleanup', () => {
     )
     expect(localStorageSetItemSpy).toHaveBeenCalledWith('activeStoreId', 'sheet-store-id')
     expect(window.localStorage.getItem('activeStoreId')).toBe('sheet-store-id')
+  })
+
+  it('ensures a team member profile exists when login falls back to the sheet', async () => {
+    const user = userEvent.setup()
+    const { user: existingUser } = createTestUser()
+
+    mocks.signInWithEmailAndPassword.mockImplementation(async () => {
+      mocks.auth.currentUser = existingUser
+      return { user: existingUser }
+    })
+
+    mocks.resolveStoreAccess.mockImplementationOnce(async () => {
+      throw new Error('callable failed')
+    })
+
+    sheet.fetchSheetRowsMock.mockResolvedValue([{ id: 'row-1' }])
+    sheet.findUserRowMock.mockImplementation(() => ({ storeId: 'sheet-store', role: 'Owner' }))
+    sheet.isContractActiveMock.mockReturnValue(true)
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument(),
+    )
+
+    await act(async () => {
+      await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
+      await user.click(screen.getByRole('button', { name: /Log in/i }))
+    })
+
+    await waitFor(() => expect(mocks.signInWithEmailAndPassword).toHaveBeenCalled())
+    await waitFor(() => expect(sheet.fetchSheetRowsMock).toHaveBeenCalled())
+    await waitFor(() => expect(localStorageSetItemSpy).toHaveBeenCalledWith('activeStoreId', 'sheet-store'))
+
+    // Delay notifying auth listeners until after the login flow resolves to avoid
+    // races with the restore-side effect that also performs a sheet fallback.
+    await act(async () => {
+      mocks.listeners.forEach(listener => listener(existingUser))
+    })
+
+    const { docRefByPath, setDocMock } = firestore
+    await waitFor(() => {
+      const profileRef = docRefByPath.get(`teamMembers/${existingUser.uid}`)
+      expect(profileRef).toBeDefined()
+    })
+    await waitFor(() => {
+      const hasProfileCall = setDocMock.mock.calls.some(([ref]) =>
+        Boolean(ref && typeof ref === 'object' && (ref as { path?: string }).path === `teamMembers/${existingUser.uid}`),
+      )
+      expect(hasProfileCall).toBe(true)
+    })
+
+    const profileCall = setDocMock.mock.calls.find(([ref]) => {
+      return Boolean(ref && typeof ref === 'object' && (ref as { path?: string }).path === `teamMembers/${existingUser.uid}`)
+    })
+    expect(profileCall).toBeDefined()
+    const [profileRef, profilePayload, profileOptions] = profileCall!
+    expect(profileRef).toEqual(expect.objectContaining({ path: `teamMembers/${existingUser.uid}` }))
+    expect(profilePayload).toEqual(
+      expect.objectContaining({
+        uid: existingUser.uid,
+        storeId: 'sheet-store',
+        role: 'owner',
+      }),
+    )
+    expect(profileOptions).toEqual({ merge: true })
+    expect(window.localStorage.getItem('activeStoreId')).toBe('sheet-store')
   })
 
   it('cleans up the account when store access resolution fails (callable + sheet fallback)', async () => {
