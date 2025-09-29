@@ -243,6 +243,8 @@ async function recordActivityEntry(activity: {
 type ContactPayload = {
   phone?: unknown
   firstSignupEmail?: unknown
+  company?: unknown
+  ownerName?: unknown
 }
 
 type InitializeStorePayload = {
@@ -264,8 +266,12 @@ const INACTIVE_WORKSPACE_MESSAGE =
 function normalizeContactPayload(contact: ContactPayload | undefined) {
   let hasPhone = false
   let hasFirstSignupEmail = false
+  let hasCompany = false
+  let hasOwnerName = false
   let phone: string | null | undefined
   let firstSignupEmail: string | null | undefined
+  let company: string | null | undefined
+  let ownerName: string | null | undefined
 
   if (contact && typeof contact === 'object') {
     if ('phone' in contact) {
@@ -296,9 +302,44 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
         )
       }
     }
+
+    if ('company' in contact) {
+      hasCompany = true
+      const raw = contact.company
+      if (raw === null || raw === undefined || raw === '') {
+        company = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        company = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError('invalid-argument', 'Company must be a string when provided')
+      }
+    }
+
+    if ('ownerName' in contact) {
+      hasOwnerName = true
+      const raw = contact.ownerName
+      if (raw === null || raw === undefined || raw === '') {
+        ownerName = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        ownerName = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError('invalid-argument', 'Owner name must be a string when provided')
+      }
+    }
   }
 
-  return { phone, hasPhone, firstSignupEmail, hasFirstSignupEmail }
+  return {
+    phone,
+    hasPhone,
+    firstSignupEmail,
+    hasFirstSignupEmail,
+    company,
+    hasCompany,
+    ownerName,
+    hasOwnerName,
+  }
 }
 
 function getRoleFromToken(token: Record<string, unknown> | undefined) {
@@ -726,6 +767,10 @@ async function handleStoreBootstrap(
   const memberSnap = await memberRef.get()
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
   const existingData = memberSnap.data() ?? {}
+  const existingMemberCompany =
+    typeof existingData.company === 'string' ? (existingData.company as string).trim() : ''
+  const existingMemberName =
+    typeof existingData.name === 'string' ? (existingData.name as string).trim() : ''
   const existingStoreId =
     typeof existingData.storeId === 'string' && existingData.storeId.trim() !== ''
       ? (existingData.storeId as string)
@@ -743,6 +788,18 @@ async function handleStoreBootstrap(
     updatedAt: timestamp,
   }
 
+  if (contact.hasCompany) {
+    memberData.company = contact.company ?? null
+  } else if (!memberSnap.exists && existingMemberCompany) {
+    memberData.company = existingMemberCompany
+  }
+
+  if (contact.hasOwnerName) {
+    memberData.name = contact.ownerName ?? null
+  } else if (!memberSnap.exists && existingMemberName) {
+    memberData.name = existingMemberName
+  }
+
   if (!memberSnap.exists) {
     memberData.createdAt = timestamp
   }
@@ -751,6 +808,24 @@ async function handleStoreBootstrap(
 
   const storeRef = defaultDb.collection('stores').doc(storeId)
   const storeSnap = await storeRef.get()
+  const existingStore = storeSnap.data() ?? {}
+  const existingStoreCompany =
+    typeof existingStore.company === 'string' ? (existingStore.company as string).trim() : ''
+  const existingStoreOwnerName =
+    typeof existingStore.ownerName === 'string' ? (existingStore.ownerName as string).trim() : ''
+
+  const resolvedCompany = contact.hasCompany
+    ? contact.company ?? null
+    : existingMemberCompany || existingStoreCompany
+    ? (existingMemberCompany || existingStoreCompany)
+    : null
+
+  const resolvedOwnerName = contact.hasOwnerName
+    ? contact.ownerName ?? null
+    : existingMemberName || existingStoreOwnerName
+    ? (existingMemberName || existingStoreOwnerName)
+    : null
+
   const storeData: admin.firestore.DocumentData = {
     storeId,
     ownerId: uid,
@@ -759,6 +834,14 @@ async function handleStoreBootstrap(
 
   if (!storeSnap.exists) {
     storeData.createdAt = timestamp
+  }
+
+  if (resolvedOwnerName) {
+    storeData.ownerName = resolvedOwnerName
+  }
+
+  if (resolvedCompany) {
+    storeData.company = resolvedCompany
   }
 
   await storeRef.set(storeData, { merge: true })

@@ -18,6 +18,7 @@ import {
   persistSession,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
+import { afterSignupBootstrap } from './controllers/accessController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import {
   clearActiveStoreIdForUser,
@@ -390,6 +391,17 @@ export default function App() {
           company: sanitizedCompany,
           phone: sanitizedPhone,
           preferExisting: false,
+        })
+
+        const ownerName = resolveOwnerName(nextUser)
+        await afterSignupBootstrap({
+          storeId,
+          contact: {
+            phone: sanitizedPhone || null,
+            firstSignupEmail: (nextUser.email ?? '').toLowerCase() || null,
+            company: sanitizedCompany || null,
+            ownerName,
+          },
         })
 
         // Optional additional doc for UX

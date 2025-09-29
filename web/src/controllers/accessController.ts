@@ -78,8 +78,16 @@ type ResolveStoreAccessPayload = {
   storeId?: string
 }
 
+type ContactPayload = {
+  phone?: string | null
+  firstSignupEmail?: string | null
+  company?: string | null
+  ownerName?: string | null
+}
+
 type AfterSignupBootstrapPayload = {
   storeId?: string
+  contact?: ContactPayload
 }
 
 const resolveStoreAccessCallable = httpsCallable<
@@ -159,8 +167,45 @@ export async function resolveStoreAccess(storeId?: string): Promise<ResolveStore
   }
 }
 
-export async function afterSignupBootstrap(storeId?: string): Promise<void> {
-  const trimmedStoreId = typeof storeId === 'string' ? storeId.trim() : ''
-  const payload = trimmedStoreId ? { storeId: trimmedStoreId } : undefined
-  await afterSignupBootstrapCallable(payload)
+export async function afterSignupBootstrap(payload?: AfterSignupBootstrapPayload): Promise<void> {
+  if (!payload) {
+    await afterSignupBootstrapCallable(undefined)
+    return
+  }
+
+  const normalized: AfterSignupBootstrapPayload = {}
+
+  if (typeof payload.storeId === 'string') {
+    const trimmed = payload.storeId.trim()
+    if (trimmed) {
+      normalized.storeId = trimmed
+    }
+  }
+
+  if (payload.contact && typeof payload.contact === 'object') {
+    const contact: NonNullable<AfterSignupBootstrapPayload['contact']> = {}
+
+    if (payload.contact.phone !== undefined) {
+      contact.phone = payload.contact.phone
+    }
+
+    if (payload.contact.firstSignupEmail !== undefined) {
+      contact.firstSignupEmail = payload.contact.firstSignupEmail
+    }
+
+    if (payload.contact.company !== undefined) {
+      contact.company = payload.contact.company
+    }
+
+    if (payload.contact.ownerName !== undefined) {
+      contact.ownerName = payload.contact.ownerName
+    }
+
+    if (Object.keys(contact).length > 0) {
+      normalized.contact = contact
+    }
+  }
+
+  const callablePayload = Object.keys(normalized).length > 0 ? normalized : undefined
+  await afterSignupBootstrapCallable(callablePayload)
 }
