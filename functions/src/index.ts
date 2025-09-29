@@ -763,6 +763,8 @@ async function handleStoreBootstrap(
 
   await storeRef.set(storeData, { merge: true })
 
+  await applyRoleClaims({ uid, role: 'owner', storeId })
+
   return { ok: true, storeId }
 }
 

@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
     persistSession: vi.fn(async () => {}),
     refreshSessionHeartbeat: vi.fn(async () => {}),
     publish: vi.fn(),
+    afterSignupBootstrap: vi.fn(async () => {}),
   }
   return state
 })
@@ -114,6 +115,10 @@ vi.mock('./controllers/sessionController', async () => {
   }
 })
 
+vi.mock('./controllers/accessController', () => ({
+  afterSignupBootstrap: (...args: unknown[]) => mocks.afterSignupBootstrap(...args),
+}))
+
 vi.mock('./components/ToastProvider', () => ({
   useToast: () => ({ publish: mocks.publish }),
 }))
@@ -128,7 +133,7 @@ function createTestUser() {
     uid: 'test-user',
     email: 'owner@example.com',
     delete: deleteFn,
-    getIdToken: vi.fn(async () => 'token'),
+    getIdToken: vi.fn(async (_force?: boolean) => 'token'),
   } as unknown as User
   return { user: testUser, deleteFn }
 }
@@ -224,9 +229,10 @@ describe('App signup cleanup', () => {
       await user.click(screen.getByRole('button', { name: /Create account/i }))
     })
 
-    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
-
     const storeId = 'store-test-use'
+    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.afterSignupBootstrap).toHaveBeenCalledWith(storeId))
+    await waitFor(() => expect(createdUser.getIdToken).toHaveBeenCalledWith(true))
     const { docRefByPath, setDocMock } = firestore
     const ownerDocKey = `teamMembers/${createdUser.uid}`
     const overrideDocKey = 'teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2'
