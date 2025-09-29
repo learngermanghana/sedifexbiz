@@ -86,18 +86,32 @@ service cloud.firestore {
       return storeId != null && hasStoreAccess(getRequesterMembership(), storeId);
     }
 
-    function canStaffCreateStoreResource() {
+    function requestMaintainsStoreIdConsistency() {
+      let requestStoreId = storeIdFromData(request.resource.data);
+      if (requestStoreId == null) {
+        return false;
+      }
+
+      if (resource == null) {
+        return true;
+      }
+
+      let resourceStoreId = storeIdFromData(resource.data);
+      return resourceStoreId != null && resourceStoreId == requestStoreId;
+    }
+
+    function canCreateStoreResource() {
+
       let storeId = storeIdFromData(request.resource.data);
-      return storeId != null
+      return requestMaintainsStoreIdConsistency()
+        && storeId != null
         && hasStoreAccess(getRequesterMembership(), storeId);
     }
 
     function canStaffUpdateStoreResource() {
       let currentStoreId = storeIdFromData(resource.data);
-      let newStoreId = storeIdFromData(request.resource.data);
-      return currentStoreId != null
-        && newStoreId != null
-        && currentStoreId == newStoreId
+      return requestMaintainsStoreIdConsistency()
+        && currentStoreId != null
         && hasStoreAccess(getRequesterMembership(), currentStoreId);
     }
 
@@ -111,7 +125,8 @@ service cloud.firestore {
 
     function canOwnerCreateStoreResource() {
       let storeId = storeIdFromData(request.resource.data);
-      return storeId != null
+      return requestMaintainsStoreIdConsistency()
+        && storeId != null
         && hasOwnerAccess(getRequesterMembership(), storeId);
     }
 
@@ -202,6 +217,13 @@ service cloud.firestore {
       allow delete: if canOwnerWriteStoreResource();
     }
 
+    match /customers/{customerId} {
+      allow read: if canReadStoreResource();
+      allow create: if canCreateStoreResource();
+      allow update: if canUpdateStoreResource();
+      allow delete: if canOwnerWriteStoreResource();
+    }
+
     match /sales/{saleId} {
       allow read: if canReadStoreResource();
       allow create: if canStaffCreateStoreResource();
@@ -227,6 +249,13 @@ service cloud.firestore {
       allow read: if canReadStoreResource();
       allow create: if canOwnerCreateStoreResource();
       allow update: if canOwnerUpdateStoreResource();
+      allow delete: if canOwnerWriteStoreResource();
+    }
+
+    match /receipts/{receiptId} {
+      allow read: if canReadStoreResource();
+      allow create: if canCreateStoreResource();
+      allow update: if canUpdateStoreResource();
       allow delete: if canOwnerWriteStoreResource();
     }
 

@@ -3,6 +3,7 @@ import { initializeApp, deleteApp, type FirebaseApp } from 'firebase/app'
 import {
   collection,
   connectFirestoreEmulator,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -290,7 +291,41 @@ describe('Firestore rules - multi-tenant store access', () => {
     }
   })
 
-  test('product updates require owner role and matching store', async () => {
+  test('staff can manage customers for their store while preventing cross-store access', async () => {
+    const staff = await createStoreMember('store-1', 'staff')
+    const outsider = await createStoreMember('store-2', 'staff')
+
+    try {
+      const customerRef = doc(staff.db, 'customers/customer-1')
+      await expectSucceeds(
+        setDoc(customerRef, { name: 'Customer One', storeId: 'store-1' }),
+        'staff should create customers for their own store',
+      )
+      await expectSucceeds(
+        setDoc(customerRef, { name: 'Customer Updated', storeId: 'store-1' }),
+        'staff should update customers for their store',
+      )
+      await expectFails(
+        setDoc(customerRef, { name: 'Customer Hijack', storeId: 'store-2' }),
+        'staff should not move customers to another store',
+      )
+      await expectSucceeds(getDoc(customerRef), 'staff should read customers in their store')
+      await expectFails(
+        getDoc(doc(outsider.db, 'customers/customer-1')),
+        'other store staff should not read store-1 customers',
+      )
+      await expectFails(
+        deleteDoc(customerRef),
+        'staff should not delete customers',
+      )
+    } finally {
+      await destroyContext(staff)
+      await destroyContext(outsider)
+    }
+  })
+
+  test('product updates are limited to the member store', async () => {
+
     const owner = await createStoreMember('store-1', 'owner')
     try {
       const productRef = doc(owner.db, 'products/product-1')
@@ -415,6 +450,39 @@ describe('Firestore rules - multi-tenant store access', () => {
       await expectFails(
         setDoc(doc(outsider.db, 'customers/customer-1'), { storeId: 'store-1', name: 'Alice' }),
         'other store staff should not write customers for store-1',
+      )
+    } finally {
+      await destroyContext(staff)
+      await destroyContext(outsider)
+    }
+  })
+
+  test('staff can create receipts for their store and cannot see other stores', async () => {
+    const staff = await createStoreMember('store-1', 'staff')
+    const outsider = await createStoreMember('store-2', 'staff')
+
+    try {
+      const receiptRef = doc(staff.db, 'receipts/receipt-1')
+      await expectSucceeds(
+        setDoc(receiptRef, {
+          storeId: 'store-1',
+          productId: 'product-1',
+          qty: 3,
+        }),
+        'staff should create receipts for their store',
+      )
+      await expectSucceeds(getDoc(receiptRef), 'staff should read receipts for their store')
+      await expectFails(
+        setDoc(doc(staff.db, 'receipts/receipt-2'), {
+          storeId: 'store-2',
+          productId: 'product-2',
+          qty: 1,
+        }),
+        'staff should not create receipts for another store',
+      )
+      await expectFails(
+        getDoc(doc(outsider.db, 'receipts/receipt-1')),
+        'other store staff should not read store-1 receipts',
       )
     } finally {
       await destroyContext(staff)
