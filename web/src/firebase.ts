@@ -59,7 +59,7 @@ try {
   }
 }
 
-export const db = initializeFirestore(app, firestoreSettings, 'roster')
+export const db = initializeFirestore(app, firestoreSettings)
 
 export const storage = getStorage(app)
 export const functions = getFunctions(app)
