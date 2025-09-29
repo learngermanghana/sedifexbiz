@@ -20,6 +20,7 @@ import {
 } from './controllers/sessionController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
+import { setPersistedActiveStoreId } from './utils/activeStore'
 
 /* ------------------------------ config ------------------------------ */
 /** If you want to ALSO mirror the team member to a fixed doc id, put it here. */
@@ -42,9 +43,6 @@ const OWNER_NAME_FALLBACK = 'Owner account'
 
 function sanitizePhone(value: string): string {
   return value.replace(/\D+/g, '')
-}
-function persistActiveStoreId(storeId: string) {
-  try { window.localStorage.setItem('activeStoreId', storeId) } catch {}
 }
 function resolveOwnerName(user: User): string {
   const displayName = user.displayName?.trim()
@@ -71,7 +69,7 @@ async function upsertTeamMemberDocs(params: {
     if (snap.exists()) {
       const existingStoreId = String(snap.get('storeId') || '')
       if (existingStoreId) {
-        persistActiveStoreId(existingStoreId)
+        setPersistedActiveStoreId(existingStoreId)
         // Optionally mirror to fixed doc for your analytics/admin
         if (OVERRIDE_MEMBER_DOC_ID) {
           await setDoc(
@@ -106,7 +104,7 @@ async function upsertTeamMemberDocs(params: {
     await setDoc(doc(db, 'teamMembers', OVERRIDE_MEMBER_DOC_ID), payload, { merge: true })
   }
 
-  persistActiveStoreId(storeId)
+  setPersistedActiveStoreId(storeId)
   return { storeId, role }
 }
 

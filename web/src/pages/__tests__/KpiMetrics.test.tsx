@@ -5,16 +5,14 @@ import { vi } from 'vitest'
 
 import GoalPlannerPage from '../KpiMetrics'
 import Shell from '../../layout/Shell'
+import { ActiveStoreContext, type ActiveStoreContextValue } from '../../utils/activeStore'
 
 const mockUseAuthUser = vi.fn(() => ({ uid: 'user-1', email: 'manager@example.com' }))
 vi.mock('../../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
-vi.mock('../../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
-}))
+const mockSetActiveStoreId = vi.fn()
 
 const mockPublish = vi.fn()
 vi.mock('../../components/ToastProvider', () => ({
@@ -62,13 +60,23 @@ vi.mock('firebase/firestore', () => ({
   onSnapshot: (...args: Parameters<typeof onSnapshotMock>) => onSnapshotMock(...args),
 }))
 
-const renderPlanner = () => {
+const renderPlanner = (activeStoreOverrides: Partial<ActiveStoreContextValue> = {}) => {
+  const activeStoreValue: ActiveStoreContextValue = {
+    storeId: 'store-1',
+    isLoading: false,
+    error: null,
+    setActiveStoreId: mockSetActiveStoreId,
+    ...activeStoreOverrides,
+  }
+
   render(
-    <MemoryRouter initialEntries={['/goals']}>
-      <Routes>
-        <Route path="/goals" element={<Shell><GoalPlannerPage /></Shell>} />
-      </Routes>
-    </MemoryRouter>,
+    <ActiveStoreContext.Provider value={activeStoreValue}>
+      <MemoryRouter initialEntries={['/goals']}>
+        <Routes>
+          <Route path="/goals" element={<Shell><GoalPlannerPage /></Shell>} />
+        </Routes>
+      </MemoryRouter>
+    </ActiveStoreContext.Provider>,
   )
 }
 
@@ -102,7 +110,7 @@ describe('Goal planner page', () => {
     uuidSpy.mockReturnValue('goal-new-id')
 
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'manager@example.com' })
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockSetActiveStoreId.mockReset()
     mockPublish.mockReset()
 
     docMock.mockClear()

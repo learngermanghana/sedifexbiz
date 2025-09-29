@@ -2,8 +2,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { render, screen, waitFor, act, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
 
 import Products from '../Products'
+import { ActiveStoreContext, type ActiveStoreContextValue } from '../../utils/activeStore'
 
 const mockLoadCachedProducts = vi.fn(async () => [] as unknown[])
 const mockSaveCachedProducts = vi.fn(async () => {})
@@ -20,10 +22,31 @@ vi.mock('../../firebase', () => ({
   db: {},
 }))
 
-const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
-vi.mock('../../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
-}))
+const mockSetActiveStoreId = vi.fn()
+
+function createActiveStoreValue(
+  overrides: Partial<ActiveStoreContextValue> = {},
+): ActiveStoreContextValue {
+  return {
+    storeId: 'store-1',
+    isLoading: false,
+    error: null,
+    setActiveStoreId: mockSetActiveStoreId,
+    ...overrides,
+  }
+}
+
+function renderWithProviders(
+  element: ReactElement,
+  options: { activeStore?: Partial<ActiveStoreContextValue> } = {},
+) {
+  const value = createActiveStoreValue(options.activeStore)
+  return render(
+    <ActiveStoreContext.Provider value={value}>
+      <MemoryRouter>{element}</MemoryRouter>
+    </ActiveStoreContext.Provider>,
+  )
+}
 
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
 const queryMock = vi.fn((collectionRef: { path: string }, ...clauses: unknown[]) => ({
@@ -86,8 +109,7 @@ describe('Products page', () => {
     serverTimestampMock.mockClear()
     docMock.mockClear()
     whereMock.mockClear()
-    mockUseActiveStore.mockReset()
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockSetActiveStoreId.mockReset()
 
 
 
@@ -110,11 +132,7 @@ describe('Products page', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    renderWithProviders(<Products />)
 
     await waitFor(() => {
       expect(onSnapshotMock).toHaveBeenCalledTimes(1)
@@ -136,11 +154,7 @@ describe('Products page', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    renderWithProviders(<Products />)
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
 
@@ -176,11 +190,7 @@ describe('Products page', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    renderWithProviders(<Products />)
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
 
@@ -211,11 +221,7 @@ describe('Products page', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    renderWithProviders(<Products />)
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
 
@@ -250,11 +256,7 @@ describe('Products page', () => {
       })
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    renderWithProviders(<Products />)
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
     await act(async () => {
@@ -336,11 +338,7 @@ describe('Products page', () => {
       })
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    renderWithProviders(<Products />)
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
 
@@ -376,11 +374,7 @@ describe('Products page', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    renderWithProviders(<Products />)
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
 

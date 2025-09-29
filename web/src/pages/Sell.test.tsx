@@ -5,16 +5,14 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 
 import Sell from './Sell'
+import { ActiveStoreContext, type ActiveStoreContextValue } from '../utils/activeStore'
 
 const mockUseAuthUser = vi.fn()
 vi.mock('../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
-vi.mock('../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
-}))
+const mockSetActiveStoreId = vi.fn()
 
 const originalCreateObjectURL = globalThis.URL.createObjectURL
 const originalRevokeObjectURL = globalThis.URL.revokeObjectURL
@@ -194,19 +192,40 @@ vi.mock('firebase/firestore', () => ({
   serverTimestamp: () => serverTimestampMock(),
 }))
 
-function renderWithProviders(ui: ReactElement) {
-  return render(ui, { wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter> })
+function createActiveStoreValue(
+  overrides: Partial<ActiveStoreContextValue> = {},
+): ActiveStoreContextValue {
+  return {
+    storeId: 'store-1',
+    isLoading: false,
+    error: null,
+    setActiveStoreId: mockSetActiveStoreId,
+    ...overrides,
+  }
+}
+
+function renderWithProviders(
+  ui: ReactElement,
+  options: { activeStore?: Partial<ActiveStoreContextValue> } = {},
+) {
+  const contextValue = createActiveStoreValue(options.activeStore)
+  return render(ui, {
+    wrapper: ({ children }) => (
+      <ActiveStoreContext.Provider value={contextValue}>
+        <MemoryRouter>{children}</MemoryRouter>
+      </ActiveStoreContext.Provider>
+    ),
+  })
 }
 
 describe('Sell page', () => {
   beforeEach(() => {
     mockUseAuthUser.mockReset()
-    mockUseActiveStore.mockReset()
+    mockSetActiveStoreId.mockReset()
     mockUseAuthUser.mockReturnValue({
       uid: 'cashier-123',
       email: 'cashier@example.com',
     })
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
 
     autoCounters = {}
     firestoreState = {

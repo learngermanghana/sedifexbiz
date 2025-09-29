@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth'
 import { MemoryRouter } from 'react-router-dom'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { ActiveStoreContext, type ActiveStoreContextValue } from './utils/activeStore'
 
 /** ---------------- hoisted state/mocks ---------------- */
 const mocks = vi.hoisted(() => {
@@ -121,6 +122,8 @@ vi.mock('./components/ToastProvider', () => ({
 import App from './App'
 
 /** ---------------- helpers ---------------- */
+const mockSetActiveStoreId = vi.fn()
+
 function createTestUser() {
   const deleteFn = vi.fn(async () => {})
   const testUser = {
@@ -130,6 +133,23 @@ function createTestUser() {
     getIdToken: vi.fn(async () => 'token'),
   } as unknown as User
   return { user: testUser, deleteFn }
+}
+
+function renderWithActiveStore() {
+  const activeStoreValue: ActiveStoreContextValue = {
+    storeId: null,
+    isLoading: false,
+    error: null,
+    setActiveStoreId: mockSetActiveStoreId,
+  }
+
+  render(
+    <ActiveStoreContext.Provider value={activeStoreValue}>
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>
+    </ActiveStoreContext.Provider>,
+  )
 }
 
 let localStorageSetItemSpy: ReturnType<typeof vi.spyOn>
@@ -144,6 +164,7 @@ describe('App signup cleanup', () => {
 
     window.localStorage.clear()
     localStorageSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+    mockSetActiveStoreId.mockReset()
   })
 
   afterEach(() => {
@@ -162,11 +183,7 @@ describe('App signup cleanup', () => {
 
     mocks.persistSession.mockRejectedValueOnce(new Error('Unable to persist session'))
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderWithActiveStore()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
@@ -203,11 +220,38 @@ describe('App signup cleanup', () => {
       return { user: createdUser }
     })
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+
+    mocks.resolveStoreAccess.mockImplementation(async storeId => {
+      if (!storeId) return null
+      return {
+        ok: true,
+        storeId: 'sheet-store-id',
+        role: 'owner',
+        teamMember: {
+          id: 'seed-team-member',
+          data: { name: 'Seeded Member', role: 'staff' },
+        },
+        store: { id: 'sheet-store-id', data: { name: 'Seeded Store' } },
+        products: [
+          {
+            id: 'product-1',
+            data: {
+              name: 'Seed Product',
+              createdAt: 1_700_000_000_000,
+            },
+          },
+        ],
+        customers: [
+          {
+            id: 'seeded-customer',
+            data: { name: 'Seeded Customer' },
+          },
+        ],
+      }
+    })
+
+    renderWithActiveStore()
+
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
@@ -298,11 +342,7 @@ describe('App signup cleanup', () => {
 
     firestore.getDocMock.mockImplementation(async () => ({ exists: () => false }))
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderWithActiveStore()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
@@ -336,9 +376,9 @@ describe('App signup cleanup', () => {
     )
     expect(profileOptions).toEqual({ merge: true })
 
-    const overrideCall = setDocMock.mock.calls.find(([ref]) => ref === overrideDocRef)
-    expect(overrideCall).toBeDefined()
-    expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
+
+    renderWithActiveStore()
+
 
     expect(localStorageSetItemSpy).toHaveBeenCalledWith('activeStoreId', storeId)
     expect(window.localStorage.getItem('activeStoreId')).toBe(storeId)

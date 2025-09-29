@@ -1,80 +1,12 @@
-import { useEffect, useState } from 'react'
-import { onAuthStateChanged, signOut, type User } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
-import { auth, db } from './firebase'
 
-type TeamMemberSnapshot = {
-  storeId: string | null
-  status: string | null
-  contractStatus: string | null
-}
+import { useEffect, useState, type ReactNode } from 'react'
+import { onAuthStateChanged, signOut, User } from 'firebase/auth'
+import { auth } from './firebase'
+import { fetchSheetRows, findUserRow, isContractActive } from './sheetClient'
+import { setPersistedActiveStoreId } from './utils/activeStore'
 
-const BLOCKED_STATUSES = new Set([
-  'inactive',
-  'disabled',
-  'suspended',
-  'terminated',
-  'cancelled',
-  'canceled',
-  'expired',
-])
 
-function normalizeString(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    return trimmed ? trimmed : null
-  }
-  return null
-}
-
-function snapshotFromData(data: Record<string, unknown> | undefined): TeamMemberSnapshot {
-  if (!data) {
-    return { storeId: null, status: null, contractStatus: null }
-  }
-
-  const storeId = normalizeString(data['storeId'])
-  const status = normalizeString(data['status'])
-  const contractStatus = normalizeString(data['contractStatus'])
-
-  return { storeId, status, contractStatus }
-}
-
-async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
-  const uidRef = doc(db, 'teamMembers', user.uid)
-  const uidSnapshot = await getDoc(uidRef)
-
-  if (uidSnapshot.exists()) {
-    return snapshotFromData(uidSnapshot.data())
-  }
-
-  const email = normalizeString(user.email)
-  if (!email) {
-    return { storeId: null, status: null, contractStatus: null }
-  }
-
-  const membersRef = collection(db, 'teamMembers')
-  const candidates = await getDocs(query(membersRef, where('email', '==', email)))
-  const match = candidates.docs[0]
-  if (!match) {
-    return { storeId: null, status: null, contractStatus: null }
-  }
-
-  return snapshotFromData(match.data())
-}
-
-function isWorkspaceActive({ status, contractStatus }: TeamMemberSnapshot): boolean {
-  const candidates = [status, contractStatus]
-    .map(value => normalizeString(value ?? undefined))
-    .filter((value): value is string => Boolean(value))
-
-  if (candidates.length === 0) {
-    return true
-  }
-
-  return candidates.every(value => !BLOCKED_STATUSES.has(value.toLowerCase()))
-}
-
-export default function SheetAccessGuard({ children }: { children: React.ReactNode }) {
+export default function SheetAccessGuard({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -87,27 +19,19 @@ export default function SheetAccessGuard({ children }: { children: React.ReactNo
       }
 
       try {
-        setError(null)
-        const member = await loadTeamMember(user)
-        if (!member.storeId) {
-          throw new Error('We could not find a workspace assignment for this account.')
-        }
 
-        if (!isWorkspaceActive(member)) {
-          throw new Error('Your Sedifex workspace contract is not active.')
-        }
-
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem('activeStoreId', member.storeId)
-        }
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : 'Access denied.'
-        setError(message)
+        const rows = await fetchSheetRows()
+        const row = findUserRow(rows, user.email)
+        if (!row) throw new Error('We could not find a workspace assignment for this account.')
+        if (!row.storeId) throw new Error('Your account is missing a workspace store ID.')
+        if (!isContractActive(row)) throw new Error('Your Sedifex workspace contract is not active.')
+        setPersistedActiveStoreId(row.storeId)
+        setReady(true)                           // allowed
+      } catch (e: any) {
+        setError(e?.message || 'Access denied.') // block
         await signOut(auth)
-        if (typeof window !== 'undefined') {
-          window.localStorage.removeItem('activeStoreId')
-        }
-      } finally {
+        setPersistedActiveStoreId(null)
+
         setReady(true)
       }
     })
