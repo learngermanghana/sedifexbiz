@@ -142,6 +142,8 @@ export default function CloseDay() {
             }
           : null,
         closedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
         storeId: activeStoreId,
       }
 
