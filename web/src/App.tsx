@@ -21,6 +21,10 @@ import {
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 
+/* ------------------------------ config ------------------------------ */
+/** If you want to ALSO mirror the team member to a fixed doc id, put it here. */
+const OVERRIDE_MEMBER_DOC_ID = 'l8Rbmym8aBVMwL6NpZHntjBHmCo2' // set '' to disable
+
 /* ------------------------------ constants ------------------------------ */
 
 type AuthMode = 'login' | 'signup'
@@ -39,63 +43,74 @@ const OWNER_NAME_FALLBACK = 'Owner account'
 function sanitizePhone(value: string): string {
   return value.replace(/\D+/g, '')
 }
-
 function persistActiveStoreId(storeId: string) {
   try { window.localStorage.setItem('activeStoreId', storeId) } catch {}
 }
-
 function resolveOwnerName(user: User): string {
   const displayName = user.displayName?.trim()
   return displayName && displayName.length > 0 ? displayName : OWNER_NAME_FALLBACK
 }
-
 function generateStoreId(uid: string) {
   return `store-${uid.slice(0, 8)}`
 }
 
-async function ensureTeamMemberDoc(params: {
+/** Ensure teamMembers/{uid} exists; optionally mirror to fixed ID. */
+async function upsertTeamMemberDocs(params: {
   user: User
   role: 'owner' | 'staff'
   phone?: string | null
+  company?: string | null
   preferExisting?: boolean
 }) {
-  const { user, role, phone = null, preferExisting = true } = params
-  const ref = doc(db, 'teamMembers', user.uid)
+  const { user, role, phone = null, company = null, preferExisting = true } = params
+  const uidRef = doc(db, 'teamMembers', user.uid)
 
+  // Try to reuse existing storeId if present
   if (preferExisting) {
-    const snap = await getDoc(ref)
+    const snap = await getDoc(uidRef)
     if (snap.exists()) {
-      const storeIdExisting = String(snap.get('storeId') || '')
-      if (storeIdExisting) {
-        persistActiveStoreId(storeIdExisting)
-        return { storeId: storeIdExisting, role: (snap.get('role') as 'owner' | 'staff') || role }
+      const existingStoreId = String(snap.get('storeId') || '')
+      if (existingStoreId) {
+        persistActiveStoreId(existingStoreId)
+        // Optionally mirror to fixed doc for your analytics/admin
+        if (OVERRIDE_MEMBER_DOC_ID) {
+          await setDoc(
+            doc(db, 'teamMembers', OVERRIDE_MEMBER_DOC_ID),
+            { ...snap.data(), updatedAt: serverTimestamp() },
+            { merge: true },
+          )
+        }
+        return { storeId: existingStoreId, role: (snap.get('role') as 'owner' | 'staff') || role }
       }
     }
   }
 
-  // Create/overwrite minimal record
   const storeId = generateStoreId(user.uid)
-  await setDoc(
-    ref,
-    {
-      uid: user.uid,
-      email: user.email ?? null,
-      phone: phone ?? null,
-      role,
-      storeId,
-      name: resolveOwnerName(user),
-      firstSignupEmail: (user.email ?? '').toLowerCase() || null,
-      invitedBy: user.uid,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  )
+  const payload = {
+    uid: user.uid,
+    email: user.email ?? null,
+    phone,
+    role,
+    company: company ?? null,
+    storeId,
+    name: resolveOwnerName(user),
+    firstSignupEmail: (user.email ?? '').toLowerCase() || null,
+    invitedBy: user.uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }
+
+  await setDoc(uidRef, payload, { merge: true })
+
+  if (OVERRIDE_MEMBER_DOC_ID) {
+    await setDoc(doc(db, 'teamMembers', OVERRIDE_MEMBER_DOC_ID), payload, { merge: true })
+  }
+
   persistActiveStoreId(storeId)
   return { storeId, role }
 }
 
-/** You may have future seed flows; helpers are kept here if needed */
+/** Optional seed helper kept for future use */
 type SeededDocument = { id: string; data: Record<string, unknown> }
 const TIMESTAMP_FIELD_KEYS = new Set(['createdAt', 'updatedAt', 'receivedAt'])
 function normalizeSeededDocumentData(data: Record<string, unknown>): Record<string, unknown> {
@@ -130,7 +145,6 @@ interface PasswordStrength {
   hasNumber: boolean
   hasSymbol: boolean
 }
-
 function evaluatePasswordStrength(password: string): PasswordStrength {
   return {
     isLongEnough: password.length >= PASSWORD_MIN_LENGTH,
@@ -140,15 +154,13 @@ function evaluatePasswordStrength(password: string): PasswordStrength {
     hasSymbol: /[^A-Za-z0-9]/.test(password),
   }
 }
-
 function getLoginValidationError(email: string, password: string): string | null {
   if (!email) return 'Enter your email.'
   if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
   if (!password) return 'Enter your password.'
   return null
 }
-
-function getSignupValidationError(email: string, password: string, confirmPassword: string, phone: string): string | null {
+function getSignupValidationError(email: string, password: string, confirmPassword: string, phone: string, company: string): string | null {
   if (!email) return 'Enter your email.'
   if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
   if (!password) return 'Create a password to continue.'
@@ -161,6 +173,7 @@ function getSignupValidationError(email: string, password: string, confirmPasswo
   if (!confirmPassword) return 'Confirm your password.'
   if (password !== confirmPassword) return 'Passwords do not match.'
   if (!phone) return 'Enter your phone number.'
+  if (!company.trim()) return 'Enter your company name.'
   return null
 }
 
@@ -168,23 +181,11 @@ function getSignupValidationError(email: string, password: string, confirmPasswo
 
 type QueueCompletedMessage = { type: 'QUEUE_REQUEST_COMPLETED'; requestType?: unknown }
 type QueueFailedMessage = { type: 'QUEUE_REQUEST_FAILED'; requestType?: unknown; error?: unknown }
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-function isQueueCompletedMessage(value: unknown): value is QueueCompletedMessage {
-  return isRecord(value) && (value as any).type === 'QUEUE_REQUEST_COMPLETED'
-}
-function isQueueFailedMessage(value: unknown): value is QueueFailedMessage {
-  return isRecord(value) && (value as any).type === 'QUEUE_REQUEST_FAILED'
-}
-function getQueueRequestLabel(requestType: unknown): string {
-  return requestType === 'receipt' ? 'stock receipt' : 'sale'
-}
-function normalizeQueueError(value: unknown): string | null {
-  if (typeof value === 'string') { const t = value.trim(); if (t) return t }
-  return null
-}
+function isRecord(v: unknown): v is Record<string, unknown> { return typeof v === 'object' && v !== null }
+function isQueueCompletedMessage(v: unknown): v is QueueCompletedMessage { return isRecord(v) && (v as any).type === 'QUEUE_REQUEST_COMPLETED' }
+function isQueueFailedMessage(v: unknown): v is QueueFailedMessage { return isRecord(v) && (v as any).type === 'QUEUE_REQUEST_FAILED' }
+function getQueueRequestLabel(requestType: unknown): string { return requestType === 'receipt' ? 'stock receipt' : 'sale' }
+function normalizeQueueError(v: unknown): string | null { if (typeof v === 'string') { const t = v.trim(); if (t) return t } return null }
 
 /* --------------------------------- App --------------------------------- */
 
@@ -196,6 +197,11 @@ export default function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+
+  // new fields
+  const [role, setRole] = useState<'owner' | 'staff'>('staff')
+  const [company, setCompany] = useState('')
+
   const [phone, setPhone] = useState('')
   const [normalizedPhone, setNormalizedPhone] = useState('')
 
@@ -208,6 +214,7 @@ export default function App() {
   const normalizedEmail = email.trim()
   const normalizedPassword = password.trim()
   const normalizedConfirmPassword = confirmPassword.trim()
+  const normalizedCompany = company.trim()
 
   const strength = evaluatePasswordStrength(normalizedPassword)
   const checklist = [
@@ -225,7 +232,8 @@ export default function App() {
     meetsAll &&
     normalizedConfirmPassword.length > 0 &&
     normalizedPassword === normalizedConfirmPassword &&
-    normalizedPhone.length > 0
+    normalizedPhone.length > 0 &&
+    normalizedCompany.length > 0
 
   const isLoginFormValid =
     EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
@@ -304,7 +312,6 @@ export default function App() {
         { merge: true },
       )
     } catch (error) {
-      // non-blocking
       console.warn('[customers] Unable to upsert customer record', error)
     }
   }
@@ -315,6 +322,7 @@ export default function App() {
     const sanitizedPassword = password.trim()
     const sanitizedConfirmPassword = confirmPassword.trim()
     const sanitizedPhone = sanitizePhone(phone)
+    const sanitizedCompany = company.trim()
 
     setEmail(sanitizedEmail)
     setPassword(sanitizedPassword)
@@ -323,7 +331,7 @@ export default function App() {
     const validationError =
       mode === 'login'
         ? getLoginValidationError(sanitizedEmail, sanitizedPassword)
-        : getSignupValidationError(sanitizedEmail, sanitizedPassword, sanitizedConfirmPassword, sanitizedPhone)
+        : getSignupValidationError(sanitizedEmail, sanitizedPassword, sanitizedConfirmPassword, sanitizedPhone, sanitizedCompany)
 
     if (mode === 'signup') {
       setPhone(sanitizedPhone)
@@ -346,17 +354,22 @@ export default function App() {
         const { user: nextUser } = await signInWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
 
-        // Load or create team member doc; storeId persisted inside
-        await ensureTeamMemberDoc({ user: nextUser, role: 'owner', preferExisting: true })
+        // Load or create team member doc (no sheet involved)
+        await upsertTeamMemberDocs({
+          user: nextUser,
+          role: 'owner', // fallback if missing — real role stored in Firestore
+          preferExisting: true,
+        })
 
       } else {
         const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
 
-        // Auto-provision workspace + teamMembers/{uid}
-        const { storeId } = await ensureTeamMemberDoc({
+        // Create team member with selected role + company; auto storeId
+        const { storeId } = await upsertTeamMemberDocs({
           user: nextUser,
-          role: 'owner',
+          role,
+          company: sanitizedCompany,
           phone: sanitizedPhone,
           preferExisting: false,
         })
@@ -375,6 +388,7 @@ export default function App() {
       setPassword('')
       setConfirmPassword('')
       setPhone('')
+      setCompany('')
       setNormalizedPhone('')
 
     } catch (err: unknown) {
@@ -394,6 +408,7 @@ export default function App() {
     setStatus({ tone: 'idle', message: '' })
     setConfirmPassword('')
     setPhone('')
+    setCompany('')
     setNormalizedPhone('')
   }
 
@@ -477,37 +492,69 @@ export default function App() {
               </div>
 
               {isSignup && (
-                <div className="form__field">
-                  <label htmlFor="phone">Phone</label>
-                  <input
-                    id="phone"
-                    value={phone}
-                    onChange={e => {
-                      const next = e.target.value
-                      setPhone(next)
-                      setNormalizedPhone(sanitizePhone(next))
-                    }}
-                    onBlur={() =>
-                      setPhone(current => {
-                        const trimmed = current.trim()
-                        const sanitized = sanitizePhone(trimmed)
-                        setNormalizedPhone(sanitized)
-                        return sanitized
-                      })
-                    }
-                    type="tel"
-                    autoComplete="tel"
-                    inputMode="tel"
-                    placeholder="(555) 123-4567"
-                    required
-                    disabled={isLoading}
-                    aria-invalid={phone.length > 0 && normalizedPhone.length === 0}
-                    aria-describedby="phone-hint"
-                  />
-                  <p className="form__hint" id="phone-hint">
-                    We’ll use this to tailor your onboarding.
-                  </p>
-                </div>
+                <>
+                  <div className="form__field">
+                    <label htmlFor="role">Role</label>
+                    <select
+                      id="role"
+                      value={role}
+                      onChange={e => setRole(e.target.value as 'owner' | 'staff')}
+                      disabled={isLoading}
+                    >
+                      <option value="owner">Owner</option>
+                      <option value="staff">Staff</option>
+                    </select>
+                    <p className="form__hint">We’ll use this to set your workspace permissions.</p>
+                  </div>
+
+                  <div className="form__field">
+                    <label htmlFor="company">Company</label>
+                    <input
+                      id="company"
+                      value={company}
+                      onChange={e => setCompany(e.target.value)}
+                      onBlur={() => setCompany(current => current.trim())}
+                      type="text"
+                      autoComplete="organization"
+                      placeholder="Acme Retail"
+                      required
+                      disabled={isLoading}
+                      aria-invalid={company.length > 0 && !normalizedCompany}
+                    />
+                  </div>
+
+                  <div className="form__field">
+                    <label htmlFor="phone">Phone</label>
+                    <input
+                      id="phone"
+                      value={phone}
+                      onChange={e => {
+                        const next = e.target.value
+                        setPhone(next)
+                        setNormalizedPhone(sanitizePhone(next))
+                      }}
+                      onBlur={() =>
+                        setPhone(current => {
+                          const trimmed = current.trim()
+                          const sanitized = sanitizePhone(trimmed)
+                          setNormalizedPhone(sanitized)
+                          return sanitized
+                        })
+                      }
+                      type="tel"
+                      autoComplete="tel"
+                      inputMode="tel"
+                      placeholder="(555) 123-4567"
+                      required
+                      disabled={isLoading}
+                      aria-invalid={phone.length > 0 && normalizedPhone.length === 0}
+                      aria-describedby="phone-hint"
+                    />
+                    <p className="form__hint" id="phone-hint">
+                      We’ll use this to tailor your onboarding.
+                    </p>
+                  </div>
+                </>
               )}
 
               <div className="form__field">
@@ -527,7 +574,13 @@ export default function App() {
                 />
                 {isSignup && (
                   <ul className="form__hint-list" id="password-guidelines">
-                    {checklist.map(item => (
+                    {[
+                      { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: strength.isLongEnough },
+                      { id: 'uppercase', label: 'Includes an uppercase letter', passed: strength.hasUppercase },
+                      { id: 'lowercase', label: 'Includes a lowercase letter', passed: strength.hasLowercase },
+                      { id: 'number', label: 'Includes a number', passed: strength.hasNumber },
+                      { id: 'symbol', label: 'Includes a symbol', passed: strength.hasSymbol },
+                    ].map(item => (
                       <li key={item.id} data-complete={item.passed}>
                         <span className={`form__hint-indicator${item.passed ? ' is-valid' : ''}`}>
                           {item.passed ? '✓' : '•'}
