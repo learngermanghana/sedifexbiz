@@ -15,7 +15,26 @@ describe('useActiveStore', () => {
     window.localStorage.clear()
   })
 
-  it('prefers the persisted store id when available after initialization', async () => {
+  it('prefers the persisted store id when it matches the membership store', async () => {
+    mockUseMemberships.mockReturnValue({
+      memberships: [{ id: 'member-1', storeId: 'matching-store' }],
+      loading: false,
+      error: null,
+    })
+
+    window.localStorage.setItem('activeStoreId', 'matching-store')
+
+    const { result } = renderHook(() => useActiveStore())
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    expect(result.current.storeId).toBe('matching-store')
+    expect(result.current.error).toBeNull()
+  })
+
+  it('updates the persisted store id when membership store differs', async () => {
     mockUseMemberships.mockReturnValue({
       memberships: [{ id: 'member-1', storeId: 'membership-store' }],
       loading: false,
@@ -28,10 +47,10 @@ describe('useActiveStore', () => {
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
+      expect(result.current.storeId).toBe('membership-store')
     })
 
-    expect(result.current.storeId).toBe('persisted-store')
-    expect(result.current.error).toBeNull()
+    expect(window.localStorage.getItem('activeStoreId')).toBe('membership-store')
   })
 
   it('falls back to the membership store id when nothing is persisted', async () => {

@@ -28,6 +28,32 @@ export function useActiveStore(): ActiveStoreState {
   const membershipStoreId = memberships.find(m => m.storeId)?.storeId ?? null
   const normalizedPersistedStoreId =
     persistedStoreId && persistedStoreId.trim() !== '' ? persistedStoreId : null
+
+  useEffect(() => {
+    if (membershipLoading) {
+      return
+    }
+
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    if (!membershipStoreId) {
+      return
+    }
+
+    const trimmedPersistedStoreId =
+      persistedStoreId && persistedStoreId.trim() !== ''
+        ? persistedStoreId.trim()
+        : null
+
+    if (trimmedPersistedStoreId === membershipStoreId) {
+      return
+    }
+
+    setPersistedStoreId(membershipStoreId)
+    window.localStorage.setItem('activeStoreId', membershipStoreId)
+  }, [membershipLoading, membershipStoreId, persistedStoreId])
   const activeStoreId = isPersistedLoading
     ? null
     : normalizedPersistedStoreId ?? membershipStoreId
