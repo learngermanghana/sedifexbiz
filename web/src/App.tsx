@@ -757,6 +757,51 @@ export default function App() {
                 {status.message}
               </p>
             )}
+
+            <nav className="app__socials" aria-label="Sedifex social channels">
+              <ul className="app__socials-list">
+                <li>
+                  <a
+                    className="app__social-link"
+                    href="https://www.facebook.com/sedifex"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    Facebook
+                  </a>
+                </li>
+                <li>
+                  <a
+                    className="app__social-link"
+                    href="https://www.instagram.com/sedifex"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    Instagram
+                  </a>
+                </li>
+                <li>
+                  <a
+                    className="app__social-link"
+                    href="https://www.linkedin.com/company/sedifex"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    LinkedIn
+                  </a>
+                </li>
+                <li>
+                  <a
+                    className="app__social-link"
+                    href="https://www.twitter.com/sedifex"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    Twitter / X
+                  </a>
+                </li>
+              </ul>
+            </nav>
           </div>
 
           <aside className="app__visual" aria-hidden="true">
