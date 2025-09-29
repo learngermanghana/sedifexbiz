@@ -37,7 +37,7 @@ describe('useMemberships', () => {
   it('returns an empty membership list when the user is not authenticated', async () => {
     mockUseAuthUser.mockReturnValue(null)
 
-    const { result } = renderHook(() => useMemberships())
+    const { result } = renderHook(() => useMemberships(null))
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
@@ -68,15 +68,16 @@ describe('useMemberships', () => {
 
     getDocsMock.mockResolvedValue({ docs: [membershipDoc] })
 
-    const { result } = renderHook(() => useMemberships())
+    const { result } = renderHook(() => useMemberships(null))
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
     })
 
     expect(collectionMock).toHaveBeenCalledWith({}, 'teamMembers')
+    expect(whereMock).toHaveBeenCalledTimes(1)
     expect(whereMock).toHaveBeenCalledWith('uid', '==', 'user-123')
-    expect(queryMock).toHaveBeenCalled()
+    expect(queryMock).toHaveBeenCalledWith({ type: 'collection' }, { type: 'where' })
     expect(getDocsMock).toHaveBeenCalled()
 
     expect(result.current.memberships).toEqual([
@@ -108,7 +109,7 @@ describe('useMemberships', () => {
 
     getDocsMock.mockResolvedValue({ docs: [membershipDoc] })
 
-    const { result } = renderHook(() => useMemberships())
+    const { result } = renderHook(() => useMemberships(null))
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false)
@@ -128,5 +129,20 @@ describe('useMemberships', () => {
         updatedAt: null,
       },
     ])
+  })
+
+  it('filters memberships by active store when provided', async () => {
+    mockUseAuthUser.mockReturnValue({ uid: 'user-789' })
+
+    getDocsMock.mockResolvedValue({ docs: [] })
+
+    renderHook(() => useMemberships('active-store'))
+
+    await waitFor(() => {
+      expect(queryMock).toHaveBeenCalled()
+    })
+
+    expect(whereMock).toHaveBeenNthCalledWith(1, 'uid', '==', 'user-789')
+    expect(whereMock).toHaveBeenNthCalledWith(2, 'storeId', '==', 'active-store')
   })
 })

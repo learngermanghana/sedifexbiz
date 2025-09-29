@@ -1,5 +1,6 @@
 // web/src/pages/Gate.tsx
 import type { ReactNode } from 'react'
+import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships } from '../hooks/useMemberships'
 
 function toErrorMessage(error: unknown) {
@@ -13,9 +14,11 @@ function toErrorMessage(error: unknown) {
 }
 
 export default function Gate({ children }: { children?: ReactNode }) {
-  const { loading, error } = useMemberships()
+  const { storeId, isLoading: storeLoading } = useActiveStore()
+  const membershipsStoreId = storeLoading ? undefined : storeId ?? null
+  const { loading, error } = useMemberships(membershipsStoreId)
 
-  if (loading) {
+  if (storeLoading || loading) {
     return <div className="p-6">Loading…</div>
   }
 

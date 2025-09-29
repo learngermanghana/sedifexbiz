@@ -51,7 +51,7 @@ function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): M
   }
 }
 
-export function useMemberships() {
+export function useMemberships(activeStoreId?: string | null) {
   const user = useAuthUser()
   const [loading, setLoading] = useState(true)
   const [memberships, setMemberships] = useState<Membership[]>([])
@@ -70,6 +70,15 @@ export function useMemberships() {
         return
       }
 
+      if (activeStoreId === undefined) {
+        if (!cancelled) {
+          setLoading(true)
+          setError(null)
+          setMemberships([])
+        }
+        return
+      }
+
       if (!cancelled) {
         setLoading(true)
         setError(null)
@@ -77,7 +86,17 @@ export function useMemberships() {
 
       try {
         const membersRef = collection(db, 'teamMembers')
-        const membershipsQuery = query(membersRef, where('uid', '==', user.uid))
+        const constraints = [where('uid', '==', user.uid)]
+        const normalizedStoreId =
+          typeof activeStoreId === 'string' && activeStoreId.trim() !== ''
+            ? activeStoreId
+            : null
+
+        if (normalizedStoreId) {
+          constraints.push(where('storeId', '==', normalizedStoreId))
+        }
+
+        const membershipsQuery = query(membersRef, ...constraints)
         const snapshot = await getDocs(membershipsQuery)
 
         if (cancelled) return
@@ -100,7 +119,7 @@ export function useMemberships() {
     return () => {
       cancelled = true
     }
-  }, [user?.uid])
+  }, [activeStoreId, user?.uid])
 
   return { loading, memberships, error }
 }

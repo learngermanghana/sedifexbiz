@@ -6,7 +6,7 @@ import { useActiveStore } from './useActiveStore'
 const mockUseMemberships = vi.fn()
 
 vi.mock('./useMemberships', () => ({
-  useMemberships: () => mockUseMemberships(),
+  useMemberships: (storeId?: string | null) => mockUseMemberships(storeId),
 }))
 
 describe('useActiveStore', () => {
@@ -16,11 +16,15 @@ describe('useActiveStore', () => {
   })
 
   it('prefers the persisted store id when it matches the membership store', async () => {
-    mockUseMemberships.mockReturnValue({
-      memberships: [{ id: 'member-1', storeId: 'matching-store' }],
-      loading: false,
-      error: null,
-    })
+    mockUseMemberships.mockImplementation(storeId =>
+      storeId === undefined
+        ? { memberships: [], loading: true, error: null }
+        : {
+            memberships: [{ id: 'member-1', storeId: 'matching-store' }],
+            loading: false,
+            error: null,
+          },
+    )
 
     window.localStorage.setItem('activeStoreId', 'matching-store')
 
@@ -35,11 +39,15 @@ describe('useActiveStore', () => {
   })
 
   it('updates the persisted store id when membership store differs', async () => {
-    mockUseMemberships.mockReturnValue({
-      memberships: [{ id: 'member-1', storeId: 'membership-store' }],
-      loading: false,
-      error: null,
-    })
+    mockUseMemberships.mockImplementation(storeId =>
+      storeId === undefined
+        ? { memberships: [], loading: true, error: null }
+        : {
+            memberships: [{ id: 'member-1', storeId: 'membership-store' }],
+            loading: false,
+            error: null,
+          },
+    )
 
     window.localStorage.setItem('activeStoreId', 'persisted-store')
 
@@ -54,14 +62,18 @@ describe('useActiveStore', () => {
   })
 
   it('falls back to the membership store id when nothing is persisted', async () => {
-    mockUseMemberships.mockReturnValue({
-      memberships: [
-        { id: 'member-1', storeId: 'membership-store' },
-        { id: 'member-2', storeId: 'membership-store-2' },
-      ],
-      loading: false,
-      error: null,
-    })
+    mockUseMemberships.mockImplementation(storeId =>
+      storeId === undefined
+        ? { memberships: [], loading: true, error: null }
+        : {
+            memberships: [
+              { id: 'member-1', storeId: 'membership-store' },
+              { id: 'member-2', storeId: 'membership-store-2' },
+            ],
+            loading: false,
+            error: null,
+          },
+    )
 
     const { result } = renderHook(() => useActiveStore())
 
