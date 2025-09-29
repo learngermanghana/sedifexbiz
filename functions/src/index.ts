@@ -159,6 +159,133 @@ function normalizePaymentMethod(method: string): string {
   return normalized
 }
 
+type NormalizedSaleItem = {
+  productId: string
+  name: string
+  price: number
+  qty: number
+  taxRate: number
+}
+
+type NormalizedSaleCustomer = {
+  id: string
+  name: string
+  phone?: string
+  email?: string
+}
+
+function normalizeSaleId(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function normalizeSaleCustomer(value: unknown): NormalizedSaleCustomer | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const record = value as Record<string, unknown>
+  const id = typeof record.id === 'string' ? record.id.trim() : ''
+  if (!id) {
+    return null
+  }
+
+  const nameRaw = typeof record.name === 'string' ? record.name.trim() : ''
+  const customer: NormalizedSaleCustomer = {
+    id,
+    name: nameRaw || id,
+  }
+
+  const phone = typeof record.phone === 'string' ? record.phone.trim() : ''
+  if (phone) customer.phone = phone
+
+  const email = typeof record.email === 'string' ? record.email.trim() : ''
+  if (email) customer.email = email.toLowerCase()
+
+  return customer
+}
+
+function normalizeSaleItems(value: unknown): NormalizedSaleItem[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'At least one item is required to record the sale.',
+    )
+  }
+
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== 'object') {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        `Item ${index + 1} is invalid. Refresh and try again.`,
+      )
+    }
+
+    const record = entry as Record<string, unknown>
+    const productId = typeof record.productId === 'string' ? record.productId.trim() : ''
+    if (!productId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Each cart line must reference a valid product before recording the sale.',
+      )
+    }
+
+    const name = typeof record.name === 'string' ? record.name : ''
+    const qtyValue = Number(record.qty)
+    if (!Number.isFinite(qtyValue) || qtyValue <= 0) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Update item quantities before recording the sale.',
+      )
+    }
+
+    const priceValue = Number(record.price)
+    if (!Number.isFinite(priceValue) || priceValue < 0) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Each item needs a valid price before selling.',
+      )
+    }
+
+    const taxRateValue = Number(record.taxRate)
+    const taxRate = Number.isFinite(taxRateValue) && taxRateValue >= 0 ? taxRateValue : 0
+
+    return {
+      productId,
+      name,
+      price: priceValue,
+      qty: qtyValue,
+      taxRate,
+    }
+  })
+}
+
+function normalizeSaleTotals(value: unknown, field: string): number {
+  const amount = Number(value)
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new functions.https.HttpsError('invalid-argument', `${field} must be zero or greater`)
+  }
+  return amount
+}
+
+function normalizeSaleTenders(value: unknown): Record<string, number> {
+  const tenders: Record<string, number> = {}
+  if (!value || typeof value !== 'object') {
+    return tenders
+  }
+
+  for (const [method, amountRaw] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedMethod = method.trim()
+    if (!normalizedMethod) continue
+    const amount = Number(amountRaw)
+    if (!Number.isFinite(amount) || amount < 0) continue
+    tenders[normalizedMethod] = amount
+  }
+
+  return tenders
+}
+
 type TenderStats = {
   methods: string[]
   cardTotal: number
@@ -1196,6 +1323,130 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
 
   await memberRef.set(memberData, { merge: true })
   return { ok: true, role, email, uid: record.uid, created, storeId }
+})
+
+export const recordSale = functions.https.onCall(async (data, context) => {
+  assertStaffAccess(context)
+
+  const cashierId = context.auth?.uid ?? null
+  if (!cashierId) {
+    throw new functions.https.HttpsError('unauthenticated', 'Login required')
+  }
+
+  const payload = (data ?? {}) as Record<string, unknown>
+  const storeIdRaw = typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
+  if (!storeIdRaw) {
+    throw new functions.https.HttpsError('invalid-argument', 'A workspace must be selected to record a sale.')
+  }
+
+  const saleId = normalizeSaleId(payload.saleId)
+  const tenders = normalizeSaleTenders(payload.tenders)
+  const changeDue = normalizeSaleTotals(payload.changeDue ?? 0, 'Change due')
+  const subtotal = normalizeSaleTotals(payload.subtotal ?? 0, 'Subtotal')
+  const items = normalizeSaleItems(payload.items)
+  const customer = normalizeSaleCustomer(payload.customer)
+
+  const saleRef = saleId ? db.collection('sales').doc(saleId) : db.collection('sales').doc()
+  const resolvedSaleId = saleRef.id
+
+  const saleItemsCollection = db.collection('saleItems')
+  const stockCollection = db.collection('stock')
+  const ledgerCollection = db.collection('ledger')
+
+  await db.runTransaction(async tx => {
+    const existingSale = await tx.get(saleRef)
+    if (existingSale.exists) {
+      throw new functions.https.HttpsError('already-exists', 'This sale has already been recorded.')
+    }
+
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+
+    const productEntries = await Promise.all(
+      items.map(async item => {
+        const productRef = db.collection('products').doc(item.productId)
+        const productSnapshot = await tx.get(productRef)
+        return { item, productRef, productSnapshot }
+      }),
+    )
+
+    const saleData: admin.firestore.DocumentData = {
+      branchId: storeIdRaw,
+      storeId: storeIdRaw,
+      cashierId,
+      total: subtotal,
+      taxTotal: 0,
+      tenders,
+      changeDue,
+      customer,
+      items,
+      createdBy: cashierId,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    tx.set(saleRef, saleData)
+
+    for (const { item, productRef, productSnapshot } of productEntries) {
+      if (!productSnapshot.exists) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          `${item.name || 'Product'} is unavailable. Refresh your catalog and try again.`,
+        )
+      }
+
+      const productStoreIdRaw = productSnapshot.get('storeId')
+      const productStoreId = typeof productStoreIdRaw === 'string' ? productStoreIdRaw.trim() : ''
+      if (productStoreId && productStoreId !== storeIdRaw) {
+        throw new functions.https.HttpsError('failed-precondition', 'Product belongs to a different workspace.')
+      }
+
+      const currentStockRaw = productSnapshot.get('stockCount')
+      const currentStock = Number(currentStockRaw ?? 0) || 0
+      const qtyChange = Math.abs(item.qty)
+      const nextStock = currentStock - qtyChange
+
+      const saleItemRef = saleItemsCollection.doc()
+      tx.set(saleItemRef, {
+        saleId: resolvedSaleId,
+        productId: item.productId,
+        qty: item.qty,
+        price: item.price,
+        taxRate: item.taxRate,
+        storeId: storeIdRaw,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+
+      const stockRef = stockCollection.doc()
+      tx.set(stockRef, {
+        productId: item.productId,
+        qtyChange: -qtyChange,
+        reason: 'sale',
+        refId: resolvedSaleId,
+        storeId: storeIdRaw,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+
+      tx.update(productRef, {
+        stockCount: nextStock,
+        updatedAt: timestamp,
+      })
+
+      const ledgerRef = ledgerCollection.doc()
+      tx.set(ledgerRef, {
+        productId: item.productId,
+        qtyChange: -qtyChange,
+        type: 'sale',
+        refId: resolvedSaleId,
+        storeId: storeIdRaw,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })
+    }
+  })
+
+  return { ok: true, saleId: resolvedSaleId }
 })
 
 export const receiveStock = functions.https.onCall(async (data, context) => {

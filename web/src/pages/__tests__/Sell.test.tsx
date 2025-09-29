@@ -30,6 +30,11 @@ vi.mock('../../firebase', () => ({
   db: {},
 }))
 
+const mockPublish = vi.fn()
+vi.mock('../../components/ToastProvider', () => ({
+  useToast: () => ({ publish: mockPublish }),
+}))
+
 const mockUseAuthUser = vi.fn(() => ({ uid: 'user-1', email: 'cashier@example.com' }))
 vi.mock('../../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
@@ -111,6 +116,7 @@ describe('Sell page barcode scanner', () => {
     mockSaveCachedProducts.mockReset()
     mockLoadCachedCustomers.mockReset()
     mockSaveCachedCustomers.mockReset()
+    mockPublish.mockReset()
     collectionMock.mockClear()
     queryMock.mockClear()
     orderByMock.mockClear()

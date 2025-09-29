@@ -7,11 +7,10 @@ import {
   onSnapshot,
   doc,
   where,
-  runTransaction,
-  serverTimestamp,
 } from 'firebase/firestore'
+import { httpsCallable } from 'firebase/functions'
 import { FirebaseError } from 'firebase/app'
-import { db } from '../firebase'
+import { db, functions } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import './Sell.css'
@@ -26,6 +25,8 @@ import {
   saveCachedProducts,
 } from '../utils/offlineCache'
 import { buildSimplePdf } from '../utils/pdf'
+import { queueCallableRequest } from '../utils/offlineQueue'
+import { useToast } from '../components/ToastProvider'
 
 type Product = {
   id: string
@@ -162,6 +163,14 @@ function normalizeTenderEntries(tenders: Record<string, number>): TenderEntry[] 
     .filter(entry => Number.isFinite(entry.amount) && entry.amount > 0)
 }
 
+type SaleItemPayload = {
+  productId: string
+  name: string
+  price: number
+  qty: number
+  taxRate: number
+}
+
 function getTenderTotal(tenders: Record<string, number>): number {
   return normalizeTenderEntries(tenders).reduce((sum, entry) => sum + entry.amount, 0)
 }
@@ -203,6 +212,9 @@ export default function Sell() {
   } | null>(null)
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null)
+  const [pendingStockAdjustments, setPendingStockAdjustments] = useState<
+    Record<string, { delta: number; expectedStock: number | null }>
+  >({})
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
   const selectedCustomerDisplayName = selectedCustomer
@@ -223,6 +235,20 @@ export default function Sell() {
   }, [amountPaid, paymentMethod, subtotal])
   const tenderTotal = useMemo(() => getTenderTotal(tenders), [tenders])
   const tenderBreakdown = useMemo(() => formatTenderBreakdown(tenders), [tenders])
+  const { publish } = useToast()
+
+  const productsForDisplay = useMemo(() => {
+    if (!Object.keys(pendingStockAdjustments).length) {
+      return products
+    }
+    return products.map(product => {
+      const adjustment = pendingStockAdjustments[product.id]
+      if (!adjustment) return product
+      const baseStock = typeof product.stockCount === 'number' ? product.stockCount : 0
+      const adjustedStock = Math.max(0, baseStock - adjustment.delta)
+      return { ...product, stockCount: adjustedStock }
+    })
+  }, [pendingStockAdjustments, products])
 
   useEffect(() => {
     let cancelled = false
@@ -275,6 +301,23 @@ export default function Sell() {
       const sortedRows = [...sanitizedRows].sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
       )
+      setPendingStockAdjustments(current => {
+        if (!Object.keys(current).length) {
+          return current
+        }
+        let changed = false
+        const next = { ...current }
+        sortedRows.forEach(row => {
+          const entry = current[row.id]
+          if (!entry) return
+          const currentStock = Number(row.stockCount ?? 0) || 0
+          if (entry.expectedStock !== null && currentStock <= entry.expectedStock) {
+            delete next[row.id]
+            changed = true
+          }
+        })
+        return changed ? next : current
+      })
       setProducts(sortedRows)
     })
 
@@ -435,6 +478,7 @@ export default function Sell() {
     setScannerStatus(null)
     setReceipt(null)
     setReceiptSharePayload(null)
+    setPendingStockAdjustments({})
   }, [storeChangeToken])
 
   const handleDownloadPdf = useCallback(() => {
@@ -549,10 +593,6 @@ export default function Sell() {
     setReceipt(null)
     setIsRecording(true)
     const saleId = doc(collection(db, 'sales')).id
-    const saleRef = doc(db, 'sales', saleId)
-    const saleItemsCollection = collection(db, 'saleItems')
-    const stockCollection = collection(db, 'stock')
-    const ledgerCollection = collection(db, 'ledger')
 
     const receiptItems = cart.map(line => ({ ...line }))
     const saleCustomer = selectedCustomer
@@ -564,147 +604,36 @@ export default function Sell() {
         }
       : null
 
-    try {
-      await runTransaction(db, async transaction => {
-        const existingSale = await transaction.get(saleRef)
-        if (typeof existingSale.exists === 'function' ? existingSale.exists() : existingSale.exists) {
-          throw new Error('This sale has already been recorded.')
-        }
+    let normalizedItems: SaleItemPayload[] = []
+    let callablePayload: {
+      saleId: string
+      storeId: string
+      subtotal: number
+      taxTotal: number
+      tenders: Record<string, number>
+      changeDue: number
+      customer: typeof saleCustomer
+      items: SaleItemPayload[]
+    } | null = null
 
-        const timestamp = serverTimestamp()
-        const normalizedItems = cart.map(line => {
-          const productId = typeof line.productId === 'string' ? line.productId.trim() : ''
-          if (!productId) {
-            throw new Error('Each cart line must reference a valid product before recording the sale.')
-          }
-
-          const qty = Number(line.qty)
-          if (!Number.isFinite(qty) || qty <= 0) {
-            throw new Error('Update item quantities before recording the sale.')
-          }
-
-          const price = Number(line.price)
-          if (!Number.isFinite(price) || price < 0) {
-            throw new Error('Each item needs a valid price before selling.')
-          }
-
-          return {
-            productId,
-            name: line.name,
-            price,
-            qty,
-            taxRate: 0,
-          }
-        })
-
-        const productEntries = await Promise.all(
-          normalizedItems.map(async item => {
-            const productRef = doc(db, 'products', item.productId)
-            const productSnapshot = await transaction.get(productRef)
-            return { item, productRef, productSnapshot }
-          }),
-        )
-
-        const saleData = {
-          branchId: activeStoreId,
-          storeId: activeStoreId,
-          cashierId: user.uid,
-          total: subtotal,
-          taxTotal: 0,
-          tenders: { ...tenders },
-          changeDue,
-          customer: saleCustomer,
-          items: normalizedItems,
-          createdBy: user.uid,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        }
-
-        const saleItemWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
-        const stockWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
-        const productUpdates: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
-        const ledgerWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
-
-        for (const { item, productRef, productSnapshot } of productEntries) {
-          const productExists = productSnapshot && (typeof productSnapshot.exists === 'function'
-            ? productSnapshot.exists()
-            : productSnapshot.exists)
-          if (!productExists) {
-            throw new Error(`${item.name || 'Product'} is unavailable. Refresh your catalog and try again.`)
-          }
-
-          const currentStockRaw = typeof productSnapshot.get === 'function'
-            ? productSnapshot.get('stockCount')
-            : (productSnapshot.data?.stockCount ?? productSnapshot.stockCount)
-          const currentStock = Number(currentStockRaw ?? 0) || 0
+    const applyOptimisticOutcome = (items: SaleItemPayload[], queued: boolean) => {
+      setPendingStockAdjustments(current => {
+        const next = { ...current }
+        for (const item of items) {
+          const existing = next[item.productId]
+          const product = products.find(p => p.id === item.productId)
+          const baseStock =
+            existing && existing.expectedStock !== null
+              ? existing.expectedStock
+              : typeof product?.stockCount === 'number'
+                ? product.stockCount
+                : null
           const qtyChange = Math.abs(item.qty)
-          const nextStock = currentStock - qtyChange
-
-          const saleItemRef = doc(saleItemsCollection)
-          saleItemWrites.push({
-            ref: saleItemRef,
-            data: {
-              saleId,
-              productId: item.productId,
-              qty: item.qty,
-              price: item.price,
-              taxRate: item.taxRate,
-              storeId: activeStoreId,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            },
-          })
-
-          const stockRef = doc(stockCollection)
-          stockWrites.push({
-            ref: stockRef,
-            data: {
-              productId: item.productId,
-              qtyChange: -qtyChange,
-              reason: 'sale',
-              refId: saleId,
-              storeId: activeStoreId,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            },
-          })
-
-          productUpdates.push({
-            ref: productRef,
-            data: {
-              stockCount: nextStock,
-              updatedAt: timestamp,
-            },
-          })
-
-          const ledgerRef = doc(ledgerCollection)
-          ledgerWrites.push({
-            ref: ledgerRef,
-            data: {
-              productId: item.productId,
-              qtyChange: -qtyChange,
-              type: 'sale',
-              refId: saleId,
-              storeId: activeStoreId,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            },
-          })
+          const delta = (existing?.delta ?? 0) + qtyChange
+          const expectedStock = baseStock === null ? null : Math.max(0, baseStock - qtyChange)
+          next[item.productId] = { delta, expectedStock }
         }
-
-        transaction.set(saleRef, saleData)
-        for (const { ref, data } of saleItemWrites) {
-          transaction.set(ref, data)
-        }
-        for (const { ref, data } of stockWrites) {
-          transaction.set(ref, data)
-        }
-        for (const { ref, data } of ledgerWrites) {
-          transaction.set(ref, data)
-        }
-        for (const { ref, data } of productUpdates) {
-          transaction.update(ref, data)
-        }
+        return next
       })
 
       setReceipt({
@@ -719,11 +648,74 @@ export default function Sell() {
       setCart([])
       setSelectedCustomerId('')
       setAmountTendered('')
-      setSaleSuccess(`Sale recorded #${saleId}. Receipt sent to printer.`)
+      setSaleError(null)
+      setSaleSuccess(
+        queued
+          ? `Sale queued #${saleId}. Receipt sent to printer.`
+          : `Sale recorded #${saleId}. Receipt sent to printer.`,
+      )
+    }
+
+    try {
+      normalizedItems = cart.map(line => {
+        const productId = typeof line.productId === 'string' ? line.productId.trim() : ''
+        if (!productId) {
+          throw new Error('Each cart line must reference a valid product before recording the sale.')
+        }
+
+        const qty = Number(line.qty)
+        if (!Number.isFinite(qty) || qty <= 0) {
+          throw new Error('Update item quantities before recording the sale.')
+        }
+
+        const price = Number(line.price)
+        if (!Number.isFinite(price) || price < 0) {
+          throw new Error('Each item needs a valid price before selling.')
+        }
+
+        return {
+          productId,
+          name: line.name,
+          price,
+          qty,
+          taxRate: 0,
+        }
+      })
+
+      callablePayload = {
+        saleId,
+        storeId: activeStoreId,
+        subtotal,
+        taxTotal: 0,
+        tenders: { ...tenders },
+        changeDue,
+        customer: saleCustomer,
+        items: normalizedItems,
+      }
+
+      const callable = httpsCallable(functions, 'recordSale')
+      await callable(callablePayload)
+      applyOptimisticOutcome(normalizedItems, false)
     } catch (err) {
+      const offline = isOfflineError(err)
+      if (offline) {
+        try {
+          if (callablePayload) {
+            const queued = await queueCallableRequest('recordSale', callablePayload, 'sale')
+            if (queued) {
+              publish({ message: 'Queued sale • will sync' })
+              applyOptimisticOutcome(normalizedItems, true)
+              return
+            }
+          }
+        } catch (queueError) {
+          console.error('[sell] Failed to queue sale for background sync', queueError)
+        }
+      }
+
       console.error('[sell] Unable to record sale', err)
       const message = err instanceof Error ? err.message : null
-      const fallback = isOfflineError(err)
+      const fallback = offline
         ? 'We were unable to record this sale while offline. Please try again once you have a connection.'
         : 'We were unable to record this sale. Please try again.'
       setSaleError(message && message.trim().length > 0 ? message : fallback)
@@ -734,7 +726,7 @@ export default function Sell() {
 
 
 
-  const filtered = products.filter(p => p.name.toLowerCase().includes(queryText.toLowerCase()))
+  const filtered = productsForDisplay.filter(p => p.name.toLowerCase().includes(queryText.toLowerCase()))
 
   return (
     <div className="page sell-page">

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, beforeAll, afterAll } from 'vitest'
+import { describe, expect, it, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -11,31 +11,10 @@ vi.mock('../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-const mockUseActiveStoreContext = vi.fn(() => ({
-  storeId: 'store-1',
-  isLoading: false,
-  error: null,
-  memberships: [],
-  membershipsLoading: false,
-  setActiveStoreId: vi.fn(),
-  storeChangeToken: 0,
-}))
+const mockUseActiveStoreContext = vi.fn()
 vi.mock('../context/ActiveStoreProvider', () => ({
   useActiveStoreContext: () => mockUseActiveStoreContext(),
 }))
-
-const originalCreateObjectURL = globalThis.URL.createObjectURL
-const originalRevokeObjectURL = globalThis.URL.revokeObjectURL
-
-beforeAll(() => {
-  ;(globalThis.URL as any).createObjectURL = vi.fn(() => 'blob:mock-url')
-  ;(globalThis.URL as any).revokeObjectURL = vi.fn()
-})
-
-afterAll(() => {
-  ;(globalThis.URL as any).createObjectURL = originalCreateObjectURL
-  ;(globalThis.URL as any).revokeObjectURL = originalRevokeObjectURL
-})
 
 const mockLoadCachedProducts = vi.fn(async () => [] as unknown[])
 const mockSaveCachedProducts = vi.fn(async () => {})
@@ -59,34 +38,22 @@ vi.mock('../utils/offlineCache', () => ({
   ) => mockSaveCachedCustomers(...args),
 }))
 
-vi.mock('../firebase', () => ({
-  db: {},
+const mockPublish = vi.fn()
+vi.mock('../components/ToastProvider', () => ({
+  useToast: () => ({ publish: mockPublish }),
 }))
 
-const productSnapshot = {
-  docs: [
-    {
-      id: 'product-1',
-      data: () => ({ id: 'product-1', name: 'Iced Coffee', price: 12 }),
-    },
-    {
-      id: 'product-2',
-      data: () => ({ id: 'product-2', name: 'Mystery Item' }),
-    },
-  ],
-}
+const mockQueueCallableRequest = vi.fn(async () => false)
+vi.mock('../utils/offlineQueue', () => ({
+  queueCallableRequest: (
+    ...args: Parameters<typeof mockQueueCallableRequest>
+  ) => mockQueueCallableRequest(...args),
+}))
 
-const customerSnapshot = {
-  docs: [
-    {
-      id: 'customer-1',
-      data: () => ({ id: 'customer-1', name: 'Ada Lovelace', phone: '+233200000000' }),
-    },
-  ],
-}
-
-type FakeCollectionRef = { type: 'collection'; path: string }
-type FakeDocRef = { type: 'doc'; path: string; id: string; collectionPath: string }
+vi.mock('../firebase', () => ({
+  db: {},
+  functions: {},
+}))
 
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
 const queryMock = vi.fn((collectionRef: { path: string }, ...clauses: unknown[]) => ({
@@ -98,24 +65,37 @@ const orderByMock = vi.fn((field: string, direction?: string) => ({ type: 'order
 const limitMock = vi.fn((value: number) => ({ type: 'limit', value }))
 const whereMock = vi.fn((field: string, op: string, value: unknown) => ({ type: 'where', field, op, value }))
 
+let snapshotListeners: Record<string, ((snap: any) => void)[]> = {}
+
+function emitSnapshot(path: string, docs: Array<{ id: string; data: () => unknown }>) {
+  const listeners = snapshotListeners[path] ?? []
+  const snapshot = {
+    docs: docs.map(doc => ({ id: doc.id, data: doc.data })),
+  }
+  listeners.forEach(listener => listener(snapshot))
+}
+
 const onSnapshotMock = vi.fn((queryRef: { collection: { path: string } }, callback: (snap: unknown) => void) => {
+  const path = queryRef.collection.path
+  snapshotListeners[path] = snapshotListeners[path] ?? []
+  snapshotListeners[path].push(callback)
   queueMicrotask(() => {
-    if (queryRef.collection.path === 'products') {
-      callback(productSnapshot)
+    if (path === 'products') {
+      emitSnapshot('products', productDocs)
     }
-    if (queryRef.collection.path === 'customers') {
-      callback(customerSnapshot)
+    if (path === 'customers') {
+      emitSnapshot('customers', customerDocs)
     }
   })
   return () => {
-    /* noop */
+    snapshotListeners[path] = (snapshotListeners[path] ?? []).filter(listener => listener !== callback)
   }
 })
 
 let autoCounters: Record<string, number> = {}
-const docMock = vi.fn((...args: unknown[]): FakeDocRef => {
+const docMock = vi.fn((...args: unknown[]) => {
   if (args.length === 1) {
-    const collectionRef = args[0] as FakeCollectionRef
+    const collectionRef = args[0] as { path: string }
     const collectionPath = collectionRef.path
     if (collectionPath === 'sales') {
       return { type: 'doc', path: 'sales/sale-42', id: 'sale-42', collectionPath }
@@ -139,41 +119,6 @@ const docMock = vi.fn((...args: unknown[]): FakeDocRef => {
   throw new Error('Unsupported doc invocation in test mock')
 })
 
-type RecordedOperation = { type: 'set' | 'update'; path: string; data: any }
-
-let firestoreState: Record<string, any> = {}
-let lastTransactionOperations: RecordedOperation[] = []
-
-function createSnapshot(path: string, data: any) {
-  return {
-    exists: () => data !== undefined,
-    data: () => data,
-    get: (field: string) => (data ? data[field] : undefined),
-    path,
-  }
-}
-
-const runTransactionMock = vi.fn(async (_db: unknown, updater: any) => {
-  const operations: RecordedOperation[] = []
-  const transaction = {
-    get: vi.fn(async (ref: FakeDocRef) => createSnapshot(ref.path, firestoreState[ref.path])),
-    set: vi.fn((ref: FakeDocRef, data: any) => {
-      operations.push({ type: 'set', path: ref.path, data })
-      firestoreState[ref.path] = data
-    }),
-    update: vi.fn((ref: FakeDocRef, data: any) => {
-      operations.push({ type: 'update', path: ref.path, data })
-      firestoreState[ref.path] = { ...(firestoreState[ref.path] ?? {}), ...data }
-    }),
-  }
-
-  const result = await updater(transaction)
-  lastTransactionOperations = operations
-  return result
-})
-
-const serverTimestampMock = vi.fn(() => 'server-timestamp')
-
 vi.mock('firebase/firestore', () => ({
   collection: (
     ...args: Parameters<typeof collectionMock>
@@ -196,15 +141,42 @@ vi.mock('firebase/firestore', () => ({
   onSnapshot: (
     ...args: Parameters<typeof onSnapshotMock>
   ) => onSnapshotMock(...args),
-  runTransaction: (
-    ...args: Parameters<typeof runTransactionMock>
-  ) => runTransactionMock(...args),
-  serverTimestamp: () => serverTimestampMock(),
+}))
+
+const mockCallable = vi.fn(async () => ({ data: { ok: true } }))
+const mockHttpsCallable = vi.fn(() => mockCallable)
+
+vi.mock('firebase/functions', () => ({
+  httpsCallable: (
+    ...args: Parameters<typeof mockHttpsCallable>
+  ) => mockHttpsCallable(...args),
 }))
 
 function renderWithProviders(ui: ReactElement) {
   return render(ui, { wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter> })
 }
+
+let productDocs: Array<{ id: string; data: () => unknown }> = []
+let customerDocs: Array<{ id: string; data: () => unknown }> = []
+
+const originalCreateObjectURL = globalThis.URL.createObjectURL
+const originalRevokeObjectURL = globalThis.URL.revokeObjectURL
+
+beforeAll(() => {
+  ;(globalThis.URL as any).createObjectURL = vi.fn(() => 'blob:mock-url')
+  ;(globalThis.URL as any).revokeObjectURL = vi.fn()
+})
+
+afterAll(() => {
+  ;(globalThis.URL as any).createObjectURL = originalCreateObjectURL
+  ;(globalThis.URL as any).revokeObjectURL = originalRevokeObjectURL
+})
+
+afterEach(() => {
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true })
+  }
+})
 
 describe('Sell page', () => {
   beforeEach(() => {
@@ -224,13 +196,26 @@ describe('Sell page', () => {
       storeChangeToken: 0,
     })
 
+    productDocs = [
+      {
+        id: 'product-1',
+        data: () => ({ id: 'product-1', name: 'Iced Coffee', price: 12, stockCount: 5 }),
+      },
+      {
+        id: 'product-2',
+        data: () => ({ id: 'product-2', name: 'Mystery Item' }),
+      },
+    ]
+
+    customerDocs = [
+      {
+        id: 'customer-1',
+        data: () => ({ id: 'customer-1', name: 'Ada Lovelace', phone: '+233200000000' }),
+      },
+    ]
+
+    snapshotListeners = {}
     autoCounters = {}
-    firestoreState = {
-      'products/product-1': { stockCount: 5, storeId: 'store-1', price: 12, name: 'Iced Coffee' },
-    }
-    lastTransactionOperations = []
-    runTransactionMock.mockClear()
-    serverTimestampMock.mockClear()
     mockLoadCachedProducts.mockReset()
     mockLoadCachedCustomers.mockReset()
     mockSaveCachedProducts.mockReset()
@@ -239,15 +224,24 @@ describe('Sell page', () => {
     mockLoadCachedCustomers.mockResolvedValue([])
     mockSaveCachedProducts.mockResolvedValue(undefined)
     mockSaveCachedCustomers.mockResolvedValue(undefined)
+
     collectionMock.mockClear()
     queryMock.mockClear()
     orderByMock.mockClear()
     limitMock.mockClear()
+    whereMock.mockClear()
     docMock.mockClear()
     onSnapshotMock.mockClear()
+    mockCallable.mockClear()
+    mockHttpsCallable.mockClear()
+    mockHttpsCallable.mockReturnValue(mockCallable)
+    mockCallable.mockResolvedValue({ data: { ok: true } })
+    mockQueueCallableRequest.mockReset()
+    mockQueueCallableRequest.mockResolvedValue(false)
+    mockPublish.mockReset()
   })
 
-  it('records a cash sale with a Firestore transaction', async () => {
+  it('records a cash sale via callable and updates stock optimistically', async () => {
     const user = userEvent.setup()
 
     renderWithProviders(<Sell />)
@@ -263,34 +257,25 @@ describe('Sell page', () => {
     await user.click(recordButton)
 
     await waitFor(() => {
-      expect(runTransactionMock).toHaveBeenCalledTimes(1)
+      expect(mockCallable).toHaveBeenCalledTimes(1)
     })
 
-    const saleOperation = lastTransactionOperations.find(op => op.type === 'set' && op.path === 'sales/sale-42')
-    expect(saleOperation?.data).toMatchObject({
-      branchId: 'store-1',
-      total: 12,
-      tenders: { cash: 15 },
-      changeDue: 3,
-      items: [expect.objectContaining({ productId: 'product-1', qty: 1, price: 12 })],
-    })
+    const payload = mockCallable.mock.calls[0][0]
+    expect(payload.storeId).toBe('store-1')
+    expect(payload.saleId).toBe('sale-42')
+    expect(payload.tenders).toEqual({ cash: 15 })
+    expect(payload.items).toEqual([
+      expect.objectContaining({ productId: 'product-1', qty: 1, price: 12 }),
+    ])
 
-    const saleItemOperation = lastTransactionOperations.find(op => op.type === 'set' && op.path.startsWith('saleItems/'))
-    expect(saleItemOperation?.data).toMatchObject({ saleId: 'sale-42', productId: 'product-1', qty: 1, price: 12 })
-
-    const stockOperation = lastTransactionOperations.find(op => op.type === 'set' && op.path.startsWith('stock/'))
-    expect(stockOperation?.data).toMatchObject({ productId: 'product-1', qtyChange: -1, reason: 'sale', refId: 'sale-42' })
-
-    const ledgerOperation = lastTransactionOperations.find(op => op.type === 'set' && op.path.startsWith('ledger/'))
-    expect(ledgerOperation?.data).toMatchObject({ productId: 'product-1', qtyChange: -1, type: 'sale', refId: 'sale-42' })
-
-    const productUpdate = lastTransactionOperations.find(op => op.type === 'update' && op.path === 'products/product-1')
-    expect(productUpdate?.data).toMatchObject({ stockCount: 4 })
-
+    expect(await screen.findByText(/Sale #\s*sale-42/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Cart is empty/i)).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
+    expect(await screen.findByText(/Stock 4/)).toBeInTheDocument()
   })
 
-  it('shows a friendly error when the transaction fails validation', async () => {
-    firestoreState = {}
+  it('shows a friendly error when the callable rejects', async () => {
+    mockCallable.mockRejectedValueOnce(new Error('Validation failed'))
     const user = userEvent.setup()
 
     renderWithProviders(<Sell />)
@@ -305,23 +290,69 @@ describe('Sell page', () => {
     const recordButton = screen.getByRole('button', { name: /record sale/i })
     await user.click(recordButton)
 
-    const errorAlert = await screen.findByText(/refresh your catalog and try again/i)
-    expect(errorAlert).toBeInTheDocument()
-    expect(runTransactionMock).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText(/Validation failed/i)).toBeInTheDocument()
+    expect(mockQueueCallableRequest).not.toHaveBeenCalled()
   })
 
-  it('disables products that do not have a valid price', async () => {
+  it('queues the sale when offline and notifies the user', async () => {
+    mockCallable.mockRejectedValueOnce(new Error('Network error'))
+    mockQueueCallableRequest.mockResolvedValueOnce(true)
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false })
+
     const user = userEvent.setup()
 
     renderWithProviders(<Sell />)
 
-    const unavailableButton = await screen.findByRole('button', { name: /mystery item/i })
-    expect(unavailableButton).toBeDisabled()
-    expect(unavailableButton).toHaveTextContent(/price unavailable/i)
-    expect(unavailableButton).toHaveTextContent(/set price to sell/i)
+    const productButton = await screen.findByRole('button', { name: /iced coffee/i })
+    await user.click(productButton)
 
-    await user.click(unavailableButton)
+    const cashInput = screen.getByLabelText(/cash received/i)
+    await user.clear(cashInput)
+    await user.type(cashInput, '12')
 
-    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
+    const recordButton = screen.getByRole('button', { name: /record sale/i })
+    await user.click(recordButton)
+
+    await waitFor(() => {
+      expect(mockQueueCallableRequest).toHaveBeenCalledWith('recordSale', expect.any(Object), 'sale')
+    })
+
+    expect(mockPublish).toHaveBeenCalledWith({ message: 'Queued sale • will sync' })
+    expect(await screen.findByText(/Sale #\s*sale-42/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Cart is empty/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Stock 4/)).toBeInTheDocument()
+  })
+
+  it('clears optimistic stock deltas when product snapshots update', async () => {
+    const user = userEvent.setup()
+
+    renderWithProviders(<Sell />)
+
+    const productButton = await screen.findByRole('button', { name: /iced coffee/i })
+    await user.click(productButton)
+
+    const cashInput = screen.getByLabelText(/cash received/i)
+    await user.clear(cashInput)
+    await user.type(cashInput, '12')
+
+    const recordButton = screen.getByRole('button', { name: /record sale/i })
+    await user.click(recordButton)
+
+    await waitFor(() => {
+      expect(mockCallable).toHaveBeenCalledTimes(1)
+    })
+
+    expect(await screen.findByText(/Stock 4/)).toBeInTheDocument()
+
+    productDocs = [
+      {
+        id: 'product-1',
+        data: () => ({ id: 'product-1', name: 'Iced Coffee', price: 12, stockCount: 4 }),
+      },
+    ]
+    emitSnapshot('products', productDocs)
+
+    expect(await screen.findByText(/Stock 4/)).toBeInTheDocument()
+    expect(mockQueueCallableRequest).not.toHaveBeenCalled()
   })
 })
