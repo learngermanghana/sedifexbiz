@@ -1,5 +1,5 @@
 import { describe, beforeEach, it, expect, vi } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { renderHook, waitFor, act } from '@testing-library/react'
 
 import { useActiveStore } from './useActiveStore'
 import { getActiveStoreStorageKey } from '../utils/activeStoreStorage'
@@ -16,6 +16,21 @@ vi.mock('./useAuthUser', () => ({
 }))
 
 describe('useActiveStore', () => {
+  function createMembership(storeId: string) {
+    return {
+      id: `member-${storeId}`,
+      uid: 'user-1',
+      role: 'owner' as const,
+      storeId,
+      email: null,
+      phone: null,
+      invitedBy: null,
+      firstSignupEmail: null,
+      createdAt: null,
+      updatedAt: null,
+    }
+  }
+
   beforeEach(() => {
     mockUseMemberships.mockReset()
     mockUseAuthUser.mockReset()
@@ -28,7 +43,7 @@ describe('useActiveStore', () => {
       storeId === undefined
         ? { memberships: [], loading: true, error: null }
         : {
-            memberships: [{ id: 'member-1', storeId: 'matching-store' }],
+            memberships: [createMembership('matching-store')],
             loading: false,
             error: null,
           },
@@ -52,7 +67,7 @@ describe('useActiveStore', () => {
       storeId === undefined
         ? { memberships: [], loading: true, error: null }
         : {
-            memberships: [{ id: 'member-1', storeId: 'membership-store' }],
+            memberships: [createMembership('membership-store')],
             loading: false,
             error: null,
           },
@@ -77,8 +92,8 @@ describe('useActiveStore', () => {
         ? { memberships: [], loading: true, error: null }
         : {
             memberships: [
-              { id: 'member-1', storeId: 'membership-store' },
-              { id: 'member-2', storeId: 'membership-store-2' },
+              createMembership('membership-store'),
+              createMembership('membership-store-2'),
             ],
             loading: false,
             error: null,
@@ -105,14 +120,14 @@ describe('useActiveStore', () => {
 
       if (currentUser.uid === 'user-1') {
         return {
-          memberships: [{ id: 'member-1', storeId: 'user-1-store' }],
+          memberships: [createMembership('user-1-store')],
           loading: false,
           error: null,
         }
       }
 
       return {
-        memberships: [{ id: 'member-2', storeId: 'user-2-store' }],
+        memberships: [createMembership('user-2-store')],
         loading: false,
         error: null,
       }
@@ -140,5 +155,37 @@ describe('useActiveStore', () => {
 
     expect(window.localStorage.getItem(user1Key)).toBe('user-1-store')
     expect(window.localStorage.getItem(user2Key)).toBe('user-2-store')
+  })
+
+  it('allows selecting a membership store manually', async () => {
+    mockUseMemberships.mockImplementation(storeId =>
+      storeId === undefined
+        ? { memberships: [], loading: true, error: null }
+        : {
+            memberships: [createMembership('store-a'), createMembership('store-b')],
+            loading: false,
+            error: null,
+          },
+    )
+
+    const storageKey = getActiveStoreStorageKey('user-1')
+
+    const { result } = renderHook(() => useActiveStore())
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+    })
+
+    expect(result.current.storeId).toBe('store-a')
+
+    act(() => {
+      result.current.setActiveStoreId('store-b')
+    })
+
+    await waitFor(() => {
+      expect(result.current.storeId).toBe('store-b')
+    })
+
+    expect(window.localStorage.getItem(storageKey)).toBe('store-b')
   })
 })

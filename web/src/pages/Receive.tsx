@@ -35,7 +35,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Receive() {
-  const { storeId: activeStoreId } = useActiveStoreContext()
+  const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string>('')
   const [qty, setQty] = useState<string>('')
@@ -68,6 +68,8 @@ export default function Receive() {
 
   useEffect(() => {
     let cancelled = false
+
+    setProducts([])
 
     if (!activeStoreId) {
       setProducts([])
@@ -111,7 +113,16 @@ export default function Receive() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, storeChangeToken])
+
+  useEffect(() => {
+    setSelected('')
+    setQty('')
+    setSupplier('')
+    setReference('')
+    setUnitCost('')
+    setStatus(null)
+  }, [storeChangeToken])
 
   async function receive() {
     if (!selected || qty === '') return

@@ -214,7 +214,7 @@ function buildCsvValue(value: string): string {
 }
 
 export default function Customers() {
-  const { storeId: activeStoreId } = useActiveStoreContext()
+  const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -256,6 +256,8 @@ export default function Customers() {
 
   useEffect(() => {
     let cancelled = false
+
+    setCustomers([])
 
     if (!activeStoreId) {
       setCustomers([])
@@ -311,7 +313,7 @@ export default function Customers() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, storeChangeToken])
 
   function normalizeSaleDate(value: unknown): Date | null {
     if (!value) return null
@@ -414,6 +416,9 @@ export default function Customers() {
   useEffect(() => {
     let cancelled = false
 
+    setCustomerStats({})
+    setSalesHistory({})
+
     if (!activeStoreId) {
       setCustomerStats({})
       setSalesHistory({})
@@ -451,7 +456,17 @@ export default function Customers() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, storeChangeToken])
+
+  useEffect(() => {
+    setSelectedCustomerId(null)
+    setEditingCustomerId(null)
+    setSearchTerm('')
+    setTagFilter(null)
+    setQuickFilter('all')
+    setSuccess(null)
+    setError(null)
+  }, [storeChangeToken])
 
   useEffect(() => {
     if (!selectedCustomerId) return

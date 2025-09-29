@@ -185,7 +185,7 @@ function formatTenderBreakdown(tenders: Record<string, number>): string {
 
 export default function Sell() {
   const user = useAuthUser()
-  const { storeId: activeStoreId } = useActiveStoreContext()
+  const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -226,6 +226,8 @@ export default function Sell() {
 
   useEffect(() => {
     let cancelled = false
+
+    setProducts([])
 
     if (!activeStoreId) {
       setProducts([])
@@ -280,10 +282,12 @@ export default function Sell() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, storeChangeToken])
 
   useEffect(() => {
     let cancelled = false
+
+    setCustomers([])
 
     if (!activeStoreId) {
       setCustomers([])
@@ -333,7 +337,7 @@ export default function Sell() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, storeChangeToken])
 
   useEffect(() => {
     if (!receipt) return
@@ -418,6 +422,20 @@ export default function Sell() {
       URL.revokeObjectURL(pdfUrl)
     }
   }, [receipt, user?.email])
+
+  useEffect(() => {
+    setQueryText('')
+    setCart([])
+    setSelectedCustomerId('')
+    setPaymentMethod('cash')
+    setAmountTendered('')
+    setSaleError(null)
+    setSaleSuccess(null)
+    setIsRecording(false)
+    setScannerStatus(null)
+    setReceipt(null)
+    setReceiptSharePayload(null)
+  }, [storeChangeToken])
 
   const handleDownloadPdf = useCallback(() => {
     setReceiptSharePayload(prev => {

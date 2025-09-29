@@ -20,7 +20,15 @@ vi.mock('../../firebase', () => ({
   db: {},
 }))
 
-const mockUseActiveStoreContext = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
+const mockUseActiveStoreContext = vi.fn(() => ({
+  storeId: 'store-1',
+  isLoading: false,
+  error: null,
+  memberships: [],
+  membershipsLoading: false,
+  setActiveStoreId: vi.fn(),
+  storeChangeToken: 0,
+}))
 vi.mock('../../context/ActiveStoreProvider', () => ({
   useActiveStoreContext: () => mockUseActiveStoreContext(),
 }))
@@ -87,7 +95,15 @@ describe('Products page', () => {
     docMock.mockClear()
     whereMock.mockClear()
     mockUseActiveStoreContext.mockReset()
-    mockUseActiveStoreContext.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockUseActiveStoreContext.mockReturnValue({
+      storeId: 'store-1',
+      isLoading: false,
+      error: null,
+      memberships: [],
+      membershipsLoading: false,
+      setActiveStoreId: vi.fn(),
+      storeChangeToken: 0,
+    })
 
 
 

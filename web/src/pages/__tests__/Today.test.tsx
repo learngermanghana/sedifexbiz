@@ -8,6 +8,10 @@ const mockUseActiveStoreContext = vi.fn(() => ({
   storeId: 'store-123',
   isLoading: false,
   error: null,
+  memberships: [],
+  membershipsLoading: false,
+  setActiveStoreId: vi.fn(),
+  storeChangeToken: 0,
 }))
 
 vi.mock('../../context/ActiveStoreProvider', () => ({
@@ -74,6 +78,10 @@ describe('Today page', () => {
       storeId: 'store-123',
       isLoading: false,
       error: null,
+      memberships: [],
+      membershipsLoading: false,
+      setActiveStoreId: vi.fn(),
+      storeChangeToken: 0,
     })
 
     collectionMock.mockClear()

@@ -80,7 +80,15 @@ describe('AccountOverview', () => {
     queryMock.mockClear()
     whereMock.mockClear()
 
-    mockUseActiveStoreContext.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
+    mockUseActiveStoreContext.mockReturnValue({
+      storeId: 'store-123',
+      isLoading: false,
+      error: null,
+      memberships: [],
+      membershipsLoading: false,
+      setActiveStoreId: vi.fn(),
+      storeChangeToken: 0,
+    })
     getDocMock.mockResolvedValue({
       exists: () => true,
       data: () => ({

@@ -163,7 +163,7 @@ function formatTime(value: Date | null) {
 }
 
 export default function Today() {
-  const { storeId, isLoading: storeLoading } = useActiveStoreContext()
+  const { storeId, isLoading: storeLoading, storeChangeToken } = useActiveStoreContext()
 
   const today = useMemo(() => new Date(), [])
   const todayKey = useMemo(() => formatDateKey(today), [today])
@@ -221,7 +221,7 @@ export default function Today() {
     return () => {
       cancelled = true
     }
-  }, [storeId, todayKey])
+  }, [storeId, todayKey, storeChangeToken])
 
   useEffect(() => {
     if (!storeId) {
@@ -262,7 +262,14 @@ export default function Today() {
     return () => {
       cancelled = true
     }
-  }, [storeId, todayKey])
+  }, [storeId, todayKey, storeChangeToken])
+
+  useEffect(() => {
+    setSummary(null)
+    setSummaryError(null)
+    setActivities([])
+    setActivitiesError(null)
+  }, [storeChangeToken])
 
   if (storeLoading) {
     return (

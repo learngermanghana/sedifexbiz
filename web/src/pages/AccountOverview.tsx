@@ -153,7 +153,8 @@ function formatTimestamp(timestamp: Timestamp | null) {
 }
 
 export default function AccountOverview() {
-  const { storeId, isLoading: storeLoading, error: storeError } = useActiveStoreContext()
+  const { storeId, isLoading: storeLoading, error: storeError, storeChangeToken } =
+    useActiveStoreContext()
   const membershipsStoreId = storeLoading ? undefined : storeId ?? null
   const {
     memberships,
@@ -224,7 +225,7 @@ export default function AccountOverview() {
     return () => {
       cancelled = true
     }
-  }, [storeId, publish])
+  }, [storeId, publish, storeChangeToken])
 
   useEffect(() => {
     if (!storeId) {
@@ -261,7 +262,20 @@ export default function AccountOverview() {
     return () => {
       cancelled = true
     }
-  }, [storeId, rosterVersion, publish])
+  }, [storeId, rosterVersion, publish, storeChangeToken])
+
+  useEffect(() => {
+    setProfile(null)
+    setProfileError(null)
+    setRoster([])
+    setRosterError(null)
+    setEmail('')
+    setRole('staff')
+    setPassword('')
+    setFormError(null)
+    setSubmitting(false)
+    setRosterVersion(0)
+  }, [storeChangeToken])
 
   function validateForm() {
     if (!storeId) {
