@@ -1,5 +1,25 @@
 const clone = value => (value === undefined ? value : JSON.parse(JSON.stringify(value)))
 
+const isMockIncrement = value =>
+  value && typeof value === 'object' && !Array.isArray(value) && value.__mockIncrement !== undefined
+
+const resolveUpdateValue = (currentValue, incomingValue) => {
+  if (isMockIncrement(incomingValue)) {
+    const incrementBy = Number(incomingValue.__mockIncrement)
+    const baseValue = Number.isFinite(Number(currentValue)) ? Number(currentValue) : 0
+    return baseValue + incrementBy
+  }
+  return clone(incomingValue)
+}
+
+const applyMerge = (existing = {}, updates = {}) => {
+  const result = { ...clone(existing) }
+  for (const [key, value] of Object.entries(updates || {})) {
+    result[key] = resolveUpdateValue(result[key], value)
+  }
+  return result
+}
+
 class MockTimestamp {
   constructor(millis = Date.now()) {
     this._millis = millis
@@ -58,10 +78,10 @@ class MockDocumentReference {
 
   async set(data, options = {}) {
     const existing = this._db.getRaw(this.path)
-    if (options && options.merge && existing) {
-      this._db.setRaw(this.path, { ...existing, ...clone(data) })
+    if (options && options.merge) {
+      this._db.setRaw(this.path, applyMerge(existing || {}, data))
     } else {
-      this._db.setRaw(this.path, clone(data))
+      this._db.setRaw(this.path, applyMerge({}, data))
     }
   }
 }
@@ -90,8 +110,13 @@ class MockTransaction {
     return new MockDocSnapshot(base ? clone(base) : undefined)
   }
 
-  set(ref, data) {
-    this._writes.set(ref.path, clone(data))
+  set(ref, data, options = {}) {
+    const existing = this._writes.get(ref.path) || this._db.getRaw(ref.path)
+    if (options && options.merge) {
+      this._writes.set(ref.path, applyMerge(existing || {}, data))
+    } else {
+      this._writes.set(ref.path, applyMerge({}, data))
+    }
   }
 
   update(ref, data) {
@@ -99,7 +124,7 @@ class MockTransaction {
     if (!existing) {
       throw new Error('Document does not exist')
     }
-    this._writes.set(ref.path, { ...clone(existing), ...clone(data) })
+    this._writes.set(ref.path, applyMerge(existing, data))
   }
 
   commit() {
