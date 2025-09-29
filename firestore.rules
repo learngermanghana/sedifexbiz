@@ -10,9 +10,23 @@ service cloud.firestore {
       return member != null && member.exists();
     }
 
+    function storeIdFromData(data) {
+      return data != null
+        ? (
+            data.keys().hasAny(['storeId']) && data.storeId is string && data.storeId != ''
+              ? data.storeId
+              : (
+                  data.keys().hasAny(['storeid']) && data.storeid is string && data.storeid != ''
+                    ? data.storeid
+                    : null
+                )
+          )
+        : null;
+    }
+
     function memberStoreId(member) {
-      return membershipExists(member) && member.data.storeId is string && member.data.storeId != ''
-        ? member.data.storeId
+      return membershipExists(member)
+        ? storeIdFromData(member.data)
         : null;
     }
 
@@ -45,7 +59,7 @@ service cloud.firestore {
     }
 
     function dataHasStore(data) {
-      return data.keys().hasAll(['storeId']) && data.storeId is string && data.storeId != '';
+      return storeIdFromData(data) != null;
     }
 
     function requestRoleIsValid() {
@@ -68,37 +82,43 @@ service cloud.firestore {
     }
 
     function canReadStoreResource() {
-      return dataHasStore(resource.data) && hasStoreAccess(getRequesterMembership(), resource.data.storeId);
+      let storeId = storeIdFromData(resource.data);
+      return storeId != null && hasStoreAccess(getRequesterMembership(), storeId);
     }
 
     function canCreateStoreResource() {
-      return dataHasStore(request.resource.data)
-        && hasStoreAccess(getRequesterMembership(), request.resource.data.storeId);
+      let storeId = storeIdFromData(request.resource.data);
+      return storeId != null
+        && hasStoreAccess(getRequesterMembership(), storeId);
     }
 
     function canUpdateStoreResource() {
-      return dataHasStore(resource.data)
-        && dataHasStore(request.resource.data)
-        && resource.data.storeId == request.resource.data.storeId
-        && hasStoreAccess(getRequesterMembership(), resource.data.storeId);
+      let currentStoreId = storeIdFromData(resource.data);
+      let newStoreId = storeIdFromData(request.resource.data);
+      return currentStoreId != null
+        && newStoreId != null
+        && currentStoreId == newStoreId
+        && hasStoreAccess(getRequesterMembership(), currentStoreId);
     }
 
     function canOwnerCreateStoreResource() {
-      return dataHasStore(request.resource.data)
-        && hasOwnerAccess(getRequesterMembership(), request.resource.data.storeId);
+      let storeId = storeIdFromData(request.resource.data);
+      return storeId != null
+        && hasOwnerAccess(getRequesterMembership(), storeId);
     }
 
     function canOwnerWriteStoreResource() {
-      return dataHasStore(resource.data)
-        && hasOwnerAccess(getRequesterMembership(), resource.data.storeId);
+      let storeId = storeIdFromData(resource.data);
+      return storeId != null
+        && hasOwnerAccess(getRequesterMembership(), storeId);
     }
 
     match /teamMembers/{memberId} {
       allow read: if resource != null
-        && resource.data.keys().hasAll(['storeId'])
+        && dataHasStore(resource.data)
         && (
           (request.auth != null && request.auth.uid == memberId && membershipExists(getRequesterMembership()))
-          || hasOwnerAccess(getRequesterMembership(), resource.data.storeId)
+          || hasOwnerAccess(getRequesterMembership(), storeIdFromData(resource.data))
         );
 
       allow create: if request.auth != null
@@ -108,7 +128,7 @@ service cloud.firestore {
         && (
           (
             membershipExists(getRequesterMembership())
-            && hasOwnerAccess(getRequesterMembership(), request.resource.data.storeId)
+            && hasOwnerAccess(getRequesterMembership(), storeIdFromData(request.resource.data))
           )
           || (
             !membershipExists(getRequesterMembership())
@@ -121,15 +141,15 @@ service cloud.firestore {
         && requestUidMatches(memberId)
         && dataHasStore(resource.data)
         && dataHasStore(request.resource.data)
-        && resource.data.storeId == request.resource.data.storeId
+        && storeIdFromData(resource.data) == storeIdFromData(request.resource.data)
         && membershipExists(getRequesterMembership())
-        && hasOwnerAccess(getRequesterMembership(), resource.data.storeId)
+        && hasOwnerAccess(getRequesterMembership(), storeIdFromData(resource.data))
         && requestRoleIsValid();
 
       allow delete: if request.auth != null
         && dataHasStore(resource.data)
         && membershipExists(getRequesterMembership())
-        && hasOwnerAccess(getRequesterMembership(), resource.data.storeId);
+        && hasOwnerAccess(getRequesterMembership(), storeIdFromData(resource.data));
     }
 
     match /stores/{storeId} {
