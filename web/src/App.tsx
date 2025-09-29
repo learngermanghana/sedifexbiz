@@ -448,6 +448,8 @@ export default function App() {
       message: mode === 'login' ? 'Signing you in…' : 'Creating your account…',
     })
 
+    let createdSignupUser: User | null = null
+
     try {
       if (mode === 'login') {
         const { user: nextUser } = await signInWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
@@ -471,6 +473,7 @@ export default function App() {
       } else {
         const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
+        createdSignupUser = nextUser
 
         let resolution: ResolveStoreAccessResult | null = null
         try {
@@ -531,6 +534,9 @@ export default function App() {
       setPhone('')
       setNormalizedPhone('')
     } catch (err: unknown) {
+      if (mode === 'signup' && createdSignupUser) {
+        await cleanupFailedSignup(createdSignupUser)
+      }
       setStatus({ tone: 'error', message: getErrorMessage(err) })
     }
   }

@@ -16,7 +16,6 @@ type ManageStaffAccountResult = {
   email: string
   uid: string
   created: boolean
-  claims?: unknown
 }
 
 export async function manageStaffAccount(payload: ManageStaffAccountPayload) {

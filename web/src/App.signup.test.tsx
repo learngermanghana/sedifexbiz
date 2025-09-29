@@ -152,6 +152,7 @@ describe('App signup cleanup', () => {
     mocks.listeners.splice(0, mocks.listeners.length)
     firestore.reset()
     mocks.resolveStoreAccess.mockReset()
+    mocks.resolveStoreAccess.mockResolvedValue(null)
     window.localStorage.clear()
     localStorageSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
   })
@@ -216,28 +217,30 @@ describe('App signup cleanup', () => {
       return { user: createdUser }
     })
 
-    mocks.resolveStoreAccess.mockResolvedValueOnce({
-      ok: true,
-      storeId: 'sheet-store-id',
-      role: 'staff',
-      claims: {},
-      teamMember: { id: 'seed-team-member', data: { name: 'Seeded Member' } },
-      store: { id: 'sheet-store-id', data: { name: 'Seeded Store' } },
-      products: [
-        {
-          id: 'product-1',
-          data: {
-            name: 'Seed Product',
-            createdAt: 1_700_000_000_000,
+    mocks.resolveStoreAccess.mockImplementation(async storeId => {
+      if (!storeId) return null
+      return {
+        ok: true,
+        storeId: 'sheet-store-id',
+        role: 'staff',
+        teamMember: { id: 'seed-team-member', data: { name: 'Seeded Member' } },
+        store: { id: 'sheet-store-id', data: { name: 'Seeded Store' } },
+        products: [
+          {
+            id: 'product-1',
+            data: {
+              name: 'Seed Product',
+              createdAt: 1_700_000_000_000,
+            },
           },
-        },
-      ],
-      customers: [
-        {
-          id: 'seeded-customer',
-          data: { name: 'Seeded Customer' },
-        },
-      ],
+        ],
+        customers: [
+          {
+            id: 'seeded-customer',
+            data: { name: 'Seeded Customer' },
+          },
+        ],
+      }
     })
 
     render(
@@ -360,13 +363,13 @@ describe('App signup cleanup', () => {
       return { user: createdUser }
     })
 
-    // Callable fails
-    mocks.resolveStoreAccess.mockRejectedValueOnce(
-      new Error(
+    // Callable fails when invoked with a store ID (sheet fallback already mocked to fail)
+    mocks.resolveStoreAccess.mockImplementation(async storeId => {
+      if (!storeId) return null
+      throw new Error(
         'We could not confirm the store ID assigned to your Sedifex workspace. Reach out to your Sedifex administrator.',
-      ),
-    )
-    // Sheet fallback already mocked above to fail deterministically
+      )
+    })
 
     render(
       <MemoryRouter>
