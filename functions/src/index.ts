@@ -85,9 +85,17 @@ async function resolveStoreDateKey(
   return { dateKey, timestamp: resolvedTimestamp }
 }
 
+type ProductStatIncrement = {
+  productId: string
+  units: number
+  revenue: number
+  name?: string | null
+}
+
 type DailySummaryUpdateOptions = {
   increments?: Record<string, number>
   lastActivityAt?: admin.firestore.Timestamp
+  productStats?: ProductStatIncrement[]
 }
 
 async function upsertDailySummaryDoc(
@@ -112,6 +120,96 @@ async function upsertDailySummaryDoc(
     for (const [field, amount] of Object.entries(options.increments ?? {})) {
       if (!Number.isFinite(amount) || amount === 0) continue
       payload[field] = admin.firestore.FieldValue.increment(amount)
+    }
+
+    const productStatsUpdates = new Map<string, { units: number; revenue: number; name?: string }>()
+    for (const item of options.productStats ?? []) {
+      if (!item || typeof item !== 'object') continue
+      const productId = typeof item.productId === 'string' ? item.productId.trim() : ''
+      if (!productId) continue
+
+      const units = Number(item.units)
+      const revenue = Number(item.revenue)
+      if (!Number.isFinite(units) && !Number.isFinite(revenue)) continue
+
+      const normalizedUnits = Number.isFinite(units) ? units : 0
+      const normalizedRevenue = Number.isFinite(revenue) ? revenue : 0
+      if (normalizedUnits === 0 && normalizedRevenue === 0) continue
+
+      const nameValue = typeof item.name === 'string' ? item.name.trim() : ''
+      const existing = productStatsUpdates.get(productId) ?? { units: 0, revenue: 0, name: undefined }
+      existing.units += normalizedUnits
+      existing.revenue += normalizedRevenue
+      if (!existing.name && nameValue) {
+        existing.name = nameValue
+      }
+      productStatsUpdates.set(productId, existing)
+    }
+
+    if (productStatsUpdates.size > 0) {
+      const existingStatsRaw = snapshot.get('productStats')
+      const existingStats = new Map<string, { units: number; revenue: number; name?: string }>()
+
+      if (existingStatsRaw && typeof existingStatsRaw === 'object') {
+        for (const [productId, value] of Object.entries(existingStatsRaw as Record<string, unknown>)) {
+          if (!value || typeof value !== 'object') continue
+          const record = value as Record<string, unknown>
+          const units = Number(record.units)
+          const revenue = Number(record.revenue)
+          const existingName = typeof record.name === 'string' ? record.name : undefined
+          existingStats.set(productId, {
+            units: Number.isFinite(units) ? units : 0,
+            revenue: Number.isFinite(revenue) ? revenue : 0,
+            name: existingName,
+          })
+        }
+      }
+
+      for (const [productId, update] of productStatsUpdates.entries()) {
+        const entry = existingStats.get(productId) ?? { units: 0, revenue: 0, name: undefined }
+        entry.units += update.units
+        entry.revenue += update.revenue
+        if (update.name) {
+          entry.name = update.name
+        }
+        existingStats.set(productId, entry)
+      }
+
+      const sortedStats = [...existingStats.entries()]
+        .filter(([, value]) => value.units > 0 || value.revenue > 0)
+        .sort((a, b) => {
+          if (b[1].units !== a[1].units) return b[1].units - a[1].units
+          if (b[1].revenue !== a[1].revenue) return b[1].revenue - a[1].revenue
+          return a[0].localeCompare(b[0])
+        })
+
+      const topStats = sortedStats.slice(0, 5)
+      const topIds = new Set(topStats.map(([productId]) => productId))
+      payload.productStatsOrder = topStats.map(([productId]) => productId)
+
+      const entryPayloads: Record<string, admin.firestore.DocumentData> = {}
+      for (const [productId, stat] of topStats) {
+        const update = productStatsUpdates.get(productId)
+        const unitsIncrement = update?.units ?? 0
+        const revenueIncrement = update?.revenue ?? 0
+        entryPayloads[productId] = {
+          name: stat.name ?? null,
+          units: admin.firestore.FieldValue.increment(unitsIncrement),
+          revenue: admin.firestore.FieldValue.increment(revenueIncrement),
+        }
+      }
+
+      for (const [productId, entry] of Object.entries(entryPayloads)) {
+        payload[`productStats.${productId}`] = entry
+      }
+
+      if (existingStatsRaw && typeof existingStatsRaw === 'object') {
+        for (const productId of Object.keys(existingStatsRaw as Record<string, unknown>)) {
+          if (!topIds.has(productId)) {
+            payload[`productStats.${productId}`] = admin.firestore.FieldValue.delete()
+          }
+        }
+      }
     }
 
     if (!snapshot.exists) {
@@ -1315,6 +1413,51 @@ export const onSaleCreate = functions.firestore
       }
     }
 
+    const productStatAccumulator = new Map<
+      string,
+      { units: number; revenue: number; name?: string }
+    >()
+    if (Array.isArray(data.items)) {
+      for (const rawItem of data.items as unknown[]) {
+        if (!rawItem || typeof rawItem !== 'object') continue
+        const item = rawItem as Record<string, unknown>
+        const rawProductId =
+          (typeof item.productId === 'string' ? item.productId : undefined) ??
+          (typeof item.id === 'string' ? item.id : undefined)
+        const productId = rawProductId ? rawProductId.trim() : ''
+        if (!productId) continue
+
+        const quantityValue = coerceNumber(item.qty ?? item.quantity ?? item.units ?? 0)
+        const quantity = Math.max(0, quantityValue)
+        if (quantity === 0) continue
+
+        const nameValue = typeof item.name === 'string' ? item.name.trim() : ''
+        const priceValue = coerceNumber(item.price ?? item.unitPrice ?? 0)
+        let revenue = Math.max(0, coerceNumber(item.total ?? item.subtotal ?? 0))
+        if (revenue === 0 && priceValue > 0) {
+          revenue = Math.max(0, priceValue * quantity)
+        }
+
+        const existing = productStatAccumulator.get(productId) ?? { units: 0, revenue: 0, name: undefined }
+        existing.units += quantity
+        existing.revenue += revenue
+        if (!existing.name && nameValue) {
+          existing.name = nameValue
+        }
+        productStatAccumulator.set(productId, existing)
+      }
+    }
+
+    const productStatsUpdates =
+      productStatAccumulator.size > 0
+        ? Array.from(productStatAccumulator.entries()).map(([productId, value]) => ({
+            productId,
+            units: value.units,
+            revenue: value.revenue,
+            name: value.name,
+          }))
+        : undefined
+
     await upsertDailySummaryDoc(storeId, dateKey, {
       increments: {
         salesCount: 1,
@@ -1323,6 +1466,7 @@ export const onSaleCreate = functions.firestore
         cashTotal: cashTotalIncrement,
       },
       lastActivityAt: timestamp,
+      productStats: productStatsUpdates,
     })
 
     const customer = data.customer as Record<string, unknown> | undefined

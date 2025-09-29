@@ -1,7 +1,10 @@
 const clone = value => (value === undefined ? value : JSON.parse(JSON.stringify(value)))
 
-const isMockIncrement = value =>
-  value && typeof value === 'object' && !Array.isArray(value) && value.__mockIncrement !== undefined
+const isPlainObject = value => value && typeof value === 'object' && !Array.isArray(value)
+
+const isMockIncrement = value => isPlainObject(value) && value.__mockIncrement !== undefined
+
+const isMockDelete = value => isPlainObject(value) && value.__mockDelete === true
 
 const resolveUpdateValue = (currentValue, incomingValue) => {
   if (isMockIncrement(incomingValue)) {
@@ -12,10 +15,43 @@ const resolveUpdateValue = (currentValue, incomingValue) => {
   return clone(incomingValue)
 }
 
+const applyFieldUpdate = (target, pathSegments, value) => {
+  if (pathSegments.length === 0) {
+    return target
+  }
+
+  const [head, ...rest] = pathSegments
+  const result = { ...target }
+
+  if (rest.length === 0) {
+    if (isMockDelete(value)) {
+      delete result[head]
+      return result
+    }
+
+    if (isPlainObject(value) && !isMockIncrement(value)) {
+      const current = isPlainObject(result[head]) ? result[head] : {}
+      result[head] = applyMerge(current, value)
+      return result
+    }
+
+    result[head] = resolveUpdateValue(result[head], value)
+    return result
+  }
+
+  const current = isPlainObject(result[head]) ? result[head] : {}
+  result[head] = applyFieldUpdate(current, rest, value)
+  if (isMockDelete(value) && Object.keys(result[head]).length === 0) {
+    delete result[head]
+  }
+  return result
+}
+
 const applyMerge = (existing = {}, updates = {}) => {
-  const result = { ...clone(existing) }
+  let result = { ...clone(existing) }
   for (const [key, value] of Object.entries(updates || {})) {
-    result[key] = resolveUpdateValue(result[key], value)
+    const segments = key.split('.')
+    result = applyFieldUpdate(result, segments, value)
   }
   return result
 }

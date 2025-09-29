@@ -12,6 +12,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
     firestore.FieldValue = {
       serverTimestamp: () => MockTimestamp.now(),
       increment: amount => ({ __mockIncrement: amount }),
+      delete: () => ({ __mockDelete: true }),
     }
     firestore.Timestamp = MockTimestamp
 
@@ -70,9 +71,13 @@ async function runSalesAggregationTest() {
   await onSaleCreate.run(
     createSnapshot('sale-1', {
       storeId: 'store-123',
-      total: 120.5,
-      tenders: { cash: 120.5 },
+      total: 120,
+      tenders: { cash: 120 },
       createdAt: saleTimestamp,
+      items: [
+        { productId: 'product-a', name: 'Widget A', qty: 2, price: 30, total: 60 },
+        { productId: 'product-b', name: 'Widget B', qty: 1, price: 60, total: 60 },
+      ],
     }),
     {
       params: { saleId: 'sale-1' },
@@ -85,19 +90,38 @@ async function runSalesAggregationTest() {
   assert.ok(summaryAfterFirstSale, 'Expected summary document after first sale')
   assert.strictEqual(summaryAfterFirstSale.storeId, 'store-123')
   assert.strictEqual(summaryAfterFirstSale.salesCount, 1)
-  assert.strictEqual(summaryAfterFirstSale.salesTotal, 120.5)
-  assert.strictEqual(summaryAfterFirstSale.cashTotal, 120.5)
+  assert.strictEqual(summaryAfterFirstSale.salesTotal, 120)
+  assert.strictEqual(summaryAfterFirstSale.cashTotal, 120)
   assert.strictEqual(summaryAfterFirstSale.cardTotal ?? 0, 0)
   assert.ok(summaryAfterFirstSale.lastActivityAt)
   assert.strictEqual(summaryAfterFirstSale.lastActivityAt._millis, saleTimestamp.toMillis())
+  assert.deepStrictEqual(summaryAfterFirstSale.productStatsOrder, ['product-a', 'product-b'])
+  assert.deepStrictEqual(summaryAfterFirstSale.productStats['product-a'], {
+    name: 'Widget A',
+    units: 2,
+    revenue: 60,
+  })
+  assert.deepStrictEqual(summaryAfterFirstSale.productStats['product-b'], {
+    name: 'Widget B',
+    units: 1,
+    revenue: 60,
+  })
 
   const secondSaleTimestamp = MockTimestamp.fromMillis(Date.UTC(2024, 2, 2, 15, 45))
   await onSaleCreate.run(
     createSnapshot('sale-2', {
       storeId: 'store-123',
-      total: 100,
-      tenders: { card: 100 },
+      total: 208,
+      tenders: { card: 208 },
       createdAt: secondSaleTimestamp,
+      items: [
+        { productId: 'product-a', name: 'Widget A', qty: 1, price: 40, total: 40 },
+        { productId: 'product-c', name: 'Widget C', qty: 4, price: 10, total: 40 },
+        { productId: 'product-d', name: 'Widget D', qty: 5, price: 5, total: 25 },
+        { productId: 'product-e', name: 'Widget E', qty: 2, price: 20, total: 40 },
+        { productId: 'product-f', name: 'Widget F', qty: 3, price: 15, total: 45 },
+        { productId: 'product-g', name: 'Widget G', qty: 6, price: 3, total: 18 },
+      ],
     }),
     {
       params: { saleId: 'sale-2' },
@@ -108,11 +132,45 @@ async function runSalesAggregationTest() {
   const summaryAfterSecondSale = currentDefaultDb.getDoc(summaryPath)
   assert.ok(summaryAfterSecondSale, 'Expected summary document after second sale')
   assert.strictEqual(summaryAfterSecondSale.salesCount, 2)
-  assert.strictEqual(summaryAfterSecondSale.salesTotal, 220.5)
-  assert.strictEqual(summaryAfterSecondSale.cashTotal, 120.5)
-  assert.strictEqual(summaryAfterSecondSale.cardTotal, 100)
+  assert.strictEqual(summaryAfterSecondSale.salesTotal, 328)
+  assert.strictEqual(summaryAfterSecondSale.cashTotal, 120)
+  assert.strictEqual(summaryAfterSecondSale.cardTotal, 208)
   assert.ok(summaryAfterSecondSale.updatedAt)
   assert.strictEqual(summaryAfterSecondSale.lastActivityAt._millis, secondSaleTimestamp.toMillis())
+  assert.deepStrictEqual(summaryAfterSecondSale.productStatsOrder, [
+    'product-g',
+    'product-d',
+    'product-c',
+    'product-a',
+    'product-f',
+  ])
+  assert.deepStrictEqual(summaryAfterSecondSale.productStats['product-g'], {
+    name: 'Widget G',
+    units: 6,
+    revenue: 18,
+  })
+  assert.deepStrictEqual(summaryAfterSecondSale.productStats['product-d'], {
+    name: 'Widget D',
+    units: 5,
+    revenue: 25,
+  })
+  assert.deepStrictEqual(summaryAfterSecondSale.productStats['product-c'], {
+    name: 'Widget C',
+    units: 4,
+    revenue: 40,
+  })
+  assert.deepStrictEqual(summaryAfterSecondSale.productStats['product-a'], {
+    name: 'Widget A',
+    units: 3,
+    revenue: 100,
+  })
+  assert.deepStrictEqual(summaryAfterSecondSale.productStats['product-f'], {
+    name: 'Widget F',
+    units: 3,
+    revenue: 45,
+  })
+  assert.strictEqual(summaryAfterSecondSale.productStats['product-b'], undefined)
+  assert.strictEqual(summaryAfterSecondSale.productStats['product-e'], undefined)
 
   const activities = currentDefaultDb.listCollection('activities')
   const saleActivities = activities.filter(entry => entry.data.type === 'sale')
