@@ -540,7 +540,15 @@ export default function Sell() {
           }
         })
 
-        transaction.set(saleRef, {
+        const productEntries = await Promise.all(
+          normalizedItems.map(async item => {
+            const productRef = doc(db, 'products', item.productId)
+            const productSnapshot = await transaction.get(productRef)
+            return { item, productRef, productSnapshot }
+          }),
+        )
+
+        const saleData = {
           branchId: activeStoreId,
           storeId: activeStoreId,
           cashierId: user.uid,
@@ -555,12 +563,18 @@ export default function Sell() {
           items: normalizedItems,
           createdBy: user.uid,
           createdAt: timestamp,
-        })
+        }
 
-        for (const item of normalizedItems) {
-          const productRef = doc(db, 'products', item.productId)
-          const productSnapshot = await transaction.get(productRef)
-          if (!productSnapshot || !(typeof productSnapshot.exists === 'function' ? productSnapshot.exists() : productSnapshot.exists)) {
+        const saleItemWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
+        const stockWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
+        const productUpdates: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
+        const ledgerWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
+
+        for (const { item, productRef, productSnapshot } of productEntries) {
+          const productExists = productSnapshot && (typeof productSnapshot.exists === 'function'
+            ? productSnapshot.exists()
+            : productSnapshot.exists)
+          if (!productExists) {
             throw new Error(`${item.name || 'Product'} is unavailable. Refresh your catalog and try again.`)
           }
 
@@ -572,40 +586,66 @@ export default function Sell() {
           const nextStock = currentStock - qtyChange
 
           const saleItemRef = doc(saleItemsCollection)
-          transaction.set(saleItemRef, {
-            saleId,
-            productId: item.productId,
-            qty: item.qty,
-            price: item.price,
-            taxRate: item.taxRate,
-            storeId: activeStoreId,
-            createdAt: timestamp,
+          saleItemWrites.push({
+            ref: saleItemRef,
+            data: {
+              saleId,
+              productId: item.productId,
+              qty: item.qty,
+              price: item.price,
+              taxRate: item.taxRate,
+              storeId: activeStoreId,
+              createdAt: timestamp,
+            },
           })
 
           const stockRef = doc(stockCollection)
-          transaction.set(stockRef, {
-            productId: item.productId,
-            qtyChange: -qtyChange,
-            reason: 'sale',
-            refId: saleId,
-            storeId: activeStoreId,
-            createdAt: timestamp,
+          stockWrites.push({
+            ref: stockRef,
+            data: {
+              productId: item.productId,
+              qtyChange: -qtyChange,
+              reason: 'sale',
+              refId: saleId,
+              storeId: activeStoreId,
+              createdAt: timestamp,
+            },
           })
 
-          transaction.update(productRef, {
-            stockCount: nextStock,
-            updatedAt: timestamp,
+          productUpdates.push({
+            ref: productRef,
+            data: {
+              stockCount: nextStock,
+              updatedAt: timestamp,
+            },
           })
 
           const ledgerRef = doc(ledgerCollection)
-          transaction.set(ledgerRef, {
-            productId: item.productId,
-            qtyChange: -qtyChange,
-            type: 'sale',
-            refId: saleId,
-            storeId: activeStoreId,
-            createdAt: timestamp,
+          ledgerWrites.push({
+            ref: ledgerRef,
+            data: {
+              productId: item.productId,
+              qtyChange: -qtyChange,
+              type: 'sale',
+              refId: saleId,
+              storeId: activeStoreId,
+              createdAt: timestamp,
+            },
           })
+        }
+
+        transaction.set(saleRef, saleData)
+        for (const { ref, data } of saleItemWrites) {
+          transaction.set(ref, data)
+        }
+        for (const { ref, data } of stockWrites) {
+          transaction.set(ref, data)
+        }
+        for (const { ref, data } of ledgerWrites) {
+          transaction.set(ref, data)
+        }
+        for (const { ref, data } of productUpdates) {
+          transaction.update(ref, data)
         }
       })
 
