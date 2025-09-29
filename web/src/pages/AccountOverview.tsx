@@ -11,12 +11,11 @@ import {
   type DocumentSnapshot,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
 import { manageStaffAccount } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
-import { fetchSheetRows, findUserRow } from '../sheetClient'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -26,6 +25,12 @@ type StoreProfile = {
   email: string | null
   phone: string | null
   status: string | null
+  company: string | null
+  contractStatus: string | null
+  contractStart: string | null
+  contractEnd: string | null
+  paymentStatus: string | null
+  amountPaid: string | null
   timezone: string | null
   currency: string | null
   billingPlan: string | null
@@ -49,27 +54,43 @@ type RosterMember = {
   updatedAt: Timestamp | null
 }
 
-// SHEET: additional type for sheet info
-type SheetInfo = {
-  ok: boolean
-  existsOnSheet?: boolean
-  email?: string
-  storeId?: string | null
-  role?: 'owner' | 'staff'
-  company?: string | null
-  contractStart?: string | null
-  contractEnd?: string | null
-  paymentStatus?: string | null
-  amountPaid?: string | null
-  name?: string | null
-} | null
-
 function toNullableString(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' ? value : null
 }
 
 function isTimestamp(value: unknown): value is Timestamp {
   return typeof value === 'object' && value !== null && typeof (value as Timestamp).toDate === 'function'
+}
+
+function toDisplayDate(value: unknown): string | null {
+  if (isTimestamp(value)) {
+    try {
+      return value.toDate().toLocaleDateString()
+    } catch (error) {
+      console.warn('Unable to format Firestore Timestamp', error)
+      return null
+    }
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed || null
+  }
+
+  return null
+}
+
+function toAmountString(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value.toString()
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed || null
+  }
+
+  return null
 }
 
 function mapStoreSnapshot(snapshot: DocumentSnapshot<DocumentData> | null): StoreProfile | null {
@@ -82,6 +103,12 @@ function mapStoreSnapshot(snapshot: DocumentSnapshot<DocumentData> | null): Stor
     email: toNullableString(data.email),
     phone: toNullableString(data.phone),
     status: toNullableString(data.status),
+    company: toNullableString(data.company ?? data.displayName ?? data.name),
+    contractStatus: toNullableString(data.contractStatus ?? data.status),
+    contractStart: toDisplayDate(data.contractStart),
+    contractEnd: toDisplayDate(data.contractEnd),
+    paymentStatus: toNullableString(data.paymentStatus),
+    amountPaid: toAmountString(data.amountPaid),
     timezone: toNullableString(data.timezone),
     currency: toNullableString(data.currency),
     billingPlan: toNullableString(data.billingPlan),
@@ -144,11 +171,6 @@ export default function AccountOverview() {
   const [rosterError, setRosterError] = useState<string | null>(null)
   const [rosterVersion, setRosterVersion] = useState(0)
 
-  // SHEET: state for sheet data
-  const [sheetInfo, setSheetInfo] = useState<SheetInfo>(null)
-  const [sheetLoading, setSheetLoading] = useState(false)
-  const [sheetError, setSheetError] = useState<string | null>(null)
-
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Membership['role']>('staff')
   const [password, setPassword] = useState('')
@@ -161,59 +183,6 @@ export default function AccountOverview() {
   }, [memberships, storeId])
 
   const isOwner = activeMembership?.role === 'owner'
-
-  // SHEET: fetch sheet info for the signed-in user
-  useEffect(() => {
-    let cancelled = false
-    setSheetLoading(true)
-    setSheetError(null)
-
-    const userEmail = auth.currentUser?.email?.trim()
-    if (!userEmail) {
-      setSheetInfo(null)
-      setSheetLoading(false)
-    } else {
-      fetchSheetRows()
-        .then(rows => {
-          if (cancelled) return
-          const row = findUserRow(rows, userEmail)
-          if (!row) {
-            setSheetInfo({ ok: true, existsOnSheet: false, email: userEmail })
-            return
-          }
-
-          const normalizedRole = row.role === 'owner' ? 'owner' : row.role === 'staff' ? 'staff' : undefined
-
-          setSheetInfo({
-            ok: true,
-            existsOnSheet: true,
-            email: row.email,
-            storeId: toNullableString(row.storeId),
-            role: normalizedRole,
-            company: toNullableString(row.company),
-            contractStart: toNullableString(row.contractStart),
-            contractEnd: toNullableString(row.contractEnd),
-            paymentStatus: toNullableString(row.paymentStatus),
-            amountPaid: toNullableString(row.amountPaid),
-            name: toNullableString(row.name),
-          })
-        })
-        .catch((err: any) => {
-          if (cancelled) return
-          console.error('Failed to load sheet info', err)
-          setSheetInfo(null)
-          setSheetError('We could not load your Google Sheet account info.')
-          publish({ message: 'Unable to load sheet info.', tone: 'error' })
-        })
-        .finally(() => {
-          if (!cancelled) setSheetLoading(false)
-        })
-    }
-
-    return () => {
-      cancelled = true
-    }
-  }, [publish])
 
   useEffect(() => {
     if (!storeId) {
@@ -372,18 +341,17 @@ export default function AccountOverview() {
     )
   }
 
-  const isBusy = storeLoading || membershipsLoading || profileLoading || rosterLoading || sheetLoading
+  const isBusy = storeLoading || membershipsLoading || profileLoading || rosterLoading
 
   return (
     <div className="account-overview">
       <h1>Account overview</h1>
 
-      {(membershipsError || profileError || rosterError || sheetError) && (
+      {(membershipsError || profileError || rosterError) && (
         <div className="account-overview__error" role="alert">
           {membershipsError && <p>We could not load your memberships.</p>}
           {profileError && <p>{profileError}</p>}
           {rosterError && <p>{rosterError}</p>}
-          {sheetError && <p>{sheetError}</p>}
         </div>
       )}
 
@@ -391,11 +359,6 @@ export default function AccountOverview() {
         <p role="status" aria-live="polite">
           Loading account details…
         </p>
-      )}
-
-      {/* SHEET: show a quick sheet summary if present */}
-      {sheetInfo?.existsOnSheet === false && (
-        <p role="note">This account email isn’t on the Sedifex sheet.</p>
       )}
 
       {profile && (
@@ -449,40 +412,33 @@ export default function AccountOverview() {
       <section aria-labelledby="account-overview-contract">
         <h2 id="account-overview-contract">Contract &amp; billing</h2>
         <dl className="account-overview__grid">
-          {/* SHEET: new rows from the sheet */}
           <div>
-            <dt>Store ID (from Sheet)</dt>
-            <dd>{formatValue(sheetInfo?.storeId)}</dd>
+            <dt>Store ID</dt>
+            <dd>{formatValue(storeId ?? null)}</dd>
           </div>
           <div>
-            <dt>Role (from Sheet)</dt>
-            <dd>{formatValue(sheetInfo?.role ?? null)}</dd>
+            <dt>Contract status</dt>
+            <dd>{formatValue(profile?.contractStatus ?? profile?.status ?? null)}</dd>
           </div>
           <div>
             <dt>Company</dt>
-            <dd>{formatValue(sheetInfo?.company ?? null)}</dd>
+            <dd>{formatValue(profile?.company ?? null)}</dd>
           </div>
           <div>
             <dt>Contract start</dt>
-            <dd>{formatValue(sheetInfo?.contractStart ?? null)}</dd>
+            <dd>{formatValue(profile?.contractStart ?? null)}</dd>
           </div>
           <div>
             <dt>Contract end</dt>
-            <dd>{formatValue(sheetInfo?.contractEnd ?? null)}</dd>
+            <dd>{formatValue(profile?.contractEnd ?? null)}</dd>
           </div>
           <div>
             <dt>Payment status</dt>
-            <dd>{formatValue(sheetInfo?.paymentStatus ?? null)}</dd>
+            <dd>{formatValue(profile?.paymentStatus ?? null)}</dd>
           </div>
           <div>
             <dt>Amount paid</dt>
-            <dd>{formatValue(sheetInfo?.amountPaid ?? null)}</dd>
-          </div>
-
-          {/* existing Firestore billing/profile fields */}
-          <div>
-            <dt>Contract status</dt>
-            <dd>{formatValue(profile?.status ?? null)}</dd>
+            <dd>{formatValue(profile?.amountPaid ?? null)}</dd>
           </div>
           <div>
             <dt>Billing plan</dt>
