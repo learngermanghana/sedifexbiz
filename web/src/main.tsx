@@ -11,7 +11,7 @@ import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
 import Onboarding from './pages/Onboarding'
-import GoalPlannerPage from './pages/KpiMetrics'
+import Today from './pages/Today'
 import AccountOverview from './pages/AccountOverview'
 import { ToastProvider } from './components/ToastProvider'
 import { ActiveStoreProvider } from './context/ActiveStoreProvider'
@@ -26,7 +26,7 @@ const router = createHashRouter([
     ),
     children: [
       { index: true, element: <Shell><Dashboard /></Shell> },
-      { path: 'goals',     element: <Shell><GoalPlannerPage /></Shell> },
+      { path: 'today',    element: <Shell><Today /></Shell> },
       { path: 'products',  element: <Shell><Products /></Shell> },
       { path: 'sell',      element: <Shell><Sell /></Shell> },
       { path: 'receive',   element: <Shell><Receive /></Shell> },
