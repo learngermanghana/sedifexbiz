@@ -99,9 +99,15 @@ describe('Today page', () => {
       exists: () => boolean
       data: () => Record<string, unknown>
     }>()
+    const previousSummaryDeferred = createDeferred<{
+      exists: () => boolean
+      data: () => Record<string, unknown>
+    }>()
     const activitiesDeferred = createDeferred<{ docs: Array<{ id: string; data: () => Record<string, unknown> }> }>()
 
-    getDocMock.mockReturnValue(summaryDeferred.promise)
+    getDocMock
+      .mockReturnValueOnce(summaryDeferred.promise)
+      .mockReturnValueOnce(previousSummaryDeferred.promise)
     getDocsMock.mockReturnValue(activitiesDeferred.promise)
 
     render(
@@ -123,29 +129,50 @@ describe('Today page', () => {
         receiptCount: 9,
         receiptUnits: 18,
         newCustomers: 3,
+        topProducts: [],
       }),
+    })
+    previousSummaryDeferred.resolve({
+      exists: () => false,
+      data: () => ({}),
     })
     activitiesDeferred.resolve({ docs: [] })
 
     await waitFor(() => {
-      expect(getDocMock).toHaveBeenCalledTimes(1)
+      expect(getDocMock).toHaveBeenCalledTimes(2)
       expect(getDocsMock).toHaveBeenCalledTimes(1)
     })
   })
 
   it('renders KPI cards and activities when data is available', async () => {
-    getDocMock.mockResolvedValue({
-      exists: () => true,
-      data: () => ({
-        salesTotal: 480.5,
-        salesCount: 8,
-        cardTotal: 320,
-        cashTotal: 160.5,
-        receiptCount: 6,
-        receiptUnits: 18,
-        newCustomers: 2,
-      }),
-    })
+    getDocMock
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          salesTotal: 480.5,
+          salesCount: 8,
+          cardTotal: 320,
+          cashTotal: 160.5,
+          receiptCount: 6,
+          receiptUnits: 18,
+          newCustomers: 2,
+          topProducts: [
+            { id: 'prod-2', name: 'Cold Brew', unitsSold: 18, salesTotal: 220 },
+            { id: 'prod-3', name: 'Croissant', unitsSold: 25, salesTotal: 125 },
+            { id: 'prod-1', name: 'Espresso', unitsSold: 12, salesTotal: 180 },
+            { id: 'prod-4', name: 'Muffin', unitsSold: 15, salesTotal: 90 },
+            { id: 'prod-5', name: 'Tea', unitsSold: 10, salesTotal: 40 },
+            { id: 'prod-6', name: 'Bagel', unitsSold: 6, salesTotal: 30 },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          salesTotal: 460,
+          salesCount: 10,
+        }),
+      })
 
     getDocsMock.mockResolvedValue({
       docs: [
@@ -177,28 +204,85 @@ describe('Today page', () => {
     )
 
     const expectedKey = formatDateKey(new Date())
+    const previousDate = new Date()
+    previousDate.setDate(previousDate.getDate() - 1)
+    const expectedPreviousKey = formatDateKey(previousDate)
 
     await waitFor(() => {
       expect(screen.getByText('GHS 480.50')).toBeInTheDocument()
     })
 
     expect(screen.getByText('8 sales')).toBeInTheDocument()
+    expect(screen.getByText('Sales variance')).toBeInTheDocument()
+    expect(screen.getByText('+GHS 20.50')).toBeInTheDocument()
+    expect(screen.getByText('+4.5% vs GHS 460.00 yesterday')).toBeInTheDocument()
+    expect(screen.getByText('Average basket size')).toBeInTheDocument()
+    expect(screen.getByText('GHS 60.06')).toBeInTheDocument()
+    expect(screen.getByText('Across 8 sales')).toBeInTheDocument()
     expect(screen.getByText('Card payments')).toBeInTheDocument()
     expect(screen.getByText('Cash payments')).toBeInTheDocument()
     expect(screen.getByText('New customers')).toBeInTheDocument()
+    expect(screen.getByText('Top products')).toBeInTheDocument()
+    expect(screen.getByText('Cold Brew')).toBeInTheDocument()
+    expect(screen.getByText('GHS 220.00 · 18 units sold')).toBeInTheDocument()
 
     expect(screen.getByText('Sold 3 iced coffees')).toBeInTheDocument()
     expect(screen.getByText(/sale • Lila •/i)).toBeInTheDocument()
     expect(screen.getByText('Added a new customer')).toBeInTheDocument()
     expect(screen.getByText(/customer • Marcus •/i)).toBeInTheDocument()
 
-    const [[, docCollection, docId]] = docMock.mock.calls as unknown[][]
-    expect(docCollection).toBe('dailySummaries')
-    expect(docId).toBe(`store-123_${expectedKey}`)
-    const todayKey = docId.split('store-123_')[1]
+    const docCalls = docMock.mock.calls as unknown[][]
+    const dailySummaryCalls = docCalls.filter(([, collection]) => collection === 'dailySummaries')
+    expect(dailySummaryCalls).toHaveLength(2)
+    const requestedIds = dailySummaryCalls.map(([, , id]) => id)
+    expect(requestedIds).toContain(`store-123_${expectedKey}`)
+    expect(requestedIds).toContain(`store-123_${expectedPreviousKey}`)
     expect(whereMock).toHaveBeenCalledWith('storeId', '==', 'store-123')
-    expect(whereMock).toHaveBeenCalledWith('dateKey', '==', todayKey)
+    expect(whereMock).toHaveBeenCalledWith('dateKey', '==', expectedKey)
     expect(orderByMock).toHaveBeenCalledWith('at', 'desc')
     expect(limitMock).toHaveBeenCalledWith(50)
+  })
+
+  it('handles zero sales gracefully', async () => {
+    getDocMock
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          salesTotal: 0,
+          salesCount: 0,
+          cardTotal: 0,
+          cashTotal: 0,
+          receiptCount: 0,
+          receiptUnits: 0,
+          newCustomers: 0,
+          topProducts: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          salesTotal: 0,
+          salesCount: 0,
+        }),
+      })
+
+    getDocsMock.mockResolvedValue({ docs: [] })
+
+    render(
+      <MemoryRouter>
+        <Today />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Sales variance')).toBeInTheDocument()
+    })
+
+    expect(screen.getByText('+GHS 0.00')).toBeInTheDocument()
+    expect(screen.getByText('No sales recorded today or yesterday')).toBeInTheDocument()
+    expect(screen.getByText('Average basket size')).toBeInTheDocument()
+    expect(screen.getAllByText('GHS 0.00').length).toBeGreaterThan(0)
+    expect(screen.getByText('No sales recorded today')).toBeInTheDocument()
+    expect(screen.getByText('No product sales recorded today.')).toBeInTheDocument()
   })
 })
