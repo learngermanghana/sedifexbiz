@@ -12,6 +12,7 @@ type ContactPayload = {
 
 type InitializeStorePayload = {
   contact?: ContactPayload
+  storeId?: unknown
 }
 
 type ManageStaffPayload = {
@@ -437,7 +438,41 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
     )
 })
 
-export const initializeStore = functions.https.onCall(async (data, context) => {
+function normalizeStoreId(
+  candidate: unknown,
+  existingStoreId: string | null,
+  fallbackStoreId: string,
+): string {
+  if (candidate === undefined || candidate === null) {
+    return existingStoreId ?? fallbackStoreId
+  }
+
+  if (typeof candidate !== 'string') {
+    throw new functions.https.HttpsError('invalid-argument', 'Store ID must be a string when provided')
+  }
+
+  const trimmed = candidate.trim()
+  if (!trimmed) {
+    if (existingStoreId) {
+      return existingStoreId
+    }
+    throw new functions.https.HttpsError('invalid-argument', 'A store ID is required')
+  }
+
+  if (existingStoreId && existingStoreId !== trimmed) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'This account is already assigned to a different store.',
+    )
+  }
+
+  return trimmed
+}
+
+async function handleStoreBootstrap(
+  data: InitializeStorePayload,
+  context: functions.https.CallableContext,
+): Promise<{ ok: true; storeId: string }> {
   assertAuthenticated(context)
 
   const uid = context.auth!.uid
@@ -460,7 +495,7 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
     typeof existingData.storeId === 'string' && existingData.storeId.trim() !== ''
       ? (existingData.storeId as string)
       : null
-  const storeId = existingStoreId ?? uid
+  const storeId = normalizeStoreId(payload.storeId, existingStoreId, uid)
 
   const memberData: admin.firestore.DocumentData = {
     uid,
@@ -478,7 +513,30 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   }
 
   await memberRef.set(memberData, { merge: true })
+
+  const storeRef = defaultDb.collection('stores').doc(storeId)
+  const storeSnap = await storeRef.get()
+  const storeData: admin.firestore.DocumentData = {
+    storeId,
+    ownerId: uid,
+    updatedAt: timestamp,
+  }
+
+  if (!storeSnap.exists) {
+    storeData.createdAt = timestamp
+  }
+
+  await storeRef.set(storeData, { merge: true })
+
   return { ok: true, storeId }
+}
+
+export const initializeStore = functions.https.onCall(async (data, context) => {
+  return handleStoreBootstrap((data ?? {}) as InitializeStorePayload, context)
+})
+
+export const afterSignupBootstrap = functions.https.onCall(async (data, context) => {
+  return handleStoreBootstrap((data ?? {}) as InitializeStorePayload, context)
 })
 
 export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
@@ -575,16 +633,18 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   const storeId = storeIdCandidate
 
   const resolvedRoleCandidate = getValueFromRecord(record, ['role', 'member_role', 'store_role', 'workspace_role'])
-  let resolvedRole = 'staff'
+  const existingRole =
+    typeof existingMember.role === 'string' && VALID_ROLES.has(existingMember.role)
+      ? (existingMember.role as 'owner' | 'staff')
+      : null
+  let resolvedRole: 'owner' | 'staff' = existingRole ?? 'staff'
   if (resolvedRoleCandidate) {
     const normalizedRole = resolvedRoleCandidate.toLowerCase()
-    if (VALID_ROLES.has(normalizedRole)) {
-      resolvedRole = normalizedRole
-    } else if (normalizedRole.includes('owner')) {
+    if (normalizedRole.includes('owner')) {
       resolvedRole = 'owner'
+    } else if (VALID_ROLES.has(normalizedRole) && existingRole !== 'owner') {
+      resolvedRole = normalizedRole as 'owner' | 'staff'
     }
-  } else if (typeof existingMember.role === 'string' && VALID_ROLES.has(existingMember.role)) {
-    resolvedRole = existingMember.role
   }
 
   const memberEmail =

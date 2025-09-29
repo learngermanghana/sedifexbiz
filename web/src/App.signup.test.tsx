@@ -249,8 +249,11 @@ describe('App signup cleanup', () => {
       return {
         ok: true,
         storeId: 'sheet-store-id',
-        role: 'staff',
-        teamMember: { id: 'seed-team-member', data: { name: 'Seeded Member' } },
+        role: 'owner',
+        teamMember: {
+          id: 'seed-team-member',
+          data: { name: 'Seeded Member', role: 'staff' },
+        },
         store: { id: 'sheet-store-id', data: { name: 'Seeded Store' } },
         products: [
           {
@@ -329,7 +332,7 @@ describe('App signup cleanup', () => {
       expect.objectContaining({
         uid: createdUser.uid,
         storeId: 'sheet-store-id',
-        role: 'staff',
+        role: 'owner',
       }),
     )
     expect(ensureOptions).toEqual({ merge: true })
@@ -345,7 +348,7 @@ describe('App signup cleanup', () => {
         name: 'Owner account',
         phone: '5551234567',
         email: 'owner@example.com',
-        role: 'staff',
+        role: 'owner',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
       }),
