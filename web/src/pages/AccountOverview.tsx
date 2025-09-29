@@ -127,7 +127,12 @@ function formatTimestamp(timestamp: Timestamp | null) {
 
 export default function AccountOverview() {
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
-  const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships()
+  const membershipsStoreId = storeLoading ? undefined : storeId ?? null
+  const {
+    memberships,
+    loading: membershipsLoading,
+    error: membershipsError,
+  } = useMemberships(membershipsStoreId)
   const { publish } = useToast()
 
   const [profile, setProfile] = useState<StoreProfile | null>(null)

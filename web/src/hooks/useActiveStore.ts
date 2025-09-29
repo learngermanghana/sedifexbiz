@@ -10,9 +10,19 @@ interface ActiveStoreState {
 const STORE_ERROR_MESSAGE = 'We could not load your workspace access. Some features may be limited.'
 
 export function useActiveStore(): ActiveStoreState {
-  const { memberships, loading: membershipLoading, error } = useMemberships()
   const [persistedStoreId, setPersistedStoreId] = useState<string | null>(null)
   const [isPersistedLoading, setIsPersistedLoading] = useState(true)
+
+  const normalizedPersistedStoreId =
+    persistedStoreId && persistedStoreId.trim() !== '' ? persistedStoreId.trim() : null
+  const membershipsHookStoreId = isPersistedLoading
+    ? undefined
+    : normalizedPersistedStoreId ?? null
+  const {
+    memberships,
+    loading: membershipLoading,
+    error,
+  } = useMemberships(membershipsHookStoreId)
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -26,8 +36,6 @@ export function useActiveStore(): ActiveStoreState {
   }, [])
 
   const membershipStoreId = memberships.find(m => m.storeId)?.storeId ?? null
-  const normalizedPersistedStoreId =
-    persistedStoreId && persistedStoreId.trim() !== '' ? persistedStoreId : null
 
   useEffect(() => {
     if (membershipLoading) {

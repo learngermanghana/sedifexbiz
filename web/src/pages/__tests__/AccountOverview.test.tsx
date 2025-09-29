@@ -16,7 +16,7 @@ vi.mock('../../hooks/useActiveStore', () => ({
 
 const mockUseMemberships = vi.fn()
 vi.mock('../../hooks/useMemberships', () => ({
-  useMemberships: () => mockUseMemberships(),
+  useMemberships: (storeId?: string | null) => mockUseMemberships(storeId),
 }))
 
 const mockManageStaffAccount = vi.fn()
