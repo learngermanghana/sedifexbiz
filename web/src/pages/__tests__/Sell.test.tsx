@@ -1,8 +1,10 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import type { ReactElement } from 'react'
 
 import Sell from '../Sell'
+import { ActiveStoreContext, type ActiveStoreContextValue } from '../../utils/activeStore'
 
 const mockLoadCachedProducts = vi.fn(async () => [] as unknown[])
 const mockSaveCachedProducts = vi.fn(async () => {})
@@ -35,10 +37,31 @@ vi.mock('../../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
-vi.mock('../../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
-}))
+const mockSetActiveStoreId = vi.fn()
+
+function createActiveStoreValue(
+  overrides: Partial<ActiveStoreContextValue> = {},
+): ActiveStoreContextValue {
+  return {
+    storeId: 'store-1',
+    isLoading: false,
+    error: null,
+    setActiveStoreId: mockSetActiveStoreId,
+    ...overrides,
+  }
+}
+
+function wrapWithProviders(
+  element: ReactElement,
+  options: { activeStore?: Partial<ActiveStoreContextValue> } = {},
+) {
+  const value = createActiveStoreValue(options.activeStore)
+  return (
+    <ActiveStoreContext.Provider value={value}>
+      <MemoryRouter>{element}</MemoryRouter>
+    </ActiveStoreContext.Provider>
+  )
+}
 
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
 const whereMock = vi.fn((field: string, op: string, value: unknown) => ({
@@ -112,8 +135,7 @@ describe('Sell page barcode scanner', () => {
     docMock.mockClear()
     mockUseAuthUser.mockReset()
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'cashier@example.com' })
-    mockUseActiveStore.mockReset()
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockSetActiveStoreId.mockReset()
 
     mockLoadCachedProducts.mockResolvedValue([])
     mockLoadCachedCustomers.mockResolvedValue([])
@@ -142,11 +164,7 @@ describe('Sell page barcode scanner', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Sell />
-      </MemoryRouter>,
-    )
+    render(wrapWithProviders(<Sell />))
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalled())
 
@@ -190,11 +208,7 @@ describe('Sell page barcode scanner', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Sell />
-      </MemoryRouter>,
-    )
+    render(wrapWithProviders(<Sell />))
 
     await waitFor(() => expect(productSnapshot).toBeTruthy())
 
@@ -225,11 +239,7 @@ describe('Sell page barcode scanner', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Sell />
-      </MemoryRouter>,
-    )
+    render(wrapWithProviders(<Sell />))
 
     await waitFor(() => expect(productSnapshot).toBeTruthy())
 

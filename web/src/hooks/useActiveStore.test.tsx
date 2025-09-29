@@ -1,7 +1,13 @@
 import { describe, beforeEach, it, expect, vi } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
+import type { ReactNode } from 'react'
 
 import { useActiveStore } from './useActiveStore'
+import { ActiveStoreProvider } from '../utils/activeStore'
+
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <ActiveStoreProvider>{children}</ActiveStoreProvider>
+)
 
 const mockUseMemberships = vi.fn()
 
@@ -28,7 +34,7 @@ describe('useActiveStore', () => {
 
     window.localStorage.setItem('activeStoreId', 'matching-store')
 
-    const { result } = renderHook(() => useActiveStore())
+    const { result } = renderHook(() => useActiveStore(), { wrapper })
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
@@ -51,7 +57,7 @@ describe('useActiveStore', () => {
 
     window.localStorage.setItem('activeStoreId', 'persisted-store')
 
-    const { result } = renderHook(() => useActiveStore())
+    const { result } = renderHook(() => useActiveStore(), { wrapper })
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
@@ -75,7 +81,7 @@ describe('useActiveStore', () => {
           },
     )
 
-    const { result } = renderHook(() => useActiveStore())
+    const { result } = renderHook(() => useActiveStore(), { wrapper })
 
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)

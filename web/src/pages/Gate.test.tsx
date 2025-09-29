@@ -1,14 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
 
 import Gate from './Gate';
+import { ActiveStoreContext, type ActiveStoreContextValue } from '../utils/activeStore';
 
-const mockUseActiveStore = vi.fn();
 const mockUseMemberships = vi.fn();
+const mockSetActiveStoreId = vi.fn();
 
-vi.mock('../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
-}));
+function withActiveStore(ui: ReactElement, overrides: Partial<ActiveStoreContextValue> = {}) {
+  const value: ActiveStoreContextValue = {
+    storeId: 'store-1',
+    isLoading: false,
+    error: null,
+    setActiveStoreId: mockSetActiveStoreId,
+    ...overrides,
+  };
+
+  return <ActiveStoreContext.Provider value={value}>{ui}</ActiveStoreContext.Provider>;
+}
 
 vi.mock('../hooks/useMemberships', () => ({
   useMemberships: (storeId?: string | null) => mockUseMemberships(storeId),
@@ -16,9 +26,8 @@ vi.mock('../hooks/useMemberships', () => ({
 
 describe('Gate', () => {
   beforeEach(() => {
-    mockUseActiveStore.mockReset();
     mockUseMemberships.mockReset();
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null });
+    mockSetActiveStoreId.mockReset();
   });
 
   it('renders a loading state while memberships are loading', () => {
@@ -28,7 +37,7 @@ describe('Gate', () => {
       error: null,
     }));
 
-    render(<Gate />);
+    render(withActiveStore(<Gate />));
 
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
@@ -37,7 +46,7 @@ describe('Gate', () => {
     const error = new Error('Failed to load memberships');
     mockUseMemberships.mockReturnValue({ loading: false, error });
 
-    render(<Gate />);
+    render(withActiveStore(<Gate />));
 
     expect(screen.getByRole('heading', { name: /couldn't load your workspace/i })).toBeInTheDocument();
     expect(screen.getByText(/failed to load memberships/i)).toBeInTheDocument();
@@ -47,7 +56,7 @@ describe('Gate', () => {
     mockUseMemberships.mockReturnValue({ loading: false, error: null });
     const child = <div data-testid="app">App</div>;
 
-    render(<Gate>{child}</Gate>);
+    render(withActiveStore(<Gate>{child}</Gate>));
 
     expect(screen.getByTestId('app')).toBeInTheDocument();
   });

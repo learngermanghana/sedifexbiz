@@ -2,6 +2,7 @@ import React from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AccountOverview from '../AccountOverview'
+import { ActiveStoreContext, type ActiveStoreContextValue } from '../../utils/activeStore'
 
 const mockPublish = vi.fn()
 
@@ -9,10 +10,7 @@ vi.mock('../../components/ToastProvider', () => ({
   useToast: () => ({ publish: mockPublish }),
 }))
 
-const mockUseActiveStore = vi.fn()
-vi.mock('../../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
-}))
+const mockSetActiveStoreId = vi.fn()
 
 const mockUseMemberships = vi.fn()
 vi.mock('../../hooks/useMemberships', () => ({
@@ -96,7 +94,7 @@ afterAll(() => {
 describe('AccountOverview', () => {
   beforeEach(() => {
     mockPublish.mockReset()
-    mockUseActiveStore.mockReset()
+    mockSetActiveStoreId.mockReset()
     mockUseMemberships.mockReset()
     mockManageStaffAccount.mockReset()
     collectionMock.mockClear()
@@ -116,7 +114,6 @@ describe('AccountOverview', () => {
     )
     mockAuth.currentUser = { email: 'owner@example.com' }
 
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
     getDocMock.mockResolvedValue({
       exists: () => true,
       data: () => ({
@@ -164,7 +161,7 @@ describe('AccountOverview', () => {
       error: null,
     })
 
-    render(<AccountOverview />)
+    render(withActiveStore(<AccountOverview />))
     await act(async () => {
       await Promise.resolve()
     })
@@ -221,7 +218,7 @@ describe('AccountOverview', () => {
       error: null,
     })
 
-    render(<AccountOverview />)
+    render(withActiveStore(<AccountOverview />))
     await act(async () => {
       await Promise.resolve()
     })
@@ -233,3 +230,18 @@ describe('AccountOverview', () => {
     expect(screen.getByText(/read-only access/i)).toBeInTheDocument()
   })
 })
+function withActiveStore(
+  element: React.ReactElement,
+  overrides: Partial<ActiveStoreContextValue> = {},
+) {
+  const value: ActiveStoreContextValue = {
+    storeId: 'store-123',
+    isLoading: false,
+    error: null,
+    setActiveStoreId: mockSetActiveStoreId,
+    ...overrides,
+  }
+
+  return <ActiveStoreContext.Provider value={value}>{element}</ActiveStoreContext.Provider>
+}
+

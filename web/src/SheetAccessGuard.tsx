@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { onAuthStateChanged, signOut, User } from 'firebase/auth'
 import { auth } from './firebase'
 import { fetchSheetRows, findUserRow, isContractActive } from './sheetClient'
+import { setPersistedActiveStoreId } from './utils/activeStore'
 
-export default function SheetAccessGuard({ children }: { children: React.ReactNode }) {
+export default function SheetAccessGuard({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -17,16 +18,12 @@ export default function SheetAccessGuard({ children }: { children: React.ReactNo
         if (!row) throw new Error('We could not find a workspace assignment for this account.')
         if (!row.storeId) throw new Error('Your account is missing a workspace store ID.')
         if (!isContractActive(row)) throw new Error('Your Sedifex workspace contract is not active.')
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem('activeStoreId', row.storeId)
-        }
+        setPersistedActiveStoreId(row.storeId)
         setReady(true)                           // allowed
       } catch (e: any) {
         setError(e?.message || 'Access denied.') // block
         await signOut(auth)
-        if (typeof window !== 'undefined') {
-          window.localStorage.removeItem('activeStoreId')
-        }
+        setPersistedActiveStoreId(null)
         setReady(true)
       }
     })

@@ -14,6 +14,7 @@ import Onboarding from './pages/Onboarding'
 import GoalPlannerPage from './pages/KpiMetrics'
 import AccountOverview from './pages/AccountOverview'
 import { ToastProvider } from './components/ToastProvider'
+import { ActiveStoreProvider } from './utils/activeStore'
 
 const router = createHashRouter([
   {
@@ -40,7 +41,9 @@ const router = createHashRouter([
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ToastProvider>
-      <RouterProvider router={router} />
+      <ActiveStoreProvider>
+        <RouterProvider router={router} />
+      </ActiveStoreProvider>
     </ToastProvider>
   </React.StrictMode>,
 )

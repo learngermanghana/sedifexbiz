@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth'
 import { MemoryRouter } from 'react-router-dom'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { ActiveStoreContext, type ActiveStoreContextValue } from './utils/activeStore'
 
 /** ---------------- hoisted state/mocks ---------------- */
 const mocks = vi.hoisted(() => {
@@ -155,6 +156,8 @@ vi.mock('./sheetClient', () => ({
 import App from './App'
 
 /** ---------------- helpers ---------------- */
+const mockSetActiveStoreId = vi.fn()
+
 function createTestUser() {
   const deleteFn = vi.fn(async () => {})
   const testUser = {
@@ -164,6 +167,23 @@ function createTestUser() {
     getIdToken: vi.fn(async () => 'token'),
   } as unknown as User
   return { user: testUser, deleteFn }
+}
+
+function renderWithActiveStore() {
+  const activeStoreValue: ActiveStoreContextValue = {
+    storeId: null,
+    isLoading: false,
+    error: null,
+    setActiveStoreId: mockSetActiveStoreId,
+  }
+
+  render(
+    <ActiveStoreContext.Provider value={activeStoreValue}>
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>
+    </ActiveStoreContext.Provider>,
+  )
 }
 
 let localStorageSetItemSpy: ReturnType<typeof vi.spyOn>
@@ -182,6 +202,7 @@ describe('App signup cleanup', () => {
 
     window.localStorage.clear()
     localStorageSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+    mockSetActiveStoreId.mockReset()
   })
 
   afterEach(() => {
@@ -201,11 +222,7 @@ describe('App signup cleanup', () => {
     // Force the very first persistSession to fail
     mocks.persistSession.mockRejectedValueOnce(new Error('Unable to persist session'))
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderWithActiveStore()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() =>
@@ -273,11 +290,7 @@ describe('App signup cleanup', () => {
       }
     })
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderWithActiveStore()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() =>
@@ -416,11 +429,7 @@ describe('App signup cleanup', () => {
     sheet.findUserRowMock.mockImplementation(() => ({ storeId: 'sheet-store', role: 'Owner' }))
     sheet.isContractActiveMock.mockReturnValue(true)
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderWithActiveStore()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() =>
@@ -490,11 +499,7 @@ describe('App signup cleanup', () => {
       )
     })
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderWithActiveStore()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() =>
