@@ -1,13 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { collection, query, orderBy, limit, onSnapshot, doc, where } from 'firebase/firestore'
+import {
+  collection,
+  query,
+  orderBy,
+  limit,
+  onSnapshot,
+  doc,
+  where,
+  runTransaction,
+  serverTimestamp,
+} from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
-import { httpsCallable } from 'firebase/functions'
-import { db, functions as cloudFunctions } from '../firebase'
+import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'
 import { Link } from 'react-router-dom'
-import { queueCallableRequest } from '../utils/offlineQueue'
 import BarcodeScanner, { ScanResult } from '../components/BarcodeScanner'
 import {
   CUSTOMER_CACHE_LIMIT,
@@ -64,39 +72,6 @@ type ReceiptSharePayload = {
   pdfBlob: Blob
   pdfUrl: string
   pdfFileName: string
-}
-
-type CommitSalePayload = {
-  branchId: string | null
-  saleId: string
-  cashierId: string
-  totals: {
-    total: number
-    taxTotal: number
-  }
-  payment: {
-    method: string
-    amountPaid: number
-    changeDue: number
-  }
-  customer?: {
-    id?: string
-    name: string
-    phone?: string
-    email?: string
-  }
-  items: Array<{
-    productId: string
-    name: string
-    price: number
-    qty: number
-    taxRate?: number
-  }>
-}
-
-type CommitSaleResponse = {
-  ok: boolean
-  saleId: string
 }
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
@@ -517,47 +492,125 @@ export default function Sell() {
     setReceipt(null)
     setIsRecording(true)
     const saleId = doc(collection(db, 'sales')).id
-    const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
-    const payload: CommitSalePayload = {
-      branchId: activeStoreId,
-      saleId,
-      cashierId: user.uid,
-      totals: {
-        total: subtotal,
-        taxTotal: 0,
-      },
-      payment: {
-        method: paymentMethod,
-        amountPaid,
-        changeDue,
-      },
-      items: cart.map(line => ({
-        productId: line.productId,
-        name: line.name,
-        price: line.price,
-        qty: line.qty,
-        taxRate: 0,
-      })),
-    }
-    if (selectedCustomer) {
-      payload.customer = {
-        id: selectedCustomer.id,
-        name: selectedCustomerDataName || selectedCustomer.id,
-        ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
-        ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
-      }
-    }
+    const saleRef = doc(db, 'sales', saleId)
+    const saleItemsCollection = collection(db, 'saleItems')
+    const stockCollection = collection(db, 'stock')
+    const ledgerCollection = collection(db, 'ledger')
 
     const receiptItems = cart.map(line => ({ ...line }))
+    const saleCustomer = selectedCustomer
+      ? {
+          id: selectedCustomer.id,
+          name: selectedCustomerDataName || selectedCustomer.id,
+          ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
+          ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
+        }
+      : null
 
     try {
-      const { data } = await commitSale(payload)
-      if (!data?.ok) {
-        throw new Error('Sale was not recorded')
-      }
+      await runTransaction(db, async transaction => {
+        const existingSale = await transaction.get(saleRef)
+        if (typeof existingSale.exists === 'function' ? existingSale.exists() : existingSale.exists) {
+          throw new Error('This sale has already been recorded.')
+        }
+
+        const timestamp = serverTimestamp()
+        const normalizedItems = cart.map(line => {
+          const productId = typeof line.productId === 'string' ? line.productId.trim() : ''
+          if (!productId) {
+            throw new Error('Each cart line must reference a valid product before recording the sale.')
+          }
+
+          const qty = Number(line.qty)
+          if (!Number.isFinite(qty) || qty <= 0) {
+            throw new Error('Update item quantities before recording the sale.')
+          }
+
+          const price = Number(line.price)
+          if (!Number.isFinite(price) || price < 0) {
+            throw new Error('Each item needs a valid price before selling.')
+          }
+
+          return {
+            productId,
+            name: line.name,
+            price,
+            qty,
+            taxRate: 0,
+          }
+        })
+
+        transaction.set(saleRef, {
+          branchId: activeStoreId,
+          storeId: activeStoreId,
+          cashierId: user.uid,
+          total: subtotal,
+          taxTotal: 0,
+          payment: {
+            method: paymentMethod,
+            amountPaid,
+            changeDue,
+          },
+          customer: saleCustomer,
+          items: normalizedItems,
+          createdBy: user.uid,
+          createdAt: timestamp,
+        })
+
+        for (const item of normalizedItems) {
+          const productRef = doc(db, 'products', item.productId)
+          const productSnapshot = await transaction.get(productRef)
+          if (!productSnapshot || !(typeof productSnapshot.exists === 'function' ? productSnapshot.exists() : productSnapshot.exists)) {
+            throw new Error(`${item.name || 'Product'} is unavailable. Refresh your catalog and try again.`)
+          }
+
+          const currentStockRaw = typeof productSnapshot.get === 'function'
+            ? productSnapshot.get('stockCount')
+            : (productSnapshot.data?.stockCount ?? productSnapshot.stockCount)
+          const currentStock = Number(currentStockRaw ?? 0) || 0
+          const qtyChange = Math.abs(item.qty)
+          const nextStock = currentStock - qtyChange
+
+          const saleItemRef = doc(saleItemsCollection)
+          transaction.set(saleItemRef, {
+            saleId,
+            productId: item.productId,
+            qty: item.qty,
+            price: item.price,
+            taxRate: item.taxRate,
+            storeId: activeStoreId,
+            createdAt: timestamp,
+          })
+
+          const stockRef = doc(stockCollection)
+          transaction.set(stockRef, {
+            productId: item.productId,
+            qtyChange: -qtyChange,
+            reason: 'sale',
+            refId: saleId,
+            storeId: activeStoreId,
+            createdAt: timestamp,
+          })
+
+          transaction.update(productRef, {
+            stockCount: nextStock,
+            updatedAt: timestamp,
+          })
+
+          const ledgerRef = doc(ledgerCollection)
+          transaction.set(ledgerRef, {
+            productId: item.productId,
+            qtyChange: -qtyChange,
+            type: 'sale',
+            refId: saleId,
+            storeId: activeStoreId,
+            createdAt: timestamp,
+          })
+        }
+      })
 
       setReceipt({
-        saleId: data.saleId,
+        saleId,
         createdAt: new Date(),
         items: receiptItems,
         subtotal,
@@ -566,52 +619,19 @@ export default function Sell() {
           amountPaid,
           changeDue,
         },
-        customer: selectedCustomer
-          ? {
-              name: selectedCustomerDataName || selectedCustomer.id,
-              phone: selectedCustomer.phone,
-              email: selectedCustomer.email,
-            }
-          : undefined,
+        customer: saleCustomer || undefined,
       })
       setCart([])
       setSelectedCustomerId('')
       setAmountTendered('')
-      setSaleSuccess(`Sale recorded #${data.saleId}. Receipt sent to printer.`)
+      setSaleSuccess(`Sale recorded #${saleId}. Receipt sent to printer.`)
     } catch (err) {
       console.error('[sell] Unable to record sale', err)
-      if (isOfflineError(err)) {
-        const queued = await queueCallableRequest('commitSale', payload, 'sale')
-        if (queued) {
-          setReceipt({
-            saleId,
-            createdAt: new Date(),
-            items: receiptItems,
-            subtotal,
-            payment: {
-              method: paymentMethod,
-              amountPaid,
-              changeDue,
-            },
-            customer: selectedCustomer
-              ? {
-                  name: selectedCustomerDataName || selectedCustomer.id,
-                  phone: selectedCustomer.phone,
-                  email: selectedCustomer.email,
-                }
-              : undefined,
-          })
-          setCart([])
-          setSelectedCustomerId('')
-          setAmountTendered('')
-          setSaleSuccess(`Sale queued offline #${saleId}. We'll sync it once you're back online.`)
-          return
-        }
-      }
       const message = err instanceof Error ? err.message : null
-      setSaleError(message && message !== 'Sale was not recorded'
-        ? message
-        : 'We were unable to record this sale. Please try again.')
+      const fallback = isOfflineError(err)
+        ? 'We were unable to record this sale while offline. Please try again once you have a connection.'
+        : 'We were unable to record this sale. Please try again.'
+      setSaleError(message && message.trim().length > 0 ? message : fallback)
     } finally {
       setIsRecording(false)
     }
