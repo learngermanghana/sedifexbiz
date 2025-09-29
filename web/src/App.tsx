@@ -24,6 +24,7 @@ import {
   type SeededDocument,
   extractCallableErrorMessage,
   INACTIVE_WORKSPACE_MESSAGE,
+  afterSignupBootstrap,
 } from './controllers/accessController'
 import { fetchSheetRows, findUserRow, isContractActive } from './sheetClient'
 import { AuthUserContext } from './hooks/useAuthUser'
@@ -519,6 +520,8 @@ export default function App() {
         const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
         createdSignupUser = nextUser
+
+        await afterSignupBootstrap(sanitizedStoreId)
 
         let resolution: ResolveStoreAccessResult | null = null
         try {
