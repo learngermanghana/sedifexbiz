@@ -145,6 +145,69 @@ export default function CloseDay() {
     window.print()
   }
 
+  const handleExportCSV = () => {
+    const now = new Date()
+    const fileTimestamp = now.toISOString().split('T')[0]
+    const formatAmount = (value: number) => value.toFixed(2)
+    const csvEscape = (value: string | number) => {
+      const stringValue = String(value ?? '')
+      if (/[",\n]/.test(stringValue)) {
+        return `"${stringValue.replace(/"/g, '""')}"`
+      }
+      return stringValue
+    }
+
+    const rows: Array<Array<string | number>> = []
+    rows.push(['Close Day Summary'])
+    rows.push(['Date/Time', now.toLocaleString()])
+    rows.push(['Store ID', activeStoreId ?? 'N/A'])
+    rows.push([])
+
+    rows.push(['Sales Summary'])
+    rows.push(['Metric', 'Amount (GHS)'])
+    rows.push(['Sales total', formatAmount(total)])
+    rows.push(['Expected cash', formatAmount(expectedCash)])
+    rows.push(['Counted cash', formatAmount(countedCash)])
+    rows.push(['Variance', formatAmount(variance)])
+    rows.push([])
+
+    rows.push(['Tender Breakdown'])
+    rows.push(['Tender type', 'Amount (GHS)'])
+    rows.push(['Card & digital payments', formatAmount(cardTotal)])
+    rows.push(['Cash removed (drops, payouts)', formatAmount(removedTotal)])
+    rows.push(['Cash added (float top-ups)', formatAmount(addedTotal)])
+    rows.push(['Loose cash / coins', formatAmount(looseCashTotal)])
+    rows.push([])
+
+    rows.push(['Cash Denominations'])
+    rows.push(['Denomination (GHS)', 'Quantity', 'Subtotal (GHS)'])
+    DENOMINATIONS.forEach(denom => {
+      const key = String(denom)
+      const quantity = parseQuantity(cashCounts[key])
+      const subtotal = denom * quantity
+      rows.push([denom.toFixed(denom % 1 === 0 ? 0 : 2), quantity, subtotal.toFixed(2)])
+    })
+    rows.push(['Loose cash / coins', '', formatAmount(looseCashTotal)])
+    rows.push([])
+
+    rows.push(['Notes'])
+    rows.push([notes.trim() || ''])
+
+    const csvContent = rows
+      .map(row => row.map(csvEscape).join(','))
+      .join('\r\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `close-day-${fileTimestamp}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async event => {
     event.preventDefault()
     setSubmitError(null)
@@ -352,6 +415,9 @@ export default function CloseDay() {
         )}
 
         <div className="no-print" style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+          <button type="button" onClick={handleExportCSV} style={{ padding: '10px 16px' }}>
+            Export CSV
+          </button>
           <button type="button" onClick={handlePrint} style={{ padding: '10px 16px' }}>
             Print summary
           </button>
