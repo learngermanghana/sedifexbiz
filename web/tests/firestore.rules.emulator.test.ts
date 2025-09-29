@@ -6,6 +6,7 @@ import {
   getDoc,
   setDoc,
   getFirestore,
+  serverTimestamp,
   type Firestore,
 } from 'firebase/firestore'
 import {
@@ -30,22 +31,6 @@ interface TestContext {
   auth: Auth | null
 }
 
-async function setCustomClaims(uid: string, claims: Record<string, unknown>) {
-  const response = await fetch(`${authBaseUrl}/identitytoolkit.googleapis.com/v1/accounts:update?key=fake-api-key`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      localId: uid,
-      customAttributes: JSON.stringify(claims),
-    }),
-  })
-
-  if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`Failed to set custom claims (${response.status}): ${body}`)
-  }
-}
-
 function createBaseApp(name: string): TestContext {
   const app = initializeApp(
     {
@@ -65,12 +50,35 @@ function createBaseApp(name: string): TestContext {
   return { app, db, auth }
 }
 
-async function createStoreUser(storeId: string): Promise<TestContext> {
-  const context = createBaseApp(`store-user-${storeId}-${Math.random().toString(36).slice(2)}`)
+async function createStoreMember(storeId: string, role: 'owner' | 'staff' = 'owner'): Promise<TestContext> {
+  const context = createBaseApp(`store-member-${storeId}-${Math.random().toString(36).slice(2)}`)
   await signInAnonymously(context.auth)
   const user = context.auth.currentUser
-  if (!user) throw new Error('Anonymous sign-in failed for store user test context')
-  await setCustomClaims(user.uid, { storeId })
+  if (!user) throw new Error('Anonymous sign-in failed for store member test context')
+
+  if (role === 'owner') {
+    await setDoc(doc(context.db, 'teamMembers', user.uid), {
+      uid: user.uid,
+      storeId,
+      role,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  } else {
+    const ownerContext = await createStoreMember(storeId, 'owner')
+    try {
+      await setDoc(doc(ownerContext.db, 'teamMembers', user.uid), {
+        uid: user.uid,
+        storeId,
+        role,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    } finally {
+      await destroyContext(ownerContext)
+    }
+  }
+
   await user.getIdToken(true)
   return context
 }
@@ -117,7 +125,7 @@ async function expectFails<T>(promise: Promise<T>, message: string) {
 }
 
 beforeAll(async () => {
-  const seedingContext = await createStoreUser('store-1')
+  const seedingContext = await createStoreMember('store-1')
   try {
     await setDoc(doc(seedingContext.db, 'stores/store-1'), { name: 'Demo Store' })
     await setDoc(doc(seedingContext.db, 'stores/store-1/inventory/item-1'), { sku: 'sku-1', quantity: 5 })
@@ -132,7 +140,7 @@ afterAll(async () => {
 
 describe('Firestore rules - multi-tenant store access', () => {
   test('matching storeId users can read and write their store document', async () => {
-    const context = await createStoreUser('store-1')
+    const context = await createStoreMember('store-1')
     try {
       await expectSucceeds(getDoc(doc(context.db, 'stores/store-1')), 'store-1 user should read own store document')
       await expectSucceeds(
@@ -145,7 +153,7 @@ describe('Firestore rules - multi-tenant store access', () => {
   })
 
   test('mismatched storeId users cannot access another store document', async () => {
-    const context = await createStoreUser('store-2')
+    const context = await createStoreMember('store-2')
     try {
       await expectFails(getDoc(doc(context.db, 'stores/store-1')), 'store-2 user should be blocked from reading store-1')
       await expectFails(
@@ -158,8 +166,8 @@ describe('Firestore rules - multi-tenant store access', () => {
   })
 
   test('subcollection access is limited to matching storeId users', async () => {
-    const allowed = await createStoreUser('store-1')
-    const denied = await createStoreUser('store-2')
+    const allowed = await createStoreMember('store-1')
+    const denied = await createStoreMember('store-2')
     try {
       await expectSucceeds(
         setDoc(doc(allowed.db, 'stores/store-1/inventory/item-2'), { sku: 'sku-2', quantity: 3 }),
@@ -194,6 +202,57 @@ describe('Firestore rules - multi-tenant store access', () => {
       await expectFails(getDoc(doc(context.db, 'stores/store-1')), 'unauthenticated requests should be denied')
     } finally {
       await destroyContext(context)
+    }
+  })
+
+  test('sales writes must target the member store and include a storeId', async () => {
+    const context = await createStoreMember('store-1', 'staff')
+    try {
+      const saleRef = doc(context.db, 'sales/sale-1')
+      await expectFails(
+        setDoc(saleRef, { total: 10, storeId: 'store-2' }),
+        'staff should not create sales for another store',
+      )
+      await expectFails(
+        setDoc(saleRef, { total: 10 }),
+        'staff should not create sales without storeId',
+      )
+      await expectSucceeds(
+        setDoc(saleRef, { total: 10, storeId: 'store-1' }),
+        'staff should create sales for their store',
+      )
+    } finally {
+      await destroyContext(context)
+    }
+  })
+
+  test('product updates are limited to the member store', async () => {
+    const owner = await createStoreMember('store-1', 'owner')
+    try {
+      const productRef = doc(owner.db, 'products/product-1')
+      await expectSucceeds(
+        setDoc(productRef, { name: 'Example', price: 1, storeId: 'store-1' }),
+        'owners can seed products for their store',
+      )
+    } finally {
+      await destroyContext(owner)
+    }
+
+    const staff = await createStoreMember('store-1', 'staff')
+    const outsider = await createStoreMember('store-2', 'staff')
+
+    try {
+      await expectSucceeds(
+        setDoc(doc(staff.db, 'products/product-1'), { name: 'Updated', price: 2, storeId: 'store-1' }),
+        'staff can update products for their store',
+      )
+      await expectFails(
+        setDoc(doc(outsider.db, 'products/product-1'), { name: 'Hijack', price: 2, storeId: 'store-1' }),
+        'staff from another store cannot update products',
+      )
+    } finally {
+      await destroyContext(staff)
+      await destroyContext(outsider)
     }
   })
 })
