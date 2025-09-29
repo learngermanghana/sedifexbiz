@@ -21,8 +21,6 @@ const mocks = vi.hoisted(() => {
     persistSession: vi.fn(async () => {}),
     refreshSessionHeartbeat: vi.fn(async () => {}),
     publish: vi.fn(),
-    resolveStoreAccess: vi.fn(),
-    afterSignupBootstrap: vi.fn(async () => {}),
   }
   return state
 })
@@ -41,6 +39,7 @@ const firestore = vi.hoisted(() => {
 
   const setDocMock = vi.fn(async () => {})
   const updateDocMock = vi.fn(async () => {})
+  const getDocMock = vi.fn(async () => ({ exists: () => false }))
 
   const serverTimestampMock = vi.fn(() => {
     timestampCallCount += 1
@@ -51,39 +50,17 @@ const firestore = vi.hoisted(() => {
     docMock,
     setDocMock,
     updateDocMock,
+    getDocMock,
     serverTimestampMock,
     docRefByPath,
     reset() {
       docMock.mockClear()
       setDocMock.mockClear()
       updateDocMock.mockClear()
+      getDocMock.mockClear()
       serverTimestampMock.mockClear()
       docRefByPath.clear()
       timestampCallCount = 0
-    },
-  }
-})
-
-const sheet = vi.hoisted(() => {
-  const fetchSheetRowsMock = vi.fn(async () => {
-    throw new Error('sheet fetch failed')
-  })
-  const findUserRowMock = vi.fn(() => null)
-  const isContractActiveMock = vi.fn(() => false)
-
-  return {
-    fetchSheetRowsMock,
-    findUserRowMock,
-    isContractActiveMock,
-    reset() {
-      fetchSheetRowsMock.mockReset()
-      findUserRowMock.mockReset()
-      isContractActiveMock.mockReset()
-      fetchSheetRowsMock.mockImplementation(async () => {
-        throw new Error('sheet fetch failed')
-      })
-      findUserRowMock.mockReturnValue(null)
-      isContractActiveMock.mockReturnValue(false)
     },
   }
 })
@@ -110,6 +87,7 @@ vi.mock('firebase/firestore', () => ({
   doc: (...args: Parameters<typeof firestore.docMock>) => firestore.docMock(...args),
   setDoc: (...args: Parameters<typeof firestore.setDocMock>) => firestore.setDocMock(...args),
   updateDoc: (...args: Parameters<typeof firestore.updateDocMock>) => firestore.updateDocMock(...args),
+  getDoc: (...args: Parameters<typeof firestore.getDocMock>) => firestore.getDocMock(...args),
   serverTimestamp: (
     ...args: Parameters<typeof firestore.serverTimestampMock>
   ) => firestore.serverTimestampMock(...args),
@@ -139,18 +117,6 @@ vi.mock('./components/ToastProvider', () => ({
   useToast: () => ({ publish: mocks.publish }),
 }))
 
-vi.mock('./controllers/accessController', () => ({
-  resolveStoreAccess: (...args: unknown[]) => mocks.resolveStoreAccess(...args),
-  afterSignupBootstrap: (...args: unknown[]) => mocks.afterSignupBootstrap(...args),
-}))
-
-// IMPORTANT: mock the sheet fallback to be deterministic when a test expects cleanup
-vi.mock('./sheetClient', () => ({
-  fetchSheetRows: (...args: unknown[]) => sheet.fetchSheetRowsMock(...args),
-  findUserRow: (...args: unknown[]) => sheet.findUserRowMock(...args),
-  isContractActive: (...args: unknown[]) => sheet.isContractActiveMock(...args),
-}))
-
 /** ---------------- imports after mocks ---------------- */
 import App from './App'
 
@@ -174,11 +140,7 @@ describe('App signup cleanup', () => {
     mocks.auth.currentUser = null
     mocks.listeners.splice(0, mocks.listeners.length)
     firestore.reset()
-    mocks.resolveStoreAccess.mockReset()
-    mocks.resolveStoreAccess.mockResolvedValue(null)
-
-    mocks.afterSignupBootstrap.mockReset()
-    mocks.afterSignupBootstrap.mockImplementation(async () => {})
+    firestore.getDocMock.mockImplementation(async () => ({ exists: () => false }))
 
     window.localStorage.clear()
     localStorageSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
@@ -198,7 +160,6 @@ describe('App signup cleanup', () => {
       return { user: createdUser }
     })
 
-    // Force the very first persistSession to fail
     mocks.persistSession.mockRejectedValueOnce(new Error('Unable to persist session'))
 
     render(
@@ -208,15 +169,14 @@ describe('App signup cleanup', () => {
     )
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
-    await waitFor(() =>
-      expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
 
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.type(screen.getByLabelText(/Store ID/i), 'store-001')
-      await user.type(screen.getByLabelText(/Phone/i), '5551234567')
+      await user.selectOptions(screen.getByLabelText(/Role/i), 'owner')
+      await user.type(screen.getByLabelText(/Company/i), 'Sedifex')
+      await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
       await user.click(screen.getByRole('button', { name: /Create account/i }))
@@ -233,44 +193,14 @@ describe('App signup cleanup', () => {
     expect(localStorageSetItemSpy).not.toHaveBeenCalled()
   })
 
-  it('persists metadata and seeds the workspace after a successful signup', async () => {
+  it('creates team member and customer records after a successful signup', async () => {
     const user = userEvent.setup()
     const { user: createdUser } = createTestUser()
 
-    // Successful create + callable returns seed data
     mocks.createUserWithEmailAndPassword.mockImplementation(async () => {
       mocks.auth.currentUser = createdUser
       mocks.listeners.forEach(listener => listener(createdUser))
       return { user: createdUser }
-    })
-
-    mocks.resolveStoreAccess.mockImplementation(async storeId => {
-      if (!storeId) return null
-      return {
-        ok: true,
-        storeId: 'sheet-store-id',
-        role: 'owner',
-        teamMember: {
-          id: 'seed-team-member',
-          data: { name: 'Seeded Member', role: 'staff' },
-        },
-        store: { id: 'sheet-store-id', data: { name: 'Seeded Store' } },
-        products: [
-          {
-            id: 'product-1',
-            data: {
-              name: 'Seed Product',
-              createdAt: 1_700_000_000_000,
-            },
-          },
-        ],
-        customers: [
-          {
-            id: 'seeded-customer',
-            data: { name: 'Seeded Customer' },
-          },
-        ],
-      }
     })
 
     render(
@@ -280,14 +210,13 @@ describe('App signup cleanup', () => {
     )
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
-    await waitFor(() =>
-      expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
 
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.type(screen.getByLabelText(/Store ID/i), '  sheet-store-id  ')
+      await user.selectOptions(screen.getByLabelText(/Role/i), 'owner')
+      await user.type(screen.getByLabelText(/Company/i), 'Sedifex')
       await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -295,72 +224,50 @@ describe('App signup cleanup', () => {
     })
 
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
-    await waitFor(() => expect(mocks.afterSignupBootstrap).toHaveBeenCalledWith('sheet-store-id'))
-    await waitFor(() =>
-      expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('sheet-store-id'),
-    )
 
+    const storeId = 'store-test-use'
     const { docRefByPath, setDocMock } = firestore
     const ownerDocKey = `teamMembers/${createdUser.uid}`
+    const overrideDocKey = 'teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2'
     const customerDocKey = `customers/${createdUser.uid}`
-    const seededTeamMemberDocKey = 'teamMembers/seed-team-member'
-    const seededStoreDocKey = 'stores/sheet-store-id'
-    const seededProductDocKey = 'products/product-1'
-    const seededCustomerDocKey = 'customers/seeded-customer'
 
     const ownerDocRef = docRefByPath.get(ownerDocKey)
+    const overrideDocRef = docRefByPath.get(overrideDocKey)
     const customerDocRef = docRefByPath.get(customerDocKey)
-    const seededTeamMemberDocRef = docRefByPath.get(seededTeamMemberDocKey)
-    const seededStoreDocRef = docRefByPath.get(seededStoreDocKey)
-    const seededProductDocRef = docRefByPath.get(seededProductDocKey)
-    const seededCustomerDocRef = docRefByPath.get(seededCustomerDocKey)
 
     expect(ownerDocRef).toBeDefined()
+    expect(overrideDocRef).toBeDefined()
     expect(customerDocRef).toBeDefined()
-    expect(seededTeamMemberDocRef).toBeDefined()
-    expect(seededStoreDocRef).toBeDefined()
-    expect(seededProductDocRef).toBeDefined()
-    expect(seededCustomerDocRef).toBeDefined()
 
-    const setDocCalls = setDocMock.mock.calls
-
-    const ownerCalls = setDocCalls.filter(([ref]) => ref === ownerDocRef)
-    expect(ownerCalls).toHaveLength(2)
-
-    const [, ensurePayload, ensureOptions] = ownerCalls[0]!
-    expect(ensurePayload).toEqual(
-      expect.objectContaining({
-        uid: createdUser.uid,
-        storeId: 'sheet-store-id',
-        role: 'owner',
-      }),
-    )
-    expect(ensureOptions).toEqual({ merge: true })
-
-    const metadataCall = ownerCalls.find(([, payload]) =>
-      Object.prototype.hasOwnProperty.call(payload as Record<string, unknown>, 'phone'),
-    )
-    expect(metadataCall).toBeDefined()
-    const [, ownerPayload, ownerOptions] = metadataCall!
+    const ownerCall = setDocMock.mock.calls.find(([ref]) => ref === ownerDocRef)
+    expect(ownerCall).toBeDefined()
+    const [, ownerPayload, ownerOptions] = ownerCall!
     expect(ownerPayload).toEqual(
       expect.objectContaining({
-        storeId: 'sheet-store-id',
-        name: 'Owner account',
+        uid: createdUser.uid,
+        storeId,
+        role: 'owner',
+        company: 'Sedifex',
         phone: '5551234567',
         email: 'owner@example.com',
-        role: 'owner',
+        invitedBy: createdUser.uid,
+        firstSignupEmail: 'owner@example.com',
+        name: 'Owner account',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
       }),
     )
     expect(ownerOptions).toEqual({ merge: true })
 
-    const customerCall = setDocCalls.find(([ref]) => ref === customerDocRef)
+    const overrideCall = setDocMock.mock.calls.find(([ref]) => ref === overrideDocRef)
+    expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
+
+    const customerCall = setDocMock.mock.calls.find(([ref]) => ref === customerDocRef)
     expect(customerCall).toBeDefined()
     const [, customerPayload, customerOptions] = customerCall!
     expect(customerPayload).toEqual(
       expect.objectContaining({
-        storeId: 'sheet-store-id',
+        storeId,
         name: 'owner@example.com',
         displayName: 'owner@example.com',
         email: 'owner@example.com',
@@ -373,33 +280,14 @@ describe('App signup cleanup', () => {
     )
     expect(customerOptions).toEqual({ merge: true })
 
-    const seededTeamMemberCall = setDocCalls.find(([ref]) => ref === seededTeamMemberDocRef)
-    expect(seededTeamMemberCall?.[1]).toEqual(
-      expect.objectContaining({ name: 'Seeded Member' }),
-    )
-
-    const seededStoreCall = setDocCalls.find(([ref]) => ref === seededStoreDocRef)
-    expect(seededStoreCall?.[1]).toEqual(expect.objectContaining({ name: 'Seeded Store' }))
-
-    const seededProductCall = setDocCalls.find(([ref]) => ref === seededProductDocRef)
-    expect(seededProductCall?.[1]).toEqual(
-      expect.objectContaining({
-        name: 'Seed Product',
-        createdAt: expect.objectContaining({ __type: 'timestamp', millis: 1_700_000_000_000 }),
-      }),
-    )
-
-    const seededCustomerCall = setDocCalls.find(([ref]) => ref === seededCustomerDocRef)
-    expect(seededCustomerCall?.[1]).toEqual(expect.objectContaining({ name: 'Seeded Customer' }))
-
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({ tone: 'success', message: expect.stringMatching(/All set/i) }),
     )
-    expect(localStorageSetItemSpy).toHaveBeenCalledWith('activeStoreId', 'sheet-store-id')
-    expect(window.localStorage.getItem('activeStoreId')).toBe('sheet-store-id')
+    expect(localStorageSetItemSpy).toHaveBeenCalledWith('activeStoreId', storeId)
+    expect(window.localStorage.getItem('activeStoreId')).toBe(storeId)
   })
 
-  it('ensures a team member profile exists when login falls back to the sheet', async () => {
+  it('creates a team member profile when logging in without an existing doc', async () => {
     const user = userEvent.setup()
     const { user: existingUser } = createTestUser()
 
@@ -408,13 +296,7 @@ describe('App signup cleanup', () => {
       return { user: existingUser }
     })
 
-    mocks.resolveStoreAccess.mockImplementationOnce(async () => {
-      throw new Error('callable failed')
-    })
-
-    sheet.fetchSheetRowsMock.mockResolvedValue([{ id: 'row-1' }])
-    sheet.findUserRowMock.mockImplementation(() => ({ storeId: 'sheet-store', role: 'Owner' }))
-    sheet.isContractActiveMock.mockReturnValue(true)
+    firestore.getDocMock.mockImplementation(async () => ({ exists: () => false }))
 
     render(
       <MemoryRouter>
@@ -423,9 +305,7 @@ describe('App signup cleanup', () => {
     )
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
-    await waitFor(() =>
-      expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
 
     await act(async () => {
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
@@ -434,98 +314,36 @@ describe('App signup cleanup', () => {
     })
 
     await waitFor(() => expect(mocks.signInWithEmailAndPassword).toHaveBeenCalled())
-    await waitFor(() => expect(sheet.fetchSheetRowsMock).toHaveBeenCalled())
-    await waitFor(() => expect(localStorageSetItemSpy).toHaveBeenCalledWith('activeStoreId', 'sheet-store'))
+    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
 
-    // Delay notifying auth listeners until after the login flow resolves to avoid
-    // races with the restore-side effect that also performs a sheet fallback.
-    await act(async () => {
-      mocks.listeners.forEach(listener => listener(existingUser))
-    })
-
+    const storeId = 'store-test-use'
     const { docRefByPath, setDocMock } = firestore
-    await waitFor(() => {
-      const profileRef = docRefByPath.get(`teamMembers/${existingUser.uid}`)
-      expect(profileRef).toBeDefined()
-    })
-    await waitFor(() => {
-      const hasProfileCall = setDocMock.mock.calls.some(([ref]) =>
-        Boolean(ref && typeof ref === 'object' && (ref as { path?: string }).path === `teamMembers/${existingUser.uid}`),
-      )
-      expect(hasProfileCall).toBe(true)
-    })
+    const profileDocRef = docRefByPath.get(`teamMembers/${existingUser.uid}`)
+    const overrideDocRef = docRefByPath.get('teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2')
 
-    const profileCall = setDocMock.mock.calls.find(([ref]) => {
-      return Boolean(ref && typeof ref === 'object' && (ref as { path?: string }).path === `teamMembers/${existingUser.uid}`)
-    })
+    expect(profileDocRef).toBeDefined()
+    expect(overrideDocRef).toBeDefined()
+
+    const profileCall = setDocMock.mock.calls.find(([ref]) => ref === profileDocRef)
     expect(profileCall).toBeDefined()
-    const [profileRef, profilePayload, profileOptions] = profileCall!
-    expect(profileRef).toEqual(expect.objectContaining({ path: `teamMembers/${existingUser.uid}` }))
+    const [, profilePayload, profileOptions] = profileCall!
     expect(profilePayload).toEqual(
       expect.objectContaining({
         uid: existingUser.uid,
-        storeId: 'sheet-store',
+        storeId,
         role: 'owner',
       }),
     )
     expect(profileOptions).toEqual({ merge: true })
-    expect(window.localStorage.getItem('activeStoreId')).toBe('sheet-store')
-  })
 
-  it('cleans up the account when store access resolution fails (callable + sheet fallback)', async () => {
-    const user = userEvent.setup()
-    const { user: createdUser, deleteFn } = createTestUser()
+    const overrideCall = setDocMock.mock.calls.find(([ref]) => ref === overrideDocRef)
+    expect(overrideCall).toBeDefined()
+    expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
 
-    mocks.createUserWithEmailAndPassword.mockImplementation(async () => {
-      mocks.auth.currentUser = createdUser
-      mocks.listeners.forEach(listener => listener(createdUser))
-      return { user: createdUser }
-    })
-
-    // Callable fails when invoked with a store ID (sheet fallback already mocked to fail)
-    mocks.resolveStoreAccess.mockImplementation(async storeId => {
-      if (!storeId) return null
-      throw new Error(
-        'We could not confirm the store ID assigned to your Sedifex workspace. Reach out to your Sedifex administrator.',
-      )
-    })
-
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
+    expect(localStorageSetItemSpy).toHaveBeenCalledWith('activeStoreId', storeId)
+    expect(window.localStorage.getItem('activeStoreId')).toBe(storeId)
+    expect(mocks.publish).toHaveBeenCalledWith(
+      expect.objectContaining({ tone: 'success', message: expect.stringMatching(/Welcome back/i) }),
     )
-
-    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
-    await waitFor(() =>
-      expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument(),
-    )
-
-    await act(async () => {
-      await user.click(screen.getByRole('tab', { name: /Sign up/i }))
-      await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.type(screen.getByLabelText(/Store ID/i), 'store-001')
-      await user.type(screen.getByLabelText(/Phone/i), '5551234567')
-      await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
-      await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
-      await user.click(screen.getByRole('button', { name: /Create account/i }))
-    })
-
-    await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('store-001'))
-    await waitFor(() => expect(deleteFn).toHaveBeenCalled())
-    expect(mocks.auth.signOut).toHaveBeenCalled()
-    expect(mocks.auth.currentUser).toBeNull()
-
-    // Ensure no seeded writes happened
-    const seededWrites = firestore.setDocMock.mock.calls.filter(([ref]) => {
-      const path = ref?.path ?? ''
-      return (
-        path.startsWith('teamMembers/') ||
-        path.startsWith('customers/') ||
-        path.startsWith('stores/') ||
-        path.startsWith('products/')
-      )
-    })
-    expect(seededWrites).toHaveLength(0)
   })
 })
