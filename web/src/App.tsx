@@ -6,7 +6,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
 } from 'firebase/auth'
-import { doc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { auth, db } from './firebase'
@@ -18,133 +18,30 @@ import {
   persistSession,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
-import {
-  resolveStoreAccess,
-  type ResolveStoreAccessResult,
-  type SeededDocument,
-  extractCallableErrorMessage,
-  INACTIVE_WORKSPACE_MESSAGE,
-  afterSignupBootstrap,
-} from './controllers/accessController'
-import { fetchSheetRows, findUserRow, isContractActive } from './sheetClient'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
+
+/* ------------------------------ constants ------------------------------ */
 
 type AuthMode = 'login' | 'signup'
 type StatusTone = 'idle' | 'loading' | 'success' | 'error'
 interface StatusState { tone: StatusTone; message: string }
 
-type QueueRequestType = 'receipt'
-function isQueueRequestType(value: unknown): value is QueueRequestType {
-  return value === 'receipt'
-}
+type QueueRequestType = 'sale' | 'receipt'
 
-const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
-function sanitizePhone(value: string): string { return value.replace(/\D+/g, '') }
-
+const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const OWNER_NAME_FALLBACK = 'Owner account'
 
-const SHEET_LOOKUP_GENERIC_ERROR_MESSAGE =
-  "We couldn't verify your workspace access. Please try again."
-const SHEET_ASSIGNMENT_MISSING_MESSAGE =
-  'We could not find a workspace assignment for this account.'
-const SHEET_STORE_ID_MISSING_MESSAGE = 'Your account is missing a workspace store ID.'
-const SHEET_STORE_ID_MISMATCH_MESSAGE =
-  'The provided store ID does not match your Sedifex workspace assignment.'
+/* ------------------------------ helpers ------------------------------ */
+
+function sanitizePhone(value: string): string {
+  return value.replace(/\D+/g, '')
+}
 
 function persistActiveStoreId(storeId: string) {
-  if (typeof window === 'undefined') return
-  try { window.localStorage.setItem('activeStoreId', storeId) }
-  catch (error) { console.warn('[auth] Failed to persist active store ID', error) }
-}
-
-function clearActiveStoreId() {
-  if (typeof window === 'undefined') return
-  try { window.localStorage.removeItem('activeStoreId') }
-  catch (error) { console.warn('[auth] Failed to clear active store ID', error) }
-}
-
-/** Sheet-only fallback to resolve workspace & set activeStoreId */
-async function resolveWorkspaceAccessFromSheet(
-  email: string,
-  providedStoreId?: string,
-): Promise<ResolveStoreAccessResult> {
-  const normalizedEmail = email.trim().toLowerCase()
-  if (!normalizedEmail) throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
-
-  let rows
-  try {
-    rows = await fetchSheetRows()
-  } catch (error) {
-    const fallbackError = new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
-    ;(fallbackError as Error & { cause?: unknown }).cause = error
-    throw fallbackError
-  }
-
-  const row = findUserRow(rows, normalizedEmail)
-  if (!row) throw new Error(SHEET_ASSIGNMENT_MISSING_MESSAGE)
-
-  const assignedStoreId = row.storeId?.trim()
-  if (!assignedStoreId) throw new Error(SHEET_STORE_ID_MISSING_MESSAGE)
-
-  if (providedStoreId) {
-    const normalizedProvided = providedStoreId.trim()
-    if (normalizedProvided && normalizedProvided.toLowerCase() !== assignedStoreId.toLowerCase()) {
-      throw new Error(SHEET_STORE_ID_MISMATCH_MESSAGE)
-    }
-  }
-
-  if (!isContractActive(row)) throw new Error(INACTIVE_WORKSPACE_MESSAGE)
-
-  persistActiveStoreId(assignedStoreId)
-  const normalizedRole = row.role?.toLowerCase() === 'owner' ? 'owner' : 'staff'
-
-  return {
-    ok: true,
-    storeId: assignedStoreId,
-    role: normalizedRole,
-    teamMember: null,
-    store: null,
-    products: [],
-    customers: [],
-  }
-}
-
-function hasSeedData(resolution: ResolveStoreAccessResult): boolean {
-  return (
-    Boolean(resolution.teamMember) ||
-    Boolean(resolution.store) ||
-    resolution.products.length > 0 ||
-    resolution.customers.length > 0
-  )
-}
-
-function sanitizeSeededTeamMemberData(data: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
-  Object.entries(data).forEach(([key, value]) => {
-    if (value !== undefined) result[key] = value
-  })
-  return result
-}
-
-async function ensureTeamMemberProfile(user: User, resolution: ResolveStoreAccessResult) {
-  if (!user?.uid) return
-
-  try {
-    const seededData = resolution.teamMember?.data ?? {}
-    const payload = {
-      ...sanitizeSeededTeamMemberData(seededData),
-      uid: user.uid,
-      storeId: resolution.storeId,
-      role: resolution.role,
-    }
-
-    await setDoc(doc(db, 'teamMembers', user.uid), payload, { merge: true })
-  } catch (error) {
-    console.warn('[auth] Failed to ensure team member profile', error)
-  }
+  try { window.localStorage.setItem('activeStoreId', storeId) } catch {}
 }
 
 function resolveOwnerName(user: User): string {
@@ -152,39 +49,54 @@ function resolveOwnerName(user: User): string {
   return displayName && displayName.length > 0 ? displayName : OWNER_NAME_FALLBACK
 }
 
-async function persistTeamMemberMetadata(
-  user: User,
-  email: string,
-  phone: string,
-  resolution: ResolveStoreAccessResult,
-) {
-  try {
-    await setDoc(
-      doc(db, 'teamMembers', user.uid),
-      {
-        uid: user.uid,
-        role: resolution.role,
-        storeId: resolution.storeId,
-        name: resolveOwnerName(user),
-        phone,
-        email,
-        firstSignupEmail: email,
-        invitedBy: user.uid,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    )
-  } catch (error) {
-    console.warn('[signup] Failed to persist team member metadata', error)
+function generateStoreId(uid: string) {
+  return `store-${uid.slice(0, 8)}`
+}
+
+async function ensureTeamMemberDoc(params: {
+  user: User
+  role: 'owner' | 'staff'
+  phone?: string | null
+  preferExisting?: boolean
+}) {
+  const { user, role, phone = null, preferExisting = true } = params
+  const ref = doc(db, 'teamMembers', user.uid)
+
+  if (preferExisting) {
+    const snap = await getDoc(ref)
+    if (snap.exists()) {
+      const storeIdExisting = String(snap.get('storeId') || '')
+      if (storeIdExisting) {
+        persistActiveStoreId(storeIdExisting)
+        return { storeId: storeIdExisting, role: (snap.get('role') as 'owner' | 'staff') || role }
+      }
+    }
   }
+
+  // Create/overwrite minimal record
+  const storeId = generateStoreId(user.uid)
+  await setDoc(
+    ref,
+    {
+      uid: user.uid,
+      email: user.email ?? null,
+      phone: phone ?? null,
+      role,
+      storeId,
+      name: resolveOwnerName(user),
+      firstSignupEmail: (user.email ?? '').toLowerCase() || null,
+      invitedBy: user.uid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  )
+  persistActiveStoreId(storeId)
+  return { storeId, role }
 }
 
-async function cleanupFailedSignup(user: User) {
-  try { await user.delete() } catch (error) { console.warn('[signup] Unable to delete rejected signup account', error) }
-  try { await auth.signOut() } catch (error) { console.warn('[signup] Unable to sign out after rejected signup', error) }
-}
-
+/** You may have future seed flows; helpers are kept here if needed */
+type SeededDocument = { id: string; data: Record<string, unknown> }
 const TIMESTAMP_FIELD_KEYS = new Set(['createdAt', 'updatedAt', 'receivedAt'])
 function normalizeSeededDocumentData(data: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {}
@@ -198,32 +110,18 @@ function normalizeSeededDocumentData(data: Record<string, unknown>): Record<stri
       result[key] = value.map(item =>
         item && typeof item === 'object' && !Array.isArray(item)
           ? normalizeSeededDocumentData(item as Record<string, unknown>)
-          : item,
-      )
+          : item)
       return
     }
     if (typeof value === 'object') {
-      result[key] = normalizeSeededDocumentData(value as Record<string, unknown>)
-      return
+      result[key] = normalizeSeededDocumentData(value as Record<string, unknown>); return
     }
     result[key] = value
   })
   return result
 }
 
-async function persistStoreSeedData(resolution: ResolveStoreAccessResult) {
-  const writes: Promise<unknown>[] = []
-  const enqueue = (collectionName: string, document: SeededDocument | null) => {
-    if (!document) return
-    const normalized = normalizeSeededDocumentData(document.data)
-    writes.push(setDoc(doc(db, collectionName, document.id), normalized, { merge: true }))
-  }
-  enqueue('teamMembers', resolution.teamMember)
-  enqueue('stores', resolution.store)
-  resolution.products.forEach(product => enqueue('products', product))
-  resolution.customers.forEach(customer => enqueue('customers', customer))
-  if (writes.length) await Promise.all(writes)
-}
+/* ----------------------------- validation ----------------------------- */
 
 interface PasswordStrength {
   isLongEnough: boolean
@@ -232,6 +130,7 @@ interface PasswordStrength {
   hasNumber: boolean
   hasSymbol: boolean
 }
+
 function evaluatePasswordStrength(password: string): PasswordStrength {
   return {
     isLongEnough: password.length >= PASSWORD_MIN_LENGTH,
@@ -249,19 +148,10 @@ function getLoginValidationError(email: string, password: string): string | null
   return null
 }
 
-function getSignupValidationError(
-  email: string,
-  password: string,
-  confirmPassword: string,
-  storeId: string,
-  phone: string,
-): string | null {
+function getSignupValidationError(email: string, password: string, confirmPassword: string, phone: string): string | null {
   if (!email) return 'Enter your email.'
   if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
   if (!password) return 'Create a password to continue.'
-  if (!storeId) return 'Enter your store ID.'
-  if (!phone) return 'Enter your phone number.'
-
   const s = evaluatePasswordStrength(password)
   if (!s.isLongEnough) return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`
   if (!s.hasUppercase) return 'Password must include an uppercase letter.'
@@ -270,11 +160,15 @@ function getSignupValidationError(
   if (!s.hasSymbol) return 'Password must include a symbol.'
   if (!confirmPassword) return 'Confirm your password.'
   if (password !== confirmPassword) return 'Passwords do not match.'
+  if (!phone) return 'Enter your phone number.'
   return null
 }
 
+/* ----------------------------- UI helpers ----------------------------- */
+
 type QueueCompletedMessage = { type: 'QUEUE_REQUEST_COMPLETED'; requestType?: unknown }
 type QueueFailedMessage = { type: 'QUEUE_REQUEST_FAILED'; requestType?: unknown; error?: unknown }
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
@@ -285,36 +179,26 @@ function isQueueFailedMessage(value: unknown): value is QueueFailedMessage {
   return isRecord(value) && (value as any).type === 'QUEUE_REQUEST_FAILED'
 }
 function getQueueRequestLabel(requestType: unknown): string {
-  if (!isQueueRequestType(requestType)) return 'request'
-  return 'stock receipt'
+  return requestType === 'receipt' ? 'stock receipt' : 'sale'
 }
 function normalizeQueueError(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim()
-    if (trimmed.length > 0) return trimmed
-  }
+  if (typeof value === 'string') { const t = value.trim(); if (t) return t }
   return null
 }
 
-/** Hoisted so it's not rebuilt on each render */
-const PAGE_FEATURES = [
-  { path: '/products',  name: 'Products',  description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.' },
-  { path: '/sell',      name: 'Sell',      description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.' },
-  { path: '/receive',   name: 'Receive',   description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.' },
-  { path: '/customers', name: 'Customers', description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.' },
-  { path: '/close-day', name: 'Close Day', description: 'Tie out cash, settle registers, and share end-of-day reports with finance in one view.' },
-] as const
+/* --------------------------------- App --------------------------------- */
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
+
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [storeId, setStoreId] = useState('')
   const [phone, setPhone] = useState('')
   const [normalizedPhone, setNormalizedPhone] = useState('')
+
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
   const isLoading = status.tone === 'loading'
   const { publish } = useToast()
@@ -324,93 +208,45 @@ export default function App() {
   const normalizedEmail = email.trim()
   const normalizedPassword = password.trim()
   const normalizedConfirmPassword = confirmPassword.trim()
-  const normalizedStoreId = storeId.trim()
-  const hasStoreId = normalizedStoreId.length > 0
-  const hasPhone = normalizedPhone.length > 0
-  const passwordStrength = evaluatePasswordStrength(normalizedPassword)
-  const passwordChecklist = [
-    { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: passwordStrength.isLongEnough },
-    { id: 'uppercase', label: 'Includes an uppercase letter', passed: passwordStrength.hasUppercase },
-    { id: 'lowercase', label: 'Includes a lowercase letter', passed: passwordStrength.hasLowercase },
-    { id: 'number', label: 'Includes a number', passed: passwordStrength.hasNumber },
-    { id: 'symbol', label: 'Includes a symbol', passed: passwordStrength.hasSymbol },
+
+  const strength = evaluatePasswordStrength(normalizedPassword)
+  const checklist = [
+    { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: strength.isLongEnough },
+    { id: 'uppercase', label: 'Includes an uppercase letter', passed: strength.hasUppercase },
+    { id: 'lowercase', label: 'Includes a lowercase letter', passed: strength.hasLowercase },
+    { id: 'number', label: 'Includes a number', passed: strength.hasNumber },
+    { id: 'symbol', label: 'Includes a symbol', passed: strength.hasSymbol },
   ] as const
-  const doesPasswordMeetAllChecks = passwordChecklist.every(item => item.passed)
-  const hasConfirmedPassword = normalizedConfirmPassword.length > 0
+  const meetsAll = checklist.every(c => c.passed)
+
   const isSignupFormValid =
     EMAIL_PATTERN.test(normalizedEmail) &&
     normalizedPassword.length > 0 &&
-    doesPasswordMeetAllChecks &&
-    hasConfirmedPassword &&
-    hasStoreId &&
-    hasPhone &&
-    normalizedPassword === normalizedConfirmPassword
+    meetsAll &&
+    normalizedConfirmPassword.length > 0 &&
+    normalizedPassword === normalizedConfirmPassword &&
+    normalizedPhone.length > 0
+
   const isLoginFormValid =
     EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
+
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
 
-  /** Configure persistence and auth listener */
+  /* auth lifecycle */
   useEffect(() => {
-    configureAuthPersistence(auth).catch(error => {
-      console.warn('[auth] Unable to configure persistence', error)
-    })
-    const unsubscribe = onAuthStateChanged(auth, async nextUser => {
+    configureAuthPersistence(auth).catch(() => {})
+    const unsubscribe = onAuthStateChanged(auth, nextUser => {
       setUser(nextUser)
       setIsAuthReady(true)
-
-      // 🔑 On session restore / refresh: ensure active store exists
-      if (nextUser?.email) {
-        let existing = typeof window !== 'undefined'
-          ? window.localStorage.getItem('activeStoreId')
-          : null
-
-        try {
-          await nextUser.getIdToken(true)
-          const tokenResult = await nextUser.getIdTokenResult()
-          const claimStoreId =
-            typeof tokenResult.claims?.activeStoreId === 'string'
-              ? tokenResult.claims.activeStoreId.trim()
-              : ''
-          if (claimStoreId) {
-            persistActiveStoreId(claimStoreId)
-            existing = claimStoreId
-          } else {
-            console.info('[auth] No activeStoreId claim found; falling back to lookup')
-          }
-        } catch (error) {
-          console.warn('[auth] Failed to refresh ID token or read claims', error)
-        }
-
-        if (!existing) {
-          try {
-            // Try callable (if deployed); fallback to Sheet
-            const resolution = await resolveStoreAccess().catch(() => null)
-            if (resolution && (resolution as any).storeId) {
-              persistActiveStoreId((resolution as any).storeId)
-            } else {
-              const sheetRes = await resolveWorkspaceAccessFromSheet(nextUser.email!)
-              persistActiveStoreId(sheetRes.storeId)
-            }
-          } catch (err) {
-            console.warn('[auth] Could not resolve active store on restore', err)
-          }
-        }
-      } else {
-        clearActiveStoreId()
-      }
     })
     return unsubscribe
   }, [])
 
-  /** Keep session heartbeat alive */
   useEffect(() => {
     if (!user) return
-    refreshSessionHeartbeat(user).catch(error => {
-      console.warn('[session] Unable to refresh session', error)
-    })
+    refreshSessionHeartbeat(user).catch(() => {})
   }, [user])
 
-  /** Onboarding redirect (unchanged) */
   useEffect(() => {
     if (!user) return
     const status = getOnboardingStatus(user.uid)
@@ -419,29 +255,26 @@ export default function App() {
     }
   }, [location.pathname, navigate, user])
 
-  /** Tab title UX */
   useEffect(() => {
     document.title = mode === 'login' ? 'Sedifex — Log in' : 'Sedifex — Sign up'
   }, [mode])
 
-  /** PWA queue status handling */
+  /* sw queue notifications */
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
     const handleMessage = (event: MessageEvent) => {
       const data = event.data
-      if (!data || typeof data !== 'object') return
+      if (!isRecord(data)) return
       if (isQueueCompletedMessage(data)) {
-        const label = getQueueRequestLabel(data.requestType)
+        const label = getQueueRequestLabel((data as any).requestType)
         publish({ message: `Queued ${label} synced successfully.`, tone: 'success' })
         return
       }
       if (isQueueFailedMessage(data)) {
-        const label = getQueueRequestLabel(data.requestType)
-        const detail = normalizeQueueError(data.error)
+        const label = getQueueRequestLabel((data as any).requestType)
+        const detail = normalizeQueueError((data as any).error)
         publish({
-          message: detail
-            ? `We couldn't sync the queued ${label}. ${detail}`
-            : `We couldn't sync the queued ${label}. Please try again.`,
+          message: detail ? `We couldn't sync the queued ${label}. ${detail}` : `We couldn't sync the queued ${label}. Please try again.`,
           tone: 'error',
           duration: 8000,
         })
@@ -451,36 +284,54 @@ export default function App() {
     return () => navigator.serviceWorker.removeEventListener('message', handleMessage)
   }, [publish])
 
+  async function persistOwnerSideDocs(nextUser: User, storeId: string, phone: string) {
+    // Optional: create a matching customers record
+    try {
+      const preferredDisplayName = nextUser.displayName?.trim() || (nextUser.email ?? '')
+      await setDoc(
+        doc(db, 'customers', nextUser.uid),
+        {
+          storeId,
+          name: preferredDisplayName,
+          displayName: preferredDisplayName,
+          email: (nextUser.email ?? '').toLowerCase(),
+          phone,
+          status: 'active',
+          role: 'client',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      )
+    } catch (error) {
+      // non-blocking
+      console.warn('[customers] Unable to upsert customer record', error)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const sanitizedEmail = email.trim()
     const sanitizedPassword = password.trim()
     const sanitizedConfirmPassword = confirmPassword.trim()
-    const sanitizedStoreId = storeId.trim()
+    const sanitizedPhone = sanitizePhone(phone)
 
     setEmail(sanitizedEmail)
     setPassword(sanitizedPassword)
     if (mode === 'signup') setConfirmPassword(sanitizedConfirmPassword)
 
-    const sanitizedPhone = sanitizePhone(phone)
-
     const validationError =
       mode === 'login'
         ? getLoginValidationError(sanitizedEmail, sanitizedPassword)
-        : getSignupValidationError(
-            sanitizedEmail,
-            sanitizedPassword,
-            sanitizedConfirmPassword,
-            sanitizedStoreId,
-            sanitizedPhone,
-          )
+        : getSignupValidationError(sanitizedEmail, sanitizedPassword, sanitizedConfirmPassword, sanitizedPhone)
 
     if (mode === 'signup') {
-      setStoreId(sanitizedStoreId)
       setPhone(sanitizedPhone)
       setNormalizedPhone(sanitizedPhone)
-      if (!sanitizedStoreId) { setStatus({ tone: 'error', message: 'Enter your store ID.' }); return }
-      if (!sanitizedPhone) { setStatus({ tone: 'error', message: 'Enter your phone number.' }); return }
+      if (!sanitizedPhone) {
+        setStatus({ tone: 'error', message: 'Enter your phone number.' })
+        return
+      }
     }
 
     if (validationError) {
@@ -488,88 +339,32 @@ export default function App() {
       return
     }
 
-    setStatus({
-      tone: 'loading',
-      message: mode === 'login' ? 'Signing you in…' : 'Creating your account…',
-    })
-
-    let createdSignupUser: User | null = null
+    setStatus({ tone: 'loading', message: mode === 'login' ? 'Signing you in…' : 'Creating your account…' })
 
     try {
       if (mode === 'login') {
         const { user: nextUser } = await signInWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
 
-        let resolution: ResolveStoreAccessResult | null = null
-        try {
-          resolution = await resolveStoreAccess()
-        } catch (error) {
-          console.warn('[auth] Failed callable; trying sheet fallback', error)
-          resolution = await resolveWorkspaceAccessFromSheet(sanitizedEmail)
-        }
+        // Load or create team member doc; storeId persisted inside
+        await ensureTeamMemberDoc({ user: nextUser, role: 'owner', preferExisting: true })
 
-        if (!resolution) throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
-
-        persistActiveStoreId(resolution.storeId)
-        await ensureTeamMemberProfile(nextUser, resolution)
-        if (hasSeedData(resolution)) await persistStoreSeedData(resolution)
-
-        try { await nextUser.getIdToken(true) }
-        catch (error) { console.warn('[auth] Unable to refresh ID token after login', error) }
       } else {
         const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
-        createdSignupUser = nextUser
 
-        await afterSignupBootstrap(sanitizedStoreId)
+        // Auto-provision workspace + teamMembers/{uid}
+        const { storeId } = await ensureTeamMemberDoc({
+          user: nextUser,
+          role: 'owner',
+          phone: sanitizedPhone,
+          preferExisting: false,
+        })
 
-        let resolution: ResolveStoreAccessResult | null = null
-        try {
-          resolution = await resolveStoreAccess(sanitizedStoreId)
-        } catch (error) {
-          console.warn('[signup] Failed callable; trying sheet fallback', error)
-          resolution = await resolveWorkspaceAccessFromSheet(sanitizedEmail, sanitizedStoreId)
-        }
+        // Optional additional doc for UX
+        await persistOwnerSideDocs(nextUser, storeId, sanitizedPhone)
 
-        if (!resolution) throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
-
-        persistActiveStoreId(resolution.storeId)
-        await ensureTeamMemberProfile(nextUser, resolution)
-        await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution)
-
-        if (hasSeedData(resolution)) {
-          try { await persistStoreSeedData(resolution) }
-          catch (error) {
-            console.warn('[signup] Failed to seed workspace data', error)
-            setStatus({ tone: 'error', message: getErrorMessage(error) })
-            return
-          }
-        }
-
-        try {
-          const preferredDisplayName = nextUser.displayName?.trim() || sanitizedEmail
-          await setDoc(
-            doc(db, 'customers', nextUser.uid),
-            {
-              storeId: resolution.storeId,
-              name: preferredDisplayName,
-              displayName: preferredDisplayName,
-              email: sanitizedEmail,
-              phone: sanitizedPhone,
-              status: 'active',
-              role: 'client',
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true },
-          )
-        } catch (error) {
-          console.warn('[customers] Unable to upsert customer record', error)
-        }
-
-        try { await nextUser.getIdToken(true) }
-        catch (error) { console.warn('[auth] Unable to refresh ID token after signup', error) }
-
+        try { await nextUser.getIdToken(true) } catch {}
         setOnboardingStatus(nextUser.uid, 'pending')
       }
 
@@ -579,13 +374,10 @@ export default function App() {
       })
       setPassword('')
       setConfirmPassword('')
-      setStoreId('')
       setPhone('')
       setNormalizedPhone('')
+
     } catch (err: unknown) {
-      if (mode === 'signup' && createdSignupUser) {
-        await cleanupFailedSignup(createdSignupUser)
-      }
       setStatus({ tone: 'error', message: getErrorMessage(err) })
     }
   }
@@ -601,12 +393,10 @@ export default function App() {
     setMode(nextMode)
     setStatus({ tone: 'idle', message: '' })
     setConfirmPassword('')
-    setStoreId('')
     setPhone('')
     setNormalizedPhone('')
   }
 
-  // Inline minHeight is just a safety net; CSS already uses dvh/svh.
   const appStyle: React.CSSProperties = { minHeight: '100dvh' }
 
   if (!isAuthReady) {
@@ -620,6 +410,7 @@ export default function App() {
   }
 
   if (!user) {
+    const isSignup = mode === 'signup'
     return (
       <main className="app" style={appStyle}>
         <div className="app__layout">
@@ -628,9 +419,7 @@ export default function App() {
               <span className="app__logo">Sx</span>
               <div>
                 <h1 className="app__title">Sedifex</h1>
-                <p className="app__tagline">
-                  Sell faster. <span className="app__highlight">Count smarter.</span>
-                </p>
+                <p className="app__tagline">Sell faster. <span className="app__highlight">Count smarter.</span></p>
               </div>
             </div>
 
@@ -641,17 +430,17 @@ export default function App() {
             </div>
 
             <p className="form__hint">
-              {mode === 'login'
-                ? 'Welcome back! Sign in to keep your stock moving.'
-                : 'Create an account to start tracking sales and inventory in minutes.'}
+              {isSignup
+                ? 'Create an account to start tracking sales and inventory in minutes.'
+                : 'Welcome back! Sign in to keep your stock moving.'}
             </p>
 
             <div className="toggle-group" role="tablist" aria-label="Authentication mode">
               <button
                 type="button"
                 role="tab"
-                aria-selected={mode === 'login'}
-                className={`toggle-button${mode === 'login' ? ' is-active' : ''}`}
+                aria-selected={!isSignup}
+                className={`toggle-button${!isSignup ? ' is-active' : ''}`}
                 onClick={() => handleModeChange('login')}
                 disabled={isLoading}
               >
@@ -660,8 +449,8 @@ export default function App() {
               <button
                 type="button"
                 role="tab"
-                aria-selected={mode === 'signup'}
-                className={`toggle-button${mode === 'signup' ? ' is-active' : ''}`}
+                aria-selected={isSignup}
+                className={`toggle-button${isSignup ? ' is-active' : ''}`}
                 onClick={() => handleModeChange('signup')}
                 disabled={isLoading}
               >
@@ -675,7 +464,7 @@ export default function App() {
                 <input
                   id="email"
                   value={email}
-                  onChange={event => setEmail(event.target.value)}
+                  onChange={e => setEmail(e.target.value)}
                   onBlur={() => setEmail(current => current.trim())}
                   type="email"
                   autoComplete="email"
@@ -687,34 +476,16 @@ export default function App() {
                 />
               </div>
 
-              {mode === 'signup' && (
-                <div className="form__field">
-                  <label htmlFor="store-id">Store ID</label>
-                  <input
-                    id="store-id"
-                    value={storeId}
-                    onChange={event => setStoreId(event.target.value)}
-                    onBlur={() => setStoreId(current => current.trim())}
-                    type="text"
-                    autoComplete="off"
-                    placeholder="store-001"
-                    required
-                    disabled={isLoading}
-                    aria-invalid={storeId.length > 0 && !hasStoreId}
-                  />
-                </div>
-              )}
-
-              {mode === 'signup' && (
+              {isSignup && (
                 <div className="form__field">
                   <label htmlFor="phone">Phone</label>
                   <input
                     id="phone"
                     value={phone}
-                    onChange={event => {
-                      const nextValue = event.target.value
-                      setPhone(nextValue)
-                      setNormalizedPhone(sanitizePhone(nextValue))
+                    onChange={e => {
+                      const next = e.target.value
+                      setPhone(next)
+                      setNormalizedPhone(sanitizePhone(next))
                     }}
                     onBlur={() =>
                       setPhone(current => {
@@ -744,21 +515,19 @@ export default function App() {
                 <input
                   id="password"
                   value={password}
-                  onChange={event => setPassword(event.target.value)}
+                  onChange={e => setPassword(e.target.value)}
                   onBlur={() => setPassword(current => current.trim())}
                   type="password"
-                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                  autoComplete={isSignup ? 'new-password' : 'current-password'}
                   placeholder="Use a strong password"
                   required
                   disabled={isLoading}
-                  aria-invalid={
-                    mode === 'signup' && normalizedPassword.length > 0 && !doesPasswordMeetAllChecks
-                  }
-                  aria-describedby={mode === 'signup' ? 'password-guidelines' : undefined}
+                  aria-invalid={isSignup && normalizedPassword.length > 0 && !meetsAll}
+                  aria-describedby={isSignup ? 'password-guidelines' : undefined}
                 />
-                {mode === 'signup' && (
+                {isSignup && (
                   <ul className="form__hint-list" id="password-guidelines">
-                    {passwordChecklist.map(item => (
+                    {checklist.map(item => (
                       <li key={item.id} data-complete={item.passed}>
                         <span className={`form__hint-indicator${item.passed ? ' is-valid' : ''}`}>
                           {item.passed ? '✓' : '•'}
@@ -770,13 +539,13 @@ export default function App() {
                 )}
               </div>
 
-              {mode === 'signup' && (
+              {isSignup && (
                 <div className="form__field">
                   <label htmlFor="confirm-password">Confirm password</label>
                   <input
                     id="confirm-password"
                     value={confirmPassword}
-                    onChange={event => setConfirmPassword(event.target.value)}
+                    onChange={e => setConfirmPassword(e.target.value)}
                     onBlur={() => setConfirmPassword(current => current.trim())}
                     type="password"
                     autoComplete="new-password"
@@ -797,12 +566,8 @@ export default function App() {
 
               <button className="primary-button" type="submit" disabled={isSubmitDisabled}>
                 {isLoading
-                  ? mode === 'login'
-                    ? 'Signing in…'
-                    : 'Creating account…'
-                  : mode === 'login'
-                    ? 'Log in'
-                    : 'Create account'}
+                  ? isSignup ? 'Creating account…' : 'Signing in…'
+                  : isSignup ? 'Create account' : 'Log in'}
               </button>
             </form>
 
@@ -815,59 +580,10 @@ export default function App() {
                 {status.message}
               </p>
             )}
-
-            <nav className="app__socials" aria-label="Sedifex social channels">
-              <ul className="app__socials-list">
-                <li>
-                  <a
-                    className="app__social-link"
-                    href="https://www.facebook.com/sedifex"
-                    target="_blank"
-                    rel="noreferrer noopener"
-                  >
-                    Facebook
-                  </a>
-                </li>
-                <li>
-                  <a
-                    className="app__social-link"
-                    href="https://www.instagram.com/sedifex"
-                    target="_blank"
-                    rel="noreferrer noopener"
-                  >
-                    Instagram
-                  </a>
-                </li>
-                <li>
-                  <a
-                    className="app__social-link"
-                    href="https://www.linkedin.com/company/sedifex"
-                    target="_blank"
-                    rel="noreferrer noopener"
-                  >
-                    LinkedIn
-                  </a>
-                </li>
-                <li>
-                  <a
-                    className="app__social-link"
-                    href="https://www.twitter.com/sedifex"
-                    target="_blank"
-                    rel="noreferrer noopener"
-                  >
-                    Twitter / X
-                  </a>
-                </li>
-              </ul>
-            </nav>
           </div>
 
           <aside className="app__visual" aria-hidden="true">
-            <img
-              src={LOGIN_IMAGE_URL}
-              alt="Team members organizing inventory packages in a warehouse"
-              loading="lazy"
-            />
+            <img src={LOGIN_IMAGE_URL} alt="Team members organizing inventory packages in a warehouse" loading="lazy" />
             <div className="app__visual-overlay" />
             <div className="app__visual-caption">
               <span className="app__visual-pill">Operations snapshot</span>
@@ -887,16 +603,15 @@ export default function App() {
             <h2>Explore the workspace</h2>
             <p>Every Sedifex page is built to keep retail operations synchronized—from the sales floor to finance.</p>
           </header>
-
           <div className="app__features-grid" role="list">
-            {PAGE_FEATURES.map(feature => (
-              <Link
-                key={feature.path}
-                className="feature-card"
-                to={feature.path}
-                role="listitem"
-                aria-label={`Open the ${feature.name} page`}
-              >
+            {[
+              { path: '/products', name: 'Products', description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.' },
+              { path: '/sell', name: 'Sell', description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.' },
+              { path: '/receive', name: 'Receive', description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.' },
+              { path: '/customers', name: 'Customers', description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.' },
+              { path: '/close-day', name: 'Close Day', description: 'Tie out cash, settle registers, and share end-of-day reports with finance in one view.' },
+            ].map(feature => (
+              <Link key={feature.path} className="feature-card" to={feature.path} role="listitem" aria-label={`Open the ${feature.name} page`}>
                 <div className="feature-card__body">
                   <h3>{feature.name}</h3>
                   <p>{feature.description}</p>
@@ -905,54 +620,6 @@ export default function App() {
               </Link>
             ))}
           </div>
-        </section>
-
-        <section className="app__info-grid" aria-label="Sedifex company information">
-          <article className="info-card">
-            <h3>About Sedifex</h3>
-            <p>
-              Sedifex is the operations control tower for modern retail teams. We unite store
-              execution, warehouse visibility, and merchandising insights so every location can act on
-              the same live source of truth.
-            </p>
-            <p>
-              Connect your POS, ecommerce, and supplier systems in minutes to orchestrate the entire
-              product journey—from forecast to fulfillment—with less manual work and far fewer stockouts.
-            </p>
-            <footer>
-              <ul className="info-card__list">
-                <li>Real-time inventory that syncs every channel and warehouse</li>
-                <li>Automated replenishment playbooks driven by store performance</li>
-                <li>Integrations for Shopify, NetSuite, Square, and 40+ retail tools</li>
-              </ul>
-            </footer>
-          </article>
-
-          <article className="info-card">
-            <h3>Our Mission</h3>
-            <p>
-              We believe resilient retailers win by responding to change faster than their
-              inventory can move. Sedifex exists to give operators the clarity and confidence
-              to do exactly that.
-            </p>
-            <ul className="info-card__list">
-              <li>Deliver every SKU promise with predictive inventory intelligence</li>
-              <li>Empower teams with guided workflows, not spreadsheets</li>
-              <li>Earn shopper loyalty through always-on availability</li>
-            </ul>
-          </article>
-
-          <article className="info-card">
-            <h3>Contact Sales</h3>
-            <p>
-              Partner with a retail operations strategist to tailor Sedifex to your fleet,
-              review pricing, and build an onboarding plan that keeps stores running while we launch.
-            </p>
-            <a className="info-card__cta" href="https://calendly.com/sedifex/demo" target="_blank" rel="noreferrer noopener">
-              Book a 30-minute consultation
-            </a>
-            <p className="info-card__caption">Prefer email? Reach us at sales@sedifex.com.</p>
-          </article>
         </section>
       </main>
     )
@@ -965,8 +632,9 @@ export default function App() {
   )
 }
 
+/* ------------------------------ error text ------------------------------ */
+
 function getErrorMessage(error: unknown): string {
-  // Friendlier Firebase Auth errors
   if (error instanceof FirebaseError) {
     const code = error.code || ''
     switch (code) {
@@ -982,16 +650,10 @@ function getErrorMessage(error: unknown): string {
         return 'An account already exists with this email.'
       case 'auth/weak-password':
         return 'Please choose a stronger password. It must be at least 8 characters and include uppercase, lowercase, number, and symbol.'
-      case 'functions/permission-denied': {
-        const callableMessage =
-          extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
-        return callableMessage
-      }
       default:
         return (error as any).message || 'Something went wrong. Please try again.'
     }
   }
-
   if (error instanceof Error) return error.message || 'Something went wrong. Please try again.'
   if (typeof error === 'string') return error
   return 'Something went wrong. Please try again.'
