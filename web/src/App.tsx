@@ -120,6 +120,32 @@ function hasSeedData(resolution: ResolveStoreAccessResult): boolean {
   )
 }
 
+function sanitizeSeededTeamMemberData(data: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined) result[key] = value
+  })
+  return result
+}
+
+async function ensureTeamMemberProfile(user: User, resolution: ResolveStoreAccessResult) {
+  if (!user?.uid) return
+
+  try {
+    const seededData = resolution.teamMember?.data ?? {}
+    const payload = {
+      ...sanitizeSeededTeamMemberData(seededData),
+      uid: user.uid,
+      storeId: resolution.storeId,
+      role: resolution.role,
+    }
+
+    await setDoc(doc(db, 'teamMembers', user.uid), payload, { merge: true })
+  } catch (error) {
+    console.warn('[auth] Failed to ensure team member profile', error)
+  }
+}
+
 function resolveOwnerName(user: User): string {
   const displayName = user.displayName?.trim()
   return displayName && displayName.length > 0 ? displayName : OWNER_NAME_FALLBACK
@@ -484,6 +510,7 @@ export default function App() {
         if (!resolution) throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
 
         persistActiveStoreId(resolution.storeId)
+        await ensureTeamMemberProfile(nextUser, resolution)
         if (hasSeedData(resolution)) await persistStoreSeedData(resolution)
 
         try { await nextUser.getIdToken(true) }
@@ -504,6 +531,7 @@ export default function App() {
         if (!resolution) throw new Error(SHEET_LOOKUP_GENERIC_ERROR_MESSAGE)
 
         persistActiveStoreId(resolution.storeId)
+        await ensureTeamMemberProfile(nextUser, resolution)
         await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution)
 
         if (hasSeedData(resolution)) {
