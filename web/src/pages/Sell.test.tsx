@@ -254,7 +254,8 @@ describe('Sell page', () => {
     expect(saleOperation?.data).toMatchObject({
       branchId: 'store-1',
       total: 12,
-      payment: { method: 'cash', amountPaid: 15, changeDue: 3 },
+      tenders: { cash: 15 },
+      changeDue: 3,
       items: [expect.objectContaining({ productId: 'product-1', qty: 1, price: 12 })],
     })
 

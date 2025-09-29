@@ -159,21 +159,53 @@ function normalizePaymentMethod(method: string): string {
   return normalized
 }
 
-function formatSaleSummary(total: number, method: string): string {
-  const label = normalizePaymentMethod(method)
-  if (total > 0) {
-    return `Recorded sale of ${formatAmount(total)} via ${label}`
+type TenderStats = {
+  methods: string[]
+  cardTotal: number
+  cashTotal: number
+}
+
+function collectTenderStats(tenders: unknown): TenderStats {
+  const stats: TenderStats = { methods: [], cardTotal: 0, cashTotal: 0 }
+  if (!tenders || typeof tenders !== 'object') {
+    return stats
   }
-  return `Recorded sale via ${label}`
+
+  const methodLabels = new Set<string>()
+  for (const [key, value] of Object.entries(tenders as Record<string, unknown>)) {
+    const amount = Number(value)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      continue
+    }
+
+    const methodKey = String(key)
+    const normalizedKey = methodKey.trim().toLowerCase()
+    const label = normalizePaymentMethod(methodKey)
+    if (!methodLabels.has(label)) {
+      methodLabels.add(label)
+      stats.methods.push(label)
+    }
+
+    if (normalizedKey === 'cash') {
+      stats.cashTotal += amount
+    } else if (normalizedKey === 'card' || normalizedKey === 'mobile') {
+      stats.cardTotal += amount
+    }
+  }
+
+  return stats
 }
 
-function isCashPayment(method: string): boolean {
-  return normalizePaymentMethod(method) === 'cash'
-}
-
-function isDigitalPayment(method: string): boolean {
-  const normalized = normalizePaymentMethod(method)
-  return normalized === 'card' || normalized === 'mobile'
+function formatSaleSummary(total: number, methods: string[]): string {
+  const labels = methods.length ? methods : ['unknown method']
+  const unique = Array.from(new Set(labels))
+  const summaryLabel = unique.length === 1
+    ? unique[0]
+    : `${unique.slice(0, -1).join(', ')} & ${unique.slice(-1)}`
+  if (total > 0) {
+    return `Recorded sale of ${formatAmount(total)} via ${summaryLabel}`
+  }
+  return `Recorded sale via ${summaryLabel}`
 }
 
 function formatReceiptSummary(qty: number, productId: string | null, totalCost: number): string {
@@ -1178,22 +1210,39 @@ export const onSaleCreate = functions.firestore
     const { dateKey, timestamp } = await resolveStoreDateKey(storeId, data.createdAt, context.timestamp)
 
     const saleTotal = Math.max(0, coerceNumber(data.total))
-    const payment = (data.payment ?? {}) as Record<string, unknown>
-    const paymentMethod = typeof payment.method === 'string' ? payment.method : ''
+    const tenderStats = collectTenderStats(data.tenders)
+    let tenderMethods = [...tenderStats.methods]
+    let cardTotalIncrement = tenderStats.cardTotal
+    let cashTotalIncrement = tenderStats.cashTotal
+
+    if (tenderMethods.length === 0) {
+      const legacyPayment = (data.payment ?? {}) as Record<string, unknown>
+      const paymentMethod = typeof legacyPayment.method === 'string' ? legacyPayment.method : ''
+      const normalizedMethod = paymentMethod.trim().toLowerCase()
+      const label = normalizePaymentMethod(paymentMethod)
+      if (label) {
+        tenderMethods = [label]
+      }
+      if (normalizedMethod === 'cash') {
+        cashTotalIncrement = saleTotal
+      } else if (normalizedMethod === 'card' || normalizedMethod === 'mobile') {
+        cardTotalIncrement = saleTotal
+      }
+    }
 
     await upsertDailySummaryDoc(storeId, dateKey, {
       increments: {
         salesCount: 1,
         salesTotal: saleTotal,
-        cardTotal: isDigitalPayment(paymentMethod) ? saleTotal : 0,
-        cashTotal: isCashPayment(paymentMethod) ? saleTotal : 0,
+        cardTotal: cardTotalIncrement,
+        cashTotal: cashTotalIncrement,
       },
       lastActivityAt: timestamp,
     })
 
     const customer = data.customer as Record<string, unknown> | undefined
     const customerId = typeof customer?.id === 'string' ? (customer.id as string) : undefined
-    const summary = formatSaleSummary(saleTotal, paymentMethod)
+    const summary = formatSaleSummary(saleTotal, tenderMethods)
 
     await recordActivityEntry({
       storeId,
