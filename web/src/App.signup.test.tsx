@@ -67,10 +67,15 @@ const firestore = vi.hoisted(() => {
   }
 })
 
+const access = vi.hoisted(() => ({
+  afterSignupBootstrap: vi.fn(),
+}))
+
 /** ---------------- module mocks ---------------- */
 vi.mock('./firebase', () => ({
   auth: mocks.auth,
   db: {},
+  functions: {},
 }))
 
 vi.mock('firebase/auth', () => ({
@@ -123,6 +128,16 @@ vi.mock('./components/ToastProvider', () => ({
   useToast: () => ({ publish: mocks.publish }),
 }))
 
+vi.mock('./controllers/accessController', async () => {
+  const actual = await vi.importActual<typeof import('./controllers/accessController')>(
+    './controllers/accessController',
+  )
+  return {
+    ...actual,
+    afterSignupBootstrap: (...args: unknown[]) => access.afterSignupBootstrap(...args),
+  }
+})
+
 /** ---------------- imports after mocks ---------------- */
 import App from './App'
 
@@ -147,6 +162,31 @@ describe('App signup cleanup', () => {
     mocks.listeners.splice(0, mocks.listeners.length)
     firestore.reset()
     firestore.getDocMock.mockImplementation(async () => ({ exists: () => false }))
+    access.afterSignupBootstrap.mockReset()
+    access.afterSignupBootstrap.mockImplementation(async (rawPayload?: unknown) => {
+      const payload = (rawPayload ?? {}) as {
+        storeId?: string
+        contact?: { ownerName?: string | null; company?: string | null }
+      }
+      if (typeof payload.storeId !== 'string' || !payload.storeId) {
+        throw new Error('storeId required for bootstrap')
+      }
+      const storeRef = firestore.docMock(null, 'stores', payload.storeId)
+      const createdAt = firestore.serverTimestampMock()
+      const updatedAt = firestore.serverTimestampMock()
+      await firestore.setDocMock(
+        storeRef,
+        {
+          storeId: payload.storeId,
+          ownerId: mocks.auth.currentUser?.uid ?? null,
+          ownerName: payload.contact?.ownerName ?? null,
+          company: payload.contact?.company ?? null,
+          createdAt,
+          updatedAt,
+        },
+        { merge: true },
+      )
+    })
 
     window.localStorage.clear()
     localStorageSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
@@ -237,14 +277,17 @@ describe('App signup cleanup', () => {
     const ownerDocKey = `teamMembers/${createdUser.uid}`
     const overrideDocKey = 'teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2'
     const customerDocKey = `customers/${createdUser.uid}`
+    const storeDocKey = `stores/${storeId}`
 
     const ownerDocRef = docRefByPath.get(ownerDocKey)
     const overrideDocRef = docRefByPath.get(overrideDocKey)
     const customerDocRef = docRefByPath.get(customerDocKey)
+    const storeDocRef = docRefByPath.get(storeDocKey)
 
     expect(ownerDocRef).toBeDefined()
     expect(overrideDocRef).toBeDefined()
     expect(customerDocRef).toBeDefined()
+    expect(storeDocRef).toBeDefined()
 
     const ownerCall = setDocMock.mock.calls.find(([ref]) => ref === ownerDocRef)
     expect(ownerCall).toBeDefined()
@@ -286,6 +329,32 @@ describe('App signup cleanup', () => {
       }),
     )
     expect(customerOptions).toEqual({ merge: true })
+
+    const storeCall = setDocMock.mock.calls.find(([ref]) => ref === storeDocRef)
+    expect(storeCall).toBeDefined()
+    const [, storePayload, storeOptions] = storeCall!
+    expect(storePayload).toEqual(
+      expect.objectContaining({
+        storeId,
+        ownerId: createdUser.uid,
+        company: 'Sedifex',
+        ownerName: 'Owner account',
+        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+      }),
+    )
+    expect(storeOptions).toEqual({ merge: true })
+
+    expect(access.afterSignupBootstrap).toHaveBeenCalledTimes(1)
+    expect(access.afterSignupBootstrap).toHaveBeenCalledWith({
+      storeId,
+      contact: {
+        phone: '5551234567',
+        firstSignupEmail: 'owner@example.com',
+        company: 'Sedifex',
+        ownerName: 'Owner account',
+      },
+    })
 
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({ tone: 'success', message: expect.stringMatching(/All set/i) }),

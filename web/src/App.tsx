@@ -393,6 +393,17 @@ export default function App() {
           preferExisting: false,
         })
 
+        const ownerName = resolveOwnerName(nextUser)
+        await afterSignupBootstrap({
+          storeId,
+          contact: {
+            phone: sanitizedPhone || null,
+            firstSignupEmail: (nextUser.email ?? '').toLowerCase() || null,
+            company: sanitizedCompany || null,
+            ownerName,
+          },
+        })
+
         // Optional additional doc for UX
         await persistOwnerSideDocs(nextUser, storeId, sanitizedPhone)
 
