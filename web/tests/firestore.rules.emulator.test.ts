@@ -1,13 +1,17 @@
 import { beforeAll, afterAll, describe, test } from 'vitest'
 import { initializeApp, deleteApp, type FirebaseApp } from 'firebase/app'
 import {
+  collection,
   connectFirestoreEmulator,
   doc,
   getDoc,
-  setDoc,
+  getDocs,
   getFirestore,
+  query,
   serverTimestamp,
+  setDoc,
   type Firestore,
+  where,
 } from 'firebase/firestore'
 import {
   connectAuthEmulator,
@@ -24,6 +28,60 @@ const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '127.0.0.1:9099'
 const [firestoreAddress, firestorePortRaw] = firestoreHost.split(':')
 const firestorePort = Number(firestorePortRaw ?? '8080')
 const authBaseUrl = `http://${authHost}`
+const firestoreRestBaseUrl = `http://${firestoreHost}/v1/projects/${projectId}/databases/(default)`
+
+function encodeFirestoreValue(value: unknown): Record<string, unknown> {
+  if (value === null) return { nullValue: null }
+  if (value instanceof Date) return { timestampValue: value.toISOString() }
+
+  switch (typeof value) {
+    case 'string':
+      return { stringValue: value }
+    case 'number':
+      return Number.isInteger(value)
+        ? { integerValue: value.toString() }
+        : { doubleValue: value }
+    case 'boolean':
+      return { booleanValue: value }
+    case 'object':
+      if (Array.isArray(value)) {
+        return { arrayValue: { values: value.map(encodeFirestoreValue) } }
+      }
+
+      return { mapValue: { fields: encodeFirestoreFields(value as Record<string, unknown>) } }
+    default:
+      throw new Error(`Unsupported Firestore value type: ${typeof value}`)
+  }
+}
+
+function encodeFirestoreFields(data: Record<string, unknown>): Record<string, unknown> {
+  return Object.entries(data).reduce<Record<string, unknown>>((acc, [key, value]) => {
+    acc[key] = encodeFirestoreValue(value)
+    return acc
+  }, {})
+}
+
+async function seedDocument(path: string, data: Record<string, unknown>) {
+  const response = await fetch(`${firestoreRestBaseUrl}/documents:commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      writes: [
+        {
+          update: {
+            name: `projects/${projectId}/databases/(default)/documents/${path}`,
+            fields: encodeFirestoreFields(data),
+          },
+        },
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`Failed to seed document at ${path}: ${response.status} ${text}`)
+  }
+}
 
 interface TestContext {
   app: FirebaseApp
@@ -252,6 +310,79 @@ describe('Firestore rules - multi-tenant store access', () => {
       )
     } finally {
       await destroyContext(staff)
+      await destroyContext(outsider)
+    }
+  })
+
+  test('store members can read daily summaries for their store but cannot write them', async () => {
+    await seedDocument('dailySummaries/store-1_2024-09-01', {
+      storeId: 'store-1',
+      dateKey: '2024-09-01',
+      salesTotal: 123.45,
+    })
+
+    const allowed = await createStoreMember('store-1', 'staff')
+    try {
+      await expectSucceeds(
+        getDoc(doc(allowed.db, 'dailySummaries/store-1_2024-09-01')),
+        'store member should read their daily summary',
+      )
+      await expectFails(
+        setDoc(doc(allowed.db, 'dailySummaries/store-1_2024-09-02'), {
+          storeId: 'store-1',
+          dateKey: '2024-09-02',
+        }),
+        'store member should not create a new daily summary document',
+      )
+    } finally {
+      await destroyContext(allowed)
+    }
+
+    const outsider = await createStoreMember('store-2', 'staff')
+    try {
+      await expectFails(
+        getDoc(doc(outsider.db, 'dailySummaries/store-1_2024-09-01')),
+        'other store members should not read store-1 summaries',
+      )
+    } finally {
+      await destroyContext(outsider)
+    }
+  })
+
+  test('store members can read their activity feed but cannot write entries', async () => {
+    await seedDocument('activities/activity-1', {
+      storeId: 'store-1',
+      dateKey: '2024-09-01',
+      type: 'sale',
+      summary: 'Recorded a sale',
+      at: new Date('2024-09-01T10:00:00.000Z'),
+    })
+
+    const allowed = await createStoreMember('store-1', 'staff')
+    try {
+      await expectSucceeds(
+        getDocs(query(collection(allowed.db, 'activities'), where('storeId', '==', 'store-1'))),
+        'store member should list their store activities',
+      )
+      await expectFails(
+        setDoc(doc(allowed.db, 'activities/new-activity'), {
+          storeId: 'store-1',
+          dateKey: '2024-09-01',
+          type: 'manual',
+        }),
+        'store member should not create activity entries',
+      )
+    } finally {
+      await destroyContext(allowed)
+    }
+
+    const outsider = await createStoreMember('store-2', 'staff')
+    try {
+      await expectFails(
+        getDocs(query(collection(outsider.db, 'activities'), where('storeId', '==', 'store-1'))),
+        'store-2 member should not list store-1 activities',
+      )
+    } finally {
       await destroyContext(outsider)
     }
   })
