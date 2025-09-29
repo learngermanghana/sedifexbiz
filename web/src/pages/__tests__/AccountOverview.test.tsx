@@ -9,9 +9,9 @@ vi.mock('../../components/ToastProvider', () => ({
   useToast: () => ({ publish: mockPublish }),
 }))
 
-const mockUseActiveStore = vi.fn()
-vi.mock('../../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
+const mockUseActiveStoreContext = vi.fn()
+vi.mock('../../context/ActiveStoreProvider', () => ({
+  useActiveStoreContext: () => mockUseActiveStoreContext(),
 }))
 
 const mockUseMemberships = vi.fn()
@@ -70,7 +70,7 @@ afterAll(() => {
 describe('AccountOverview', () => {
   beforeEach(() => {
     mockPublish.mockReset()
-    mockUseActiveStore.mockReset()
+    mockUseActiveStoreContext.mockReset()
     mockUseMemberships.mockReset()
     mockManageStaffAccount.mockReset()
     collectionMock.mockClear()
@@ -80,7 +80,7 @@ describe('AccountOverview', () => {
     queryMock.mockClear()
     whereMock.mockClear()
 
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
+    mockUseActiveStoreContext.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
     getDocMock.mockResolvedValue({
       exists: () => true,
       data: () => ({

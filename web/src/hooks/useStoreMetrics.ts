@@ -15,7 +15,7 @@ import {
 
 import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
-import { useActiveStore } from './useActiveStore'
+import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import { useToast } from '../components/ToastProvider'
 import {
   CUSTOMER_CACHE_LIMIT,
@@ -304,7 +304,7 @@ function buildDailyMetricSeries(
 
 export function useStoreMetrics(): UseStoreMetricsResult {
   const authUser = useAuthUser()
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId } = useActiveStoreContext()
   const { publish } = useToast()
 
   const [sales, setSales] = useState<SaleRecord[]>([])

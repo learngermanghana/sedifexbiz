@@ -14,7 +14,7 @@ import {
 import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
-import { useActiveStore } from '../hooks/useActiveStore'
+import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import {
   PRODUCT_CACHE_LIMIT,
   loadCachedProducts,
@@ -150,7 +150,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Products() {
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId } = useActiveStoreContext()
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)

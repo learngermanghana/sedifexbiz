@@ -15,7 +15,7 @@ import {
 import { Timestamp } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
-import { useActiveStore } from '../hooks/useActiveStore'
+import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import './Customers.css'
 import {
   CUSTOMER_CACHE_LIMIT,
@@ -190,7 +190,7 @@ function buildCsvValue(value: string): string {
 }
 
 export default function Customers() {
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId } = useActiveStoreContext()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')

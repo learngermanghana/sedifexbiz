@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { collection, query, where, orderBy, onSnapshot, Timestamp, addDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
-import { useActiveStore } from '../hooks/useActiveStore'
+import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 
 const DENOMINATIONS = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1] as const
 
@@ -31,7 +31,7 @@ function parseQuantity(input: string): number {
 
 export default function CloseDay() {
   const user = useAuthUser()
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId } = useActiveStoreContext()
 
   const [total, setTotal] = useState(0)
   const [cashCounts, setCashCounts] = useState<CashCountState>(() => createInitialCashCountState())

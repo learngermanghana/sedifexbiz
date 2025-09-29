@@ -11,9 +11,9 @@ vi.mock('../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
-vi.mock('../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
+const mockUseActiveStoreContext = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
+vi.mock('../context/ActiveStoreProvider', () => ({
+  useActiveStoreContext: () => mockUseActiveStoreContext(),
 }))
 
 const originalCreateObjectURL = globalThis.URL.createObjectURL
@@ -201,12 +201,12 @@ function renderWithProviders(ui: ReactElement) {
 describe('Sell page', () => {
   beforeEach(() => {
     mockUseAuthUser.mockReset()
-    mockUseActiveStore.mockReset()
+    mockUseActiveStoreContext.mockReset()
     mockUseAuthUser.mockReturnValue({
       uid: 'cashier-123',
       email: 'cashier@example.com',
     })
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockUseActiveStoreContext.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
 
     autoCounters = {}
     firestoreState = {

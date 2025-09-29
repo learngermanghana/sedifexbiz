@@ -3,7 +3,7 @@ import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/f
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../firebase'
-import { useActiveStore } from '../hooks/useActiveStore'
+import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import './Receive.css'
 import { queueCallableRequest } from '../utils/offlineQueue'
 import { loadCachedProducts, saveCachedProducts, PRODUCT_CACHE_LIMIT } from '../utils/offlineCache'
@@ -35,7 +35,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Receive() {
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId } = useActiveStoreContext()
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string>('')
   const [qty, setQty] = useState<string>('')

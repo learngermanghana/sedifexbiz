@@ -13,7 +13,7 @@ import {
 import { FirebaseError } from 'firebase/app'
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
-import { useActiveStore } from '../hooks/useActiveStore'
+import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import './Sell.css'
 import { Link } from 'react-router-dom'
 import BarcodeScanner, { ScanResult } from '../components/BarcodeScanner'
@@ -159,7 +159,7 @@ function sanitizePrice(value: unknown): number | null {
 
 export default function Sell() {
   const user = useAuthUser()
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId } = useActiveStoreContext()
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])

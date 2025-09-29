@@ -12,7 +12,7 @@ import {
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
 import { db } from '../firebase'
-import { useActiveStore } from '../hooks/useActiveStore'
+import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
 import { manageStaffAccount } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
@@ -153,7 +153,7 @@ function formatTimestamp(timestamp: Timestamp | null) {
 }
 
 export default function AccountOverview() {
-  const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
+  const { storeId, isLoading: storeLoading, error: storeError } = useActiveStoreContext()
   const membershipsStoreId = storeLoading ? undefined : storeId ?? null
   const {
     memberships,

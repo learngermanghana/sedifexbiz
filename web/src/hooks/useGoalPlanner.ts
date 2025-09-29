@@ -3,7 +3,7 @@ import { doc, onSnapshot, setDoc, updateDoc, type DocumentReference } from 'fire
 
 import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
-import { useActiveStore } from './useActiveStore'
+import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import { useToast } from '../components/ToastProvider'
 
 type PlannerFrequency = 'daily' | 'weekly' | 'monthly'
@@ -73,7 +73,7 @@ export type UseGoalPlannerResult = {
 
 export function useGoalPlanner(): UseGoalPlannerResult {
   const { publish } = useToast()
-  const { storeId } = useActiveStore()
+  const { storeId } = useActiveStoreContext()
   const authUser = useAuthUser()
 
   const initialToday = useMemo(() => new Date(), [])
