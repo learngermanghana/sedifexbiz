@@ -5,6 +5,209 @@ import { fetchClientRowByEmail, getDefaultSpreadsheetId, normalizeHeader } from 
 
 const db = defaultDb
 
+const storeTimezoneCache = new Map<string, string>()
+
+function normalizeTimezone(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+async function getStoreTimezone(storeId: string): Promise<string> {
+  if (!storeId) return 'UTC'
+  const cached = storeTimezoneCache.get(storeId)
+  if (cached) return cached
+  try {
+    const snapshot = await db.collection('stores').doc(storeId).get()
+    if (snapshot.exists) {
+      const timezoneValue = normalizeTimezone(snapshot.get('timezone'))
+      if (timezoneValue) {
+        storeTimezoneCache.set(storeId, timezoneValue)
+        return timezoneValue
+      }
+    }
+  } catch (error) {
+    functions.logger.error('[dailySummaries] Failed to load store timezone', { storeId, error })
+  }
+  storeTimezoneCache.set(storeId, 'UTC')
+  return 'UTC'
+}
+
+function formatDateKey(timestamp: admin.firestore.Timestamp, timeZone: string): string {
+  const millis = timestamp.toMillis()
+  const date = new Date(millis)
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date)
+  } catch (error) {
+    functions.logger.warn('[dailySummaries] Invalid timezone', { timeZone, error })
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date)
+  }
+}
+
+function parseTimestampValue(value: unknown): admin.firestore.Timestamp | null {
+  if (value instanceof admin.firestore.Timestamp) {
+    return value
+  }
+  if (value instanceof Date) {
+    return admin.firestore.Timestamp.fromMillis(value.getTime())
+  }
+  return parseDateValue(value)
+}
+
+function parseEventTimestamp(eventTimestamp: string | undefined): admin.firestore.Timestamp {
+  if (eventTimestamp) {
+    const parsed = Date.parse(eventTimestamp)
+    if (!Number.isNaN(parsed)) {
+      return admin.firestore.Timestamp.fromMillis(parsed)
+    }
+  }
+  return admin.firestore.Timestamp.now()
+}
+
+async function resolveStoreDateKey(
+  storeId: string,
+  sourceTimestamp: unknown,
+  eventTimestamp: string | undefined,
+): Promise<{ dateKey: string; timestamp: admin.firestore.Timestamp }> {
+  const timezone = await getStoreTimezone(storeId)
+  const resolvedTimestamp = parseTimestampValue(sourceTimestamp) ?? parseEventTimestamp(eventTimestamp)
+  const dateKey = formatDateKey(resolvedTimestamp, timezone)
+  return { dateKey, timestamp: resolvedTimestamp }
+}
+
+type DailySummaryUpdateOptions = {
+  increments?: Record<string, number>
+  lastActivityAt?: admin.firestore.Timestamp
+}
+
+async function upsertDailySummaryDoc(
+  storeId: string,
+  dateKey: string,
+  options: DailySummaryUpdateOptions,
+): Promise<void> {
+  const summaryRef = db.collection('dailySummaries').doc(`${storeId}_${dateKey}`)
+  await db.runTransaction(async tx => {
+    const snapshot = await tx.get(summaryRef)
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const payload: admin.firestore.DocumentData = {
+      storeId,
+      dateKey,
+      updatedAt: timestamp,
+    }
+
+    if (options.lastActivityAt) {
+      payload.lastActivityAt = options.lastActivityAt
+    }
+
+    for (const [field, amount] of Object.entries(options.increments ?? {})) {
+      if (!Number.isFinite(amount) || amount === 0) continue
+      payload[field] = admin.firestore.FieldValue.increment(amount)
+    }
+
+    if (!snapshot.exists) {
+      payload.createdAt = timestamp
+    }
+
+    tx.set(summaryRef, payload, { merge: true })
+  })
+}
+
+function coerceNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+  return 0
+}
+
+function sanitizeRefs(input: Record<string, unknown>): Record<string, string> {
+  const refs: Record<string, string> = {}
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (trimmed) refs[key] = trimmed
+    }
+  }
+  return refs
+}
+
+function formatAmount(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(2) : '0.00'
+}
+
+function normalizePaymentMethod(method: string): string {
+  const normalized = method.trim().toLowerCase()
+  if (!normalized) return 'unknown method'
+  if (normalized === 'cash') return 'cash'
+  if (normalized === 'card') return 'card'
+  if (normalized === 'mobile') return 'mobile'
+  return normalized
+}
+
+function formatSaleSummary(total: number, method: string): string {
+  const label = normalizePaymentMethod(method)
+  if (total > 0) {
+    return `Recorded sale of ${formatAmount(total)} via ${label}`
+  }
+  return `Recorded sale via ${label}`
+}
+
+function isCashPayment(method: string): boolean {
+  return normalizePaymentMethod(method) === 'cash'
+}
+
+function isDigitalPayment(method: string): boolean {
+  const normalized = normalizePaymentMethod(method)
+  return normalized === 'card' || normalized === 'mobile'
+}
+
+function formatReceiptSummary(qty: number, productId: string | null, totalCost: number): string {
+  const quantityLabel = qty === 1 ? '1 unit' : `${qty} units`
+  const productLabel = productId ? ` for ${productId}` : ''
+  const costLabel = totalCost > 0 ? ` totaling ${formatAmount(totalCost)}` : ''
+  return `Received ${quantityLabel}${productLabel}${costLabel}`
+}
+
+function formatCustomerSummary(name: string | null): string {
+  return name ? `Added new customer ${name}` : 'Added new customer'
+}
+
+async function recordActivityEntry(activity: {
+  storeId: string
+  dateKey: string
+  at: admin.firestore.Timestamp
+  type: string
+  summary: string
+  refs: Record<string, unknown>
+}): Promise<void> {
+  const activityRef = db.collection('activities').doc()
+  await activityRef.set({
+    storeId: activity.storeId,
+    dateKey: activity.dateKey,
+    at: activity.at,
+    type: activity.type,
+    summary: activity.summary,
+    refs: sanitizeRefs(activity.refs),
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  })
+}
+
 type ContactPayload = {
   phone?: unknown
   firstSignupEmail?: unknown
@@ -958,3 +1161,137 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
 
   return { ok: true, receiptId: receiptRef.id }
 })
+
+export const onSaleCreate = functions.firestore
+  .document('sales/{saleId}')
+  .onCreate(async (snapshot, context) => {
+    const data = snapshot.data()
+    if (!data) return
+
+    const storeIdRaw = (data.storeId ?? data.branchId) as unknown
+    const storeId = typeof storeIdRaw === 'string' ? storeIdRaw.trim() : ''
+    if (!storeId) {
+      functions.logger.warn('[dailySummaries] Sale created without storeId', { saleId: snapshot.id })
+      return
+    }
+
+    const { dateKey, timestamp } = await resolveStoreDateKey(storeId, data.createdAt, context.timestamp)
+
+    const saleTotal = Math.max(0, coerceNumber(data.total))
+    const payment = (data.payment ?? {}) as Record<string, unknown>
+    const paymentMethod = typeof payment.method === 'string' ? payment.method : ''
+
+    await upsertDailySummaryDoc(storeId, dateKey, {
+      increments: {
+        salesCount: 1,
+        salesTotal: saleTotal,
+        cardTotal: isDigitalPayment(paymentMethod) ? saleTotal : 0,
+        cashTotal: isCashPayment(paymentMethod) ? saleTotal : 0,
+      },
+      lastActivityAt: timestamp,
+    })
+
+    const customer = data.customer as Record<string, unknown> | undefined
+    const customerId = typeof customer?.id === 'string' ? (customer.id as string) : undefined
+    const summary = formatSaleSummary(saleTotal, paymentMethod)
+
+    await recordActivityEntry({
+      storeId,
+      dateKey,
+      at: timestamp,
+      type: 'sale',
+      summary,
+      refs: {
+        saleId: snapshot.id,
+        customerId,
+      },
+    })
+  })
+
+export const onReceiptCreate = functions.firestore
+  .document('receipts/{receiptId}')
+  .onCreate(async (snapshot, context) => {
+    const data = snapshot.data()
+    if (!data) return
+
+    const storeIdRaw = data.storeId as unknown
+    const storeId = typeof storeIdRaw === 'string' ? storeIdRaw.trim() : ''
+    if (!storeId) {
+      functions.logger.warn('[dailySummaries] Receipt created without storeId', {
+        receiptId: snapshot.id,
+      })
+      return
+    }
+
+    const { dateKey, timestamp } = await resolveStoreDateKey(storeId, data.createdAt, context.timestamp)
+    const unitsReceived = Math.max(0, coerceNumber(data.qty))
+    const receiptCostTotal = Math.max(0, coerceNumber(data.totalCost))
+
+    await upsertDailySummaryDoc(storeId, dateKey, {
+      increments: {
+        receiptsCount: 1,
+        unitsReceived,
+        receiptCostTotal,
+      },
+      lastActivityAt: timestamp,
+    })
+
+    const productId = typeof data.productId === 'string' ? data.productId : null
+    const summary = formatReceiptSummary(unitsReceived, productId, receiptCostTotal)
+
+    await recordActivityEntry({
+      storeId,
+      dateKey,
+      at: timestamp,
+      type: 'receipt',
+      summary,
+      refs: {
+        receiptId: snapshot.id,
+        productId: productId ?? undefined,
+      },
+    })
+  })
+
+export const onCustomerCreate = functions.firestore
+  .document('customers/{customerId}')
+  .onCreate(async (snapshot, context) => {
+    const data = snapshot.data()
+    if (!data) return
+
+    const storeIdRaw = data.storeId as unknown
+    const storeId = typeof storeIdRaw === 'string' ? storeIdRaw.trim() : ''
+    if (!storeId) {
+      functions.logger.warn('[dailySummaries] Customer created without storeId', {
+        customerId: snapshot.id,
+      })
+      return
+    }
+
+    const { dateKey, timestamp } = await resolveStoreDateKey(storeId, data.createdAt, context.timestamp)
+
+    await upsertDailySummaryDoc(storeId, dateKey, {
+      increments: {
+        newCustomersCount: 1,
+      },
+      lastActivityAt: timestamp,
+    })
+
+    const nameCandidate =
+      typeof data.name === 'string'
+        ? data.name
+        : typeof data.displayName === 'string'
+          ? data.displayName
+          : null
+    const summary = formatCustomerSummary(nameCandidate)
+
+    await recordActivityEntry({
+      storeId,
+      dateKey,
+      at: timestamp,
+      type: 'customer',
+      summary,
+      refs: {
+        customerId: snapshot.id,
+      },
+    })
+  })
