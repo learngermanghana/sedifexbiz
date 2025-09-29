@@ -3,11 +3,11 @@ import { render, screen } from '@testing-library/react';
 
 import Gate from './Gate';
 
-const mockUseActiveStore = vi.fn();
+const mockUseActiveStoreContext = vi.fn();
 const mockUseMemberships = vi.fn();
 
-vi.mock('../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
+vi.mock('../context/ActiveStoreProvider', () => ({
+  useActiveStoreContext: () => mockUseActiveStoreContext(),
 }));
 
 vi.mock('../hooks/useMemberships', () => ({
@@ -16,9 +16,9 @@ vi.mock('../hooks/useMemberships', () => ({
 
 describe('Gate', () => {
   beforeEach(() => {
-    mockUseActiveStore.mockReset();
+    mockUseActiveStoreContext.mockReset();
     mockUseMemberships.mockReset();
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null });
+    mockUseActiveStoreContext.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null });
   });
 
   it('renders a loading state while memberships are loading', () => {

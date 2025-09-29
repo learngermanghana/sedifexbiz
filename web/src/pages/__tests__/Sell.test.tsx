@@ -35,9 +35,9 @@ vi.mock('../../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
-vi.mock('../../hooks/useActiveStore', () => ({
-  useActiveStore: () => mockUseActiveStore(),
+const mockUseActiveStoreContext = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
+vi.mock('../../context/ActiveStoreProvider', () => ({
+  useActiveStoreContext: () => mockUseActiveStoreContext(),
 }))
 
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
@@ -112,8 +112,8 @@ describe('Sell page barcode scanner', () => {
     docMock.mockClear()
     mockUseAuthUser.mockReset()
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'cashier@example.com' })
-    mockUseActiveStore.mockReset()
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockUseActiveStoreContext.mockReset()
+    mockUseActiveStoreContext.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
 
     mockLoadCachedProducts.mockResolvedValue([])
     mockLoadCachedCustomers.mockResolvedValue([])
