@@ -563,6 +563,7 @@ export default function Sell() {
           items: normalizedItems,
           createdBy: user.uid,
           createdAt: timestamp,
+          updatedAt: timestamp,
         }
 
         const saleItemWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
@@ -596,6 +597,7 @@ export default function Sell() {
               taxRate: item.taxRate,
               storeId: activeStoreId,
               createdAt: timestamp,
+              updatedAt: timestamp,
             },
           })
 
@@ -609,6 +611,7 @@ export default function Sell() {
               refId: saleId,
               storeId: activeStoreId,
               createdAt: timestamp,
+              updatedAt: timestamp,
             },
           })
 
@@ -630,6 +633,7 @@ export default function Sell() {
               refId: saleId,
               storeId: activeStoreId,
               createdAt: timestamp,
+              updatedAt: timestamp,
             },
           })
         }

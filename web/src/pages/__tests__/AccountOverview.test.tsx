@@ -23,26 +23,6 @@ vi.mock('../../controllers/storeController', () => ({
     mockManageStaffAccount(...args),
 }))
 
-const baseSheetRow = {
-  email: 'owner@example.com',
-  storeId: 'store-123',
-  role: 'owner',
-  company: 'Sedifex',
-  contractStart: '2023-01-01',
-  contractEnd: '2023-12-31',
-  paymentStatus: 'Paid',
-  amountPaid: '1000',
-  name: 'Owner Example',
-}
-
-const mockFetchSheetRows = vi.fn()
-const mockFindUserRow = vi.fn()
-
-vi.mock('../../sheetClient', () => ({
-  fetchSheetRows: (...args: unknown[]) => mockFetchSheetRows(...args),
-  findUserRow: (...args: unknown[]) => mockFindUserRow(...args),
-}))
-
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
 const docMock = vi.fn((_db: unknown, path: string, id?: string) => ({
   type: 'doc',
@@ -63,14 +43,8 @@ vi.mock('firebase/firestore', () => ({
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
 }))
 
-type MockAuth = { currentUser: { email: string } | null }
-const mockAuth: MockAuth = { currentUser: { email: 'owner@example.com' } }
-
 vi.mock('../../firebase', () => ({
   db: {},
-  get auth() {
-    return mockAuth
-  },
 }))
 
 const originalConsoleError = console.error
@@ -103,22 +77,18 @@ describe('AccountOverview', () => {
     getDocsMock.mockReset()
     queryMock.mockClear()
     whereMock.mockClear()
-    mockFetchSheetRows.mockReset()
-    mockFindUserRow.mockReset()
-
-    const sheetRow = { ...baseSheetRow }
-
-    mockFetchSheetRows.mockResolvedValue([sheetRow])
-    mockFindUserRow.mockImplementation((_rows, email) =>
-      email === sheetRow.email ? sheetRow : null
-    )
-    mockAuth.currentUser = { email: 'owner@example.com' }
 
     getDocMock.mockResolvedValue({
       exists: () => true,
       data: () => ({
         displayName: 'Sedifex Coffee',
+        company: 'Sedifex',
         status: 'Active',
+        contractStatus: 'Active',
+        contractStart: '2023-01-01',
+        contractEnd: '2023-12-31',
+        paymentStatus: 'Paid',
+        amountPaid: 1000,
         currency: 'GHS',
         billingPlan: 'Monthly',
         paymentProvider: 'Stripe',
@@ -169,6 +139,13 @@ describe('AccountOverview', () => {
     await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(1))
 
+    expect(screen.getByText('store-123')).toBeInTheDocument()
+    expect(screen.getByText('Sedifex')).toBeInTheDocument()
+    expect(screen.getByText('2023-01-01')).toBeInTheDocument()
+    expect(screen.getByText('2023-12-31')).toBeInTheDocument()
+    expect(screen.getByText('Paid')).toBeInTheDocument()
+    expect(screen.getByText('1000')).toBeInTheDocument()
+
     const form = await screen.findByTestId('account-invite-form')
     expect(form).toBeInTheDocument()
 
@@ -192,13 +169,6 @@ describe('AccountOverview', () => {
   })
 
   it('renders a read-only roster for staff members', async () => {
-    const staffSheetRow = { ...baseSheetRow, email: 'staff@example.com', role: 'staff' }
-    mockAuth.currentUser = { email: 'staff@example.com' }
-    mockFetchSheetRows.mockResolvedValue([staffSheetRow])
-    mockFindUserRow.mockImplementation((_rows, email) =>
-      email === staffSheetRow.email ? staffSheetRow : null
-    )
-
     mockUseMemberships.mockReturnValue({
       memberships: [
         {

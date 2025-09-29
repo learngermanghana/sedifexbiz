@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, where, type Timestamp } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDoc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+  type Timestamp,
+} from 'firebase/firestore'
 
 import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
@@ -812,18 +824,26 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       const customerTarget = Number.isFinite(customerValue) ? Math.max(0, customerValue) : 0
       const monthKey = selectedGoalMonth || defaultMonthKey
 
-      await setDoc(
-        doc(db, 'storeGoals', goalDocumentId),
-        {
-          monthly: {
-            [monthKey]: {
-              revenueTarget,
-              customerTarget,
-            },
+      const goalRef = doc(db, 'storeGoals', goalDocumentId)
+      const existingSnapshot = await getDoc(goalRef)
+      const shouldSetCreatedAt = !existingSnapshot.exists() || !existingSnapshot.data()?.createdAt
+
+      const basePayload = {
+        storeId: activeStoreId,
+        updatedAt: serverTimestamp(),
+        monthly: {
+          [monthKey]: {
+            revenueTarget,
+            customerTarget,
           },
         },
-        { merge: true },
-      )
+      }
+
+      const payload = shouldSetCreatedAt
+        ? { ...basePayload, createdAt: serverTimestamp() }
+        : basePayload
+
+      await setDoc(goalRef, payload, { merge: true })
 
       setGoalFormTouched(false)
       setGoalFormValues({

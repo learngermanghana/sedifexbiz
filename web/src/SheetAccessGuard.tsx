@@ -1,18 +1,25 @@
+
 import { useEffect, useState, type ReactNode } from 'react'
 import { onAuthStateChanged, signOut, User } from 'firebase/auth'
 import { auth } from './firebase'
 import { fetchSheetRows, findUserRow, isContractActive } from './sheetClient'
 import { setPersistedActiveStoreId } from './utils/activeStore'
 
+
 export default function SheetAccessGuard({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user: User | null) => {
-      if (!user?.email) { setReady(true); return }
-      setError(null)
+    const unsubscribe = onAuthStateChanged(auth, async (user: User | null) => {
+      if (!user) {
+        setError(null)
+        setReady(true)
+        return
+      }
+
       try {
+
         const rows = await fetchSheetRows()
         const row = findUserRow(rows, user.email)
         if (!row) throw new Error('We could not find a workspace assignment for this account.')
@@ -24,10 +31,12 @@ export default function SheetAccessGuard({ children }: { children: ReactNode }) 
         setError(e?.message || 'Access denied.') // block
         await signOut(auth)
         setPersistedActiveStoreId(null)
+
         setReady(true)
       }
     })
-    return () => unsub()
+
+    return () => unsubscribe()
   }, [])
 
   if (!ready) return <p>Checking workspace access…</p>
