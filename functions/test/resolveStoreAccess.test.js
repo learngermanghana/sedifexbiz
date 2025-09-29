@@ -4,7 +4,6 @@ const path = require('path')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
 
 let currentDefaultDb
-let currentRosterDb
 let sheetRowMock
 const apps = []
 
@@ -50,7 +49,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
   if (request === 'firebase-admin/firestore') {
     return {
-      getFirestore: (_app, name) => (name === 'roster' ? currentRosterDb : currentDefaultDb),
+      getFirestore: () => currentDefaultDb,
     }
   }
 
@@ -75,7 +74,6 @@ function loadFunctionsModule() {
 
 async function runActiveStatusTest() {
   currentDefaultDb = new MockFirestore()
-  currentRosterDb = new MockFirestore()
   sheetRowMock = {
     spreadsheetId: 'sheet-123',
     headers: [],
@@ -112,7 +110,7 @@ async function runActiveStatusTest() {
   const expectedContractStart = Date.parse('2024-01-15T00:00:00.000Z')
   const expectedContractEnd = Date.parse('2024-12-31T00:00:00.000Z')
 
-  const rosterDoc = currentRosterDb.getDoc('teamMembers/user-1')
+  const rosterDoc = currentDefaultDb.getDoc('teamMembers/user-1')
   assert.ok(rosterDoc)
   assert.strictEqual(rosterDoc.storeId, 'store-001')
 
@@ -134,7 +132,6 @@ async function runActiveStatusTest() {
 
 async function runInactiveStatusTest() {
   currentDefaultDb = new MockFirestore()
-  currentRosterDb = new MockFirestore()
   sheetRowMock = {
     spreadsheetId: 'sheet-123',
     headers: [],
@@ -173,7 +170,6 @@ async function runInactiveStatusTest() {
 
 async function runStoreIdMismatchTest() {
   currentDefaultDb = new MockFirestore()
-  currentRosterDb = new MockFirestore()
   sheetRowMock = {
     spreadsheetId: 'sheet-123',
     headers: [],
@@ -211,7 +207,6 @@ async function runStoreIdMismatchTest() {
 
 async function runMissingStoreIdTest() {
   currentDefaultDb = new MockFirestore()
-  currentRosterDb = new MockFirestore()
   sheetRowMock = {
     spreadsheetId: 'sheet-123',
     headers: [],
