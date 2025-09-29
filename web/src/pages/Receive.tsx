@@ -7,6 +7,7 @@ import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import './Receive.css'
 import { queueCallableRequest } from '../utils/offlineQueue'
 import { loadCachedProducts, saveCachedProducts, PRODUCT_CACHE_LIMIT } from '../utils/offlineCache'
+import { useToast } from '../components/ToastProvider'
 
 type Product = {
   id: string
@@ -14,6 +15,11 @@ type Product = {
   stockCount?: number
   createdAt?: unknown
   updatedAt?: unknown
+}
+
+type PendingReceipt = {
+  baseline: number
+  increment: number
 }
 
 function isOfflineError(error: unknown) {
@@ -45,7 +51,14 @@ export default function Receive() {
   const [status, setStatus] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const statusTimeoutRef = useRef<number | null>(null)
+  const [pendingReceipts, setPendingReceipts] = useState<Record<string, PendingReceipt>>({})
+  const pendingReceiptsRef = useRef(pendingReceipts)
   const receiveStock = useMemo(() => httpsCallable(functions, 'receiveStock'), [])
+  const { publish } = useToast()
+
+  useEffect(() => {
+    pendingReceiptsRef.current = pendingReceipts
+  }, [pendingReceipts])
   useEffect(() => {
     return () => {
       if (statusTimeoutRef.current) {
@@ -81,8 +94,17 @@ export default function Receive() {
     loadCachedProducts<Product>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
+          const pending = pendingReceiptsRef.current
+          const withPending = cached.map(product => {
+            const entry = pending[product.id]
+            if (!entry) return product
+            const baseStock = product.stockCount ?? 0
+            return { ...product, stockCount: baseStock + entry.increment }
+          })
           setProducts(
-            [...cached].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+            [...withPending].sort((a, b) =>
+              a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+            ),
           )
         }
       })
@@ -99,11 +121,38 @@ export default function Receive() {
     )
 
     const unsubscribe = onSnapshot(q, snap => {
-      const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
-      saveCachedProducts(rows, { storeId: activeStoreId }).catch(error => {
+      const pending = { ...pendingReceiptsRef.current }
+      const rawRows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
+
+      const rowsWithPending = rawRows.map(row => {
+        const actualStock = row.stockCount ?? 0
+        const entry = pending[row.id]
+        if (!entry) {
+          return row
+        }
+
+        const appliedDelta = actualStock - entry.baseline
+        if (appliedDelta >= entry.increment) {
+          delete pending[row.id]
+          return { ...row, stockCount: actualStock }
+        }
+
+        const remaining = entry.increment - Math.max(appliedDelta, 0)
+        pending[row.id] = {
+          baseline: actualStock,
+          increment: remaining,
+        }
+
+        return { ...row, stockCount: actualStock + remaining }
+      })
+
+      pendingReceiptsRef.current = pending
+      setPendingReceipts(pending)
+
+      saveCachedProducts(rowsWithPending, { storeId: activeStoreId }).catch(error => {
         console.warn('[receive] Failed to cache products', error)
       })
-      const sortedRows = [...rows].sort((a, b) =>
+      const sortedRows = [...rowsWithPending].sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
       )
       setProducts(sortedRows)
@@ -122,6 +171,8 @@ export default function Receive() {
     setReference('')
     setUnitCost('')
     setStatus(null)
+    pendingReceiptsRef.current = {}
+    setPendingReceipts({})
   }, [storeChangeToken])
 
   async function receive() {
@@ -130,7 +181,8 @@ export default function Receive() {
       showStatus('error', 'Select a workspace before receiving stock.')
       return
     }
-    const p = products.find(x=>x.id===selected); if (!p) return
+    const p = products.find(x => x.id === selected)
+    if (!p) return
     const amount = Number(qty)
     if (!Number.isFinite(amount) || amount <= 0) {
       showStatus('error', 'Enter a valid quantity greater than zero.')
@@ -177,7 +229,32 @@ export default function Receive() {
           setSupplier('')
           setReference('')
           setUnitCost('')
-          showStatus('success', 'Offline — receipt saved and will sync when you reconnect.')
+          publish({ message: 'Queued receipt • will sync', tone: 'success' })
+          const existing = pendingReceiptsRef.current[selected]
+          const baseline = existing ? existing.baseline : (p.stockCount ?? 0)
+          const totalIncrement = (existing?.increment ?? 0) + amount
+          const nextPending = {
+            ...pendingReceiptsRef.current,
+            [selected]: {
+              baseline,
+              increment: totalIncrement,
+            },
+          }
+          pendingReceiptsRef.current = nextPending
+          setPendingReceipts(nextPending)
+
+          const nextProducts = products.map(product => {
+            if (product.id !== selected) return product
+            return {
+              ...product,
+              stockCount: baseline + totalIncrement,
+            }
+          })
+          setProducts(nextProducts)
+          saveCachedProducts(nextProducts, { storeId: activeStoreId }).catch(cacheError => {
+            console.warn('[receive] Failed to cache products after queueing receipt', cacheError)
+          })
+          showStatus('success', 'Offline receipt saved.')
           return
         }
       }
