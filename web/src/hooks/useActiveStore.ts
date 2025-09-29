@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMemberships } from './useMemberships'
+import { useAuthUser } from './useAuthUser'
+import {
+  clearLegacyActiveStoreId,
+  persistActiveStoreIdForUser,
+  readActiveStoreId,
+} from '../utils/activeStoreStorage'
 
 interface ActiveStoreState {
   storeId: string | null
@@ -10,6 +16,9 @@ interface ActiveStoreState {
 const STORE_ERROR_MESSAGE = 'We could not load your workspace access. Some features may be limited.'
 
 export function useActiveStore(): ActiveStoreState {
+  const user = useAuthUser()
+  const uid = user?.uid ?? null
+
   const [persistedStoreId, setPersistedStoreId] = useState<string | null>(null)
   const [isPersistedLoading, setIsPersistedLoading] = useState(true)
 
@@ -26,14 +35,24 @@ export function useActiveStore(): ActiveStoreState {
 
   useEffect(() => {
     if (typeof window === 'undefined') {
+      setPersistedStoreId(null)
       setIsPersistedLoading(false)
       return
     }
 
-    const storedId = window.localStorage.getItem('activeStoreId')
+    setIsPersistedLoading(true)
+    setPersistedStoreId(null)
+    clearLegacyActiveStoreId()
+
+    if (!uid) {
+      setIsPersistedLoading(false)
+      return
+    }
+
+    const storedId = readActiveStoreId(uid)
     setPersistedStoreId(storedId)
     setIsPersistedLoading(false)
-  }, [])
+  }, [uid])
 
   const membershipStoreId = memberships.find(m => m.storeId)?.storeId ?? null
 
@@ -42,7 +61,7 @@ export function useActiveStore(): ActiveStoreState {
       return
     }
 
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || !uid) {
       return
     }
 
@@ -60,8 +79,8 @@ export function useActiveStore(): ActiveStoreState {
     }
 
     setPersistedStoreId(membershipStoreId)
-    window.localStorage.setItem('activeStoreId', membershipStoreId)
-  }, [membershipLoading, membershipStoreId, persistedStoreId])
+    persistActiveStoreIdForUser(uid, membershipStoreId)
+  }, [membershipLoading, membershipStoreId, persistedStoreId, uid])
   const activeStoreId = isPersistedLoading
     ? null
     : normalizedPersistedStoreId ?? membershipStoreId

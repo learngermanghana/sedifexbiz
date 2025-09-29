@@ -1,5 +1,5 @@
 // web/src/App.tsx
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import type { User } from 'firebase/auth'
 import {
   createUserWithEmailAndPassword,
@@ -19,6 +19,11 @@ import {
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
 import { AuthUserContext } from './hooks/useAuthUser'
+import {
+  clearActiveStoreIdForUser,
+  clearLegacyActiveStoreId,
+  persistActiveStoreIdForUser,
+} from './utils/activeStoreStorage'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 
 /* ------------------------------ config ------------------------------ */
@@ -43,8 +48,8 @@ const OWNER_NAME_FALLBACK = 'Owner account'
 function sanitizePhone(value: string): string {
   return value.replace(/\D+/g, '')
 }
-function persistActiveStoreId(storeId: string) {
-  try { window.localStorage.setItem('activeStoreId', storeId) } catch {}
+function persistActiveStoreId(storeId: string, uid: string) {
+  persistActiveStoreIdForUser(uid, storeId)
 }
 function resolveOwnerName(user: User): string {
   const displayName = user.displayName?.trim()
@@ -71,7 +76,7 @@ async function upsertTeamMemberDocs(params: {
     if (snap.exists()) {
       const existingStoreId = String(snap.get('storeId') || '')
       if (existingStoreId) {
-        persistActiveStoreId(existingStoreId)
+        persistActiveStoreId(existingStoreId, user.uid)
         // Optionally mirror to fixed doc for your analytics/admin
         if (OVERRIDE_MEMBER_DOC_ID) {
           await setDoc(
@@ -106,7 +111,7 @@ async function upsertTeamMemberDocs(params: {
     await setDoc(doc(db, 'teamMembers', OVERRIDE_MEMBER_DOC_ID), payload, { merge: true })
   }
 
-  persistActiveStoreId(storeId)
+  persistActiveStoreId(storeId, user.uid)
   return { storeId, role }
 }
 
@@ -191,6 +196,7 @@ function normalizeQueueError(v: unknown): string | null { if (typeof v === 'stri
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
+  const previousUidRef = useRef<string | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
 
   const [mode, setMode] = useState<AuthMode>('login')
@@ -244,6 +250,18 @@ export default function App() {
   useEffect(() => {
     configureAuthPersistence(auth).catch(() => {})
     const unsubscribe = onAuthStateChanged(auth, nextUser => {
+      const previousUid = previousUidRef.current
+
+      if (!nextUser) {
+        if (previousUid) {
+          clearActiveStoreIdForUser(previousUid)
+        }
+        clearLegacyActiveStoreId()
+      } else if (previousUid && previousUid !== nextUser.uid) {
+        clearActiveStoreIdForUser(previousUid)
+      }
+
+      previousUidRef.current = nextUser?.uid ?? null
       setUser(nextUser)
       setIsAuthReady(true)
     })
