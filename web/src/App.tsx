@@ -333,9 +333,27 @@ export default function App() {
 
       // 🔑 On session restore / refresh: ensure active store exists
       if (nextUser?.email) {
-        const existing = typeof window !== 'undefined'
+        let existing = typeof window !== 'undefined'
           ? window.localStorage.getItem('activeStoreId')
           : null
+
+        try {
+          await nextUser.getIdToken(true)
+          const tokenResult = await nextUser.getIdTokenResult()
+          const claimStoreId =
+            typeof tokenResult.claims?.activeStoreId === 'string'
+              ? tokenResult.claims.activeStoreId.trim()
+              : ''
+          if (claimStoreId) {
+            persistActiveStoreId(claimStoreId)
+            existing = claimStoreId
+          } else {
+            console.info('[auth] No activeStoreId claim found; falling back to lookup')
+          }
+        } catch (error) {
+          console.warn('[auth] Failed to refresh ID token or read claims', error)
+        }
+
         if (!existing) {
           try {
             // Try callable (if deployed); fallback to Sheet
