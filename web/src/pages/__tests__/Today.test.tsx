@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
 import Today, { formatDateKey } from '../Today'
@@ -37,6 +37,7 @@ const queryMock = vi.fn((ref: unknown, ...constraints: unknown[]) => ({
   ref,
   constraints,
 }))
+const startAfterMock = vi.fn((...args: unknown[]) => ({ type: 'startAfter', args }))
 const whereMock = vi.fn((field: string, op: string, value: unknown) => ({
   type: 'where',
   field,
@@ -52,6 +53,7 @@ vi.mock('firebase/firestore', () => ({
   limit: (...args: Parameters<typeof limitMock>) => limitMock(...args),
   orderBy: (...args: Parameters<typeof orderByMock>) => orderByMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
+  startAfter: (...args: Parameters<typeof startAfterMock>) => startAfterMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
 }))
 
@@ -91,6 +93,7 @@ describe('Today page', () => {
     limitMock.mockClear()
     orderByMock.mockClear()
     queryMock.mockClear()
+    startAfterMock.mockClear()
     whereMock.mockClear()
   })
 
@@ -284,5 +287,147 @@ describe('Today page', () => {
     expect(screen.getAllByText('GHS 0.00').length).toBeGreaterThan(0)
     expect(screen.getByText('No sales recorded today')).toBeInTheDocument()
     expect(screen.getByText('No product sales recorded today.')).toBeInTheDocument()
+  })
+
+  it('filters activities by type when a filter is selected', async () => {
+    getDocMock
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          salesTotal: 100,
+          salesCount: 2,
+          cardTotal: 60,
+          cashTotal: 40,
+          receiptCount: 2,
+          receiptUnits: 4,
+          newCustomers: 1,
+          topProducts: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => false,
+        data: () => ({}),
+      })
+
+    getDocsMock
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'activity-1',
+            data: () => ({
+              message: 'Initial activity',
+              type: 'sale',
+              actor: 'Lila',
+              at: { toDate: () => new Date('2024-02-20T08:05:00Z') },
+            }),
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'activity-2',
+            data: () => ({
+              message: 'Filtered sale',
+              type: 'sale',
+              actor: 'Marcus',
+              at: { toDate: () => new Date('2024-02-20T09:15:00Z') },
+            }),
+          },
+        ],
+      })
+
+    render(
+      <MemoryRouter>
+        <Today />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Initial activity')).toBeInTheDocument()
+    })
+
+    const salesFilter = screen.getByRole('button', { name: 'Sales' })
+    fireEvent.click(salesFilter)
+
+    await waitFor(() => {
+      expect(screen.getByText('Filtered sale')).toBeInTheDocument()
+    })
+
+    expect(whereMock).toHaveBeenCalledWith('type', '==', 'sale')
+    expect(getDocsMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('loads additional activity pages using startAfter', async () => {
+    getDocMock
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          salesTotal: 100,
+          salesCount: 2,
+          cardTotal: 60,
+          cashTotal: 40,
+          receiptCount: 2,
+          receiptUnits: 4,
+          newCustomers: 1,
+          topProducts: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => false,
+        data: () => ({}),
+      })
+
+    const firstPageDocs = Array.from({ length: 50 }, (_, index) => ({
+      id: `activity-${index}`,
+      data: () => ({
+        message: `Activity ${index}`,
+        type: 'sale',
+        actor: 'User',
+        at: { toDate: () => new Date(`2024-02-20T08:${String(index).padStart(2, '0')}:00Z`) },
+      }),
+    }))
+
+    const lastDoc = firstPageDocs[firstPageDocs.length - 1]
+
+    const secondPageDocs = [
+      {
+        id: 'activity-next',
+        data: () => ({
+          message: 'Next page activity',
+          type: 'sale',
+          actor: 'User',
+          at: { toDate: () => new Date('2024-02-20T09:45:00Z') },
+        }),
+      },
+    ]
+
+    getDocsMock
+      .mockResolvedValueOnce({ docs: firstPageDocs })
+      .mockResolvedValueOnce({ docs: secondPageDocs })
+
+    render(
+      <MemoryRouter>
+        <Today />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Activity 0')).toBeInTheDocument()
+    })
+
+    const loadMoreButton = screen.getByRole('button', { name: 'Load more' })
+    expect(loadMoreButton).toBeEnabled()
+
+    fireEvent.click(loadMoreButton)
+    fireEvent.click(loadMoreButton)
+
+    await waitFor(() => {
+      expect(screen.getByText('Next page activity')).toBeInTheDocument()
+    })
+
+    expect(getDocsMock).toHaveBeenCalledTimes(2)
+    expect(startAfterMock).toHaveBeenCalledWith(lastDoc)
+    expect(screen.queryByRole('button', { name: /Load more/i })).not.toBeInTheDocument()
   })
 })

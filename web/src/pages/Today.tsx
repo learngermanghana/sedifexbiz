@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   collection,
   doc,
@@ -7,6 +7,7 @@ import {
   limit,
   orderBy,
   query,
+  startAfter,
   where,
   type DocumentData,
   type QueryDocumentSnapshot,
@@ -62,6 +63,10 @@ type ActivityEntry = {
   actor: string | null
   at: Date | null
 }
+
+type ActivityFilter = 'all' | 'sale' | 'receipt' | 'customer'
+
+const ACTIVITY_PAGE_SIZE = 50
 
 type TimestampLike = { toDate?: () => Date }
 
@@ -273,6 +278,12 @@ export default function Today() {
   const [activities, setActivities] = useState<ActivityEntry[]>([])
   const [activitiesLoading, setActivitiesLoading] = useState(false)
   const [activitiesError, setActivitiesError] = useState<string | null>(null)
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all')
+  const [lastActivityDoc, setLastActivityDoc] =
+    useState<QueryDocumentSnapshot<DocumentData> | null>(null)
+  const [hasMoreActivities, setHasMoreActivities] = useState(false)
+  const [isLoadingMoreActivities, setIsLoadingMoreActivities] = useState(false)
+  const isLoadingMoreRef = useRef(false)
 
   useEffect(() => {
     if (!storeId) {
@@ -328,25 +339,43 @@ export default function Today() {
       setActivities([])
       setActivitiesLoading(false)
       setActivitiesError(null)
+      setLastActivityDoc(null)
+      setHasMoreActivities(false)
+      setIsLoadingMoreActivities(false)
+      isLoadingMoreRef.current = false
       return
     }
 
     let cancelled = false
     setActivitiesLoading(true)
     setActivitiesError(null)
+    setIsLoadingMoreActivities(false)
+    isLoadingMoreRef.current = false
+    setActivities([])
+    setLastActivityDoc(null)
+    setHasMoreActivities(false)
 
-    const activitiesQuery = query(
-      collection(db, 'activities'),
+    const activityCollection = collection(db, 'activities')
+    const constraints = [
       where('storeId', '==', storeId),
       where('dateKey', '==', todayKey),
       orderBy('at', 'desc'),
-      limit(50),
-    )
+    ]
+    if (activityFilter !== 'all') {
+      constraints.splice(2, 0, where('type', '==', activityFilter))
+    }
+    constraints.push(limit(ACTIVITY_PAGE_SIZE))
+
+    const activitiesQuery = query(activityCollection, ...constraints)
 
     getDocs(activitiesQuery)
       .then(snapshot => {
         if (cancelled) return
         setActivities(snapshot.docs.map(mapActivity))
+        setLastActivityDoc(
+          snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null,
+        )
+        setHasMoreActivities(snapshot.docs.length === ACTIVITY_PAGE_SIZE)
       })
       .catch(error => {
         if (cancelled) return
@@ -362,7 +391,7 @@ export default function Today() {
     return () => {
       cancelled = true
     }
-  }, [storeId, todayKey, storeChangeToken])
+  }, [storeId, todayKey, activityFilter, storeChangeToken])
 
   useEffect(() => {
     setSummary(null)
@@ -370,7 +399,67 @@ export default function Today() {
     setSummaryError(null)
     setActivities([])
     setActivitiesError(null)
+    setLastActivityDoc(null)
+    setHasMoreActivities(false)
+    setIsLoadingMoreActivities(false)
+    isLoadingMoreRef.current = false
   }, [storeChangeToken])
+
+  const loadMoreActivities = () => {
+    if (
+      !storeId ||
+      !hasMoreActivities ||
+      !lastActivityDoc ||
+      activitiesLoading ||
+      isLoadingMoreActivities ||
+      isLoadingMoreRef.current
+    ) {
+      return
+    }
+
+    isLoadingMoreRef.current = true
+    setIsLoadingMoreActivities(true)
+    setActivitiesError(null)
+
+    const activityCollection = collection(db, 'activities')
+    const constraints = [
+      where('storeId', '==', storeId),
+      where('dateKey', '==', todayKey),
+    ]
+    if (activityFilter !== 'all') {
+      constraints.push(where('type', '==', activityFilter))
+    }
+    constraints.push(orderBy('at', 'desc'), startAfter(lastActivityDoc), limit(ACTIVITY_PAGE_SIZE))
+
+    const activitiesQuery = query(activityCollection, ...constraints)
+
+    getDocs(activitiesQuery)
+      .then(snapshot => {
+        setActivities(previous => [...previous, ...snapshot.docs.map(mapActivity)])
+        setLastActivityDoc(
+          snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : lastActivityDoc,
+        )
+        setHasMoreActivities(snapshot.docs.length === ACTIVITY_PAGE_SIZE)
+      })
+      .catch(error => {
+        console.error('[today] failed to load more activities', error)
+        setActivitiesError("We couldn't load the activity feed.")
+      })
+      .finally(() => {
+        isLoadingMoreRef.current = false
+        setIsLoadingMoreActivities(false)
+      })
+  }
+
+  const activityFilters: Array<{ label: string; value: ActivityFilter }> = useMemo(
+    () => [
+      { label: 'All', value: 'all' },
+      { label: 'Sales', value: 'sale' },
+      { label: 'Receipts', value: 'receipt' },
+      { label: 'Customers', value: 'customer' },
+    ],
+    [],
+  )
 
   const sortedTopProducts = useMemo(() => {
     if (!summary) return []
@@ -632,6 +721,41 @@ export default function Today() {
           )}
         </div>
 
+        <div
+          role="group"
+          aria-label="Filter activity feed"
+          style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
+        >
+          {activityFilters.map(filter => {
+            const isActive = activityFilter === filter.value
+            return (
+              <button
+                key={filter.value}
+                type="button"
+                onClick={() => {
+                  if (filter.value !== activityFilter) {
+                    setActivityFilter(filter.value)
+                  }
+                }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 9999,
+                  border: '1px solid',
+                  borderColor: isActive ? '#4338CA' : '#CBD5F5',
+                  background: isActive ? '#4338CA' : '#FFFFFF',
+                  color: isActive ? '#FFFFFF' : '#4338CA',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: isActive ? 'default' : 'pointer',
+                }}
+                disabled={isActive && activitiesLoading}
+              >
+                {filter.label}
+              </button>
+            )
+          })}
+        </div>
+
         {activitiesLoading && activities.length === 0 ? (
           <p style={{ color: '#475569' }}>Loading activity feed…</p>
         ) : activitiesError && activities.length === 0 ? (
@@ -676,6 +800,26 @@ export default function Today() {
               )
             })}
           </ul>
+        )}
+        {hasMoreActivities && (
+          <button
+            type="button"
+            onClick={loadMoreActivities}
+            disabled={isLoadingMoreActivities || activitiesLoading}
+            style={{
+              alignSelf: 'flex-start',
+              padding: '8px 14px',
+              borderRadius: 9999,
+              border: '1px solid #4338CA',
+              background: isLoadingMoreActivities ? '#EEF2FF' : '#4338CA',
+              color: isLoadingMoreActivities ? '#4338CA' : '#FFFFFF',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: isLoadingMoreActivities || activitiesLoading ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {isLoadingMoreActivities ? 'Loading more…' : 'Load more'}
+          </button>
         )}
       </section>
     </div>
