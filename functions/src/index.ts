@@ -1,4 +1,5 @@
 import * as functions from 'firebase-functions'
+import { applyRoleClaims } from './customClaims'
 import { admin, defaultDb, rosterDb } from './firestore'
 import { fetchClientRowByEmail, getDefaultSpreadsheetId, normalizeHeader } from './googleSheets'
 
@@ -622,6 +623,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   if (invitedBy) memberData.invitedBy = invitedBy
 
   await memberRef.set(memberData, { merge: true })
+  const claims = await applyRoleClaims({ uid, role: resolvedRole, storeId })
 
   const storeRef = defaultDb.collection('stores').doc(storeId)
   const storeSnap = await storeRef.get()
@@ -781,6 +783,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     role: resolvedRole,
     spreadsheetId: sheetRow.spreadsheetId,
     teamMember: { id: memberRef.id, data: serializeFirestoreData(memberData) },
+    claims,
     store: { id: storeRef.id, data: serializeFirestoreData(storeData) },
     products: productResults.map(item => ({ id: item.id, data: serializeFirestoreData(item.data) })),
     customers: customerResults.map(item => ({ id: item.id, data: serializeFirestoreData(item.data) })),

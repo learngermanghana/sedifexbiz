@@ -1,9 +1,8 @@
 import * as functions from 'firebase-functions'
+import { applyRoleClaims } from './customClaims'
 import { admin, defaultDb, rosterDb } from './firestore'
 
 const db = defaultDb
-
-const VALID_ROLES = new Set(['owner', 'staff'])
 
 type ContactPayload = {
   phone?: unknown
@@ -54,26 +53,6 @@ function normalizeContact(contact: ContactPayload | undefined) {
   return { phone, hasPhone, firstSignupEmail, hasFirstSignupEmail }
 }
 
-async function applyRoleClaim(uid: string, role: string) {
-  const userRecord = await admin
-    .auth()
-    .getUser(uid)
-    .catch(() => null)
-  const existingClaims = (userRecord?.customClaims ?? {}) as Record<string, unknown>
-  const nextClaims: Record<string, unknown> = { ...existingClaims }
-  if (VALID_ROLES.has(role)) {
-    nextClaims.role = role
-  } else {
-    delete nextClaims.role
-  }
-  delete nextClaims.stores
-  delete nextClaims.activeStoreId
-  delete nextClaims.storeId
-  delete nextClaims.roleByStore
-  await admin.auth().setCustomUserClaims(uid, nextClaims)
-  return nextClaims
-}
-
 export const backfillMyStore = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in first.')
 
@@ -115,7 +94,7 @@ export const backfillMyStore = functions.https.onCall(async (data, context) => {
   }
 
   await memberRef.set(memberData, { merge: true })
-  const claims = await applyRoleClaim(uid, 'owner')
+  const claims = await applyRoleClaims({ uid, role: 'owner', storeId })
 
   return { ok: true, claims, storeId }
 })
