@@ -91,22 +91,6 @@ function assertStaffAccess(context: functions.https.CallableContext) {
   }
 }
 
-async function updateUserClaims(uid: string, role: string) {
-  const userRecord = await admin
-    .auth()
-    .getUser(uid)
-    .catch(() => null)
-  const existingClaims = (userRecord?.customClaims ?? {}) as Record<string, unknown>
-  const nextClaims: Record<string, unknown> = { ...existingClaims }
-  nextClaims.role = role
-  delete nextClaims.stores
-  delete nextClaims.activeStoreId
-  delete nextClaims.storeId
-  delete nextClaims.roleByStore
-  await admin.auth().setCustomUserClaims(uid, nextClaims)
-  return nextClaims
-}
-
 function normalizeManageStaffPayload(data: ManageStaffPayload) {
   const storeIdRaw = data.storeId
   const storeId = typeof storeIdRaw === 'string' ? storeIdRaw.trim() : ''
@@ -493,9 +477,7 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   }
 
   await memberRef.set(memberData, { merge: true })
-  const claims = await updateUserClaims(uid, 'owner')
-
-  return { ok: true, claims, storeId }
+  return { ok: true, storeId }
 })
 
 export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
@@ -793,13 +775,10 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     }),
   )
 
-  const claims = await updateUserClaims(uid, resolvedRole)
-
   return {
     ok: true,
     storeId,
     role: resolvedRole,
-    claims,
     spreadsheetId: sheetRow.spreadsheetId,
     teamMember: { id: memberRef.id, data: serializeFirestoreData(memberData) },
     store: { id: storeRef.id, data: serializeFirestoreData(storeData) },
@@ -833,9 +812,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   }
 
   await memberRef.set(memberData, { merge: true })
-  const claims = await updateUserClaims(record.uid, role)
-
-  return { ok: true, role, email, uid: record.uid, created, storeId, claims }
+  return { ok: true, role, email, uid: record.uid, created, storeId }
 })
 
 export const receiveStock = functions.https.onCall(async (data, context) => {

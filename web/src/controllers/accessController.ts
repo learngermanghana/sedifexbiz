@@ -12,7 +12,6 @@ type RawResolveStoreAccessResponse = {
   ok?: unknown
   storeId?: unknown
   role?: unknown
-  claims?: unknown
   teamMember?: RawSeededDocument
   store?: RawSeededDocument
   products?: RawSeededDocument[] | unknown
@@ -28,7 +27,6 @@ export type ResolveStoreAccessResult = {
   ok: boolean
   storeId: string
   role: 'owner' | 'staff'
-  claims?: unknown
   teamMember: SeededDocument | null
   store: SeededDocument | null
   products: SeededDocument[]
@@ -145,7 +143,6 @@ export async function resolveStoreAccess(storeId?: string): Promise<ResolveStore
     ok,
     storeId: resolvedStoreId,
     role: normalizeRole(payload.role),
-    claims: payload.claims,
     teamMember: normalizeSeededDocument(payload.teamMember ?? null),
     store: normalizeSeededDocument(payload.store ?? null),
     products: normalizeSeededCollection(payload.products),

@@ -37,7 +37,6 @@ Module._load = function patchedLoad(request, parent, isMain) {
       firestore,
       auth: () => ({
         getUser: async () => null,
-        setCustomUserClaims: async () => {},
         getUserByEmail: async () => {
           const err = new Error('not found')
           err.code = 'auth/user-not-found'
