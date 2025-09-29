@@ -6,6 +6,7 @@ const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
 let currentDefaultDb
 let sheetRowMock
 const apps = []
+let lastCustomClaims
 
 function normalizeHeader(header) {
   if (typeof header !== 'string') return ''
@@ -35,7 +36,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
       apps,
       firestore,
       auth: () => ({
-        getUser: async () => null,
+        getUser: async () => ({ customClaims: lastCustomClaims || undefined }),
         getUserByEmail: async () => {
           const err = new Error('not found')
           err.code = 'auth/user-not-found'
@@ -43,6 +44,9 @@ Module._load = function patchedLoad(request, parent, isMain) {
         },
         updateUser: async () => {},
         createUser: async () => ({ uid: 'new-user' }),
+        setCustomUserClaims: async (_uid, claims) => {
+          lastCustomClaims = { ...claims }
+        },
       }),
     }
   }
@@ -66,6 +70,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
 function loadFunctionsModule() {
   apps.length = 0
+  lastCustomClaims = null
   delete require.cache[require.resolve('../lib/firestore.js')]
   delete require.cache[require.resolve('../lib/googleSheets.js')]
   delete require.cache[require.resolve('../lib/index.js')]
@@ -106,6 +111,14 @@ async function runActiveStatusTest() {
   assert.strictEqual(result.ok, true)
   assert.strictEqual(result.storeId, 'store-001')
   assert.strictEqual(result.role, 'owner')
+  assert.deepStrictEqual(result.claims, {
+    role: 'owner',
+    activeStoreId: 'store-001',
+  })
+  assert.deepStrictEqual(lastCustomClaims, {
+    role: 'owner',
+    activeStoreId: 'store-001',
+  })
 
   const expectedContractStart = Date.parse('2024-01-15T00:00:00.000Z')
   const expectedContractEnd = Date.parse('2024-12-31T00:00:00.000Z')
