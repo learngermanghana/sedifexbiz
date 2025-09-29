@@ -101,17 +101,26 @@ service cloud.firestore {
     }
 
     function canCreateStoreResource() {
+
       let storeId = storeIdFromData(request.resource.data);
       return requestMaintainsStoreIdConsistency()
         && storeId != null
         && hasStoreAccess(getRequesterMembership(), storeId);
     }
 
-    function canUpdateStoreResource() {
+    function canStaffUpdateStoreResource() {
       let currentStoreId = storeIdFromData(resource.data);
       return requestMaintainsStoreIdConsistency()
         && currentStoreId != null
         && hasStoreAccess(getRequesterMembership(), currentStoreId);
+    }
+
+    function canCreateStoreResource() {
+      return canOwnerCreateStoreResource();
+    }
+
+    function canUpdateStoreResource() {
+      return canOwnerUpdateStoreResource();
     }
 
     function canOwnerCreateStoreResource() {
@@ -119,6 +128,15 @@ service cloud.firestore {
       return requestMaintainsStoreIdConsistency()
         && storeId != null
         && hasOwnerAccess(getRequesterMembership(), storeId);
+    }
+
+    function canOwnerUpdateStoreResource() {
+      let currentStoreId = storeIdFromData(resource.data);
+      let newStoreId = storeIdFromData(request.resource.data);
+      return currentStoreId != null
+        && newStoreId != null
+        && currentStoreId == newStoreId
+        && hasOwnerAccess(getRequesterMembership(), currentStoreId);
     }
 
     function canOwnerWriteStoreResource() {
@@ -195,7 +213,7 @@ service cloud.firestore {
     match /products/{productId} {
       allow read: if canReadStoreResource();
       allow create: if canOwnerCreateStoreResource();
-      allow update: if canUpdateStoreResource();
+      allow update: if canOwnerUpdateStoreResource();
       allow delete: if canOwnerWriteStoreResource();
     }
 
@@ -208,29 +226,29 @@ service cloud.firestore {
 
     match /sales/{saleId} {
       allow read: if canReadStoreResource();
-      allow create: if canCreateStoreResource();
-      allow update: if canUpdateStoreResource();
+      allow create: if canStaffCreateStoreResource();
+      allow update: if canStaffUpdateStoreResource();
       allow delete: if canOwnerWriteStoreResource();
     }
 
     match /saleItems/{saleItemId} {
       allow read: if canReadStoreResource();
-      allow create: if canCreateStoreResource();
-      allow update: if canUpdateStoreResource();
+      allow create: if canStaffCreateStoreResource();
+      allow update: if canStaffUpdateStoreResource();
       allow delete: if canOwnerWriteStoreResource();
     }
 
     match /ledger/{entryId} {
       allow read: if canReadStoreResource();
-      allow create: if canCreateStoreResource();
-      allow update: if canUpdateStoreResource();
+      allow create: if canOwnerCreateStoreResource();
+      allow update: if canOwnerUpdateStoreResource();
       allow delete: if canOwnerWriteStoreResource();
     }
 
     match /stock/{entryId} {
       allow read: if canReadStoreResource();
-      allow create: if canCreateStoreResource();
-      allow update: if canUpdateStoreResource();
+      allow create: if canOwnerCreateStoreResource();
+      allow update: if canOwnerUpdateStoreResource();
       allow delete: if canOwnerWriteStoreResource();
     }
 

@@ -266,6 +266,7 @@ describe('Firestore rules - multi-tenant store access', () => {
 
   test('sales writes must target the member store and include a storeId', async () => {
     const context = await createStoreMember('store-1', 'staff')
+    const outsider = await createStoreMember('store-2', 'staff')
     try {
       const saleRef = doc(context.db, 'sales/sale-1')
       await expectFails(
@@ -280,8 +281,13 @@ describe('Firestore rules - multi-tenant store access', () => {
         setDoc(saleRef, { total: 10, storeId: 'store-1' }),
         'staff should create sales for their store',
       )
+      await expectFails(
+        setDoc(doc(outsider.db, 'sales/sale-1'), { total: 12, storeId: 'store-1' }),
+        'other store staff should not create sales for store-1',
+      )
     } finally {
       await destroyContext(context)
+      await destroyContext(outsider)
     }
   })
 
@@ -319,6 +325,7 @@ describe('Firestore rules - multi-tenant store access', () => {
   })
 
   test('product updates are limited to the member store', async () => {
+
     const owner = await createStoreMember('store-1', 'owner')
     try {
       const productRef = doc(owner.db, 'products/product-1')
@@ -331,16 +338,118 @@ describe('Firestore rules - multi-tenant store access', () => {
     }
 
     const staff = await createStoreMember('store-1', 'staff')
-    const outsider = await createStoreMember('store-2', 'staff')
-
     try {
-      await expectSucceeds(
+      await expectFails(
         setDoc(doc(staff.db, 'products/product-1'), { name: 'Updated', price: 2, storeId: 'store-1' }),
-        'staff can update products for their store',
+        'staff should not update products even for their store',
       )
+    } finally {
+      await destroyContext(staff)
+    }
+
+    const outsider = await createStoreMember('store-2', 'owner')
+    try {
       await expectFails(
         setDoc(doc(outsider.db, 'products/product-1'), { name: 'Hijack', price: 2, storeId: 'store-1' }),
-        'staff from another store cannot update products',
+        'owners from another store cannot update products',
+      )
+    } finally {
+      await destroyContext(outsider)
+    }
+  })
+
+  test('ledger updates require owner role and matching store', async () => {
+    const owner = await createStoreMember('store-1', 'owner')
+    try {
+      await expectSucceeds(
+        setDoc(doc(owner.db, 'ledger/entry-1'), { storeId: 'store-1', amount: 100 }),
+        'owners can write ledger entries for their store',
+      )
+    } finally {
+      await destroyContext(owner)
+    }
+
+    const staff = await createStoreMember('store-1', 'staff')
+    try {
+      await expectFails(
+        setDoc(doc(staff.db, 'ledger/entry-1'), { storeId: 'store-1', amount: 100 }),
+        'staff should not write ledger entries',
+      )
+    } finally {
+      await destroyContext(staff)
+    }
+
+    const outsider = await createStoreMember('store-2', 'owner')
+    try {
+      await expectFails(
+        setDoc(doc(outsider.db, 'ledger/entry-1'), { storeId: 'store-1', amount: 100 }),
+        'owners from another store should not write ledger entries',
+      )
+    } finally {
+      await destroyContext(outsider)
+    }
+  })
+
+  test('stock updates require owner role and matching store', async () => {
+    const owner = await createStoreMember('store-1', 'owner')
+    try {
+      await expectSucceeds(
+        setDoc(doc(owner.db, 'stock/item-1'), { storeId: 'store-1', quantity: 5 }),
+        'owners can write stock records for their store',
+      )
+    } finally {
+      await destroyContext(owner)
+    }
+
+    const staff = await createStoreMember('store-1', 'staff')
+    try {
+      await expectFails(
+        setDoc(doc(staff.db, 'stock/item-1'), { storeId: 'store-1', quantity: 5 }),
+        'staff should not write stock records',
+      )
+    } finally {
+      await destroyContext(staff)
+    }
+
+    const outsider = await createStoreMember('store-2', 'owner')
+    try {
+      await expectFails(
+        setDoc(doc(outsider.db, 'stock/item-1'), { storeId: 'store-1', quantity: 5 }),
+        'owners from another store should not write stock records',
+      )
+    } finally {
+      await destroyContext(outsider)
+    }
+  })
+
+  test('staff can write sales related records while outsiders are blocked', async () => {
+    const staff = await createStoreMember('store-1', 'staff')
+    const outsider = await createStoreMember('store-2', 'staff')
+    try {
+      await expectSucceeds(
+        setDoc(doc(staff.db, 'saleItems/sale-1_item-1'), { storeId: 'store-1', saleId: 'sale-1', price: 5 }),
+        'staff can write sale items for their store',
+      )
+      await expectSucceeds(
+        setDoc(doc(staff.db, 'receipts/receipt-1'), { storeId: 'store-1', total: 20 }),
+        'staff can write receipts for their store',
+      )
+      await expectSucceeds(
+        setDoc(doc(staff.db, 'customers/customer-1'), { storeId: 'store-1', name: 'Alice' }),
+        'staff can write customers for their store',
+      )
+
+      await expectFails(
+        setDoc(doc(outsider.db, 'saleItems/sale-1_item-1'), { storeId: 'store-1', saleId: 'sale-1', price: 5 }),
+        'other store staff should not write sale items for store-1',
+      )
+      await expectFails(
+        setDoc(doc(outsider.db, 'receipts/receipt-1'), { storeId: 'store-1', total: 20 }),
+        'other store staff should not write receipts for store-1',
+      )
+      await expectFails(
+        setDoc(doc(outsider.db, 'customers/customer-1'), { storeId: 'store-1', name: 'Alice' }),
+        'other store staff should not write customers for store-1',
       )
     } finally {
       await destroyContext(staff)
