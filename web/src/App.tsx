@@ -570,8 +570,6 @@ export default function App() {
         // Optional additional doc for UX
         await persistOwnerSideDocs(nextUser, storeId, phoneDetails)
 
-        await afterSignupBootstrap(storeId)
-
         setOnboardingStatus(nextUser.uid, 'pending')
 
         await signOut(auth)
