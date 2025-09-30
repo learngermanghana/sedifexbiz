@@ -195,14 +195,16 @@ describe('App signup cleanup', () => {
     mocks.listeners.splice(0, mocks.listeners.length)
     firestore.reset()
     access.afterSignupBootstrap.mockReset()
+    let bootstrapCallCount = 0
     access.afterSignupBootstrap.mockImplementation(async (rawPayload?: unknown) => {
-      if (typeof rawPayload === 'string') {
-        if (!rawPayload.trim()) {
-          throw new Error('storeId required for bootstrap')
-        }
-        return
+      bootstrapCallCount += 1
+      if (bootstrapCallCount > 1) {
+        throw new Error('afterSignupBootstrap should only be called once')
       }
-      const payload = (rawPayload ?? {}) as {
+      if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+        throw new Error('afterSignupBootstrap payload must be an object')
+      }
+      const payload = rawPayload as {
         storeId?: string
         contact?: { ownerName?: string | null; company?: string | null }
       }
