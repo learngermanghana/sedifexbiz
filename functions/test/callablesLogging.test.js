@@ -1,6 +1,5 @@
 const assert = require('assert')
 const Module = require('module')
-const path = require('path')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
 const { FIREBASE_CALLABLES } = require('../lib/shared/firebaseCallables.js')
 
@@ -39,14 +38,6 @@ Module._load = function patchedLoad(request, parent, isMain) {
   if (request === 'firebase-admin/firestore') {
     return {
       getFirestore: () => currentDefaultDb,
-    }
-  }
-
-  if (request === './googleSheets' || request.endsWith(`${path.sep}googleSheets`)) {
-    return {
-      fetchClientRowByEmail: async () => null,
-      getDefaultSpreadsheetId: () => 'sheet-123',
-      normalizeHeader: value => (typeof value === 'string' ? value.trim().toLowerCase() : ''),
     }
   }
 
