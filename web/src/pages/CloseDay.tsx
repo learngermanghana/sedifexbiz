@@ -3,6 +3,7 @@ import { collection, query, where, orderBy, onSnapshot, Timestamp, addDoc, serve
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
+import { DEFAULT_CURRENCY_SYMBOL, formatCurrency } from '@shared/currency'
 
 const DENOMINATIONS = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1] as const
 
@@ -164,7 +165,7 @@ export default function CloseDay() {
     rows.push([])
 
     rows.push(['Sales Summary'])
-    rows.push(['Metric', 'Amount (GHS)'])
+    rows.push(['Metric', `Amount (${DEFAULT_CURRENCY_SYMBOL})`])
     rows.push(['Sales total', formatAmount(total)])
     rows.push(['Expected cash', formatAmount(expectedCash)])
     rows.push(['Counted cash', formatAmount(countedCash)])
@@ -172,7 +173,7 @@ export default function CloseDay() {
     rows.push([])
 
     rows.push(['Tender Breakdown'])
-    rows.push(['Tender type', 'Amount (GHS)'])
+    rows.push(['Tender type', `Amount (${DEFAULT_CURRENCY_SYMBOL})`])
     rows.push(['Card & digital payments', formatAmount(cardTotal)])
     rows.push(['Cash removed (drops, payouts)', formatAmount(removedTotal)])
     rows.push(['Cash added (float top-ups)', formatAmount(addedTotal)])
@@ -180,7 +181,11 @@ export default function CloseDay() {
     rows.push([])
 
     rows.push(['Cash Denominations'])
-    rows.push(['Denomination (GHS)', 'Quantity', 'Subtotal (GHS)'])
+    rows.push([
+      `Denomination (${DEFAULT_CURRENCY_SYMBOL})`,
+      'Quantity',
+      `Subtotal (${DEFAULT_CURRENCY_SYMBOL})`,
+    ])
     DENOMINATIONS.forEach(denom => {
       const key = String(denom)
       const quantity = parseQuantity(cashCounts[key])
@@ -279,7 +284,7 @@ export default function CloseDay() {
         <section className="print-summary__section" style={{ marginTop: 24 }}>
           <h3 style={{ marginBottom: 8 }}>Sales Summary</h3>
           <p style={{ marginBottom: 8 }}>Today’s sales total</p>
-          <div className="print-summary__total" style={{ fontSize: 32, fontWeight: 800, marginBottom: 16 }}>GHS {total.toFixed(2)}</div>
+          <div className="print-summary__total" style={{ fontSize: 32, fontWeight: 800, marginBottom: 16 }}>{formatCurrency(total)}</div>
           <div style={{ display: 'grid', gap: 12, maxWidth: 420 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span>Card &amp; digital payments</span>
@@ -338,7 +343,12 @@ export default function CloseDay() {
                   const subtotal = denom * quantity
                   return (
                     <tr key={key}>
-                      <td style={{ padding: '6px 4px' }}>GHS {denom.toFixed(denom % 1 === 0 ? 0 : 2)}</td>
+                      <td style={{ padding: '6px 4px' }}>
+                        {formatCurrency(denom, {
+                          minimumFractionDigits: denom % 1 === 0 ? 0 : 2,
+                          maximumFractionDigits: denom % 1 === 0 ? 0 : 2,
+                        })}
+                      </td>
                       <td style={{ padding: '6px 4px' }}>
                         <input
                           type="number"
@@ -350,7 +360,7 @@ export default function CloseDay() {
                           style={{ width: '100%' }}
                         />
                       </td>
-                      <td style={{ padding: '6px 4px', textAlign: 'right' }}>GHS {subtotal.toFixed(2)}</td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right' }}>{formatCurrency(subtotal)}</td>
                     </tr>
                   )
                 })}
@@ -381,16 +391,16 @@ export default function CloseDay() {
           <div style={{ display: 'grid', gap: 6, maxWidth: 360 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Expected cash</span>
-              <strong>GHS {expectedCash.toFixed(2)}</strong>
+              <strong>{formatCurrency(expectedCash)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Counted cash</span>
-              <strong>GHS {countedCash.toFixed(2)}</strong>
+              <strong>{formatCurrency(countedCash)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Variance</span>
               <strong style={{ color: Math.abs(variance) > 0.009 ? '#b91c1c' : '#047857' }}>
-                GHS {variance.toFixed(2)}
+                {formatCurrency(variance)}
               </strong>
             </div>
           </div>

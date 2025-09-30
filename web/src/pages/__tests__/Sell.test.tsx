@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 
+import { formatCurrency } from '@shared/currency'
 import Sell from '../Sell'
 
 const mockLoadCachedProducts = vi.fn(async () => [] as unknown[])
@@ -209,7 +210,7 @@ describe('Sell page barcode scanner', () => {
       const rows = within(cart).getAllByRole('row')
       expect(rows).toHaveLength(2)
       expect(within(rows[1]).getByText('Test Product')).toBeInTheDocument()
-      expect(within(rows[1]).getByText(/GHS 10\.00/)).toBeInTheDocument()
+      expect(within(rows[1]).getByText(formatCurrency(10))).toBeInTheDocument()
     })
   })
 
@@ -285,7 +286,7 @@ describe('Sell page barcode scanner', () => {
       const rows = within(cart).getAllByRole('row')
       expect(rows).toHaveLength(2)
       expect(within(rows[1]).getByText('Test Product')).toBeInTheDocument()
-      expect(within(rows[1]).getByText(/GHS 7\.00/)).toBeInTheDocument()
+      expect(within(rows[1]).getByText(formatCurrency(7))).toBeInTheDocument()
     })
   })
 

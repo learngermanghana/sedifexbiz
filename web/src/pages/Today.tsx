@@ -1,5 +1,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import {
   collection,
@@ -19,6 +20,7 @@ import { Link } from 'react-router-dom'
 import { formatDailySummaryKey } from '../../../shared/dateKeys'
 import { db } from '../firebase'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
+import { formatCurrency } from '@shared/currency'
 
 type TopProduct = {
   id: string
@@ -213,13 +215,6 @@ function mapActivity(docSnapshot: QueryDocumentSnapshot<DocumentData>): Activity
     actor,
     at,
   }
-}
-
-function formatCurrency(value: number) {
-  return `GHS ${value.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`
 }
 
 function formatNumber(value: number) {

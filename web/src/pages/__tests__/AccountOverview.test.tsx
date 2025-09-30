@@ -2,6 +2,7 @@ import React from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AccountOverview from '../AccountOverview'
+import { DEFAULT_CURRENCY_CODE } from '@shared/currency'
 
 const mockPublish = vi.fn()
 
@@ -109,7 +110,7 @@ describe('AccountOverview', () => {
         contractEnd: '2023-12-31',
         paymentStatus: 'Paid',
         amountPaid: 1000,
-        currency: 'GHS',
+        currency: DEFAULT_CURRENCY_CODE,
         timezone: 'Africa/Accra',
         billingPlan: 'Monthly',
         paymentProvider: 'Stripe',
