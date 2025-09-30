@@ -3,14 +3,18 @@ import { useEffect, useState } from 'react'
 import {
   Timestamp,
   collection,
+  doc,
+  getDoc,
   getDocs,
   query,
   where,
   type DocumentData,
+  type DocumentSnapshot,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
+import { OVERRIDE_TEAM_MEMBER_DOC_ID } from '../config/teamMembers'
 
 export type Membership = {
   id: string
@@ -30,16 +34,19 @@ function normalizeRole(role: unknown): Membership['role'] {
   return 'staff'
 }
 
-function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): Membership {
-  const data = snapshot.data()
+function mapMembershipData(
+  id: string,
+  rawData: DocumentData | undefined,
+): Membership {
+  const data = rawData ?? {}
 
   const createdAt = data.createdAt instanceof Timestamp ? data.createdAt : null
   const updatedAt = data.updatedAt instanceof Timestamp ? data.updatedAt : null
   const storeId = typeof data.storeId === 'string' && data.storeId.trim() !== '' ? data.storeId : null
 
   return {
-    id: snapshot.id,
-    uid: typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id,
+    id,
+    uid: typeof data.uid === 'string' && data.uid.trim() ? data.uid : id,
     role: normalizeRole(data.role),
     storeId,
     email: typeof data.email === 'string' ? data.email : null,
@@ -49,6 +56,12 @@ function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): M
     createdAt,
     updatedAt,
   }
+}
+
+function mapMembershipSnapshot(
+  snapshot: QueryDocumentSnapshot<DocumentData> | DocumentSnapshot<DocumentData>,
+): Membership {
+  return mapMembershipData(snapshot.id, snapshot.data())
 }
 
 export function useMemberships(activeStoreId?: string | null) {
@@ -101,8 +114,34 @@ export function useMemberships(activeStoreId?: string | null) {
 
         if (cancelled) return
 
-        const rows = snapshot.docs.map(mapMembershipSnapshot)
-        setMemberships(rows)
+        const membershipsById = new Map<string, Membership>()
+        for (const docSnapshot of snapshot.docs) {
+          const membership = mapMembershipSnapshot(docSnapshot)
+          membershipsById.set(membership.id, membership)
+        }
+
+        const fallbackRefs = [doc(db, 'teamMembers', user.uid)]
+
+        if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
+          fallbackRefs.push(doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID))
+        }
+
+        for (const ref of fallbackRefs) {
+          try {
+            const fallbackSnapshot = await getDoc(ref)
+            if (fallbackSnapshot.exists()) {
+              const membership = mapMembershipSnapshot(fallbackSnapshot)
+              if (membership.storeId) {
+                membershipsById.set(membership.id, membership)
+              }
+            }
+          } catch (fallbackError) {
+            // Ignore fallback errors to avoid masking the primary query results.
+            console.error(fallbackError)
+          }
+        }
+
+        setMemberships(Array.from(membershipsById.values()))
         setError(null)
       } catch (e) {
         if (!cancelled) {
