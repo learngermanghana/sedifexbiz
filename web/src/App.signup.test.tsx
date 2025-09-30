@@ -363,6 +363,7 @@ describe('App signup cleanup', () => {
         storeId,
         role: 'owner',
         email: 'owner@example.com',
+        name: 'Owner account',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
       }),
@@ -376,6 +377,7 @@ describe('App signup cleanup', () => {
     const [, ownerContactPayload, ownerContactOptions] = ownerContactCall!
     expect(ownerContactPayload).toEqual(
       expect.objectContaining({
+        name: 'Owner account',
         company: 'Sedifex',
         phone: '+445551234567',
         phoneCountryCode: '+44',
@@ -449,6 +451,7 @@ describe('App signup cleanup', () => {
         ...seededTeamMember,
         uid: createdUser.uid,
         storeId,
+        name: 'Owner account',
       }),
     )
 
