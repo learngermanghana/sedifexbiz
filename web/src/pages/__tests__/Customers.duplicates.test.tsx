@@ -232,4 +232,26 @@ describe('Customers duplicate handling', () => {
 
     await screen.findByText('Customer already exists. Updated their details instead.')
   })
+
+  it('includes loyalty defaults when creating a new customer', async () => {
+    customerDocs = []
+
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <Customers />
+      </MemoryRouter>,
+    )
+
+    const nameInput = await screen.findByLabelText(/Full name/i)
+    await user.clear(nameInput)
+    await user.type(nameInput, 'New Customer')
+
+    const submitButton = screen.getByRole('button', { name: /Save customer/i })
+    await user.click(submitButton)
+
+    await waitFor(() => expect(addDocMock).toHaveBeenCalledTimes(1))
+    const payload = addDocMock.mock.calls[0]?.[1] as Record<string, unknown>
+    expect(payload.loyalty).toEqual({ points: 0, lastVisitAt: null })
+  })
 })
