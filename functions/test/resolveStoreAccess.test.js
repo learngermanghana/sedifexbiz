@@ -56,7 +56,7 @@ function loadFunctionsModule() {
 
 async function runSuccessTest() {
   currentDefaultDb = new MockFirestore({
-    'teamMembers/user-1': { storeId: 'store-123', role: 'owner' },
+    'teamMembers/user-1': { storeId: ' store-123 ', role: ' Owner ' },
   })
 
   const { resolveStoreAccess } = loadFunctionsModule()
@@ -106,10 +106,29 @@ async function runInvalidMembershipTest() {
   assert.deepStrictEqual(result, { ok: false, error: 'NO_MEMBERSHIP' })
 }
 
+async function runInvalidRoleTest() {
+  currentDefaultDb = new MockFirestore({
+    'teamMembers/user-4': { storeId: 'store-xyz', role: 'manager' },
+  })
+
+  const { resolveStoreAccess } = loadFunctionsModule()
+  const context = {
+    auth: {
+      uid: 'user-4',
+      token: {},
+    },
+  }
+
+  const result = await resolveStoreAccess.run({}, context)
+
+  assert.deepStrictEqual(result, { ok: false, error: 'NO_MEMBERSHIP' })
+}
+
 async function run() {
   await runSuccessTest()
   await runMissingMembershipTest()
   await runInvalidMembershipTest()
+  await runInvalidRoleTest()
   console.log('resolveStoreAccess tests passed')
 }
 
