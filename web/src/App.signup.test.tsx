@@ -18,6 +18,11 @@ const mocks = vi.hoisted(() => {
     },
     createUserWithEmailAndPassword: vi.fn(),
     signInWithEmailAndPassword: vi.fn(),
+    updateProfile: vi.fn(async (user: User, profile: { displayName?: string | null }) => {
+      if (profile.displayName !== undefined) {
+        ;(user as User).displayName = profile.displayName ?? null
+      }
+    }),
     configureAuthPersistence: vi.fn(async () => {}),
     persistSession: vi.fn(async () => {}),
     refreshSessionHeartbeat: vi.fn(async () => {}),
@@ -119,6 +124,7 @@ vi.mock('firebase/auth', () => ({
     callback(mocks.auth.currentUser)
     return () => {}
   },
+  updateProfile: (...args: unknown[]) => mocks.updateProfile(...(args as Parameters<typeof mocks.updateProfile>)),
 }))
 
 vi.mock('firebase/firestore', () => ({
@@ -203,7 +209,7 @@ describe('App signup cleanup', () => {
       }
       const payload = (rawPayload ?? {}) as {
         storeId?: string
-        contact?: { ownerName?: string | null; company?: string | null }
+        contact?: { name?: string | null; ownerName?: string | null; company?: string | null }
       }
       if (typeof payload.storeId !== 'string' || !payload.storeId) {
         throw new Error('storeId required for bootstrap')
@@ -216,6 +222,7 @@ describe('App signup cleanup', () => {
         {
           storeId: payload.storeId,
           ownerId: mocks.auth.currentUser?.uid ?? null,
+          name: payload.contact?.name ?? null,
           ownerName: payload.contact?.ownerName ?? null,
           company: payload.contact?.company ?? null,
           createdAt,
@@ -257,6 +264,7 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/Name/i), ' Owner Name ')
       await user.selectOptions(screen.getByLabelText(/Role/i), 'owner')
       await user.type(screen.getByLabelText(/Company/i), 'Sedifex')
       await user.selectOptions(screen.getByLabelText(/Country code/i), '+44')
@@ -325,6 +333,7 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/Name/i), ' Owner Name ')
       await user.selectOptions(screen.getByLabelText(/Role/i), 'owner')
       await user.type(screen.getByLabelText(/Company/i), 'Sedifex')
       await user.selectOptions(screen.getByLabelText(/Country code/i), '+44')
@@ -339,7 +348,7 @@ describe('App signup cleanup', () => {
     await waitFor(() => expect(access.afterSignupBootstrap).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(createdUser.getIdToken).toHaveBeenCalledWith(true))
     const { docRefByPath, setDocMock } = firestore
-    const overrideDocKey = 'teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2'
+    const overrideDocKey = 'teamMembers/gsF0m9Hw7yUfn53Z6zX7B0G3kGX2'
     const customerDocKey = `customers/${createdUser.uid}`
 
     const ownerDocRef = docRefByPath.get(ownerDocKey)
@@ -362,6 +371,7 @@ describe('App signup cleanup', () => {
         storeId,
         role: 'owner',
         email: 'owner@example.com',
+        name: 'Owner Name',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
       }),
@@ -375,6 +385,7 @@ describe('App signup cleanup', () => {
     const [, ownerContactPayload, ownerContactOptions] = ownerContactCall!
     expect(ownerContactPayload).toEqual(
       expect.objectContaining({
+        name: 'Owner Name',
         company: 'Sedifex',
         phone: '+445551234567',
         phoneCountryCode: '+44',
@@ -388,7 +399,9 @@ describe('App signup cleanup', () => {
     expect(ownerContactOptions).toEqual({ merge: true })
 
     const overrideCall = setDocMock.mock.calls.find(([ref]) => ref === overrideDocRef)
-    expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
+    expect(overrideCall?.[1]).toEqual(
+      expect.objectContaining({ storeId, name: 'Owner Name' }),
+    )
 
     const customerCall = setDocMock.mock.calls.find(([ref]) => ref === customerDocRef)
     expect(customerCall).toBeDefined()
@@ -396,8 +409,8 @@ describe('App signup cleanup', () => {
     expect(customerPayload).toEqual(
       expect.objectContaining({
         storeId,
-        name: 'owner@example.com',
-        displayName: 'owner@example.com',
+        name: 'Owner Name',
+        displayName: 'Owner Name',
         email: 'owner@example.com',
         phone: '+445551234567',
         phoneCountryCode: '+44',
@@ -426,7 +439,7 @@ describe('App signup cleanup', () => {
     expect(storeInitialOptions).toEqual({ merge: true })
 
     const storeEnrichedCall = storeCalls.find(([, payload]) =>
-      (payload as Record<string, unknown>).ownerName !== undefined,
+      (payload as Record<string, unknown>).name !== undefined,
     )
     expect(storeEnrichedCall).toBeDefined()
     const [, storeEnrichedPayload, storeEnrichedOptions] = storeEnrichedCall!
@@ -434,7 +447,8 @@ describe('App signup cleanup', () => {
       expect.objectContaining({
         storeId,
         ownerId: createdUser.uid,
-        ownerName: 'Owner account',
+        ownerName: 'Owner Name',
+        name: 'Owner Name',
         company: 'Sedifex',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
@@ -463,12 +477,13 @@ describe('App signup cleanup', () => {
     expect(access.afterSignupBootstrap).toHaveBeenCalledWith({
       storeId,
       contact: {
+        name: 'Owner Name',
         phone: '+445551234567',
         phoneCountryCode: '+44',
         phoneLocalNumber: '5551234567',
         firstSignupEmail: 'owner@example.com',
         company: 'Sedifex',
-        ownerName: 'Owner account',
+        ownerName: 'Owner Name',
       },
     })
 
@@ -512,7 +527,7 @@ describe('App signup cleanup', () => {
     const storeId = 'owner-example-com-test-use'
     const { docRefByPath, setDocMock } = firestore
     const profileDocRef = docRefByPath.get(`teamMembers/${existingUser.uid}`)
-    const overrideDocRef = docRefByPath.get('teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2')
+    const overrideDocRef = docRefByPath.get('teamMembers/gsF0m9Hw7yUfn53Z6zX7B0G3kGX2')
     const storeDocRef = docRefByPath.get(`stores/${storeId}`)
 
     expect(profileDocRef).toBeDefined()
@@ -533,7 +548,9 @@ describe('App signup cleanup', () => {
 
     const overrideCall = setDocMock.mock.calls.find(([ref]) => ref === overrideDocRef)
     expect(overrideCall).toBeDefined()
-    expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
+    expect(overrideCall?.[1]).toEqual(
+      expect.objectContaining({ storeId, name: 'Owner account' }),
+    )
 
     const storeCall = setDocMock.mock.calls.find(([ref]) => ref === storeDocRef)
     expect(storeCall).toBeDefined()

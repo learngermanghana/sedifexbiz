@@ -120,6 +120,7 @@ type CreateInitialOwnerAndStoreParams = {
   email?: string | null
   role?: string
   company?: string | null
+  name?: string | null
 }
 
 export async function createInitialOwnerAndStore(
@@ -130,12 +131,14 @@ export async function createInitialOwnerAndStore(
     email: emailOverride = null,
     role = 'owner',
     company: companyOverride = null,
+    name: nameOverride = null,
   } = params
 
   const uid = user.uid
   const company = companyOverride ?? null
   const resolvedEmail = emailOverride ?? user.email ?? null
-  const ownerName = user.displayName?.trim() || null
+  const trimmedNameOverride = typeof nameOverride === 'string' ? nameOverride.trim() : null
+  const ownerName = trimmedNameOverride || user.displayName?.trim() || null
 
   const baseSlug = resolveBaseSlug(company, resolvedEmail)
   const uidSuffix = buildUidSuffix(uid)

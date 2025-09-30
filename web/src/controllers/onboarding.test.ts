@@ -140,4 +140,29 @@ describe('createInitialOwnerAndStore', () => {
     const storeDoc = firestore.docDataByPath.get(`stores/${storeId}`)
     expect(storeDoc).toMatchObject({ ownerId: user.uid })
   })
+
+  it('applies the provided name override when displayName is not set', async () => {
+    const user = {
+      uid: 'owner-override',
+      email: 'override@example.com',
+      displayName: undefined,
+    } as unknown as User
+
+    const storeId = await createInitialOwnerAndStore({
+      user,
+      company: 'Override Incorporated',
+      name: ' Override Name ',
+    })
+
+    const teamMemberDoc = firestore.docDataByPath.get(`teamMembers/${user.uid}`)
+    const storeDoc = firestore.docDataByPath.get(`stores/${storeId}`)
+
+    expect(teamMemberDoc).toMatchObject({
+      name: 'Override Name',
+    })
+
+    expect(storeDoc).toMatchObject({
+      ownerName: 'Override Name',
+    })
+  })
 })
