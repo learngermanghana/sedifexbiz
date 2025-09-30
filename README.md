@@ -23,6 +23,7 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
    VITE_FB_PROJECT_ID=sedifex-dev
    VITE_FB_STORAGE_BUCKET=sedifex-dev.appspot.com
    VITE_FB_APP_ID=REPLACE_ME
+   VITE_FB_FUNCTIONS_REGION=us-central1
    ```
 4) (Optional) Deploy Functions:
    ```bash
