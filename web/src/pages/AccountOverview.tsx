@@ -468,11 +468,20 @@ export default function AccountOverview() {
     return <div role="alert">{storeError}</div>
   }
 
-  if (!storeId && !storeLoading) {
+  if (!storeId) {
+    if (storeLoading) {
+      return (
+        <div className="account-overview" role="status">
+          <h1>Account overview</h1>
+          <p>Loading account details…</p>
+        </div>
+      )
+    }
+
     return (
       <div className="account-overview" role="status">
         <h1>Account overview</h1>
-        <p>Select a workspace to view account details.</p>
+        <p>Select a workspace…</p>
       </div>
     )
   }
