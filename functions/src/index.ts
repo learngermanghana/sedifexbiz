@@ -11,6 +11,10 @@ const db = defaultDb
 
 const storeTimezoneCache = new Map<string, string>()
 
+type ResolveStoreAccessResponse =
+  | { ok: true; storeId: string; role: 'owner' | 'staff' }
+  | { ok: false; error: 'NO_MEMBERSHIP' }
+
 function normalizeTimezone(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
@@ -1249,7 +1253,7 @@ export const afterSignupBootstrap = functions.https.onCall(
 export const resolveStoreAccess = functions.https.onCall(
   withCallableErrorLogging(
     FIREBASE_CALLABLES.RESOLVE_STORE_ACCESS,
-    async (_data, context) => {
+    async (_data, context): Promise<ResolveStoreAccessResponse> => {
       assertAuthenticated(context)
 
       const memberRef = rosterDb.collection('teamMembers').doc(context.auth!.uid)

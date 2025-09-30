@@ -42,14 +42,6 @@ Module._load = function patchedLoad(request, parent, isMain) {
     }
   }
 
-  if (request === './googleSheets' || request.endsWith(`${path.sep}googleSheets`)) {
-    return {
-      fetchClientRowByEmail: async () => null,
-      getDefaultSpreadsheetId: () => 'sheet-123',
-      normalizeHeader: value => (typeof value === 'string' ? value.trim().toLowerCase() : ''),
-    }
-  }
-
   return originalLoad(request, parent, isMain)
 }
 
