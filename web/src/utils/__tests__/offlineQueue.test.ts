@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('../../config/firebaseEnv', () => ({
+  firebaseEnv: {
+    apiKey: 'test',
+    authDomain: 'test.firebaseapp.com',
+    projectId: 'demo-project',
+    storageBucket: 'demo-project.appspot.com',
+    appId: 'test-app-id',
+    functionsRegion: 'us-central1',
+  },
+}))
+
 vi.mock('../../firebase', () => ({
   auth: { currentUser: null },
 }))
@@ -24,11 +35,6 @@ describe('offlineQueue', () => {
       value: { serviceWorker } as Navigator,
       configurable: true,
       writable: true,
-    })
-
-    Object.assign(import.meta.env, {
-      VITE_FB_PROJECT_ID: 'demo-project',
-      VITE_FB_FUNCTIONS_REGION: 'us-central1',
     })
 
     ;({ queueCallableRequest } = await import('../offlineQueue'))
