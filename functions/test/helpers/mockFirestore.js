@@ -134,6 +134,10 @@ class MockDocumentReference {
     }
     this._db.setRaw(this.path, applyMerge(existing, data))
   }
+
+  async delete() {
+    this._db.deleteRaw(this.path)
+  }
 }
 
 class MockCollectionReference {
@@ -216,6 +220,10 @@ class MockFirestore {
 
   setRaw(path, data) {
     this._store.set(path, clone(data))
+  }
+
+  deleteRaw(path) {
+    this._store.delete(path)
   }
 
   getDoc(path) {

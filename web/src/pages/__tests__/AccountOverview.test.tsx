@@ -21,11 +21,14 @@ vi.mock('../../hooks/useMemberships', () => ({
 
 const mockManageStaffAccount = vi.fn()
 const mockUpdateStoreProfile = vi.fn()
+const mockRevokeStaffAccess = vi.fn()
 vi.mock('../../controllers/storeController', () => ({
   manageStaffAccount: (...args: Parameters<typeof mockManageStaffAccount>) =>
     mockManageStaffAccount(...args),
   updateStoreProfile: (...args: Parameters<typeof mockUpdateStoreProfile>) =>
     mockUpdateStoreProfile(...args),
+  revokeStaffAccess: (...args: Parameters<typeof mockRevokeStaffAccess>) =>
+    mockRevokeStaffAccess(...args),
 }))
 
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
@@ -77,6 +80,7 @@ describe('AccountOverview', () => {
     mockUseMemberships.mockReset()
     mockManageStaffAccount.mockReset()
     mockUpdateStoreProfile.mockReset()
+    mockRevokeStaffAccess.mockReset()
     collectionMock.mockClear()
     docMock.mockClear()
     getDocMock.mockReset()
@@ -116,13 +120,23 @@ describe('AccountOverview', () => {
     getDocsMock.mockResolvedValue({
       docs: [
         {
-          id: 'member-1',
+          id: 'owner-1',
           data: () => ({
             email: 'owner@example.com',
             role: 'owner',
             invitedBy: 'admin@example.com',
             updatedAt: { toDate: () => new Date('2023-02-01T00:00:00Z') },
             lastSeenAt: { toDate: () => new Date('2023-02-02T10:00:00Z') },
+          }),
+        },
+        {
+          id: 'member-2',
+          data: () => ({
+            email: 'staff@example.com',
+            role: 'staff',
+            invitedBy: 'owner@example.com',
+            updatedAt: { toDate: () => new Date('2023-02-03T00:00:00Z') },
+            lastSeenAt: null,
           }),
         },
       ],
@@ -155,12 +169,16 @@ describe('AccountOverview', () => {
       await Promise.resolve()
     })
 
+    const user = userEvent.setup()
+
     await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(1))
 
     const expectedLastSeen = new Date('2023-02-02T10:00:00Z').toLocaleString()
     expect(screen.getByRole('columnheader', { name: /last seen/i })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /actions/i })).toBeInTheDocument()
     expect(screen.getByText(expectedLastSeen)).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /revoke access/i })).toHaveLength(1)
 
 
     expect(screen.getByText('store-123')).toBeInTheDocument()
@@ -189,6 +207,54 @@ describe('AccountOverview', () => {
 
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
     expect(mockPublish).toHaveBeenCalledWith({ message: 'Team member updated.', tone: 'success' })
+  })
+
+  it('revokes staff access after confirmation', async () => {
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-1',
+          uid: 'owner-1',
+          role: 'owner',
+          storeId: 'store-123',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockRevokeStaffAccess.mockResolvedValue({ ok: true, storeId: 'store-123', uid: 'member-2' })
+
+    render(<AccountOverview />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(1))
+
+    const staffRow = await screen.findByTestId('account-roster-member-2')
+    const revokeButton = within(staffRow).getByRole('button', { name: /revoke access/i })
+
+    const user = userEvent.setup()
+    await user.click(revokeButton)
+
+    expect(confirmSpy).toHaveBeenCalledWith('Revoke access for staff@example.com?')
+
+    await waitFor(() =>
+      expect(mockRevokeStaffAccess).toHaveBeenCalledWith({ storeId: 'store-123', uid: 'member-2' }),
+    )
+
+    await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
+    expect(mockPublish).toHaveBeenCalledWith({ message: 'Team member access revoked.', tone: 'success' })
+
+    confirmSpy.mockRestore()
   })
 
   it('prevents profile updates when required fields are missing', async () => {

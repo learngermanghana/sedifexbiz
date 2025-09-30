@@ -14,7 +14,7 @@ import {
 import { db } from '../firebase'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
-import { manageStaffAccount, updateStoreProfile } from '../controllers/storeController'
+import { manageStaffAccount, revokeStaffAccess, updateStoreProfile } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -178,6 +178,7 @@ export default function AccountOverview() {
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterError, setRosterError] = useState<string | null>(null)
   const [rosterVersion, setRosterVersion] = useState(0)
+  const [revokingMemberId, setRevokingMemberId] = useState<string | null>(null)
 
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Membership['role']>('staff')
@@ -437,6 +438,29 @@ export default function AccountOverview() {
       publish({ message, tone: 'error' })
     } finally {
       setProfileSubmitting(false)
+    }
+  }
+
+  async function handleRevoke(member: RosterMember) {
+    if (!isOwner || !storeId) return
+
+    const label = member.email ? ` ${member.email}` : ''
+    const confirmationMessage = `Revoke access for${label || ' this team member'}?`
+    const confirmed = typeof window !== 'undefined' ? window.confirm(confirmationMessage) : true
+    if (!confirmed) return
+
+    setRevokingMemberId(member.id)
+    try {
+      await revokeStaffAccess({ storeId, uid: member.id })
+      publish({ message: 'Team member access revoked.', tone: 'success' })
+      setRosterVersion(version => version + 1)
+    } catch (error) {
+      console.error('Failed to revoke staff access', error)
+      const message =
+        error instanceof Error ? error.message : 'We could not revoke this team member’s access.'
+      publish({ message, tone: 'error' })
+    } finally {
+      setRevokingMemberId(null)
     }
   }
 
@@ -702,10 +726,11 @@ export default function AccountOverview() {
             <span role="columnheader">Invited by</span>
             <span role="columnheader">Updated</span>
             <span role="columnheader">Last seen</span>
+            {isOwner && <span role="columnheader">Actions</span>}
           </div>
           {roster.length === 0 && !rosterLoading ? (
             <div role="row" className="account-overview__roster-empty">
-              <span role="cell" colSpan={5}>
+              <span role="cell" colSpan={isOwner ? 6 : 5}>
                 No team members found.
               </span>
             </div>
@@ -719,6 +744,22 @@ export default function AccountOverview() {
                 <span role="cell">
                   {formatTimestamp(member.lastSeenAt ?? member.updatedAt ?? member.createdAt)}
                 </span>
+                {isOwner && (
+                  <span role="cell">
+                    {member.role === 'owner' ? (
+                      '—'
+                    ) : (
+                      <button
+                        type="button"
+                        className="button button--secondary"
+                        onClick={() => handleRevoke(member)}
+                        disabled={revokingMemberId === member.id}
+                      >
+                        {revokingMemberId === member.id ? 'Revoking…' : 'Revoke access'}
+                      </button>
+                    )}
+                  </span>
+                )}
               </div>
             ))
           )}
