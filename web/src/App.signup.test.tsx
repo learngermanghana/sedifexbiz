@@ -273,12 +273,19 @@ describe('App signup cleanup', () => {
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
 
     expect(deleteFn).not.toHaveBeenCalled()
-    expect(mocks.auth.signOut).not.toHaveBeenCalled()
-    expect(mocks.auth.currentUser).toBe(createdUser)
+
+    await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
+    expect(mocks.auth.currentUser).toBeNull()
+
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({ tone: 'error', message: 'Unable to persist session' }),
     )
     expect(localStorageSetItemSpy).not.toHaveBeenCalled()
+
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: /Log in/i })).toHaveAttribute('aria-selected', 'true'),
+    )
+    expect(screen.queryByRole('button', { name: /Create account/i })).not.toBeInTheDocument()
   })
 
   it('creates team member and customer records after a successful signup', async () => {

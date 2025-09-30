@@ -495,6 +495,8 @@ export default function App() {
 
     setStatus({ tone: 'loading', message: mode === 'login' ? 'Signing you in…' : 'Creating your account…' })
 
+    let createdSignupUser: User | null = null
+
     try {
       if (mode === 'login') {
         const { user: nextUser } = await signInWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
@@ -508,7 +510,10 @@ export default function App() {
         })
 
       } else {
-        const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
+        const { user } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
+        createdSignupUser = user
+        const nextUser = createdSignupUser
+
         await persistSession(nextUser)
 
         // Create team member + store record and refresh auth token before continuing
@@ -572,9 +577,6 @@ export default function App() {
         await persistOwnerSideDocs(nextUser, storeId, phoneDetails)
 
         setOnboardingStatus(nextUser.uid, 'pending')
-
-        await signOut(auth)
-        setMode('login')
       }
 
       setStatus({
@@ -594,6 +596,15 @@ export default function App() {
 
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
+    } finally {
+      if (createdSignupUser) {
+        try {
+          await signOut(auth)
+        } catch (signOutError) {
+          console.warn('[auth] Failed to sign out after signup cleanup', signOutError)
+        }
+        setMode('login')
+      }
     }
   }
 
