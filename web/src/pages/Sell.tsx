@@ -199,7 +199,7 @@ function calculateEarnedLoyaltyPoints(total: number): number {
 
 export default function Sell() {
   const user = useAuthUser()
-  const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
+  const { storeId: activeStoreId, storeChangeToken, isLoading: storeLoading } = useActiveStoreContext()
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -797,13 +797,6 @@ export default function Sell() {
 
   const filtered = products.filter(p => p.name.toLowerCase().includes(queryText.toLowerCase()))
 
-  const workspaceEmptyState = (
-    <div className="empty-state">
-      <h3 className="empty-state__title">Select a workspace…</h3>
-      <p>Choose a workspace from the switcher above to continue.</p>
-    </div>
-  )
-
   const pageHeader = (
     <header className="page__header">
       <div>
@@ -817,11 +810,16 @@ export default function Sell() {
     </header>
   )
 
-  if (!activeStoreId) {
+  if (storeLoading) {
     return (
       <div className="page sell-page">
         {pageHeader}
-        <section className="card">{workspaceEmptyState}</section>
+        <section className="card">
+          <div className="empty-state">
+            <h3 className="empty-state__title">Loading workspace…</h3>
+            <p>Please wait while we get things ready.</p>
+          </div>
+        </section>
       </div>
     )
   }

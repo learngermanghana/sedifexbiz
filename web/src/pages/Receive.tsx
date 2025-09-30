@@ -42,7 +42,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Receive() {
-  const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
+  const { storeId: activeStoreId, storeChangeToken, isLoading: storeLoading } = useActiveStoreContext()
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string>('')
   const [qty, setQty] = useState<string>('')
@@ -275,13 +275,6 @@ export default function Receive() {
 
 
 
-  const workspaceEmptyState = (
-    <div className="empty-state">
-      <h3 className="empty-state__title">Select a workspace…</h3>
-      <p>Choose a workspace from the switcher above to continue.</p>
-    </div>
-  )
-
   const pageHeader = (
     <header className="page__header">
       <div>
@@ -291,11 +284,16 @@ export default function Receive() {
     </header>
   )
 
-  if (!activeStoreId) {
+  if (storeLoading) {
     return (
       <div className="page receive-page">
         {pageHeader}
-        <section className="card receive-page__card">{workspaceEmptyState}</section>
+        <section className="card receive-page__card">
+          <div className="empty-state">
+            <h3 className="empty-state__title">Loading workspace…</h3>
+            <p>Please wait while we get things ready.</p>
+          </div>
+        </section>
       </div>
     )
   }

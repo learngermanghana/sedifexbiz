@@ -44,7 +44,7 @@ function formatPercent(value: number) {
 }
 
 export default function Dashboard() {
-  const { storeId, isLoading: storeLoading } = useActiveStoreContext()
+  const { isLoading: storeLoading } = useActiveStoreContext()
   const {
     rangePresets,
     selectedRangeId,
@@ -73,15 +73,6 @@ export default function Dashboard() {
       <div>
         <h2 style={{ color: '#4338CA', marginBottom: 8 }}>Dashboard</h2>
         <p style={{ color: '#475569' }}>Loading your workspace…</p>
-      </div>
-    )
-  }
-
-  if (!storeId) {
-    return (
-      <div>
-        <h2 style={{ color: '#4338CA', marginBottom: 8 }}>Dashboard</h2>
-        <p style={{ color: '#475569' }}>Select a workspace to see your dashboard.</p>
       </div>
     )
   }
