@@ -375,6 +375,11 @@ type UpdateStoreProfilePayload = {
   currency?: unknown
 }
 
+type RevokeStaffAccessPayload = {
+  storeId?: unknown
+  uid?: unknown
+}
+
 const VALID_ROLES = new Set(['owner', 'staff'])
 const INACTIVE_WORKSPACE_MESSAGE =
   'Your Sedifex workspace contract is not active. Reach out to your Sedifex administrator to restore access.'
@@ -550,6 +555,21 @@ function normalizeUpdateStoreProfilePayload(data: UpdateStoreProfilePayload) {
   }
 
   return { storeId, name, timezone, currency: normalizedCurrency }
+}
+
+function normalizeRevokeStaffAccessPayload(data: RevokeStaffAccessPayload) {
+  const storeId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
+  const uid = typeof data.uid === 'string' ? data.uid.trim() : ''
+
+  if (!storeId) {
+    throw new functions.https.HttpsError('invalid-argument', 'A storeId is required')
+  }
+
+  if (!uid) {
+    throw new functions.https.HttpsError('invalid-argument', 'A user ID is required')
+  }
+
+  return { storeId, uid }
 }
 
 async function ensureAuthUser(email: string, password?: string) {
@@ -1405,6 +1425,62 @@ export const manageStaffAccount = functions.https.onCall(
 
       await memberRef.set(memberData, { merge: true })
       return { ok: true, role, email, uid: record.uid, created, storeId }
+    },
+    {
+      resolveStoreId: (rawData, context) => {
+        if (rawData && typeof rawData === 'object' && 'storeId' in (rawData as Record<string, unknown>)) {
+          const candidate = (rawData as { storeId?: unknown }).storeId
+          if (typeof candidate === 'string') {
+            const trimmed = candidate.trim()
+            if (trimmed) {
+              return trimmed
+            }
+          }
+        }
+        const fromContext = deriveStoreIdFromContext(context)
+        if (fromContext) return fromContext
+        return context.auth?.uid ?? null
+      },
+    },
+  ),
+)
+
+export const revokeStaffAccess = functions.https.onCall(
+  withCallableErrorLogging(
+    'revokeStaffAccess',
+    async (data, context) => {
+      assertOwnerAccess(context)
+
+      const { storeId, uid } = normalizeRevokeStaffAccessPayload(data as RevokeStaffAccessPayload)
+
+      const memberRef = rosterDb.collection('teamMembers').doc(uid)
+      const memberSnap = await memberRef.get()
+      if (!memberSnap.exists) {
+        throw new functions.https.HttpsError('not-found', 'Team member not found')
+      }
+
+      const memberData = memberSnap.data() ?? {}
+      const memberStoreId =
+        typeof memberData.storeId === 'string' ? (memberData.storeId as string).trim() : ''
+      if (memberStoreId !== storeId) {
+        throw new functions.https.HttpsError('permission-denied', 'Cannot revoke access for this user')
+      }
+
+      const memberRole = typeof memberData.role === 'string' ? memberData.role.trim() : ''
+      if (memberRole === 'owner') {
+        throw new functions.https.HttpsError('failed-precondition', 'Cannot revoke access for owners')
+      }
+
+      await memberRef.delete()
+
+      await admin
+        .auth()
+        .setCustomUserClaims(uid, {})
+        .catch(error => {
+          functions.logger.warn('[revokeStaffAccess] Failed to clear custom claims', { uid, error })
+        })
+
+      return { ok: true, storeId, uid }
     },
     {
       resolveStoreId: (rawData, context) => {

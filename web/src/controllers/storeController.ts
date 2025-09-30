@@ -30,6 +30,17 @@ type UpdateStoreProfileResult = {
   storeId: string
 }
 
+type RevokeStaffAccessPayload = {
+  storeId: string
+  uid: string
+}
+
+type RevokeStaffAccessResult = {
+  ok: boolean
+  storeId: string
+  uid: string
+}
+
 export async function manageStaffAccount(payload: ManageStaffAccountPayload) {
   const callable = httpsCallable<ManageStaffAccountPayload, ManageStaffAccountResult>(
     functions,
@@ -43,6 +54,15 @@ export async function updateStoreProfile(payload: UpdateStoreProfilePayload) {
   const callable = httpsCallable<UpdateStoreProfilePayload, UpdateStoreProfileResult>(
     functions,
     'updateStoreProfile',
+  )
+  const response = await callable(payload)
+  return response.data
+}
+
+export async function revokeStaffAccess(payload: RevokeStaffAccessPayload) {
+  const callable = httpsCallable<RevokeStaffAccessPayload, RevokeStaffAccessResult>(
+    functions,
+    'revokeStaffAccess',
   )
   const response = await callable(payload)
   return response.data
