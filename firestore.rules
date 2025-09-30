@@ -100,8 +100,7 @@ service cloud.firestore {
       return resourceStoreId != null && resourceStoreId == requestStoreId;
     }
 
-    function canCreateStoreResource() {
-
+    function canStaffCreateStoreResource() {
       let storeId = storeIdFromData(request.resource.data);
       return requestMaintainsStoreIdConsistency()
         && storeId != null
