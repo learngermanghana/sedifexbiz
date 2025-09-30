@@ -579,6 +579,9 @@ export default function Customers() {
   async function addCustomer(event: React.FormEvent) {
     event.preventDefault()
     const trimmedName = name.trim()
+    const trimmedPhone = phone.trim()
+    const trimmedEmail = email.trim()
+    const trimmedNotes = notes.trim()
     if (!trimmedName) {
       setError('Customer name is required to save a record.')
       return
@@ -597,25 +600,56 @@ export default function Customers() {
           updatedAt: serverTimestamp(),
           storeId: activeStoreId,
         }
-        updatePayload.phone = phone.trim() ? phone.trim() : null
-        updatePayload.email = email.trim() ? email.trim() : null
-        updatePayload.notes = notes.trim() ? notes.trim() : null
+        updatePayload.phone = trimmedPhone ? trimmedPhone : null
+        updatePayload.email = trimmedEmail ? trimmedEmail : null
+        updatePayload.notes = trimmedNotes ? trimmedNotes : null
         updatePayload.tags = parsedTags
         await updateDoc(doc(db, 'customers', editingCustomerId), updatePayload)
         setSelectedCustomerId(editingCustomerId)
         showSuccess('Customer updated successfully.')
       } else {
-        await addDoc(collection(db, 'customers'), {
-          name: trimmedName,
-          storeId: activeStoreId,
-          ...(phone.trim() ? { phone: phone.trim() } : {}),
-          ...(email.trim() ? { email: email.trim() } : {}),
-          ...(notes.trim() ? { notes: notes.trim() } : {}),
-          ...(parsedTags.length ? { tags: parsedTags } : {}),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
-        showSuccess('Customer saved successfully.')
+        const normalizedPhone = trimmedPhone.replace(/\D/g, '')
+        const normalizedEmail = trimmedEmail.toLowerCase()
+
+        const matchByEmail = normalizedEmail
+          ? customers.find(customer => customer.email?.trim().toLowerCase() === normalizedEmail) ?? null
+          : null
+        let duplicate = matchByEmail
+
+        if (!duplicate && normalizedPhone) {
+          duplicate =
+            customers.find(customer => {
+              const existingPhone = customer.phone?.replace(/\D/g, '') ?? ''
+              return existingPhone && existingPhone === normalizedPhone
+            }) ?? null
+        }
+
+        if (duplicate) {
+          const updatePayload: Record<string, unknown> = {
+            name: trimmedName,
+            updatedAt: serverTimestamp(),
+            storeId: activeStoreId,
+          }
+          updatePayload.phone = trimmedPhone ? trimmedPhone : null
+          updatePayload.email = trimmedEmail ? trimmedEmail : null
+          updatePayload.notes = trimmedNotes ? trimmedNotes : null
+          updatePayload.tags = parsedTags
+          await updateDoc(doc(db, 'customers', duplicate.id), updatePayload)
+          setSelectedCustomerId(duplicate.id)
+          showSuccess('Customer already exists. Updated their details instead.')
+        } else {
+          await addDoc(collection(db, 'customers'), {
+            name: trimmedName,
+            storeId: activeStoreId,
+            ...(trimmedPhone ? { phone: trimmedPhone } : {}),
+            ...(trimmedEmail ? { email: trimmedEmail } : {}),
+            ...(trimmedNotes ? { notes: trimmedNotes } : {}),
+            ...(parsedTags.length ? { tags: parsedTags } : {}),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+          showSuccess('Customer saved successfully.')
+        }
       }
       resetForm()
     } catch (err) {
