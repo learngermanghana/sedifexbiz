@@ -7,6 +7,19 @@ const mockUseActiveStoreContext = vi.fn();
 const mockUseMemberships = vi.fn();
 const navigateMock = vi.fn();
 
+const ownerMembership = {
+  id: 'membership-1',
+  uid: 'user-1',
+  role: 'owner' as const,
+  storeId: 'store-1',
+  email: null,
+  phone: null,
+  invitedBy: null,
+  firstSignupEmail: null,
+  createdAt: null,
+  updatedAt: null,
+};
+
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
 
@@ -33,20 +46,7 @@ describe('Gate', () => {
       storeId: 'store-1',
       isLoading: false,
       error: null,
-      memberships: [
-        {
-          id: 'membership-1',
-          uid: 'user-1',
-          role: 'owner' as const,
-          storeId: 'store-1',
-          email: null,
-          phone: null,
-          invitedBy: null,
-          firstSignupEmail: null,
-          createdAt: null,
-          updatedAt: null,
-        },
-      ],
+      memberships: [ownerMembership],
       membershipsLoading: false,
       setActiveStoreId: vi.fn(),
       storeChangeToken: 0,
@@ -54,20 +54,7 @@ describe('Gate', () => {
     mockUseMemberships.mockReturnValue({
       loading: false,
       error: null,
-      memberships: [
-        {
-          id: 'membership-1',
-          uid: 'user-1',
-          role: 'owner' as const,
-          storeId: 'store-1',
-          email: null,
-          phone: null,
-          invitedBy: null,
-          firstSignupEmail: null,
-          createdAt: null,
-          updatedAt: null,
-        },
-      ],
+      memberships: [ownerMembership],
     });
   });
 
@@ -108,6 +95,8 @@ describe('Gate', () => {
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith('/onboarding', { replace: true });
     });
+
+    expect(navigateMock).toHaveBeenCalledTimes(1);
 
     expect(screen.queryByTestId('protected')).not.toBeInTheDocument();
   });
