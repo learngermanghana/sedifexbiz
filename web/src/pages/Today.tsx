@@ -16,16 +16,11 @@ import {
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
 
+import { Link } from 'react-router-dom'
+import { formatDailySummaryKey } from '../../../shared/dateKeys'
 import { db } from '../firebase'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import { formatCurrency } from '@shared/currency'
-
-export function formatDateKey(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}${month}${day}`
-}
 
 type TopProduct = {
   id: string
@@ -272,11 +267,11 @@ export default function Today() {
   )
 
   const today = useMemo(() => new Date(), [])
-  const todayKey = useMemo(() => formatDateKey(today), [today])
+  const todayKey = useMemo(() => formatDailySummaryKey(today), [today])
   const previousDayKey = useMemo(() => {
     const previous = new Date(today)
     previous.setDate(previous.getDate() - 1)
-    return formatDateKey(previous)
+    return formatDailySummaryKey(previous)
   }, [today])
   const todayLabel = useMemo(
     () =>

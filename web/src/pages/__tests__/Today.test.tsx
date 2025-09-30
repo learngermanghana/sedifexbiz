@@ -3,8 +3,10 @@ import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
+
 import { formatCurrency } from '@shared/currency'
 import Today, { formatDateKey } from '../Today'
+
 
 const currencyText = (value: number) => formatCurrency(value)
 const signedCurrency = (value: number) => `${value >= 0 ? '+' : '-'}${formatCurrency(Math.abs(value))}`
@@ -225,10 +227,10 @@ describe('Today page', () => {
       </MemoryRouter>,
     )
 
-    const expectedKey = formatDateKey(new Date())
+    const expectedKey = formatDailySummaryKey(new Date())
     const previousDate = new Date()
     previousDate.setDate(previousDate.getDate() - 1)
-    const expectedPreviousKey = formatDateKey(previousDate)
+    const expectedPreviousKey = formatDailySummaryKey(previousDate)
 
     await waitFor(() => {
       expect(screen.getByText(currencyText(480.5))).toBeInTheDocument()
