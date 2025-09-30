@@ -60,6 +60,10 @@ service cloud.firestore {
         && (resource == null || storeIdFromData(resource.data) == storeIdFromData(request.resource.data));
     }
 
+    function requestHasStoreId() {
+      return request.resource != null && storeIdFromData(request.resource.data) != null;
+    }
+
     function requestHasValidRole() {
       return request.resource != null
         && request.resource.data.keys().hasAny(['role'])
@@ -178,7 +182,8 @@ service cloud.firestore {
 
     match /customers/{customerId} {
       allow read: if canReadStoreDocument();
-      allow create, update, delete: if canOwnerModifyStoreDocument();
+      allow create, update: if canOwnerModifyStoreDocument() && requestHasStoreId();
+      allow delete: if canOwnerModifyStoreDocument();
     }
 
     match /sales/{saleId} {
