@@ -159,6 +159,45 @@ service cloud.firestore {
         && request.auth.token.serviceAccount == true;
     }
 
+    function hasNonEmptyStringField(data, field) {
+      return data != null
+        && data.keys().hasAny([field])
+        && data[field] is string
+        && data[field] != '';
+    }
+
+    function hasNumberInRange(data, field, min, max) {
+      return data != null
+        && data.keys().hasAny([field])
+        && data[field] is number
+        && data[field] >= min
+        && data[field] <= max;
+    }
+
+    function isValidCustomerData(data) {
+      // Assumes customer names are stored as non-empty strings with a practical limit of 200 characters.
+      let hasValidName = hasNonEmptyStringField(data, 'name')
+        && data.name.size() <= 200;
+
+      return hasNonEmptyStringField(data, 'storeId')
+        && hasValidName;
+    }
+
+    function isValidReceiptData(data) {
+      // Assumes receipt quantities represent item counts between 1 and 100,000 to prevent accidental bulk imports.
+      return hasNonEmptyStringField(data, 'storeId')
+        && hasNonEmptyStringField(data, 'productId')
+        && hasNumberInRange(data, 'qty', 1, 100000);
+    }
+
+    function isValidSaleData(data) {
+      // Assumes monetary fields are stored as numbers in the store's currency within +/- $1,000,000.
+      return hasNonEmptyStringField(data, 'storeId')
+        && hasNumberInRange(data, 'total', 0, 1000000)
+        && hasNumberInRange(data, 'taxTotal', 0, 1000000)
+        && hasNumberInRange(data, 'changeDue', 0, 1000000);
+    }
+
     match /teamMembers/{memberId} {
       allow read: if resource != null
         && dataHasStore(resource.data)
@@ -232,15 +271,19 @@ service cloud.firestore {
 
     match /customers/{customerId} {
       allow read: if canReadStoreResource();
-      allow create: if canOwnerCreateStoreResource();
-      allow update: if canOwnerUpdateStoreResource();
+      allow create: if canOwnerCreateStoreResource()
+        && isValidCustomerData(request.resource.data);
+      allow update: if canOwnerUpdateStoreResource()
+        && isValidCustomerData(request.resource.data);
       allow delete: if canOwnerWriteStoreResource();
     }
 
     match /sales/{saleId} {
       allow read: if canReadStoreResource();
-      allow create: if canStaffCreateStoreResource();
-      allow update: if canStaffUpdateStoreResource();
+      allow create: if canStaffCreateStoreResource()
+        && isValidSaleData(request.resource.data);
+      allow update: if canStaffUpdateStoreResource()
+        && isValidSaleData(request.resource.data);
       allow delete: if canOwnerWriteStoreResource();
     }
 
@@ -267,8 +310,10 @@ service cloud.firestore {
 
     match /receipts/{receiptId} {
       allow read: if canReadStoreResource();
-      allow create: if canOwnerCreateStoreResource();
-      allow update: if canOwnerUpdateStoreResource();
+      allow create: if canOwnerCreateStoreResource()
+        && isValidReceiptData(request.resource.data);
+      allow update: if canOwnerUpdateStoreResource()
+        && isValidReceiptData(request.resource.data);
       allow delete: if canOwnerWriteStoreResource();
     }
 
