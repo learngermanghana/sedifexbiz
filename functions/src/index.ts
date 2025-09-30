@@ -732,6 +732,8 @@ async function cleanActivityDocuments(): Promise<void> {
 
 type ContactPayload = {
   phone?: unknown
+  phoneCountryCode?: unknown
+  phoneLocalNumber?: unknown
   firstSignupEmail?: unknown
   company?: unknown
   ownerName?: unknown
@@ -767,10 +769,14 @@ const INACTIVE_WORKSPACE_MESSAGE =
 
 function normalizeContactPayload(contact: ContactPayload | undefined) {
   let hasPhone = false
+  let hasPhoneCountryCode = false
+  let hasPhoneLocalNumber = false
   let hasFirstSignupEmail = false
   let hasCompany = false
   let hasOwnerName = false
   let phone: string | null | undefined
+  let phoneCountryCode: string | null | undefined
+  let phoneLocalNumber: string | null | undefined
   let firstSignupEmail: string | null | undefined
   let company: string | null | undefined
   let ownerName: string | null | undefined
@@ -786,6 +792,38 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
         phone = trimmed ? trimmed : null
       } else {
         throw new functions.https.HttpsError('invalid-argument', 'Phone must be a string when provided')
+      }
+    }
+
+    if ('phoneCountryCode' in contact) {
+      hasPhoneCountryCode = true
+      const raw = (contact as Record<string, unknown>).phoneCountryCode
+      if (raw === null || raw === undefined || raw === '') {
+        phoneCountryCode = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        phoneCountryCode = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Phone country code must be a string when provided',
+        )
+      }
+    }
+
+    if ('phoneLocalNumber' in contact) {
+      hasPhoneLocalNumber = true
+      const raw = (contact as Record<string, unknown>).phoneLocalNumber
+      if (raw === null || raw === undefined || raw === '') {
+        phoneLocalNumber = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        phoneLocalNumber = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Phone local number must be a string when provided',
+        )
       }
     }
 
@@ -835,6 +873,10 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
   return {
     phone,
     hasPhone,
+    phoneCountryCode,
+    hasPhoneCountryCode,
+    phoneLocalNumber,
+    hasPhoneLocalNumber,
     firstSignupEmail,
     hasFirstSignupEmail,
     company,
@@ -1345,6 +1387,14 @@ async function handleStoreBootstrap(
     firstSignupEmail: resolvedFirstSignupEmail,
     invitedBy: uid,
     updatedAt: timestamp,
+  }
+
+  if (contact.hasPhoneCountryCode) {
+    memberData.phoneCountryCode = contact.phoneCountryCode ?? null
+  }
+
+  if (contact.hasPhoneLocalNumber) {
+    memberData.phoneLocalNumber = contact.phoneLocalNumber ?? null
   }
 
   if (contact.hasCompany) {
