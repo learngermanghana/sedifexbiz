@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AccountOverview from '../AccountOverview'
 
@@ -116,6 +116,7 @@ describe('AccountOverview', () => {
             role: 'owner',
             invitedBy: 'admin@example.com',
             updatedAt: { toDate: () => new Date('2023-02-01T00:00:00Z') },
+            lastSeenAt: { toDate: () => new Date('2023-02-02T10:00:00Z') },
           }),
         },
       ],
@@ -149,6 +150,10 @@ describe('AccountOverview', () => {
 
     await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(1))
+
+    const expectedLastSeen = new Date('2023-02-02T10:00:00Z').toLocaleString()
+    expect(screen.getByRole('columnheader', { name: /last seen/i })).toBeInTheDocument()
+    expect(screen.getByText(expectedLastSeen)).toBeInTheDocument()
 
     expect(screen.getByText('store-123')).toBeInTheDocument()
     expect(screen.getByText('Sedifex')).toBeInTheDocument()
@@ -199,6 +204,20 @@ describe('AccountOverview', () => {
       error: null,
     })
 
+    getDocsMock.mockResolvedValueOnce({
+      docs: [
+        {
+          id: 'member-1',
+          data: () => ({
+            email: 'staff@example.com',
+            role: 'staff',
+            invitedBy: null,
+            createdAt: { toDate: () => new Date('2023-01-10T12:00:00Z') },
+          }),
+        },
+      ],
+    })
+
     render(<AccountOverview />)
     await act(async () => {
       await Promise.resolve()
@@ -209,5 +228,11 @@ describe('AccountOverview', () => {
 
     expect(screen.queryByTestId('account-invite-form')).not.toBeInTheDocument()
     expect(screen.getByText(/read-only access/i)).toBeInTheDocument()
+
+    const row = await screen.findByTestId('account-roster-member-1')
+    const cells = within(row).getAllByRole('cell')
+    expect(cells).toHaveLength(5)
+    const expectedFallbackLastSeen = new Date('2023-01-10T12:00:00Z').toLocaleString()
+    expect(cells[4]).toHaveTextContent(expectedFallbackLastSeen)
   })
 })

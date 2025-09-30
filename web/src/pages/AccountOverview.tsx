@@ -52,6 +52,7 @@ type RosterMember = {
   invitedBy: string | null
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
+  lastSeenAt: Timestamp | null
 }
 
 function toNullableString(value: unknown) {
@@ -135,6 +136,7 @@ function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): Roste
     invitedBy: toNullableString(data.invitedBy),
     createdAt: isTimestamp(data.createdAt) ? data.createdAt : null,
     updatedAt: isTimestamp(data.updatedAt) ? data.updatedAt : null,
+    lastSeenAt: isTimestamp(data.lastSeenAt) ? data.lastSeenAt : null,
   }
 }
 
@@ -516,10 +518,11 @@ export default function AccountOverview() {
             <span role="columnheader">Role</span>
             <span role="columnheader">Invited by</span>
             <span role="columnheader">Updated</span>
+            <span role="columnheader">Last seen</span>
           </div>
           {roster.length === 0 && !rosterLoading ? (
             <div role="row" className="account-overview__roster-empty">
-              <span role="cell" colSpan={4}>
+              <span role="cell" colSpan={5}>
                 No team members found.
               </span>
             </div>
@@ -530,6 +533,9 @@ export default function AccountOverview() {
                 <span role="cell">{member.role === 'owner' ? 'Owner' : 'Staff'}</span>
                 <span role="cell">{formatValue(member.invitedBy)}</span>
                 <span role="cell">{formatTimestamp(member.updatedAt ?? member.createdAt)}</span>
+                <span role="cell">
+                  {formatTimestamp(member.lastSeenAt ?? member.updatedAt ?? member.createdAt)}
+                </span>
               </div>
             ))
           )}
