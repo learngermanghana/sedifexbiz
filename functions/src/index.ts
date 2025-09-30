@@ -368,6 +368,13 @@ type ManageStaffPayload = {
   password?: unknown
 }
 
+type UpdateStoreProfilePayload = {
+  storeId?: unknown
+  name?: unknown
+  timezone?: unknown
+  currency?: unknown
+}
+
 const VALID_ROLES = new Set(['owner', 'staff'])
 const INACTIVE_WORKSPACE_MESSAGE =
   'Your Sedifex workspace contract is not active. Reach out to your Sedifex administrator to restore access.'
@@ -501,6 +508,48 @@ function normalizeManageStaffPayload(data: ManageStaffPayload) {
   }
 
   return { storeId, email, role, password }
+}
+
+function normalizeUpdateStoreProfilePayload(data: UpdateStoreProfilePayload) {
+  const storeId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
+  const name = typeof data.name === 'string' ? data.name.trim() : ''
+  const timezone = typeof data.timezone === 'string' ? data.timezone.trim() : ''
+  const currencyRaw = typeof data.currency === 'string' ? data.currency.trim() : ''
+
+  if (!storeId) {
+    throw new functions.https.HttpsError('invalid-argument', 'A storeId is required')
+  }
+
+  if (!name) {
+    throw new functions.https.HttpsError('invalid-argument', 'A workspace name is required')
+  }
+
+  if (!timezone) {
+    throw new functions.https.HttpsError('invalid-argument', 'A timezone is required')
+  }
+
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date())
+  } catch (error) {
+    throw new functions.https.HttpsError('invalid-argument', 'Enter a valid IANA timezone')
+  }
+
+  if (!currencyRaw) {
+    throw new functions.https.HttpsError('invalid-argument', 'A currency code is required')
+  }
+
+  const normalizedCurrency = currencyRaw.toUpperCase()
+  if (!/^[A-Z]{3}$/.test(normalizedCurrency)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Enter a 3-letter currency code')
+  }
+
+  try {
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: normalizedCurrency }).format(1)
+  } catch (error) {
+    throw new functions.https.HttpsError('invalid-argument', 'Enter a supported currency code')
+  }
+
+  return { storeId, name, timezone, currency: normalizedCurrency }
 }
 
 async function ensureAuthUser(email: string, password?: string) {
@@ -1351,6 +1400,53 @@ export const manageStaffAccount = functions.https.onCall(
 
       await memberRef.set(memberData, { merge: true })
       return { ok: true, role, email, uid: record.uid, created, storeId }
+    },
+    {
+      resolveStoreId: (rawData, context) => {
+        if (rawData && typeof rawData === 'object' && 'storeId' in (rawData as Record<string, unknown>)) {
+          const candidate = (rawData as { storeId?: unknown }).storeId
+          if (typeof candidate === 'string') {
+            const trimmed = candidate.trim()
+            if (trimmed) {
+              return trimmed
+            }
+          }
+        }
+        const fromContext = deriveStoreIdFromContext(context)
+        if (fromContext) return fromContext
+        return context.auth?.uid ?? null
+      },
+    },
+  ),
+)
+
+export const updateStoreProfile = functions.https.onCall(
+  withCallableErrorLogging(
+    'updateStoreProfile',
+    async (data, context) => {
+      assertOwnerAccess(context)
+
+      const { storeId, name, timezone, currency } = normalizeUpdateStoreProfilePayload(
+        data as UpdateStoreProfilePayload,
+      )
+
+      const storeRef = db.collection('stores').doc(storeId)
+      const snapshot = await storeRef.get()
+      if (!snapshot.exists) {
+        throw new functions.https.HttpsError('not-found', 'Store not found')
+      }
+
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      await storeRef.update({
+        name,
+        displayName: name,
+        timezone,
+        currency,
+        updatedAt: timestamp,
+      })
+      storeTimezoneCache.set(storeId, timezone)
+
+      return { ok: true, storeId }
     },
     {
       resolveStoreId: (rawData, context) => {
