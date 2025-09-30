@@ -174,7 +174,7 @@ function buildCsvValue(value: string): string {
 }
 
 export default function Customers() {
-  const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
+  const { storeId: activeStoreId, storeChangeToken, isLoading: storeLoading } = useActiveStoreContext()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -832,13 +832,6 @@ export default function Customers() {
     { id: 'untagged', label: 'Untagged' },
   ]
 
-  const workspaceEmptyState = (
-    <div className="empty-state">
-      <h3 className="empty-state__title">Select a workspace…</h3>
-      <p>Choose a workspace from the switcher above to continue.</p>
-    </div>
-  )
-
   const pageHeader = (
     <header className="page__header">
       <div>
@@ -853,11 +846,16 @@ export default function Customers() {
     </header>
   )
 
-  if (!activeStoreId) {
+  if (storeLoading) {
     return (
       <div className="page customers-page">
         {pageHeader}
-        <section className="card">{workspaceEmptyState}</section>
+        <section className="card">
+          <div className="empty-state">
+            <h3 className="empty-state__title">Loading workspace…</h3>
+            <p>Please wait while we get things ready.</p>
+          </div>
+        </section>
       </div>
     )
   }

@@ -158,7 +158,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Products() {
-  const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
+  const { storeId: activeStoreId, storeChangeToken, isLoading: storeLoading } = useActiveStoreContext()
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -742,13 +742,6 @@ export default function Products() {
     )
   }
 
-  const workspaceEmptyState = (
-    <div className="empty-state">
-      <h3 className="empty-state__title">Select a workspace…</h3>
-      <p>Choose a workspace from the switcher above to continue.</p>
-    </div>
-  )
-
   const pageHeader = (
     <header className="page__header">
       <div>
@@ -763,11 +756,16 @@ export default function Products() {
     </header>
   )
 
-  if (!activeStoreId) {
+  if (storeLoading) {
     return (
       <div className="page products-page">
         {pageHeader}
-        <section className="card products-page__card">{workspaceEmptyState}</section>
+        <section className="card products-page__card">
+          <div className="empty-state">
+            <h3 className="empty-state__title">Loading workspace…</h3>
+            <p>Please wait while we get things ready.</p>
+          </div>
+        </section>
       </div>
     )
   }

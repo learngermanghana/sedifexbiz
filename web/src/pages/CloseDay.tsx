@@ -32,7 +32,7 @@ function parseQuantity(input: string): number {
 
 export default function CloseDay() {
   const user = useAuthUser()
-  const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
+  const { storeId: activeStoreId, storeChangeToken, isLoading: storeLoading } = useActiveStoreContext()
 
   const [total, setTotal] = useState(0)
   const [cashCounts, setCashCounts] = useState<CashCountState>(() => createInitialCashCountState())
@@ -276,18 +276,14 @@ export default function CloseDay() {
 
 
 
-  const workspaceEmptyState = (
-    <div className="empty-state">
-      <h3 className="empty-state__title">Select a workspace…</h3>
-      <p>Choose a workspace from the switcher above to continue.</p>
-    </div>
-  )
-
-  if (!activeStoreId) {
+  if (storeLoading) {
     return (
       <div className="print-summary" style={{ maxWidth: 760 }}>
         <h2 style={{ color: '#4338CA' }}>Close Day</h2>
-        {workspaceEmptyState}
+        <div className="empty-state">
+          <h3 className="empty-state__title">Loading workspace…</h3>
+          <p>Please wait while we get things ready.</p>
+        </div>
       </div>
     )
   }
