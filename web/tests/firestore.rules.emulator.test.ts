@@ -25,6 +25,7 @@ import {
 const projectId = process.env.GCLOUD_PROJECT ?? 'demo-sedifex'
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080'
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '127.0.0.1:9099'
+const shouldRunEmulatorSuite = process.env.RUN_FIRESTORE_EMULATOR_TESTS === '1'
 
 const [firestoreAddress, firestorePortRaw] = firestoreHost.split(':')
 const firestorePort = Number(firestorePortRaw ?? '8080')
@@ -184,6 +185,10 @@ async function expectFails<T>(promise: Promise<T>, message: string) {
 }
 
 beforeAll(async () => {
+  if (!shouldRunEmulatorSuite) {
+    return
+  }
+
   const seedingContext = await createStoreMember('store-1')
   try {
     await setDoc(doc(seedingContext.db, 'stores/store-1'), { name: 'Demo Store' })
@@ -197,7 +202,9 @@ afterAll(async () => {
   // Explicit no-op to keep Vitest happy when using only beforeAll in this suite.
 })
 
-describe('Firestore rules - multi-tenant store access', () => {
+const describeOrSkip = shouldRunEmulatorSuite ? describe : describe.skip
+
+describeOrSkip('Firestore rules - multi-tenant store access', () => {
   test('matching storeId users can read and write their store document', async () => {
     const context = await createStoreMember('store-1')
     try {
