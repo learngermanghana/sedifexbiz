@@ -5,6 +5,7 @@ import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  signOut,
 } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
@@ -572,11 +573,17 @@ export default function App() {
         await afterSignupBootstrap(storeId)
 
         setOnboardingStatus(nextUser.uid, 'pending')
+
+        await signOut(auth)
+        setMode('login')
       }
 
       setStatus({
         tone: 'success',
-        message: mode === 'login' ? 'Welcome back! Redirecting…' : 'All set! Your account is ready.',
+        message:
+          mode === 'login'
+            ? 'Welcome back! Redirecting…'
+            : 'All set! Your account is ready. Please log in to continue.',
       })
       setPassword('')
       setConfirmPassword('')
