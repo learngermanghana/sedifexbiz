@@ -1,7 +1,8 @@
 import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+
 
 import Today, { formatDateKey } from '../Today'
 
@@ -38,6 +39,7 @@ const queryMock = vi.fn((ref: unknown, ...constraints: unknown[]) => ({
   ref,
   constraints,
 }))
+const startAfterMock = vi.fn((...args: unknown[]) => ({ type: 'startAfter', args }))
 const whereMock = vi.fn((field: string, op: string, value: unknown) => ({
   type: 'where',
   field,
@@ -53,6 +55,7 @@ vi.mock('firebase/firestore', () => ({
   limit: (...args: Parameters<typeof limitMock>) => limitMock(...args),
   orderBy: (...args: Parameters<typeof orderByMock>) => orderByMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
+  startAfter: (...args: Parameters<typeof startAfterMock>) => startAfterMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
 }))
 
@@ -106,6 +109,7 @@ describe('Today page', () => {
     limitMock.mockClear()
     orderByMock.mockClear()
     queryMock.mockClear()
+    startAfterMock.mockClear()
     whereMock.mockClear()
   })
 
@@ -301,8 +305,55 @@ describe('Today page', () => {
     expect(screen.getByText('No product sales recorded today.')).toBeInTheDocument()
   })
 
-  it('renders quick action buttons with correct destinations', async () => {
-    mockEmptyFirestoreResponses()
+
+  it('filters activities by type when a filter is selected', async () => {
+    getDocMock
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          salesTotal: 100,
+          salesCount: 2,
+          cardTotal: 60,
+          cashTotal: 40,
+          receiptCount: 2,
+          receiptUnits: 4,
+          newCustomers: 1,
+          topProducts: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => false,
+        data: () => ({}),
+      })
+
+    getDocsMock
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'activity-1',
+            data: () => ({
+              message: 'Initial activity',
+              type: 'sale',
+              actor: 'Lila',
+              at: { toDate: () => new Date('2024-02-20T08:05:00Z') },
+            }),
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'activity-2',
+            data: () => ({
+              message: 'Filtered sale',
+              type: 'sale',
+              actor: 'Marcus',
+              at: { toDate: () => new Date('2024-02-20T09:15:00Z') },
+            }),
+          },
+        ],
+      })
+
 
     render(
       <MemoryRouter>
@@ -310,87 +361,93 @@ describe('Today page', () => {
       </MemoryRouter>,
     )
 
-    const newProduct = await screen.findByRole('link', {
-      name: /create a new product in your catalog/i,
-    })
-    const receiveStock = screen.getByRole('link', {
-      name: /record received stock items/i,
-    })
-    const startSale = screen.getByRole('link', {
-      name: /start a new point of sale session/i,
+
+    await waitFor(() => {
+      expect(screen.getByText('Initial activity')).toBeInTheDocument()
     })
 
-    expect(newProduct).toHaveAttribute('href', '/products')
-    expect(receiveStock).toHaveAttribute('href', '/receive')
-    expect(startSale).toHaveAttribute('href', '/sell')
-    expect(newProduct).toHaveTextContent('New Product')
-    expect(receiveStock).toHaveTextContent('Receive Stock')
-    expect(startSale).toHaveTextContent('Start Sale')
+    const salesFilter = screen.getByRole('button', { name: 'Sales' })
+    fireEvent.click(salesFilter)
+
+    await waitFor(() => {
+      expect(screen.getByText('Filtered sale')).toBeInTheDocument()
+    })
+
+    expect(whereMock).toHaveBeenCalledWith('type', '==', 'sale')
+    expect(getDocsMock).toHaveBeenCalledTimes(2)
   })
 
-  it('navigates to the products page when using the New Product quick action', async () => {
-    mockEmptyFirestoreResponses()
+  it('loads additional activity pages using startAfter', async () => {
+    getDocMock
+      .mockResolvedValueOnce({
+        exists: () => true,
+        data: () => ({
+          salesTotal: 100,
+          salesCount: 2,
+          cardTotal: 60,
+          cashTotal: 40,
+          receiptCount: 2,
+          receiptUnits: 4,
+          newCustomers: 1,
+          topProducts: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        exists: () => false,
+        data: () => ({}),
+      })
 
-    const user = userEvent.setup()
+    const firstPageDocs = Array.from({ length: 50 }, (_, index) => ({
+      id: `activity-${index}`,
+      data: () => ({
+        message: `Activity ${index}`,
+        type: 'sale',
+        actor: 'User',
+        at: { toDate: () => new Date(`2024-02-20T08:${String(index).padStart(2, '0')}:00Z`) },
+      }),
+    }))
+
+    const lastDoc = firstPageDocs[firstPageDocs.length - 1]
+
+    const secondPageDocs = [
+      {
+        id: 'activity-next',
+        data: () => ({
+          message: 'Next page activity',
+          type: 'sale',
+          actor: 'User',
+          at: { toDate: () => new Date('2024-02-20T09:45:00Z') },
+        }),
+      },
+    ]
+
+    getDocsMock
+      .mockResolvedValueOnce({ docs: firstPageDocs })
+      .mockResolvedValueOnce({ docs: secondPageDocs })
 
     render(
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route path="/" element={<Today />} />
-          <Route path="/products" element={<p>Products workspace</p>} />
-        </Routes>
+      <MemoryRouter>
+        <Today />
       </MemoryRouter>,
     )
 
-    const newProduct = await screen.findByRole('link', {
-      name: /create a new product in your catalog/i,
+    await waitFor(() => {
+      expect(screen.getByText('Activity 0')).toBeInTheDocument()
     })
-    await user.click(newProduct)
 
-    expect(await screen.findByText('Products workspace')).toBeInTheDocument()
-  })
+    const loadMoreButton = screen.getByRole('button', { name: 'Load more' })
+    expect(loadMoreButton).toBeEnabled()
 
-  it('navigates to the receive stock page when using the Receive Stock quick action', async () => {
-    mockEmptyFirestoreResponses()
+    fireEvent.click(loadMoreButton)
+    fireEvent.click(loadMoreButton)
 
-    const user = userEvent.setup()
-
-    render(
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route path="/" element={<Today />} />
-          <Route path="/receive" element={<p>Receive stock workspace</p>} />
-        </Routes>
-      </MemoryRouter>,
-    )
-
-    const receiveStock = await screen.findByRole('link', {
-      name: /record received stock items/i,
+    await waitFor(() => {
+      expect(screen.getByText('Next page activity')).toBeInTheDocument()
     })
-    await user.click(receiveStock)
 
-    expect(await screen.findByText('Receive stock workspace')).toBeInTheDocument()
-  })
+    expect(getDocsMock).toHaveBeenCalledTimes(2)
+    expect(startAfterMock).toHaveBeenCalledWith(lastDoc)
+    expect(screen.queryByRole('button', { name: /Load more/i })).not.toBeInTheDocument()
 
-  it('navigates to the sell page when using the Start Sale quick action', async () => {
-    mockEmptyFirestoreResponses()
-
-    const user = userEvent.setup()
-
-    render(
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route path="/" element={<Today />} />
-          <Route path="/sell" element={<p>Point of sale</p>} />
-        </Routes>
-      </MemoryRouter>,
-    )
-
-    const startSale = await screen.findByRole('link', {
-      name: /start a new point of sale session/i,
-    })
-    await user.click(startSale)
-
-    expect(await screen.findByText('Point of sale')).toBeInTheDocument()
   })
 })
