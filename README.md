@@ -53,6 +53,11 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 - Firestore emulator rules tests are skipped by default. To execute them, start the local Firebase emulators and run tests with
   `RUN_FIRESTORE_EMULATOR_TESTS=1 npm run test` so the suite can connect to the emulator endpoints.
 
+## Maintenance scripts
+- To backfill missing team memberships and store documents for legacy Auth accounts, run `npm run migrate-missing-members` from the
+  `functions/` directory. The script requires Firebase Admin credentials (e.g., `GOOGLE_APPLICATION_CREDENTIALS`) so it can list
+  all users and write to Firestore.
+
 ### Firestore membership documents
 - Store onboarding now relies on membership documents in Firestore. Create one document per workspace under `memberships/{workspaceId}` with fields such as `contractStart`, `contractEnd`, `paymentStatus`, `amountPaid`, and `company`.
 - Ensure date fields are stored as Firestore Timestamps (or ISO strings if ingesting via script) and normalize payment amounts to numbers so Cloud Functions can process billing logic without additional parsing.
