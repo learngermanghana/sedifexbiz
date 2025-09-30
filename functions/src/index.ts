@@ -5,6 +5,7 @@ import { fetchClientRowByEmail, getDefaultSpreadsheetId, normalizeHeader } from 
 import { deriveStoreIdFromContext, withCallableErrorLogging } from './telemetry'
 
 import { FIREBASE_CALLABLES } from '../../shared/firebaseCallables'
+import { formatDailySummaryKey, normalizeDailySummaryKey } from '../../shared/dateKeys'
 
 
 const db = defaultDb
@@ -44,6 +45,28 @@ function parseTimestampValue(value: unknown): admin.firestore.Timestamp | null {
   if (value instanceof Date) {
     return admin.firestore.Timestamp.fromMillis(value.getTime())
   }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    if (typeof record._millis === 'number') {
+      return admin.firestore.Timestamp.fromMillis(record._millis)
+    }
+    const secondsValue =
+      typeof record._seconds === 'number'
+        ? record._seconds
+        : typeof record.seconds === 'number'
+          ? record.seconds
+          : null
+    if (secondsValue !== null) {
+      const nanosValue =
+        typeof record._nanoseconds === 'number'
+          ? record._nanoseconds
+          : typeof record.nanoseconds === 'number'
+            ? record.nanoseconds
+            : 0
+      const millis = secondsValue * 1000 + nanosValue / 1_000_000
+      return admin.firestore.Timestamp.fromMillis(millis)
+    }
+  }
   return parseDateValue(value)
 }
 
@@ -72,6 +95,132 @@ async function resolveStoreDateKey(
     },
   })
   return { dateKey, timestamp: resolvedTimestamp }
+}
+
+function safeFormatDailySummaryKey(date: Date, timeZone: string): string {
+  return formatDailySummaryKey(date, {
+    timeZone,
+    onInvalidTimeZone: (invalidTimeZone, error) => {
+      functions.logger.warn('[nightlyDataHygiene] Invalid timezone for date formatting', {
+        timeZone: invalidTimeZone,
+        error,
+      })
+    },
+  })
+}
+
+function getMillisForZonedDate(timeZone: string, year: number, month: number, day: number): number {
+  const baseMillis = Date.UTC(year, month - 1, day, 0, 0, 0, 0)
+  const baseDate = new Date(baseMillis)
+
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    })
+
+    const parts = formatter.formatToParts(baseDate)
+    const getPart = (type: string, fallback: number): number => {
+      const part = parts.find(entry => entry.type === type)
+      if (!part) return fallback
+      const parsed = Number(part.value)
+      return Number.isFinite(parsed) ? parsed : fallback
+    }
+
+    const resolvedYear = getPart('year', year)
+    const resolvedMonth = getPart('month', month)
+    const resolvedDay = getPart('day', day)
+    const resolvedHour = getPart('hour', 0)
+    const resolvedMinute = getPart('minute', 0)
+    const resolvedSecond = getPart('second', 0)
+
+    if (
+      [resolvedYear, resolvedMonth, resolvedDay, resolvedHour, resolvedMinute, resolvedSecond].some(value =>
+        Number.isNaN(value),
+      )
+    ) {
+      return baseMillis
+    }
+
+    const zonedMillis = Date.UTC(
+      resolvedYear,
+      resolvedMonth - 1,
+      resolvedDay,
+      resolvedHour,
+      resolvedMinute,
+      resolvedSecond,
+    )
+    const diff = zonedMillis - baseMillis
+    return baseMillis - diff
+  } catch (error) {
+    functions.logger.warn('[nightlyDataHygiene] Failed to resolve zoned date', { timeZone, error })
+    return baseMillis
+  }
+}
+
+function computePreviousDayWindow(
+  timeZone: string,
+  reference: Date,
+): { start: Date; end: Date; dateKey: string; timeZone: string } {
+  const normalizedTimeZone = timeZone || 'UTC'
+  let effectiveTimeZone = normalizedTimeZone
+  let formatter: Intl.DateTimeFormat
+
+  try {
+    formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: effectiveTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+  } catch (error) {
+    functions.logger.warn('[nightlyDataHygiene] Falling back to UTC for invalid timezone', {
+      timeZone: effectiveTimeZone,
+      error,
+    })
+    effectiveTimeZone = 'UTC'
+    formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: effectiveTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+  }
+
+  const parts = formatter.formatToParts(reference)
+  const getPart = (type: string, fallback: number): number => {
+    const part = parts.find(entry => entry.type === type)
+    if (!part) return fallback
+    const parsed = Number(part.value)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  const currentYear = getPart('year', reference.getUTCFullYear())
+  const currentMonth = getPart('month', reference.getUTCMonth() + 1)
+  const currentDay = getPart('day', reference.getUTCDate())
+
+  const currentStartMillis = getMillisForZonedDate(effectiveTimeZone, currentYear, currentMonth, currentDay)
+  const previousDate = new Date(Date.UTC(currentYear, currentMonth - 1, currentDay))
+  previousDate.setUTCDate(previousDate.getUTCDate() - 1)
+
+  const previousStartMillis = getMillisForZonedDate(
+    effectiveTimeZone,
+    previousDate.getUTCFullYear(),
+    previousDate.getUTCMonth() + 1,
+    previousDate.getUTCDate(),
+  )
+
+  const start = new Date(previousStartMillis)
+  const end = new Date(currentStartMillis)
+  const dateKey = safeFormatDailySummaryKey(start, effectiveTimeZone)
+
+  return { start, end, dateKey, timeZone: effectiveTimeZone }
 }
 
 type ProductStatIncrement = {
@@ -335,6 +484,250 @@ async function recordActivityEntry(activity: {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   })
+}
+
+type RolledSummaryTotals = {
+  salesCount: number
+  salesTotal: number
+  cardTotal: number
+  cashTotal: number
+  receiptsCount: number
+  unitsReceived: number
+  receiptCostTotal: number
+  newCustomersCount: number
+  closeoutsCount: number
+  closeoutCountedTotal: number
+  closeoutExpectedTotal: number
+  closeoutVarianceTotal: number
+}
+
+const ROLLED_SUMMARY_FIELDS: (keyof RolledSummaryTotals)[] = [
+  'salesCount',
+  'salesTotal',
+  'cardTotal',
+  'cashTotal',
+  'receiptsCount',
+  'unitsReceived',
+  'receiptCostTotal',
+  'newCustomersCount',
+  'closeoutsCount',
+  'closeoutCountedTotal',
+  'closeoutExpectedTotal',
+  'closeoutVarianceTotal',
+]
+
+function getTimestampMillis(value: unknown): number | null {
+  const timestamp = parseTimestampValue(value)
+  return timestamp ? timestamp.toMillis() : null
+}
+
+async function recomputeDailySummaryForStore(storeId: string, referenceDate: Date): Promise<void> {
+  const timezone = await getStoreTimezone(storeId)
+  const window = computePreviousDayWindow(timezone, referenceDate)
+  const startMillis = window.start.getTime()
+  const endMillis = window.end.getTime()
+  const startTimestamp = admin.firestore.Timestamp.fromMillis(startMillis)
+  const endTimestamp = admin.firestore.Timestamp.fromMillis(endMillis)
+
+  const [salesSnapshot, receiptsSnapshot, customersSnapshot, closeoutsSnapshot] = await Promise.all([
+    db
+      .collection('sales')
+      .where('storeId', '==', storeId)
+      .where('createdAt', '>=', startTimestamp)
+      .where('createdAt', '<', endTimestamp)
+      .get(),
+    db
+      .collection('receipts')
+      .where('storeId', '==', storeId)
+      .where('createdAt', '>=', startTimestamp)
+      .where('createdAt', '<', endTimestamp)
+      .get(),
+    db
+      .collection('customers')
+      .where('storeId', '==', storeId)
+      .where('createdAt', '>=', startTimestamp)
+      .where('createdAt', '<', endTimestamp)
+      .get(),
+    db.collection('closeouts').where('storeId', '==', storeId).get(),
+  ])
+
+  const totals: RolledSummaryTotals = {
+    salesCount: 0,
+    salesTotal: 0,
+    cardTotal: 0,
+    cashTotal: 0,
+    receiptsCount: 0,
+    unitsReceived: 0,
+    receiptCostTotal: 0,
+    newCustomersCount: 0,
+    closeoutsCount: 0,
+    closeoutCountedTotal: 0,
+    closeoutExpectedTotal: 0,
+    closeoutVarianceTotal: 0,
+  }
+
+  let latestActivityMillis: number | null = null
+  const updateLatest = (candidate: number | null) => {
+    if (candidate === null || Number.isNaN(candidate)) {
+      return
+    }
+    if (latestActivityMillis === null || candidate > latestActivityMillis) {
+      latestActivityMillis = candidate
+    }
+  }
+
+  for (const doc of salesSnapshot.docs) {
+    const data = doc.data() as Record<string, unknown>
+    const createdAtMillis = getTimestampMillis(data.createdAt)
+    if (createdAtMillis === null || createdAtMillis < startMillis || createdAtMillis >= endMillis) {
+      continue
+    }
+
+    const saleTotal = Math.max(0, coerceNumber(data.total))
+    const tenderStats = collectTenderStats(data.tenders)
+    let cardIncrement = tenderStats.cardTotal
+    let cashIncrement = tenderStats.cashTotal
+
+    if (tenderStats.methods.length === 0) {
+      const legacyPayment = (data.payment ?? {}) as Record<string, unknown>
+      const paymentMethod = typeof legacyPayment.method === 'string' ? legacyPayment.method : ''
+      const normalizedMethod = paymentMethod.trim().toLowerCase()
+      if (normalizedMethod === 'cash') {
+        cashIncrement = saleTotal
+      } else if (normalizedMethod === 'card' || normalizedMethod === 'mobile') {
+        cardIncrement = saleTotal
+      }
+    }
+
+    totals.salesCount += 1
+    totals.salesTotal += saleTotal
+    if (cardIncrement !== 0) {
+      totals.cardTotal += cardIncrement
+    }
+    if (cashIncrement !== 0) {
+      totals.cashTotal += cashIncrement
+    }
+    updateLatest(createdAtMillis)
+  }
+
+  for (const doc of receiptsSnapshot.docs) {
+    const data = doc.data() as Record<string, unknown>
+    const createdAtMillis = getTimestampMillis(data.createdAt)
+    if (createdAtMillis === null || createdAtMillis < startMillis || createdAtMillis >= endMillis) {
+      continue
+    }
+
+    const unitsReceived = Math.max(0, coerceNumber(data.qty))
+    const receiptCostTotal = Math.max(0, coerceNumber(data.totalCost))
+
+    totals.receiptsCount += 1
+    if (unitsReceived !== 0) {
+      totals.unitsReceived += unitsReceived
+    }
+    if (receiptCostTotal !== 0) {
+      totals.receiptCostTotal += receiptCostTotal
+    }
+    updateLatest(createdAtMillis)
+  }
+
+  for (const doc of customersSnapshot.docs) {
+    const data = doc.data() as Record<string, unknown>
+    const createdAtMillis = getTimestampMillis(data.createdAt)
+    if (createdAtMillis === null || createdAtMillis < startMillis || createdAtMillis >= endMillis) {
+      continue
+    }
+
+    totals.newCustomersCount += 1
+    updateLatest(createdAtMillis)
+  }
+
+  for (const doc of closeoutsSnapshot.docs) {
+    const data = doc.data() as Record<string, unknown>
+    const sourceMillis =
+      getTimestampMillis(data.closedAt) ?? getTimestampMillis(data.createdAt) ?? null
+    if (sourceMillis === null || sourceMillis < startMillis || sourceMillis >= endMillis) {
+      continue
+    }
+
+    const countedCash = coerceNumber(data.countedCash)
+    const expectedCash = coerceNumber(data.expectedCash)
+    const hasVarianceField = Object.prototype.hasOwnProperty.call(data, 'variance')
+    const varianceValue = hasVarianceField ? coerceNumber(data.variance) : countedCash - expectedCash
+
+    totals.closeoutsCount += 1
+    if (countedCash !== 0) {
+      totals.closeoutCountedTotal += countedCash
+    }
+    if (expectedCash !== 0) {
+      totals.closeoutExpectedTotal += expectedCash
+    }
+    if (varianceValue !== 0) {
+      totals.closeoutVarianceTotal += varianceValue
+    }
+    updateLatest(sourceMillis)
+  }
+
+  const summaryRef = db.collection('dailySummaries').doc(`${storeId}_${window.dateKey}`)
+  const summarySnapshot = await summaryRef.get()
+  const existingData = (summarySnapshot.data() ?? {}) as Record<string, unknown>
+  const increments: Record<string, number> = {}
+
+  for (const field of ROLLED_SUMMARY_FIELDS) {
+    const target = totals[field]
+    const previous = coerceNumber(existingData[field])
+    const delta = target - previous
+    if (delta !== 0) {
+      increments[field] = delta
+    }
+  }
+
+  let lastActivityAt: admin.firestore.Timestamp | undefined
+  if (latestActivityMillis !== null) {
+    const existingLastActivityMillis = getTimestampMillis(existingData.lastActivityAt)
+    if (existingLastActivityMillis === null || existingLastActivityMillis !== latestActivityMillis) {
+      lastActivityAt = admin.firestore.Timestamp.fromMillis(latestActivityMillis)
+    }
+  }
+
+  await upsertDailySummaryDoc(storeId, window.dateKey, {
+    increments,
+    lastActivityAt,
+  })
+}
+
+async function cleanActivityDocuments(): Promise<void> {
+  const snapshot = await db.collection('activities').get()
+  for (const doc of snapshot.docs) {
+    const data = doc.data() as Record<string, unknown>
+    const storeIdRaw = data.storeId
+    const storeId = typeof storeIdRaw === 'string' ? storeIdRaw.trim() : ''
+    if (!storeId) {
+      await doc.ref.delete()
+      continue
+    }
+
+    const existingDateKeyRaw = typeof data.dateKey === 'string' ? data.dateKey.trim() : ''
+    const normalizedDateKey = existingDateKeyRaw ? normalizeDailySummaryKey(existingDateKeyRaw) : null
+
+    let needsUpdate = false
+    let nextDateKey = normalizedDateKey ?? existingDateKeyRaw
+
+    if (!normalizedDateKey) {
+      const timestampSource = (data.at ?? data.createdAt ?? data.updatedAt) as unknown
+      if (timestampSource == null) {
+        continue
+      }
+      const { dateKey } = await resolveStoreDateKey(storeId, timestampSource, undefined)
+      nextDateKey = dateKey
+      needsUpdate = true
+    } else if (normalizedDateKey !== existingDateKeyRaw) {
+      needsUpdate = true
+    }
+
+    if (needsUpdate && nextDateKey) {
+      await doc.ref.update({ dateKey: nextDateKey })
+    }
+  }
 }
 
 type ContactPayload = {
@@ -1920,4 +2313,43 @@ export const onCloseoutCreate = functions.firestore
       summary,
       refs,
     })
+  })
+
+export const runNightlyDataHygiene = functions.pubsub
+  .schedule('0 3 * * *')
+  .timeZone('UTC')
+  .onRun(async () => {
+    const referenceDate = new Date()
+
+    try {
+      const storesSnapshot = await db.collection('stores').get()
+      for (const doc of storesSnapshot.docs) {
+        const storeId = doc.id.trim()
+        if (!storeId) {
+          continue
+        }
+
+        const timezoneValue = normalizeTimezone(doc.get('timezone'))
+        if (timezoneValue) {
+          storeTimezoneCache.set(storeId, timezoneValue)
+        }
+
+        try {
+          await recomputeDailySummaryForStore(storeId, referenceDate)
+        } catch (error) {
+          functions.logger.error('[nightlyDataHygiene] Failed to recompute summary', {
+            storeId,
+            error,
+          })
+        }
+      }
+    } catch (error) {
+      functions.logger.error('[nightlyDataHygiene] Failed to iterate stores', { error })
+    }
+
+    try {
+      await cleanActivityDocuments()
+    } catch (error) {
+      functions.logger.error('[nightlyDataHygiene] Failed to clean activities', { error })
+    }
   })
