@@ -29,10 +29,13 @@ import {
 } from './utils/activeStoreStorage'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 import type { QueueRequestType } from './utils/offlineQueue'
+import { OVERRIDE_TEAM_MEMBER_DOC_ID } from './config/teamMembers'
 
 /* ------------------------------ config ------------------------------ */
+
 /** If you want to ALSO mirror the team member to a fixed doc id, put it here. */
 const OVERRIDE_MEMBER_DOC_ID = 'gsF0m9Hw7yUfn53Z6zX7B0G3kGX2' // set '' to disable
+
 const LEGACY_STORE_BACKFILL_KEY_PREFIX = 'legacy-store-backfill/'
 
 /* ------------------------------ constants ------------------------------ */
@@ -192,9 +195,9 @@ async function upsertTeamMemberDocs(params: {
         await setDoc(uidRef, { lastSeenAt }, { merge: true })
         persistActiveStoreId(existingStoreId, user.uid)
         // Optionally mirror to fixed doc for your analytics/admin
-        if (OVERRIDE_MEMBER_DOC_ID) {
+        if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
           await setDoc(
-            doc(db, 'teamMembers', OVERRIDE_MEMBER_DOC_ID),
+            doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID),
             { ...snap.data(), lastSeenAt, updatedAt: serverTimestamp() },
             { merge: true },
           )
@@ -229,8 +232,8 @@ async function upsertTeamMemberDocs(params: {
 
   await setDoc(uidRef, payload, { merge: true })
 
-  if (OVERRIDE_MEMBER_DOC_ID) {
-    await setDoc(doc(db, 'teamMembers', OVERRIDE_MEMBER_DOC_ID), payload, { merge: true })
+  if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
+    await setDoc(doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID), payload, { merge: true })
   }
 
   await ensureLegacyStoreDoc({ storeId, user, timestamp })
@@ -572,9 +575,9 @@ export default function App() {
 
         await setDoc(doc(db, 'teamMembers', nextUser.uid), teamMemberContactPayload, { merge: true })
 
-        if (OVERRIDE_MEMBER_DOC_ID) {
+        if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
           await setDoc(
-            doc(db, 'teamMembers', OVERRIDE_MEMBER_DOC_ID),
+            doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID),
             {
               ...teamMemberContactPayload,
               uid: nextUser.uid,
