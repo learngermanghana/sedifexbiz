@@ -2,6 +2,7 @@ const assert = require('assert')
 const Module = require('module')
 const path = require('path')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
+const { FIREBASE_CALLABLES } = require('../lib/shared/firebaseCallables.js')
 
 let currentDefaultDb
 const apps = []
@@ -109,7 +110,7 @@ async function runBackfillLoggingTest() {
   assert.strictEqual(error.code, 'invalid-argument')
 
   const logEntry = extractLatestLog()
-  assert.strictEqual(logEntry.route, 'backfillMyStore')
+  assert.strictEqual(logEntry.route, FIREBASE_CALLABLES.BACKFILL_MY_STORE)
   assert.strictEqual(logEntry.storeId, 'store-xyz')
   assert.strictEqual(logEntry.authUid, 'user-123')
   assert.deepStrictEqual(logEntry.payloadShape, { contact: { phone: 'number' } })
@@ -142,7 +143,7 @@ async function runManageStaffLoggingTest() {
   assert.strictEqual(error.code, 'invalid-argument')
 
   const logEntry = extractLatestLog()
-  assert.strictEqual(logEntry.route, 'manageStaffAccount')
+  assert.strictEqual(logEntry.route, FIREBASE_CALLABLES.MANAGE_STAFF_ACCOUNT)
   assert.strictEqual(logEntry.storeId, 'store-abc')
   assert.strictEqual(logEntry.authUid, 'owner-1')
   assert.strictEqual(logEntry.payloadShape.storeId, 'number')

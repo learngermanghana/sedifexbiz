@@ -2,6 +2,7 @@ import React from 'react'
 import { describe, it, beforeEach, expect, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { FIREBASE_CALLABLES } from '@shared/firebaseCallables'
 
 const mocks = vi.hoisted(() => {
   const receiveStockMock = vi.fn()
@@ -128,7 +129,13 @@ describe('Receive', () => {
     await user.type(screen.getByLabelText('Reference number'), 'PO-1')
     await user.click(screen.getByRole('button', { name: 'Add stock' }))
 
-    await waitFor(() => expect(queueCallableRequestMock).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(queueCallableRequestMock).toHaveBeenCalledWith(
+        FIREBASE_CALLABLES.RECEIVE_STOCK,
+        expect.objectContaining({ productId: 'prod-1', qty: 5 }),
+        'receipt',
+      ),
+    )
 
     expect(mockPublish).toHaveBeenCalledWith({ message: 'Queued receipt • will sync', tone: 'success' })
     expect(screen.getByRole('status')).toHaveTextContent('Offline receipt saved.')
@@ -150,7 +157,13 @@ describe('Receive', () => {
     await user.type(screen.getByLabelText('Reference number'), 'PO-1')
     await user.click(screen.getByRole('button', { name: 'Add stock' }))
 
-    await waitFor(() => expect(queueCallableRequestMock).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(queueCallableRequestMock).toHaveBeenCalledWith(
+        FIREBASE_CALLABLES.RECEIVE_STOCK,
+        expect.objectContaining({ productId: 'prod-1', qty: 5 }),
+        'receipt',
+      ),
+    )
     await waitFor(() =>
       expect(screen.getByRole('option', { name: 'Widget (Stock 15)' })).toBeInTheDocument(),
     )

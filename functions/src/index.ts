@@ -3,6 +3,7 @@ import { applyRoleClaims } from './customClaims'
 import { admin, defaultDb, rosterDb } from './firestore'
 import { fetchClientRowByEmail, getDefaultSpreadsheetId, normalizeHeader } from './googleSheets'
 import { deriveStoreIdFromContext, withCallableErrorLogging } from './telemetry'
+import { FIREBASE_CALLABLES } from '../../shared/firebaseCallables'
 
 const db = defaultDb
 
@@ -1031,7 +1032,7 @@ async function handleStoreBootstrap(
 
 export const initializeStore = functions.https.onCall(
   withCallableErrorLogging(
-    'initializeStore',
+    FIREBASE_CALLABLES.INITIALIZE_STORE,
     async (data, context) => handleStoreBootstrap((data ?? {}) as InitializeStorePayload, context),
     {
       resolveStoreId: (rawData, context) => {
@@ -1046,7 +1047,7 @@ export const initializeStore = functions.https.onCall(
 
 export const afterSignupBootstrap = functions.https.onCall(
   withCallableErrorLogging(
-    'afterSignupBootstrap',
+    FIREBASE_CALLABLES.AFTER_SIGNUP_BOOTSTRAP,
     async (data, context) => handleStoreBootstrap((data ?? {}) as InitializeStorePayload, context),
     {
       resolveStoreId: (rawData, context) => {
@@ -1061,7 +1062,7 @@ export const afterSignupBootstrap = functions.https.onCall(
 
 export const resolveStoreAccess = functions.https.onCall(
   withCallableErrorLogging(
-    'resolveStoreAccess',
+    FIREBASE_CALLABLES.RESOLVE_STORE_ACCESS,
     async (data, context) => {
       assertAuthenticated(context)
 
@@ -1393,7 +1394,7 @@ export const resolveStoreAccess = functions.https.onCall(
 
 export const manageStaffAccount = functions.https.onCall(
   withCallableErrorLogging(
-    'manageStaffAccount',
+    FIREBASE_CALLABLES.MANAGE_STAFF_ACCOUNT,
     async (data, context) => {
       assertOwnerAccess(context)
 
@@ -1447,7 +1448,7 @@ export const manageStaffAccount = functions.https.onCall(
 
 export const revokeStaffAccess = functions.https.onCall(
   withCallableErrorLogging(
-    'revokeStaffAccess',
+    FIREBASE_CALLABLES.REVOKE_STAFF_ACCESS,
     async (data, context) => {
       assertOwnerAccess(context)
 
@@ -1503,7 +1504,7 @@ export const revokeStaffAccess = functions.https.onCall(
 
 export const updateStoreProfile = functions.https.onCall(
   withCallableErrorLogging(
-    'updateStoreProfile',
+    FIREBASE_CALLABLES.UPDATE_STORE_PROFILE,
     async (data, context) => {
       assertOwnerAccess(context)
 
@@ -1550,7 +1551,7 @@ export const updateStoreProfile = functions.https.onCall(
 
 export const receiveStock = functions.https.onCall(
   withCallableErrorLogging(
-    'receiveStock',
+    FIREBASE_CALLABLES.RECEIVE_STOCK,
     async (data, context) => {
       assertStaffAccess(context)
 

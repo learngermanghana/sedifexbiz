@@ -2,6 +2,7 @@
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '../firebase'
+import { FIREBASE_CALLABLES } from '@shared/firebaseCallables'
 
 type RawSeededDocument = {
   id?: unknown
@@ -95,12 +96,12 @@ const resolveStoreAccessCallable = httpsCallable<
   RawResolveStoreAccessResponse
 >(
   functions,
-  'resolveStoreAccess',
+  FIREBASE_CALLABLES.RESOLVE_STORE_ACCESS,
 )
 
 const afterSignupBootstrapCallable = httpsCallable<AfterSignupBootstrapPayload, void>(
   functions,
-  'afterSignupBootstrap',
+  FIREBASE_CALLABLES.AFTER_SIGNUP_BOOTSTRAP,
 )
 
 export const INACTIVE_WORKSPACE_MESSAGE =
