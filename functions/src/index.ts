@@ -3,6 +3,7 @@ import { applyRoleClaims } from './customClaims'
 import { admin, defaultDb, rosterDb } from './firestore'
 import { fetchClientRowByEmail, getDefaultSpreadsheetId, normalizeHeader } from './googleSheets'
 import { deriveStoreIdFromContext, withCallableErrorLogging } from './telemetry'
+import { formatDailySummaryKey } from '../../shared/dateKeys'
 
 const db = defaultDb
 
@@ -34,27 +35,6 @@ async function getStoreTimezone(storeId: string): Promise<string> {
   return 'UTC'
 }
 
-function formatDateKey(timestamp: admin.firestore.Timestamp, timeZone: string): string {
-  const millis = timestamp.toMillis()
-  const date = new Date(millis)
-  try {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(date)
-  } catch (error) {
-    functions.logger.warn('[dailySummaries] Invalid timezone', { timeZone, error })
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'UTC',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(date)
-  }
-}
-
 function parseTimestampValue(value: unknown): admin.firestore.Timestamp | null {
   if (value instanceof admin.firestore.Timestamp) {
     return value
@@ -82,7 +62,13 @@ async function resolveStoreDateKey(
 ): Promise<{ dateKey: string; timestamp: admin.firestore.Timestamp }> {
   const timezone = await getStoreTimezone(storeId)
   const resolvedTimestamp = parseTimestampValue(sourceTimestamp) ?? parseEventTimestamp(eventTimestamp)
-  const dateKey = formatDateKey(resolvedTimestamp, timezone)
+  const date = resolvedTimestamp.toDate()
+  const dateKey = formatDailySummaryKey(date, {
+    timeZone: timezone,
+    onInvalidTimeZone: (timeZone, error) => {
+      functions.logger.warn('[dailySummaries] Invalid timezone', { timeZone, error })
+    },
+  })
   return { dateKey, timestamp: resolvedTimestamp }
 }
 
