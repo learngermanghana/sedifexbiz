@@ -55,12 +55,67 @@ type ProductRecord = {
   storeId?: string | null
 }
 
+type LoyaltyInfo = {
+  points: number
+  lastVisitAt: Timestamp | null
+}
+
 type CustomerRecord = {
   id: string
   name: string
   displayName?: string
+  loyalty: LoyaltyInfo
   createdAt?: Timestamp | Date | null
   storeId?: string | null
+}
+
+const DEFAULT_LOYALTY: LoyaltyInfo = { points: 0, lastVisitAt: null }
+
+function coerceTimestamp(value: unknown): Timestamp | null {
+  if (!value) return null
+  if (value instanceof Timestamp) return value
+  if (typeof value === 'object') {
+    const anyValue = value as { toDate?: () => Date; seconds?: number; nanoseconds?: number }
+    if (typeof anyValue.toDate === 'function') {
+      try {
+        return Timestamp.fromDate(anyValue.toDate())
+      } catch (error) {
+        console.warn('[metrics] Failed to convert loyalty timestamp via toDate', error)
+      }
+    }
+    if (typeof anyValue.seconds === 'number') {
+      const seconds = anyValue.seconds
+      const nanos = typeof anyValue.nanoseconds === 'number' ? anyValue.nanoseconds : 0
+      try {
+        return new Timestamp(seconds, nanos)
+      } catch (error) {
+        console.warn('[metrics] Failed to construct loyalty timestamp from seconds', error)
+      }
+    }
+  }
+  return null
+}
+
+function normalizeLoyalty(value: unknown): LoyaltyInfo {
+  if (!value || typeof value !== 'object') {
+    return { ...DEFAULT_LOYALTY }
+  }
+  const record = value as { points?: unknown; lastVisitAt?: unknown }
+  const rawPoints = Number(record.points)
+  const points = Number.isFinite(rawPoints) && rawPoints >= 0 ? Math.floor(rawPoints) : 0
+  const lastVisitAt = coerceTimestamp(record.lastVisitAt) ?? null
+  return { points, lastVisitAt }
+}
+
+function normalizeCustomerRecord(record: { id: string } & Partial<CustomerRecord>): CustomerRecord {
+  return {
+    id: record.id,
+    name: record.name ?? '',
+    displayName: record.displayName,
+    loyalty: normalizeLoyalty((record as Partial<CustomerRecord>).loyalty),
+    createdAt: record.createdAt ?? null,
+    storeId: record.storeId ?? null,
+  }
 }
 
 type GoalTargets = {
@@ -567,10 +622,10 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       }
     }
 
-    loadCachedCustomers<CustomerRecord>({ storeId: activeStoreId })
+    loadCachedCustomers<{ id: string } & Partial<CustomerRecord>>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
-          setCustomers(cached)
+          setCustomers(cached.map(normalizeCustomerRecord))
         }
       })
       .catch(error => {
@@ -586,10 +641,9 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     )
 
     const unsubscribe = onSnapshot(q, snapshot => {
-      const rows: CustomerRecord[] = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<CustomerRecord, 'id'>),
-      }))
+      const rows: CustomerRecord[] = snapshot.docs.map(docSnap =>
+        normalizeCustomerRecord({ id: docSnap.id, ...(docSnap.data() as Partial<CustomerRecord>) }),
+      )
       setCustomers(rows)
       saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[metrics] Failed to cache customers', error)

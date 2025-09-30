@@ -12,6 +12,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore'
+import type { FieldValue } from 'firebase/firestore'
 import { Timestamp } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
@@ -26,6 +27,16 @@ import {
   saveCachedSales,
 } from '../utils/offlineCache'
 
+type LoyaltyInfo = {
+  points: number
+  lastVisitAt: Timestamp | null
+}
+
+type LoyaltyWrite = {
+  points: number
+  lastVisitAt: Timestamp | null | FieldValue
+}
+
 type Customer = {
   id: string
   name: string
@@ -34,6 +45,7 @@ type Customer = {
   email?: string
   notes?: string
   tags?: string[]
+  loyalty: LoyaltyInfo
   createdAt?: Timestamp | null
   updatedAt?: Timestamp | null
 }
@@ -129,6 +141,64 @@ function normalizeTenderEntries(tenders: Record<string, unknown>): Array<{ metho
   return Object.entries(tenders)
     .map(([method, value]) => ({ method, amount: typeof value === 'number' ? value : Number(value) }))
     .filter(entry => Number.isFinite(entry.amount) && entry.amount > 0)
+}
+
+const DEFAULT_LOYALTY: LoyaltyInfo = { points: 0, lastVisitAt: null }
+
+function coerceTimestamp(value: unknown): Timestamp | null {
+  if (!value) return null
+  if (value instanceof Timestamp) return value
+  if (typeof value === 'object') {
+    const anyValue = value as { toDate?: () => Date; seconds?: number; nanoseconds?: number }
+    if (typeof anyValue.toDate === 'function') {
+      try {
+        return Timestamp.fromDate(anyValue.toDate())
+      } catch (error) {
+        console.warn('[customers] Failed to convert loyalty timestamp via toDate', error)
+      }
+    }
+    if (typeof anyValue.seconds === 'number') {
+      const seconds = anyValue.seconds
+      const nanos = typeof anyValue.nanoseconds === 'number' ? anyValue.nanoseconds : 0
+      try {
+        return new Timestamp(seconds, nanos)
+      } catch (error) {
+        console.warn('[customers] Failed to construct loyalty timestamp from seconds', error)
+      }
+    }
+  }
+  return null
+}
+
+function normalizeLoyalty(value: unknown): LoyaltyInfo {
+  if (!value || typeof value !== 'object') {
+    return { ...DEFAULT_LOYALTY }
+  }
+  const record = value as { points?: unknown; lastVisitAt?: unknown }
+  const rawPoints = Number(record.points)
+  const points = Number.isFinite(rawPoints) && rawPoints >= 0 ? Math.floor(rawPoints) : 0
+  const lastVisitAt = coerceTimestamp(record.lastVisitAt) ?? null
+  return { points, lastVisitAt }
+}
+
+function createLoyaltyPayload(value?: LoyaltyInfo | null): LoyaltyWrite {
+  const source = value ? normalizeLoyalty(value) : DEFAULT_LOYALTY
+  return { points: source.points, lastVisitAt: source.lastVisitAt }
+}
+
+function normalizeCustomerRecord(record: { id: string } & Partial<Customer>): Customer {
+  return {
+    id: record.id,
+    name: record.name ?? '',
+    displayName: record.displayName,
+    phone: record.phone,
+    email: record.email,
+    notes: record.notes,
+    tags: Array.isArray(record.tags) ? (record.tags as string[]) : undefined,
+    loyalty: normalizeLoyalty((record as Partial<Customer>).loyalty),
+    createdAt: (record.createdAt ?? null) as Timestamp | null,
+    updatedAt: (record.updatedAt ?? null) as Timestamp | null,
+  }
 }
 
 function formatTenderMethod(method: string): string {
@@ -266,11 +336,12 @@ export default function Customers() {
       }
     }
 
-    loadCachedCustomers<Customer>({ storeId: activeStoreId })
+    loadCachedCustomers<{ id: string } & Partial<Customer>>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
+          const normalized = cached.map(normalizeCustomerRecord)
           setCustomers(
-            [...cached].sort((a, b) =>
+            [...normalized].sort((a, b) =>
               getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
                 sensitivity: 'base',
               }),
@@ -291,13 +362,9 @@ export default function Customers() {
     )
 
     const unsubscribe = onSnapshot(q, snap => {
-      const rows = snap.docs.map(docSnap => {
-        const data = docSnap.data() as Omit<Customer, 'id'>
-        return {
-          id: docSnap.id,
-          ...data,
-        }
-      })
+      const rows = snap.docs.map(docSnap =>
+        normalizeCustomerRecord({ id: docSnap.id, ...(docSnap.data() as Partial<Customer>) }),
+      )
       saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[customers] Failed to cache customers', error)
       })
@@ -558,6 +625,9 @@ export default function Customers() {
     ? getCustomerDisplayName(selectedCustomer)
     : '—'
 
+  const selectedCustomerLoyalty = selectedCustomer?.loyalty ?? { ...DEFAULT_LOYALTY }
+  const selectedCustomerLoyaltyLastVisit = normalizeSaleDate(selectedCustomerLoyalty.lastVisitAt)
+
   const selectedCustomerHistory = selectedCustomerId
     ? salesHistory[selectedCustomerId] ?? []
     : []
@@ -601,6 +671,8 @@ export default function Customers() {
         updatePayload.email = email.trim() ? email.trim() : null
         updatePayload.notes = notes.trim() ? notes.trim() : null
         updatePayload.tags = parsedTags
+        const existingCustomer = customers.find(customer => customer.id === editingCustomerId)
+        updatePayload.loyalty = createLoyaltyPayload(existingCustomer?.loyalty)
         await updateDoc(doc(db, 'customers', editingCustomerId), updatePayload)
         setSelectedCustomerId(editingCustomerId)
         showSuccess('Customer updated successfully.')
@@ -612,6 +684,7 @@ export default function Customers() {
           ...(email.trim() ? { email: email.trim() } : {}),
           ...(notes.trim() ? { notes: notes.trim() } : {}),
           ...(parsedTags.length ? { tags: parsedTags } : {}),
+          loyalty: createLoyaltyPayload(),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
@@ -728,6 +801,8 @@ export default function Customers() {
           if (parsedTags) {
             payload.tags = parsedTags
           }
+          const existingCustomer = customers.find(customer => customer.id === existingId)
+          payload.loyalty = createLoyaltyPayload(existingCustomer?.loyalty)
           await updateDoc(doc(db, 'customers', existingId), payload)
           updatedCount += 1
         } else {
@@ -748,6 +823,7 @@ export default function Customers() {
           if (parsedTags && parsedTags.length) {
             payload.tags = parsedTags
           }
+          payload.loyalty = createLoyaltyPayload()
           await addDoc(collection(db, 'customers'), payload)
           newCount += 1
         }
@@ -1154,6 +1230,14 @@ export default function Customers() {
                       '—'
                     )}
                   </dd>
+                </div>
+                <div>
+                  <dt>Loyalty points</dt>
+                  <dd>{selectedCustomerLoyalty.points}</dd>
+                </div>
+                <div>
+                  <dt>Loyalty last visit</dt>
+                  <dd>{formatDate(selectedCustomerLoyaltyLastVisit)}</dd>
                 </div>
                 <div>
                   <dt>Total visits</dt>

@@ -9,6 +9,7 @@ import {
   where,
   runTransaction,
   serverTimestamp,
+  Timestamp,
 } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { db } from '../firebase'
@@ -37,6 +38,11 @@ type Product = {
   updatedAt?: unknown
 }
 type CartLine = { productId: string; name: string; price: number; qty: number }
+type LoyaltyInfo = {
+  points: number
+  lastVisitAt: Timestamp | null
+}
+
 type Customer = {
   id: string
   name: string
@@ -44,6 +50,7 @@ type Customer = {
   phone?: string
   email?: string
   notes?: string
+  loyalty: LoyaltyInfo
   createdAt?: unknown
   updatedAt?: unknown
 }
@@ -152,6 +159,65 @@ function sanitizePrice(value: unknown): number | null {
     return value
   }
   return null
+}
+
+const DEFAULT_LOYALTY: LoyaltyInfo = { points: 0, lastVisitAt: null }
+
+function coerceTimestamp(value: unknown): Timestamp | null {
+  if (!value) return null
+  if (value instanceof Timestamp) return value
+  if (typeof value === 'object') {
+    const anyValue = value as { toDate?: () => Date; seconds?: number; nanoseconds?: number }
+    if (typeof anyValue.toDate === 'function') {
+      try {
+        return Timestamp.fromDate(anyValue.toDate())
+      } catch (error) {
+        console.warn('[sell] Failed to convert loyalty timestamp via toDate', error)
+      }
+    }
+    if (typeof anyValue.seconds === 'number') {
+      const seconds = anyValue.seconds
+      const nanos = typeof anyValue.nanoseconds === 'number' ? anyValue.nanoseconds : 0
+      try {
+        return new Timestamp(seconds, nanos)
+      } catch (error) {
+        console.warn('[sell] Failed to construct loyalty timestamp from seconds', error)
+      }
+    }
+  }
+  return null
+}
+
+function normalizeLoyalty(value: unknown): LoyaltyInfo {
+  if (!value || typeof value !== 'object') {
+    return { ...DEFAULT_LOYALTY }
+  }
+  const record = value as { points?: unknown; lastVisitAt?: unknown }
+  const rawPoints = Number(record.points)
+  const points = Number.isFinite(rawPoints) && rawPoints >= 0 ? Math.floor(rawPoints) : 0
+  const lastVisitAt = coerceTimestamp(record.lastVisitAt) ?? null
+  return { points, lastVisitAt }
+}
+
+function normalizeCustomerRecord(record: { id: string } & Partial<Customer>): Customer {
+  return {
+    id: record.id,
+    name: record.name ?? '',
+    displayName: record.displayName,
+    phone: record.phone,
+    email: record.email,
+    notes: record.notes,
+    loyalty: normalizeLoyalty((record as Partial<Customer>).loyalty),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  }
+}
+
+function calculateLoyaltyPointsEarned(total: number): number {
+  if (!Number.isFinite(total) || total <= 0) {
+    return 0
+  }
+  return 0
 }
 
 type TenderEntry = { method: string; amount: number }
@@ -296,11 +362,12 @@ export default function Sell() {
       }
     }
 
-    loadCachedCustomers<Customer>({ storeId: activeStoreId })
+    loadCachedCustomers<{ id: string } & Partial<Customer>>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
+          const normalized = cached.map(normalizeCustomerRecord)
           setCustomers(
-            [...cached].sort((a, b) =>
+            [...normalized].sort((a, b) =>
               getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
                 sensitivity: 'base',
               }),
@@ -321,7 +388,9 @@ export default function Sell() {
     )
 
     const unsubscribe = onSnapshot(q, snap => {
-      const rows = snap.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Customer) }))
+      const rows = snap.docs.map(docSnap =>
+        normalizeCustomerRecord({ id: docSnap.id, ...(docSnap.data() as Partial<Customer>) }),
+      )
       saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[sell] Failed to cache customers', error)
       })
@@ -554,15 +623,16 @@ export default function Sell() {
     const stockCollection = collection(db, 'stock')
     const ledgerCollection = collection(db, 'ledger')
 
-    const receiptItems = cart.map(line => ({ ...line }))
-    const saleCustomer = selectedCustomer
-      ? {
-          id: selectedCustomer.id,
-          name: selectedCustomerDataName || selectedCustomer.id,
-          ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
-          ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
-        }
-      : null
+  const receiptItems = cart.map(line => ({ ...line }))
+  const saleCustomer = selectedCustomer
+    ? {
+        id: selectedCustomer.id,
+        name: selectedCustomerDataName || selectedCustomer.id,
+        ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
+        ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
+      }
+    : null
+  const selectedCustomerLoyalty = selectedCustomer?.loyalty ?? DEFAULT_LOYALTY
 
     try {
       await runTransaction(db, async transaction => {
@@ -619,6 +689,17 @@ export default function Sell() {
           createdAt: timestamp,
           updatedAt: timestamp,
         }
+
+        const loyaltyPointsEarned = calculateLoyaltyPointsEarned(subtotal)
+        const customerLoyaltyUpdate = saleCustomer
+          ? {
+              loyalty: {
+                points: selectedCustomerLoyalty.points + loyaltyPointsEarned,
+                lastVisitAt: timestamp,
+              },
+              updatedAt: timestamp,
+            }
+          : null
 
         const saleItemWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
         const stockWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
@@ -693,6 +774,10 @@ export default function Sell() {
         }
 
         transaction.set(saleRef, saleData)
+        if (saleCustomer && customerLoyaltyUpdate) {
+          const customerRef = doc(db, 'customers', saleCustomer.id)
+          transaction.set(customerRef, customerLoyaltyUpdate, { merge: true })
+        }
         for (const { ref, data } of saleItemWrites) {
           transaction.set(ref, data)
         }

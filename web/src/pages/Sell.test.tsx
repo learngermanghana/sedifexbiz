@@ -76,11 +76,20 @@ const productSnapshot = {
   ],
 }
 
+const baseCustomerDoc = {
+  id: 'customer-1',
+  name: 'Ada Lovelace',
+  phone: '+233200000000',
+  loyalty: { points: 0, lastVisitAt: null },
+}
+
+let customerDocData: Record<string, unknown> = { ...baseCustomerDoc }
+
 const customerSnapshot = {
   docs: [
     {
       id: 'customer-1',
-      data: () => ({ id: 'customer-1', name: 'Ada Lovelace', phone: '+233200000000' }),
+      data: () => customerDocData,
     },
   ],
 }
@@ -139,7 +148,7 @@ const docMock = vi.fn((...args: unknown[]): FakeDocRef => {
   throw new Error('Unsupported doc invocation in test mock')
 })
 
-type RecordedOperation = { type: 'set' | 'update'; path: string; data: any }
+type RecordedOperation = { type: 'set' | 'update'; path: string; data: any; options?: any }
 
 let firestoreState: Record<string, any> = {}
 let lastTransactionOperations: RecordedOperation[] = []
@@ -157,9 +166,13 @@ const runTransactionMock = vi.fn(async (_db: unknown, updater: any) => {
   const operations: RecordedOperation[] = []
   const transaction = {
     get: vi.fn(async (ref: FakeDocRef) => createSnapshot(ref.path, firestoreState[ref.path])),
-    set: vi.fn((ref: FakeDocRef, data: any) => {
-      operations.push({ type: 'set', path: ref.path, data })
-      firestoreState[ref.path] = data
+    set: vi.fn((ref: FakeDocRef, data: any, options?: { merge?: boolean }) => {
+      operations.push({ type: 'set', path: ref.path, data, options })
+      if (options?.merge) {
+        firestoreState[ref.path] = { ...(firestoreState[ref.path] ?? {}), ...data }
+      } else {
+        firestoreState[ref.path] = data
+      }
     }),
     update: vi.fn((ref: FakeDocRef, data: any) => {
       operations.push({ type: 'update', path: ref.path, data })
@@ -239,6 +252,7 @@ describe('Sell page', () => {
     mockLoadCachedCustomers.mockResolvedValue([])
     mockSaveCachedProducts.mockResolvedValue(undefined)
     mockSaveCachedCustomers.mockResolvedValue(undefined)
+    customerDocData = { ...baseCustomerDoc }
     collectionMock.mockClear()
     queryMock.mockClear()
     orderByMock.mockClear()
@@ -287,6 +301,46 @@ describe('Sell page', () => {
     const productUpdate = lastTransactionOperations.find(op => op.type === 'update' && op.path === 'products/product-1')
     expect(productUpdate?.data).toMatchObject({ stockCount: 4 })
 
+  })
+
+  it('updates loyalty metadata for the selected customer when recording a sale', async () => {
+    const user = userEvent.setup()
+    customerDocData = {
+      ...baseCustomerDoc,
+      loyalty: { points: 5, lastVisitAt: null },
+    }
+    firestoreState['customers/customer-1'] = customerDocData
+
+    renderWithProviders(<Sell />)
+
+    const productButton = await screen.findByRole('button', { name: /iced coffee/i })
+    await user.click(productButton)
+
+    const customerSelect = await screen.findByLabelText(/customer/i)
+    await user.selectOptions(customerSelect, 'customer-1')
+
+    const cashInput = screen.getByLabelText(/cash received/i)
+    await user.clear(cashInput)
+    await user.type(cashInput, '15')
+
+    const recordButton = screen.getByRole('button', { name: /record sale/i })
+    await user.click(recordButton)
+
+    await waitFor(() => {
+      expect(runTransactionMock).toHaveBeenCalledTimes(1)
+    })
+
+    const loyaltyOperation = lastTransactionOperations.find(
+      op => op.type === 'set' && op.path === 'customers/customer-1',
+    )
+    expect(loyaltyOperation?.data).toMatchObject({
+      loyalty: {
+        points: 5,
+        lastVisitAt: 'server-timestamp',
+      },
+      updatedAt: 'server-timestamp',
+    })
+    expect(loyaltyOperation?.options).toMatchObject({ merge: true })
   })
 
   it('shows a friendly error when the transaction fails validation', async () => {
