@@ -1,7 +1,8 @@
 // web/src/controllers/onboarding.ts
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { persistActiveStoreIdForUser } from '../utils/activeStoreStorage'
+import type { SeededDocument } from './accessController'
 
 const MAX_BASE_SLUG_LENGTH = 32
 const UID_SUFFIX_LENGTH = 8
@@ -112,4 +113,75 @@ export async function generateUniqueStoreId(params: {
 
   const ultimateCandidate = `${fallbackCandidate}-${hashUid(`${uid}-${fallbackCandidate}`)}`
   return persistAndReturn(uid, ultimateCandidate)
+}
+
+type CreateInitialOwnerAndStoreParams = {
+  uid: string
+  email?: string | null
+  storeId: string
+  ownerName?: string | null
+  company?: string | null
+  seededTeamMember?: SeededDocument | null
+  seededStore?: SeededDocument | null
+}
+
+function applyIfPresent<T>(
+  target: Record<string, unknown>,
+  key: string,
+  value: T | null | undefined,
+): void {
+  if (value !== undefined) {
+    target[key] = value
+  }
+}
+
+export async function createInitialOwnerAndStore(params: CreateInitialOwnerAndStoreParams): Promise<void> {
+  const {
+    uid,
+    email = null,
+    storeId,
+    ownerName = null,
+    company = null,
+    seededTeamMember = null,
+    seededStore = null,
+  } = params
+
+  const timestamp = serverTimestamp()
+
+  const teamMemberPayload: Record<string, unknown> = {
+    ...(seededTeamMember?.data ?? {}),
+    uid,
+    storeId,
+    role: 'owner',
+    updatedAt: timestamp,
+  }
+
+  applyIfPresent(teamMemberPayload, 'email', email ?? null)
+  applyIfPresent(teamMemberPayload, 'name', ownerName ?? undefined)
+  applyIfPresent(teamMemberPayload, 'company', company ?? undefined)
+
+  if (!('createdAt' in teamMemberPayload)) {
+    teamMemberPayload.createdAt = timestamp
+  }
+
+  const teamMemberDocId = seededTeamMember?.id || uid
+  await setDoc(doc(db, 'teamMembers', teamMemberDocId), teamMemberPayload, { merge: true })
+
+  const storePayload: Record<string, unknown> = {
+    ...(seededStore?.data ?? {}),
+    storeId,
+    ownerId: uid,
+    updatedAt: timestamp,
+  }
+
+  applyIfPresent(storePayload, 'ownerEmail', email ?? null)
+  applyIfPresent(storePayload, 'ownerName', ownerName ?? undefined)
+  applyIfPresent(storePayload, 'company', company ?? undefined)
+
+  if (!('createdAt' in storePayload)) {
+    storePayload.createdAt = timestamp
+  }
+
+  const storeDocId = seededStore?.id || storeId
+  await setDoc(doc(db, 'stores', storeDocId), storePayload, { merge: true })
 }
