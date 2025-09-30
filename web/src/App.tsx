@@ -19,6 +19,7 @@ import {
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
 import { afterSignupBootstrap } from './controllers/accessController'
+import { generateUniqueStoreId } from './controllers/onboarding'
 import { AuthUserContext } from './hooks/useAuthUser'
 import {
   clearActiveStoreIdForUser,
@@ -88,10 +89,6 @@ function resolveOwnerName(user: User): string {
   const displayName = user.displayName?.trim()
   return displayName && displayName.length > 0 ? displayName : OWNER_NAME_FALLBACK
 }
-function generateStoreId(uid: string) {
-  return `store-${uid.slice(0, 8)}`
-}
-
 /** Ensure teamMembers/{uid} exists; optionally mirror to fixed ID. */
 async function upsertTeamMemberDocs(params: {
   user: User
@@ -135,7 +132,11 @@ async function upsertTeamMemberDocs(params: {
     }
   }
 
-  const storeId = generateStoreId(user.uid)
+  const storeId = await generateUniqueStoreId({
+    uid: user.uid,
+    company,
+    email: user.email ?? null,
+  })
   const timestamp = serverTimestamp()
   const payload = {
     uid: user.uid,

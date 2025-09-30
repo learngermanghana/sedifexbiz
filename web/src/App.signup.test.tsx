@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => {
 
 const firestore = vi.hoisted(() => {
   const docRefByPath = new Map<string, { path: string }>()
+  const docDataByPath = new Map<string, Record<string, unknown>>()
   let timestampCallCount = 0
 
   const docMock = vi.fn((_: unknown, ...segments: string[]) => {
@@ -39,9 +40,36 @@ const firestore = vi.hoisted(() => {
     return docRefByPath.get(key)!
   })
 
-  const setDocMock = vi.fn(async () => {})
-  const updateDocMock = vi.fn(async () => {})
-  const getDocMock = vi.fn(async () => ({ exists: () => false }))
+  const setDocImplementation = async (
+    ref: { path: string },
+    data: Record<string, unknown>,
+    options?: { merge?: boolean },
+  ) => {
+    const existing = docDataByPath.get(ref.path)
+    const nextValue = options?.merge && existing ? { ...existing, ...data } : { ...data }
+    docDataByPath.set(ref.path, nextValue)
+  }
+
+  const updateDocImplementation = async (
+    ref: { path: string },
+    data: Record<string, unknown>,
+  ) => {
+    const existing = docDataByPath.get(ref.path) ?? {}
+    docDataByPath.set(ref.path, { ...existing, ...data })
+  }
+
+  const getDocImplementation = async (ref: { path: string }) => {
+    const stored = docDataByPath.get(ref.path)
+    return {
+      exists: () => stored !== undefined,
+      data: () => (stored ? { ...stored } : undefined),
+      get: (field: string) => (stored ? (stored as Record<string, unknown>)[field] : undefined),
+    }
+  }
+
+  const setDocMock = vi.fn(setDocImplementation)
+  const updateDocMock = vi.fn(updateDocImplementation)
+  const getDocMock = vi.fn(getDocImplementation)
 
   const serverTimestampMock = vi.fn(() => {
     timestampCallCount += 1
@@ -55,6 +83,7 @@ const firestore = vi.hoisted(() => {
     getDocMock,
     serverTimestampMock,
     docRefByPath,
+    docDataByPath,
     reset() {
       docMock.mockClear()
       setDocMock.mockClear()
@@ -62,7 +91,9 @@ const firestore = vi.hoisted(() => {
       getDocMock.mockClear()
       serverTimestampMock.mockClear()
       docRefByPath.clear()
+      docDataByPath.clear()
       timestampCallCount = 0
+      getDocMock.mockImplementation(getDocImplementation)
     },
   }
 })
@@ -140,6 +171,7 @@ vi.mock('./controllers/accessController', async () => {
 
 /** ---------------- imports after mocks ---------------- */
 import App from './App'
+import { generateUniqueStoreId } from './controllers/onboarding'
 
 /** ---------------- helpers ---------------- */
 function createTestUser() {
@@ -161,7 +193,6 @@ describe('App signup cleanup', () => {
     mocks.auth.currentUser = null
     mocks.listeners.splice(0, mocks.listeners.length)
     firestore.reset()
-    firestore.getDocMock.mockImplementation(async () => ({ exists: () => false }))
     access.afterSignupBootstrap.mockReset()
     access.afterSignupBootstrap.mockImplementation(async (rawPayload?: unknown) => {
       if (typeof rawPayload === 'string') {
@@ -279,7 +310,7 @@ describe('App signup cleanup', () => {
       await user.click(screen.getByRole('button', { name: /Create account/i }))
     })
 
-    const storeId = 'store-test-use'
+    const storeId = 'sedifex-test-use'
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
     await waitFor(() => expect(access.afterSignupBootstrap).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(createdUser.getIdToken).toHaveBeenCalledWith(true))
@@ -390,8 +421,6 @@ describe('App signup cleanup', () => {
       return { user: existingUser }
     })
 
-    firestore.getDocMock.mockImplementation(async () => ({ exists: () => false }))
-
     render(
       <MemoryRouter>
         <App />
@@ -410,7 +439,7 @@ describe('App signup cleanup', () => {
     await waitFor(() => expect(mocks.signInWithEmailAndPassword).toHaveBeenCalled())
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
 
-    const storeId = 'store-test-use'
+    const storeId = 'owner-example-com-test-use'
     const { docRefByPath, setDocMock } = firestore
     const profileDocRef = docRefByPath.get(`teamMembers/${existingUser.uid}`)
     const overrideDocRef = docRefByPath.get('teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2')
@@ -440,5 +469,47 @@ describe('App signup cleanup', () => {
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({ tone: 'success', message: expect.stringMatching(/Welcome back/i) }),
     )
+  })
+})
+
+describe('generateUniqueStoreId', () => {
+  beforeEach(() => {
+    firestore.reset()
+  })
+
+  it('produces distinct IDs when the preferred slug is already owned by another user', async () => {
+    const firstUid = 'duplicate-uid-1234'
+    const secondUid = 'duplicate_uid_1234'
+
+    const firstStoreId = await generateUniqueStoreId({
+      uid: firstUid,
+      company: 'Sedifex',
+      email: 'owner-one@example.com',
+    })
+    expect(firstStoreId).toBe('sedifex-duplicat')
+    firestore.docDataByPath.set(`stores/${firstStoreId}`, { ownerId: firstUid })
+
+    const secondStoreId = await generateUniqueStoreId({
+      uid: secondUid,
+      company: 'Sedifex',
+      email: 'owner-two@example.com',
+    })
+
+    expect(secondStoreId).toBe('sedifex-duplicat-2')
+    expect(secondStoreId).not.toBe(firstStoreId)
+  })
+
+  it('reuses the slug when the existing store belongs to the same user', async () => {
+    const uid = 'duplicate-uid-1234'
+    const storeId = await generateUniqueStoreId({ uid, company: 'Sedifex', email: 'owner@example.com' })
+    firestore.docDataByPath.set(`stores/${storeId}`, { ownerId: uid })
+
+    const nextStoreId = await generateUniqueStoreId({
+      uid,
+      company: 'Sedifex',
+      email: 'owner@example.com',
+    })
+
+    expect(nextStoreId).toBe(storeId)
   })
 })
