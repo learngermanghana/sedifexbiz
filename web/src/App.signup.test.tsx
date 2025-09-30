@@ -475,6 +475,7 @@ describe('App signup cleanup', () => {
 describe('generateUniqueStoreId', () => {
   beforeEach(() => {
     firestore.reset()
+    window.localStorage.clear()
   })
 
   it('produces distinct IDs when the preferred slug is already owned by another user', async () => {
@@ -487,6 +488,7 @@ describe('generateUniqueStoreId', () => {
       email: 'owner-one@example.com',
     })
     expect(firstStoreId).toBe('sedifex-duplicat')
+    expect(window.localStorage.getItem(getActiveStoreStorageKey(firstUid))).toBe(firstStoreId)
     firestore.docDataByPath.set(`stores/${firstStoreId}`, { ownerId: firstUid })
 
     const secondStoreId = await generateUniqueStoreId({
@@ -497,11 +499,14 @@ describe('generateUniqueStoreId', () => {
 
     expect(secondStoreId).toBe('sedifex-duplicat-2')
     expect(secondStoreId).not.toBe(firstStoreId)
+    expect(window.localStorage.getItem(getActiveStoreStorageKey(secondUid))).toBe(secondStoreId)
+    expect(window.localStorage.getItem(getActiveStoreStorageKey(firstUid))).toBe(firstStoreId)
   })
 
   it('reuses the slug when the existing store belongs to the same user', async () => {
     const uid = 'duplicate-uid-1234'
     const storeId = await generateUniqueStoreId({ uid, company: 'Sedifex', email: 'owner@example.com' })
+    expect(window.localStorage.getItem(getActiveStoreStorageKey(uid))).toBe(storeId)
     firestore.docDataByPath.set(`stores/${storeId}`, { ownerId: uid })
 
     const nextStoreId = await generateUniqueStoreId({
@@ -511,5 +516,6 @@ describe('generateUniqueStoreId', () => {
     })
 
     expect(nextStoreId).toBe(storeId)
+    expect(window.localStorage.getItem(getActiveStoreStorageKey(uid))).toBe(storeId)
   })
 })

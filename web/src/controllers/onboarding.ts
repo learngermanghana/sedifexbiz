@@ -1,6 +1,7 @@
 // web/src/controllers/onboarding.ts
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
+import { persistActiveStoreIdForUser } from '../utils/activeStoreStorage'
 
 const MAX_BASE_SLUG_LENGTH = 32
 const UID_SUFFIX_LENGTH = 8
@@ -61,6 +62,11 @@ function buildCandidate(baseSlug: string, uidSuffix: string, attempt: number): s
   return `${baseSlug}-${uidSuffix}-${attempt + 1}`
 }
 
+function persistAndReturn(uid: string, storeId: string): string {
+  persistActiveStoreIdForUser(uid, storeId)
+  return storeId
+}
+
 export async function generateUniqueStoreId(params: {
   uid: string
   company?: string | null
@@ -76,15 +82,15 @@ export async function generateUniqueStoreId(params: {
     try {
       const snapshot = await getDoc(doc(db, 'stores', candidate))
       if (!snapshot.exists()) {
-        return candidate
+        return persistAndReturn(uid, candidate)
       }
       const ownerId = snapshot.get('ownerId')
       if (typeof ownerId === 'string' && ownerId === uid) {
-        return candidate
+        return persistAndReturn(uid, candidate)
       }
     } catch (error) {
       console.warn(`[onboarding] Failed to inspect storeId "${candidate}"`, error)
-      return candidate
+      return persistAndReturn(uid, candidate)
     }
   }
 
@@ -93,16 +99,17 @@ export async function generateUniqueStoreId(params: {
   try {
     const snapshot = await getDoc(doc(db, 'stores', fallbackCandidate))
     if (!snapshot.exists()) {
-      return fallbackCandidate
+      return persistAndReturn(uid, fallbackCandidate)
     }
     const ownerId = snapshot.get('ownerId')
     if (typeof ownerId === 'string' && ownerId === uid) {
-      return fallbackCandidate
+      return persistAndReturn(uid, fallbackCandidate)
     }
   } catch (error) {
     console.warn(`[onboarding] Failed to inspect storeId "${fallbackCandidate}"`, error)
-    return fallbackCandidate
+    return persistAndReturn(uid, fallbackCandidate)
   }
 
-  return `${fallbackCandidate}-${hashUid(`${uid}-${fallbackCandidate}`)}`
+  const ultimateCandidate = `${fallbackCandidate}-${hashUid(`${uid}-${fallbackCandidate}`)}`
+  return persistAndReturn(uid, ultimateCandidate)
 }
