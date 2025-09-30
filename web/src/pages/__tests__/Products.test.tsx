@@ -21,8 +21,10 @@ vi.mock('../../firebase', () => ({
   db: {},
 }))
 
+const ACTIVE_STORE_ID = 'store-1'
+
 const mockUseActiveStoreContext = vi.fn(() => ({
-  storeId: 'store-1',
+  storeId: ACTIVE_STORE_ID,
   isLoading: false,
   error: null,
   memberships: [],
@@ -65,6 +67,41 @@ const docMock = vi.fn((collectionRef: { path: string }, id: string) => ({
   type: 'doc',
   path: `${collectionRef.path}/${id}`,
 }))
+
+function expectStoreScopedQuery(
+  collectionPath: string,
+  storeId: string,
+  additionalWhereClauses: Array<{ field: string; op: string; value: unknown }> = [],
+) {
+  const call = queryMock.mock.calls.find(([collectionRef]) => {
+    const ref = collectionRef as { path?: string } | undefined
+    return ref?.path === collectionPath
+  })
+
+  expect(call).toBeTruthy()
+  const [, ...clauses] = (call ?? []) as Array<{ type?: string; field?: string; op?: string; value?: unknown }>
+  const whereClauses = clauses.filter(clause => clause?.type === 'where')
+
+  expect(whereClauses).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ field: 'storeId', op: '==', value: storeId }),
+      ...additionalWhereClauses.map(expected => expect.objectContaining(expected)),
+    ]),
+  )
+  expect(whereClauses).toHaveLength(1 + additionalWhereClauses.length)
+}
+
+async function renderProductsPage() {
+  render(
+    <MemoryRouter>
+      <Products />
+    </MemoryRouter>,
+  )
+
+  await waitFor(() => {
+    expectStoreScopedQuery('products', ACTIVE_STORE_ID)
+  })
+}
 
 vi.mock('firebase/firestore', () => ({
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
@@ -127,11 +164,7 @@ describe('Products page', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    await renderProductsPage()
 
     await waitFor(() => {
       expect(onSnapshotMock).toHaveBeenCalledTimes(1)
@@ -153,11 +186,7 @@ describe('Products page', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    await renderProductsPage()
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
 
@@ -193,11 +222,7 @@ describe('Products page', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    await renderProductsPage()
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
 
@@ -228,11 +253,7 @@ describe('Products page', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    await renderProductsPage()
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
 
@@ -267,11 +288,7 @@ describe('Products page', () => {
       })
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    await renderProductsPage()
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
     await act(async () => {
@@ -295,6 +312,7 @@ describe('Products page', () => {
         price: 18,
         reorderThreshold: 4,
         stockCount: 10,
+        storeId: ACTIVE_STORE_ID,
       }),
     )
     expect(screen.getByText('Syncing…')).toBeInTheDocument()
@@ -353,11 +371,7 @@ describe('Products page', () => {
       })
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    await renderProductsPage()
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
 
@@ -393,11 +407,7 @@ describe('Products page', () => {
       return () => {}
     })
 
-    render(
-      <MemoryRouter>
-        <Products />
-      </MemoryRouter>,
-    )
+    await renderProductsPage()
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
 
@@ -432,7 +442,7 @@ describe('Products page', () => {
 
     expect(updateDocMock).toHaveBeenCalledWith(
       expect.objectContaining({ path: 'products/product-9' }),
-      expect.objectContaining({ price: 20 }),
+      expect.objectContaining({ price: 20, storeId: ACTIVE_STORE_ID }),
     )
   })
 })

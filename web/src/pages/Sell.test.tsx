@@ -11,8 +11,10 @@ vi.mock('../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
+const ACTIVE_STORE_ID = 'store-1'
+
 const mockUseActiveStoreContext = vi.fn(() => ({
-  storeId: 'store-1',
+  storeId: ACTIVE_STORE_ID,
   isLoading: false,
   error: null,
   memberships: [],
@@ -174,6 +176,29 @@ const runTransactionMock = vi.fn(async (_db: unknown, updater: any) => {
 
 const serverTimestampMock = vi.fn(() => 'server-timestamp')
 
+function expectStoreScopedQuery(
+  collectionPath: string,
+  storeId: string,
+  additionalWhereClauses: Array<{ field: string; op: string; value: unknown }> = [],
+) {
+  const call = queryMock.mock.calls.find(([collectionRef]) => {
+    const ref = collectionRef as { path?: string } | undefined
+    return ref?.path === collectionPath
+  })
+
+  expect(call).toBeTruthy()
+  const [, ...clauses] = (call ?? []) as Array<{ type?: string; field?: string; op?: string; value?: unknown }>
+  const whereClauses = clauses.filter(clause => clause?.type === 'where')
+
+  expect(whereClauses).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ field: 'storeId', op: '==', value: storeId }),
+      ...additionalWhereClauses.map(expected => expect.objectContaining(expected)),
+    ]),
+  )
+  expect(whereClauses).toHaveLength(1 + additionalWhereClauses.length)
+}
+
 vi.mock('firebase/firestore', () => ({
   collection: (
     ...args: Parameters<typeof collectionMock>
@@ -215,7 +240,7 @@ describe('Sell page', () => {
       email: 'cashier@example.com',
     })
     mockUseActiveStoreContext.mockReturnValue({
-      storeId: 'store-1',
+      storeId: ACTIVE_STORE_ID,
       isLoading: false,
       error: null,
       memberships: [],
@@ -226,7 +251,12 @@ describe('Sell page', () => {
 
     autoCounters = {}
     firestoreState = {
-      'products/product-1': { stockCount: 5, storeId: 'store-1', price: 12, name: 'Iced Coffee' },
+      'products/product-1': {
+        stockCount: 5,
+        storeId: ACTIVE_STORE_ID,
+        price: 12,
+        name: 'Iced Coffee',
+      },
     }
     lastTransactionOperations = []
     runTransactionMock.mockClear()
@@ -245,12 +275,18 @@ describe('Sell page', () => {
     limitMock.mockClear()
     docMock.mockClear()
     onSnapshotMock.mockClear()
+    whereMock.mockClear()
   })
 
   it('records a cash sale with a Firestore transaction', async () => {
     const user = userEvent.setup()
 
     renderWithProviders(<Sell />)
+
+    await waitFor(() => {
+      expectStoreScopedQuery('products', ACTIVE_STORE_ID)
+      expectStoreScopedQuery('customers', ACTIVE_STORE_ID)
+    })
 
     const productButton = await screen.findByRole('button', { name: /iced coffee/i })
     await user.click(productButton)
@@ -268,7 +304,8 @@ describe('Sell page', () => {
 
     const saleOperation = lastTransactionOperations.find(op => op.type === 'set' && op.path === 'sales/sale-42')
     expect(saleOperation?.data).toMatchObject({
-      branchId: 'store-1',
+      branchId: ACTIVE_STORE_ID,
+      storeId: ACTIVE_STORE_ID,
       total: 12,
       tenders: { cash: 15 },
       changeDue: 3,
@@ -276,16 +313,34 @@ describe('Sell page', () => {
     })
 
     const saleItemOperation = lastTransactionOperations.find(op => op.type === 'set' && op.path.startsWith('saleItems/'))
-    expect(saleItemOperation?.data).toMatchObject({ saleId: 'sale-42', productId: 'product-1', qty: 1, price: 12 })
+    expect(saleItemOperation?.data).toMatchObject({
+      saleId: 'sale-42',
+      productId: 'product-1',
+      qty: 1,
+      price: 12,
+      storeId: ACTIVE_STORE_ID,
+    })
 
     const stockOperation = lastTransactionOperations.find(op => op.type === 'set' && op.path.startsWith('stock/'))
-    expect(stockOperation?.data).toMatchObject({ productId: 'product-1', qtyChange: -1, reason: 'sale', refId: 'sale-42' })
+    expect(stockOperation?.data).toMatchObject({
+      productId: 'product-1',
+      qtyChange: -1,
+      reason: 'sale',
+      refId: 'sale-42',
+      storeId: ACTIVE_STORE_ID,
+    })
 
     const ledgerOperation = lastTransactionOperations.find(op => op.type === 'set' && op.path.startsWith('ledger/'))
-    expect(ledgerOperation?.data).toMatchObject({ productId: 'product-1', qtyChange: -1, type: 'sale', refId: 'sale-42' })
+    expect(ledgerOperation?.data).toMatchObject({
+      productId: 'product-1',
+      qtyChange: -1,
+      type: 'sale',
+      refId: 'sale-42',
+      storeId: ACTIVE_STORE_ID,
+    })
 
     const productUpdate = lastTransactionOperations.find(op => op.type === 'update' && op.path === 'products/product-1')
-    expect(productUpdate?.data).toMatchObject({ stockCount: 4 })
+    expect(productUpdate?.data).toMatchObject({ stockCount: 4, storeId: ACTIVE_STORE_ID })
 
   })
 
@@ -294,6 +349,11 @@ describe('Sell page', () => {
     const user = userEvent.setup()
 
     renderWithProviders(<Sell />)
+
+    await waitFor(() => {
+      expectStoreScopedQuery('products', ACTIVE_STORE_ID)
+      expectStoreScopedQuery('customers', ACTIVE_STORE_ID)
+    })
 
     const productButton = await screen.findByRole('button', { name: /iced coffee/i })
     await user.click(productButton)
@@ -314,6 +374,11 @@ describe('Sell page', () => {
     const user = userEvent.setup()
 
     renderWithProviders(<Sell />)
+
+    await waitFor(() => {
+      expectStoreScopedQuery('products', ACTIVE_STORE_ID)
+      expectStoreScopedQuery('customers', ACTIVE_STORE_ID)
+    })
 
     const unavailableButton = await screen.findByRole('button', { name: /mystery item/i })
     expect(unavailableButton).toBeDisabled()
