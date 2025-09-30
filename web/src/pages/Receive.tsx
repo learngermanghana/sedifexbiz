@@ -215,6 +215,7 @@ export default function Receive() {
       supplier: supplierName,
       reference: referenceNumber,
       unitCost: parsedCost,
+      storeId: activeStoreId,
     }
 
     try {
