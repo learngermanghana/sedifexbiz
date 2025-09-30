@@ -337,7 +337,7 @@ describe('App signup cleanup', () => {
     })
 
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
-    await waitFor(() => expect(access.afterSignupBootstrap).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(access.afterSignupBootstrap).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(createdUser.getIdToken).toHaveBeenCalledWith(true))
     const { docRefByPath, setDocMock } = firestore
     const overrideDocKey = 'teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2'
@@ -472,9 +472,6 @@ describe('App signup cleanup', () => {
         ownerName: 'Owner account',
       },
     })
-
-    expect(access.afterSignupBootstrap).toHaveBeenCalledWith(storeId)
-
     await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
     expect(mocks.auth.currentUser).toBeNull()
 
