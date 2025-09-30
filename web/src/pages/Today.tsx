@@ -1,4 +1,6 @@
+
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+
 import {
   collection,
   doc,
@@ -252,6 +254,27 @@ function formatTime(value: Date | null) {
 
 export default function Today() {
   const { storeId, isLoading: storeLoading, storeChangeToken } = useActiveStoreContext()
+
+  const quickActions = useMemo(
+    () => [
+      {
+        label: 'New Product',
+        to: '/products',
+        ariaLabel: 'Create a new product in your catalog',
+      },
+      {
+        label: 'Receive Stock',
+        to: '/receive',
+        ariaLabel: 'Record received stock items',
+      },
+      {
+        label: 'Start Sale',
+        to: '/sell',
+        ariaLabel: 'Start a new point of sale session',
+      },
+    ],
+    [],
+  )
 
   const today = useMemo(() => new Date(), [])
   const todayKey = useMemo(() => formatDateKey(today), [today])
@@ -583,9 +606,53 @@ export default function Today() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <header>
-        <h2 style={{ color: '#4338CA', marginBottom: 4 }}>Today</h2>
-        <p style={{ color: '#475569', margin: 0 }}>Daily performance for {todayLabel}.</p>
+      <header
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+          <h2 style={{ color: '#4338CA', marginBottom: 4 }}>Today</h2>
+          <p style={{ color: '#475569', margin: 0 }}>Daily performance for {todayLabel}.</p>
+        </div>
+
+        <nav
+          aria-label="Quick actions"
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+            justifyContent: 'flex-end',
+          }}
+        >
+          {quickActions.map(action => (
+            <Link
+              key={action.to}
+              to={action.to}
+              aria-label={action.ariaLabel}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: '#F8FAFC',
+                color: '#1E3A8A',
+                textDecoration: 'none',
+                fontWeight: 600,
+                fontSize: 13,
+                padding: '8px 16px',
+                borderRadius: 9999,
+                border: '1px solid #C7D2FE',
+                minHeight: 36,
+              }}
+            >
+              {action.label}
+            </Link>
+          ))}
+        </nav>
       </header>
 
       <section

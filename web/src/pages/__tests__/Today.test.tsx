@@ -1,6 +1,8 @@
 import React from 'react'
+
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+
 
 import Today, { formatDateKey } from '../Today'
 
@@ -74,6 +76,20 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 describe('Today page', () => {
+  function mockEmptyFirestoreResponses() {
+    getDocMock
+      .mockResolvedValueOnce({
+        exists: () => false,
+        data: () => ({}),
+      })
+      .mockResolvedValueOnce({
+        exists: () => false,
+        data: () => ({}),
+      })
+
+    getDocsMock.mockResolvedValue({ docs: [] })
+  }
+
   beforeEach(() => {
     mockUseActiveStoreContext.mockReset()
     mockUseActiveStoreContext.mockReturnValue({
@@ -289,6 +305,7 @@ describe('Today page', () => {
     expect(screen.getByText('No product sales recorded today.')).toBeInTheDocument()
   })
 
+
   it('filters activities by type when a filter is selected', async () => {
     getDocMock
       .mockResolvedValueOnce({
@@ -337,11 +354,13 @@ describe('Today page', () => {
         ],
       })
 
+
     render(
       <MemoryRouter>
         <Today />
       </MemoryRouter>,
     )
+
 
     await waitFor(() => {
       expect(screen.getByText('Initial activity')).toBeInTheDocument()
@@ -429,5 +448,6 @@ describe('Today page', () => {
     expect(getDocsMock).toHaveBeenCalledTimes(2)
     expect(startAfterMock).toHaveBeenCalledWith(lastDoc)
     expect(screen.queryByRole('button', { name: /Load more/i })).not.toBeInTheDocument()
+
   })
 })

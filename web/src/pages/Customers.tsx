@@ -25,6 +25,7 @@ import {
   saveCachedCustomers,
   saveCachedSales,
 } from '../utils/offlineCache'
+import { parseCsv } from '../utils/csv'
 
 type Customer = {
   id: string
@@ -151,59 +152,6 @@ function formatTenderSummary(tenders: Record<string, unknown>): string | null {
 function formatDate(date: Date | null): string {
   if (!date) return '—'
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-}
-
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = []
-  let current = ''
-  let row: string[] = []
-  let insideQuotes = false
-
-  const pushValue = () => {
-    row.push(current)
-    current = ''
-  }
-
-  const pushRow = () => {
-    if (!row.length) return
-    rows.push(row.map(cell => cell.trim()))
-    row = []
-  }
-
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i]
-    if (char === '"') {
-      if (insideQuotes && text[i + 1] === '"') {
-        current += '"'
-        i += 1
-      } else {
-        insideQuotes = !insideQuotes
-      }
-    } else if (char === ',' && !insideQuotes) {
-      pushValue()
-    } else if ((char === '\n' || char === '\r') && !insideQuotes) {
-      if (char === '\r' && text[i + 1] === '\n') {
-        i += 1
-      }
-      pushValue()
-      if (row.some(cell => cell.trim().length > 0)) {
-        pushRow()
-      } else {
-        row = []
-      }
-    } else {
-      current += char
-    }
-  }
-
-  if (current.length > 0 || row.length > 0) {
-    pushValue()
-    if (row.some(cell => cell.trim().length > 0)) {
-      pushRow()
-    }
-  }
-
-  return rows
 }
 
 function buildCsvValue(value: string): string {
@@ -579,6 +527,9 @@ export default function Customers() {
   async function addCustomer(event: React.FormEvent) {
     event.preventDefault()
     const trimmedName = name.trim()
+    const trimmedPhone = phone.trim()
+    const trimmedEmail = email.trim()
+    const trimmedNotes = notes.trim()
     if (!trimmedName) {
       setError('Customer name is required to save a record.')
       return
@@ -597,25 +548,56 @@ export default function Customers() {
           updatedAt: serverTimestamp(),
           storeId: activeStoreId,
         }
-        updatePayload.phone = phone.trim() ? phone.trim() : null
-        updatePayload.email = email.trim() ? email.trim() : null
-        updatePayload.notes = notes.trim() ? notes.trim() : null
+        updatePayload.phone = trimmedPhone ? trimmedPhone : null
+        updatePayload.email = trimmedEmail ? trimmedEmail : null
+        updatePayload.notes = trimmedNotes ? trimmedNotes : null
         updatePayload.tags = parsedTags
         await updateDoc(doc(db, 'customers', editingCustomerId), updatePayload)
         setSelectedCustomerId(editingCustomerId)
         showSuccess('Customer updated successfully.')
       } else {
-        await addDoc(collection(db, 'customers'), {
-          name: trimmedName,
-          storeId: activeStoreId,
-          ...(phone.trim() ? { phone: phone.trim() } : {}),
-          ...(email.trim() ? { email: email.trim() } : {}),
-          ...(notes.trim() ? { notes: notes.trim() } : {}),
-          ...(parsedTags.length ? { tags: parsedTags } : {}),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
-        showSuccess('Customer saved successfully.')
+        const normalizedPhone = trimmedPhone.replace(/\D/g, '')
+        const normalizedEmail = trimmedEmail.toLowerCase()
+
+        const matchByEmail = normalizedEmail
+          ? customers.find(customer => customer.email?.trim().toLowerCase() === normalizedEmail) ?? null
+          : null
+        let duplicate = matchByEmail
+
+        if (!duplicate && normalizedPhone) {
+          duplicate =
+            customers.find(customer => {
+              const existingPhone = customer.phone?.replace(/\D/g, '') ?? ''
+              return existingPhone && existingPhone === normalizedPhone
+            }) ?? null
+        }
+
+        if (duplicate) {
+          const updatePayload: Record<string, unknown> = {
+            name: trimmedName,
+            updatedAt: serverTimestamp(),
+            storeId: activeStoreId,
+          }
+          updatePayload.phone = trimmedPhone ? trimmedPhone : null
+          updatePayload.email = trimmedEmail ? trimmedEmail : null
+          updatePayload.notes = trimmedNotes ? trimmedNotes : null
+          updatePayload.tags = parsedTags
+          await updateDoc(doc(db, 'customers', duplicate.id), updatePayload)
+          setSelectedCustomerId(duplicate.id)
+          showSuccess('Customer already exists. Updated their details instead.')
+        } else {
+          await addDoc(collection(db, 'customers'), {
+            name: trimmedName,
+            storeId: activeStoreId,
+            ...(trimmedPhone ? { phone: trimmedPhone } : {}),
+            ...(trimmedEmail ? { email: trimmedEmail } : {}),
+            ...(trimmedNotes ? { notes: trimmedNotes } : {}),
+            ...(parsedTags.length ? { tags: parsedTags } : {}),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+          showSuccess('Customer saved successfully.')
+        }
       }
       resetForm()
     } catch (err) {

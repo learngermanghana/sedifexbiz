@@ -82,7 +82,35 @@ export default function CloseDay() {
 
   useEffect(() => {
     const style = document.createElement('style')
-    style.textContent = `@media print { .no-print { display: none !important; } .print-summary { max-width: 100% !important; } }`
+    style.textContent = `@page { size: A5 portrait; margin: 0.5in; }
+      @media print {
+        body {
+          margin: 0;
+        }
+        .no-print {
+          display: none !important;
+        }
+        .print-summary {
+          box-sizing: border-box;
+          width: 100% !important;
+          max-width: none !important;
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+        .print-summary h2 {
+          margin-bottom: 8px !important;
+          font-size: 20px !important;
+        }
+        .print-summary__section {
+          margin-top: 12px !important;
+          padding-top: 8px !important;
+          page-break-inside: avoid;
+        }
+        .print-summary__total {
+          font-size: 24px !important;
+          margin-bottom: 12px !important;
+        }
+      }`
     document.head.appendChild(style)
     return () => {
       document.head.removeChild(style)
@@ -115,6 +143,69 @@ export default function CloseDay() {
 
   const handlePrint = () => {
     window.print()
+  }
+
+  const handleExportCSV = () => {
+    const now = new Date()
+    const fileTimestamp = now.toISOString().split('T')[0]
+    const formatAmount = (value: number) => value.toFixed(2)
+    const csvEscape = (value: string | number) => {
+      const stringValue = String(value ?? '')
+      if (/[",\n]/.test(stringValue)) {
+        return `"${stringValue.replace(/"/g, '""')}"`
+      }
+      return stringValue
+    }
+
+    const rows: Array<Array<string | number>> = []
+    rows.push(['Close Day Summary'])
+    rows.push(['Date/Time', now.toLocaleString()])
+    rows.push(['Store ID', activeStoreId ?? 'N/A'])
+    rows.push([])
+
+    rows.push(['Sales Summary'])
+    rows.push(['Metric', 'Amount (GHS)'])
+    rows.push(['Sales total', formatAmount(total)])
+    rows.push(['Expected cash', formatAmount(expectedCash)])
+    rows.push(['Counted cash', formatAmount(countedCash)])
+    rows.push(['Variance', formatAmount(variance)])
+    rows.push([])
+
+    rows.push(['Tender Breakdown'])
+    rows.push(['Tender type', 'Amount (GHS)'])
+    rows.push(['Card & digital payments', formatAmount(cardTotal)])
+    rows.push(['Cash removed (drops, payouts)', formatAmount(removedTotal)])
+    rows.push(['Cash added (float top-ups)', formatAmount(addedTotal)])
+    rows.push(['Loose cash / coins', formatAmount(looseCashTotal)])
+    rows.push([])
+
+    rows.push(['Cash Denominations'])
+    rows.push(['Denomination (GHS)', 'Quantity', 'Subtotal (GHS)'])
+    DENOMINATIONS.forEach(denom => {
+      const key = String(denom)
+      const quantity = parseQuantity(cashCounts[key])
+      const subtotal = denom * quantity
+      rows.push([denom.toFixed(denom % 1 === 0 ? 0 : 2), quantity, subtotal.toFixed(2)])
+    })
+    rows.push(['Loose cash / coins', '', formatAmount(looseCashTotal)])
+    rows.push([])
+
+    rows.push(['Notes'])
+    rows.push([notes.trim() || ''])
+
+    const csvContent = rows
+      .map(row => row.map(csvEscape).join(','))
+      .join('\r\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `close-day-${fileTimestamp}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   }
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async event => {
@@ -152,6 +243,8 @@ export default function CloseDay() {
               uid: user.uid,
               displayName: user.displayName || null,
               email: user.email || null,
+              phoneNumber: user.phoneNumber || null,
+              photoURL: user.photoURL || null,
             }
           : null,
         closedAt: serverTimestamp(),
@@ -182,11 +275,11 @@ export default function CloseDay() {
     <div className="print-summary" style={{ maxWidth: 760 }}>
       <h2 style={{ color: '#4338CA' }}>Close Day</h2>
 
-      <form onSubmit={handleSubmit}>
-        <section style={{ marginTop: 24 }}>
+      <form className="print-summary__form" onSubmit={handleSubmit}>
+        <section className="print-summary__section" style={{ marginTop: 24 }}>
           <h3 style={{ marginBottom: 8 }}>Sales Summary</h3>
           <p style={{ marginBottom: 8 }}>Today’s sales total</p>
-          <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 16 }}>GHS {total.toFixed(2)}</div>
+          <div className="print-summary__total" style={{ fontSize: 32, fontWeight: 800, marginBottom: 16 }}>GHS {total.toFixed(2)}</div>
           <div style={{ display: 'grid', gap: 12, maxWidth: 420 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span>Card &amp; digital payments</span>
@@ -322,6 +415,9 @@ export default function CloseDay() {
         )}
 
         <div className="no-print" style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+          <button type="button" onClick={handleExportCSV} style={{ padding: '10px 16px' }}>
+            Export CSV
+          </button>
           <button type="button" onClick={handlePrint} style={{ padding: '10px 16px' }}>
             Print summary
           </button>
