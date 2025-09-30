@@ -100,8 +100,7 @@ service cloud.firestore {
       return resourceStoreId != null && resourceStoreId == requestStoreId;
     }
 
-    function canCreateStoreResource() {
-
+    function canStaffCreateStoreResource() {
       let storeId = storeIdFromData(request.resource.data);
       return requestMaintainsStoreIdConsistency()
         && storeId != null
@@ -113,14 +112,6 @@ service cloud.firestore {
       return requestMaintainsStoreIdConsistency()
         && currentStoreId != null
         && hasStoreAccess(getRequesterMembership(), currentStoreId);
-    }
-
-    function canCreateStoreResource() {
-      return canOwnerCreateStoreResource();
-    }
-
-    function canUpdateStoreResource() {
-      return canOwnerUpdateStoreResource();
     }
 
     function canOwnerCreateStoreResource() {
@@ -219,8 +210,8 @@ service cloud.firestore {
 
     match /customers/{customerId} {
       allow read: if canReadStoreResource();
-      allow create: if canCreateStoreResource();
-      allow update: if canUpdateStoreResource();
+      allow create: if canOwnerCreateStoreResource();
+      allow update: if canOwnerUpdateStoreResource();
       allow delete: if canOwnerWriteStoreResource();
     }
 
@@ -254,8 +245,8 @@ service cloud.firestore {
 
     match /receipts/{receiptId} {
       allow read: if canReadStoreResource();
-      allow create: if canCreateStoreResource();
-      allow update: if canUpdateStoreResource();
+      allow create: if canOwnerCreateStoreResource();
+      allow update: if canOwnerUpdateStoreResource();
       allow delete: if canOwnerWriteStoreResource();
     }
 
