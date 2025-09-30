@@ -528,6 +528,7 @@ export default function App() {
         const ownerName = resolveOwnerName(nextUser)
         const activityTimestamp = serverTimestamp()
         const teamMemberContactPayload = {
+          name: ownerName,
           phone: sanitizedPhone || null,
           phoneCountryCode: phoneDetails.countryCode || null,
           phoneLocalNumber: phoneDetails.localNumber || null,

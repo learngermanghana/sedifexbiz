@@ -7,6 +7,7 @@ import { persistActiveStoreIdForUser } from '../utils/activeStoreStorage'
 const MAX_BASE_SLUG_LENGTH = 32
 const UID_SUFFIX_LENGTH = 8
 const MAX_COLLISION_ATTEMPTS = 10
+const OWNER_NAME_FALLBACK = 'Owner account'
 
 function slugify(value: string | null | undefined): string {
   if (!value) {
@@ -135,7 +136,7 @@ export async function createInitialOwnerAndStore(
   const uid = user.uid
   const company = companyOverride ?? null
   const resolvedEmail = emailOverride ?? user.email ?? null
-  const ownerName = user.displayName?.trim() || null
+  const ownerName = user.displayName?.trim() || OWNER_NAME_FALLBACK
 
   const baseSlug = resolveBaseSlug(company, resolvedEmail)
   const uidSuffix = buildUidSuffix(uid)
