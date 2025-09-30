@@ -1384,6 +1384,8 @@ export const manageStaffAccount = functions.https.onCall(
       const memberRef = rosterDb.collection('teamMembers').doc(record.uid)
       const memberSnap = await memberRef.get()
       const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      const existingMemberData = memberSnap.data() ?? {}
+      const existingLastSeen = existingMemberData.lastSeenAt
 
       const memberData: admin.firestore.DocumentData = {
         uid: record.uid,
@@ -1396,6 +1398,9 @@ export const manageStaffAccount = functions.https.onCall(
 
       if (!memberSnap.exists) {
         memberData.createdAt = timestamp
+        memberData.lastSeenAt = null
+      } else if (existingLastSeen instanceof admin.firestore.Timestamp) {
+        memberData.lastSeenAt = existingLastSeen
       }
 
       await memberRef.set(memberData, { merge: true })

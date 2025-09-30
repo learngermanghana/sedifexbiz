@@ -69,6 +69,7 @@ async function upsertTeamMemberDocs(params: {
 }) {
   const { user, role, phone = null, company = null, preferExisting = true } = params
   const uidRef = doc(db, 'teamMembers', user.uid)
+  const lastSeenAt = serverTimestamp()
 
   // Try to reuse existing storeId if present
   if (preferExisting) {
@@ -76,12 +77,13 @@ async function upsertTeamMemberDocs(params: {
     if (snap.exists()) {
       const existingStoreId = String(snap.get('storeId') || '')
       if (existingStoreId) {
+        await setDoc(uidRef, { lastSeenAt }, { merge: true })
         persistActiveStoreId(existingStoreId, user.uid)
         // Optionally mirror to fixed doc for your analytics/admin
         if (OVERRIDE_MEMBER_DOC_ID) {
           await setDoc(
             doc(db, 'teamMembers', OVERRIDE_MEMBER_DOC_ID),
-            { ...snap.data(), updatedAt: serverTimestamp() },
+            { ...snap.data(), lastSeenAt, updatedAt: serverTimestamp() },
             { merge: true },
           )
         }
@@ -91,6 +93,7 @@ async function upsertTeamMemberDocs(params: {
   }
 
   const storeId = generateStoreId(user.uid)
+  const timestamp = serverTimestamp()
   const payload = {
     uid: user.uid,
     email: user.email ?? null,
@@ -101,8 +104,9 @@ async function upsertTeamMemberDocs(params: {
     name: resolveOwnerName(user),
     firstSignupEmail: (user.email ?? '').toLowerCase() || null,
     invitedBy: user.uid,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    lastSeenAt,
   }
 
   await setDoc(uidRef, payload, { merge: true })
