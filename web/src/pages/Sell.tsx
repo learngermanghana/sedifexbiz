@@ -692,6 +692,7 @@ export default function Sell() {
             data: {
               stockCount: nextStock,
               updatedAt: timestamp,
+              storeId: activeStoreId,
             },
           })
 
