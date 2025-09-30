@@ -1,8 +1,8 @@
 // web/src/controllers/onboarding.ts
+import type { User } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { persistActiveStoreIdForUser } from '../utils/activeStoreStorage'
-import type { SeededDocument } from './accessController'
 
 const MAX_BASE_SLUG_LENGTH = 32
 const UID_SUFFIX_LENGTH = 8
@@ -116,72 +116,70 @@ export async function generateUniqueStoreId(params: {
 }
 
 type CreateInitialOwnerAndStoreParams = {
-  uid: string
+  user: Pick<User, 'uid' | 'email' | 'displayName'>
   email?: string | null
-  storeId: string
-  ownerName?: string | null
+  role?: string
   company?: string | null
-  seededTeamMember?: SeededDocument | null
-  seededStore?: SeededDocument | null
 }
 
-function applyIfPresent<T>(
-  target: Record<string, unknown>,
-  key: string,
-  value: T | null | undefined,
-): void {
-  if (value !== undefined) {
-    target[key] = value
-  }
-}
-
-export async function createInitialOwnerAndStore(params: CreateInitialOwnerAndStoreParams): Promise<void> {
+export async function createInitialOwnerAndStore(
+  params: CreateInitialOwnerAndStoreParams,
+): Promise<string> {
   const {
-    uid,
-    email = null,
-    storeId,
-    ownerName = null,
-    company = null,
-    seededTeamMember = null,
-    seededStore = null,
+    user,
+    email: emailOverride = null,
+    role = 'owner',
+    company: companyOverride = null,
   } = params
 
-  const timestamp = serverTimestamp()
+  const uid = user.uid
+  const company = companyOverride ?? null
+  const resolvedEmail = emailOverride ?? user.email ?? null
+  const ownerName = user.displayName?.trim() || null
+
+  const baseSlug = resolveBaseSlug(company, resolvedEmail)
+  const uidSuffix = buildUidSuffix(uid)
+  const storeId = buildCandidate(baseSlug, uidSuffix, 0)
+
+  const createdAt = serverTimestamp()
+  const updatedAt = serverTimestamp()
 
   const teamMemberPayload: Record<string, unknown> = {
-    ...(seededTeamMember?.data ?? {}),
     uid,
     storeId,
-    role: 'owner',
-    updatedAt: timestamp,
+    role,
+    email: resolvedEmail,
+    updatedAt,
+    createdAt,
   }
 
-  applyIfPresent(teamMemberPayload, 'email', email ?? null)
-  applyIfPresent(teamMemberPayload, 'name', ownerName ?? undefined)
-  applyIfPresent(teamMemberPayload, 'company', company ?? undefined)
-
-  if (!('createdAt' in teamMemberPayload)) {
-    teamMemberPayload.createdAt = timestamp
+  if (ownerName) {
+    teamMemberPayload.name = ownerName
   }
 
-  const teamMemberDocId = seededTeamMember?.id || uid
-  await setDoc(doc(db, 'teamMembers', teamMemberDocId), teamMemberPayload, { merge: true })
+  if (company !== null) {
+    teamMemberPayload.company = company
+  }
+
+  await setDoc(doc(db, 'teamMembers', uid), teamMemberPayload, { merge: true })
 
   const storePayload: Record<string, unknown> = {
-    ...(seededStore?.data ?? {}),
     storeId,
     ownerId: uid,
-    updatedAt: timestamp,
+    ownerEmail: resolvedEmail,
+    updatedAt,
+    createdAt,
   }
 
-  applyIfPresent(storePayload, 'ownerEmail', email ?? null)
-  applyIfPresent(storePayload, 'ownerName', ownerName ?? undefined)
-  applyIfPresent(storePayload, 'company', company ?? undefined)
-
-  if (!('createdAt' in storePayload)) {
-    storePayload.createdAt = timestamp
+  if (ownerName) {
+    storePayload.ownerName = ownerName
   }
 
-  const storeDocId = seededStore?.id || storeId
-  await setDoc(doc(db, 'stores', storeDocId), storePayload, { merge: true })
+  if (company !== null) {
+    storePayload.company = company
+  }
+
+  await setDoc(doc(db, 'stores', storeId), storePayload, { merge: true })
+
+  return persistAndReturn(uid, storeId)
 }
