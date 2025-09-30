@@ -5,6 +5,7 @@ import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
+  updateProfile,
 } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
@@ -31,6 +32,10 @@ import type { QueueRequestType } from './utils/offlineQueue'
 import { OVERRIDE_TEAM_MEMBER_DOC_ID } from './config/teamMembers'
 
 /* ------------------------------ config ------------------------------ */
+
+/** If you want to ALSO mirror the team member to a fixed doc id, put it here. */
+const OVERRIDE_MEMBER_DOC_ID = 'gsF0m9Hw7yUfn53Z6zX7B0G3kGX2' // set '' to disable
+
 const LEGACY_STORE_BACKFILL_KEY_PREFIX = 'legacy-store-backfill/'
 
 /* ------------------------------ constants ------------------------------ */
@@ -287,7 +292,14 @@ function getLoginValidationError(email: string, password: string): string | null
   if (!password) return 'Enter your password.'
   return null
 }
-function getSignupValidationError(email: string, password: string, confirmPassword: string, phone: string, company: string): string | null {
+function getSignupValidationError(
+  email: string,
+  password: string,
+  confirmPassword: string,
+  phone: string,
+  company: string,
+  name: string,
+): string | null {
   if (!email) return 'Enter your email.'
   if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
   if (!password) return 'Create a password to continue.'
@@ -301,6 +313,7 @@ function getSignupValidationError(email: string, password: string, confirmPasswo
   if (password !== confirmPassword) return 'Passwords do not match.'
   if (!phone) return 'Enter your phone number.'
   if (!company.trim()) return 'Enter your company name.'
+  if (!name.trim()) return 'Enter your name.'
   return null
 }
 
@@ -323,6 +336,7 @@ export default function App() {
 
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
 
@@ -341,6 +355,7 @@ export default function App() {
   const location = useLocation()
 
   const normalizedEmail = email.trim()
+  const normalizedName = name.trim()
   const normalizedPassword = password.trim()
   const normalizedConfirmPassword = confirmPassword.trim()
   const normalizedCompany = company.trim()
@@ -357,6 +372,7 @@ export default function App() {
 
   const isSignupFormValid =
     EMAIL_PATTERN.test(normalizedEmail) &&
+    normalizedName.length > 0 &&
     normalizedPassword.length > 0 &&
     meetsAll &&
     normalizedConfirmPassword.length > 0 &&
@@ -464,18 +480,27 @@ export default function App() {
     const sanitizedEmail = email.trim()
     const sanitizedPassword = password.trim()
     const sanitizedConfirmPassword = confirmPassword.trim()
+    const sanitizedName = name.trim()
     const phoneDetails = composePhoneNumber(countryCode, phone)
     const sanitizedPhone = phoneDetails.e164
     const sanitizedCompany = company.trim()
 
     setEmail(sanitizedEmail)
+    setName(sanitizedName)
     setPassword(sanitizedPassword)
     if (mode === 'signup') setConfirmPassword(sanitizedConfirmPassword)
 
     const validationError =
       mode === 'login'
         ? getLoginValidationError(sanitizedEmail, sanitizedPassword)
-        : getSignupValidationError(sanitizedEmail, sanitizedPassword, sanitizedConfirmPassword, sanitizedPhone, sanitizedCompany)
+        : getSignupValidationError(
+            sanitizedEmail,
+            sanitizedPassword,
+            sanitizedConfirmPassword,
+            sanitizedPhone,
+            sanitizedCompany,
+            sanitizedName,
+          )
 
     if (mode === 'signup') {
       setCountryCode(phoneDetails.countryCode || DEFAULT_COUNTRY_CODE)
@@ -510,12 +535,22 @@ export default function App() {
         const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
 
+        if (sanitizedName) {
+          try {
+            await updateProfile(nextUser, { displayName: sanitizedName })
+            nextUser.displayName = sanitizedName
+          } catch (error) {
+            console.warn('[auth] Unable to update profile with display name', error)
+          }
+        }
+
         // Create team member + store record and refresh auth token before continuing
         const storeId = await createInitialOwnerAndStore({
           user: nextUser,
           role,
           company: sanitizedCompany,
           email: sanitizedEmail,
+          name: sanitizedName,
         })
 
         try {
@@ -524,9 +559,10 @@ export default function App() {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
 
-        const ownerName = resolveOwnerName(nextUser)
+        const ownerName = sanitizedName || resolveOwnerName(nextUser)
         const activityTimestamp = serverTimestamp()
         const teamMemberContactPayload = {
+          name: ownerName,
           phone: sanitizedPhone || null,
           phoneCountryCode: phoneDetails.countryCode || null,
           phoneLocalNumber: phoneDetails.localNumber || null,
@@ -548,7 +584,6 @@ export default function App() {
               storeId,
               role,
               email: nextUser.email ?? null,
-              name: ownerName,
             },
             { merge: true },
           )
@@ -557,6 +592,7 @@ export default function App() {
         await afterSignupBootstrap({
           storeId,
           contact: {
+            name: ownerName,
             phone: sanitizedPhone || null,
             phoneCountryCode: phoneDetails.countryCode || null,
             phoneLocalNumber: phoneDetails.localNumber || null,
@@ -578,6 +614,7 @@ export default function App() {
         tone: 'success',
         message: mode === 'login' ? 'Welcome back! Redirecting…' : 'All set! Your account is ready.',
       })
+      setName('')
       setPassword('')
       setConfirmPassword('')
       setPhone('')
@@ -607,6 +644,7 @@ export default function App() {
     setRole('owner')
     setNormalizedPhone('')
     setCountryCode(DEFAULT_COUNTRY_CODE)
+    setName('')
   }
 
   const appStyle: React.CSSProperties = { minHeight: '100dvh' }
@@ -690,6 +728,22 @@ export default function App() {
 
               {isSignup && (
                 <>
+                  <div className="form__field">
+                    <label htmlFor="name">Name</label>
+                    <input
+                      id="name"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      onBlur={() => setName(current => current.trim())}
+                      type="text"
+                      autoComplete="name"
+                      placeholder="Jane Doe"
+                      required
+                      disabled={isLoading}
+                      aria-invalid={name.length > 0 && !normalizedName}
+                    />
+                  </div>
+
                   <div className="form__field">
                     <label htmlFor="role">Role</label>
                     <select

@@ -80,6 +80,7 @@ type ResolveStoreAccessPayload = {
 }
 
 type ContactPayload = {
+  name?: string | null
   phone?: string | null
   phoneCountryCode?: string | null
   phoneLocalNumber?: string | null
@@ -190,6 +191,10 @@ export async function afterSignupBootstrap(payload?: AfterSignupBootstrapPayload
 
     if (payload.contact.phone !== undefined) {
       contact.phone = payload.contact.phone
+    }
+
+    if (payload.contact.name !== undefined) {
+      contact.name = payload.contact.name
     }
 
     if (payload.contact.phoneCountryCode !== undefined) {
