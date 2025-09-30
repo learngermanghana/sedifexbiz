@@ -255,7 +255,7 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState('')
 
   // new fields
-  const [role, setRole] = useState<'owner' | 'staff'>('staff')
+  const [role, setRole] = useState<'owner' | 'staff'>('owner')
   const [company, setCompany] = useState('')
 
   const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE)
@@ -479,6 +479,7 @@ export default function App() {
       setConfirmPassword('')
       setPhone('')
       setCompany('')
+      setRole('owner')
       setNormalizedPhone('')
       setCountryCode(DEFAULT_COUNTRY_CODE)
 
@@ -500,6 +501,7 @@ export default function App() {
     setConfirmPassword('')
     setPhone('')
     setCompany('')
+    setRole('owner')
     setNormalizedPhone('')
     setCountryCode(DEFAULT_COUNTRY_CODE)
   }
