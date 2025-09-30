@@ -119,7 +119,13 @@ async function runBackfillLoggingTest() {
 }
 
 async function runManageStaffLoggingTest() {
-  currentDefaultDb = new MockFirestore()
+  currentDefaultDb = new MockFirestore({
+    'teamMembers/owner-1': {
+      uid: 'owner-1',
+      storeId: 'store-abc',
+      role: 'owner',
+    },
+  })
   const { manageStaffAccount } = loadIndexModule()
 
   const context = {

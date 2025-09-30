@@ -67,6 +67,11 @@ function loadFunctionsModule() {
 
 async function runRevocationSuccessTest() {
   currentDefaultDb = new MockFirestore({
+    'teamMembers/owner-1': {
+      uid: 'owner-1',
+      storeId: 'store-123',
+      role: 'owner',
+    },
     'teamMembers/member-2': {
       uid: 'member-2',
       email: 'staff@example.com',
