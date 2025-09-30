@@ -201,6 +201,11 @@ service cloud.firestore {
       allow create, update, delete: if isServiceAccountRequest();
     }
 
+    match /closeouts/{closeoutId} {
+      allow read: if canReadStoreResource() || isServiceAccountRequest();
+      allow create, update, delete: if isServiceAccountRequest();
+    }
+
     match /products/{productId} {
       allow read: if canReadStoreResource();
       allow create: if canOwnerCreateStoreResource();
