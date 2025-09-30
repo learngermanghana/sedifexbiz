@@ -42,11 +42,44 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const OWNER_NAME_FALLBACK = 'Owner account'
+const DEFAULT_COUNTRY_CODE = '+1'
+const COUNTRY_OPTIONS = [
+  { code: '+1', label: 'United States / Canada (+1)' },
+  { code: '+44', label: 'United Kingdom (+44)' },
+  { code: '+234', label: 'Nigeria (+234)' },
+  { code: '+61', label: 'Australia (+61)' },
+  { code: '+91', label: 'India (+91)' },
+  { code: '+65', label: 'Singapore (+65)' },
+] as const
 
 /* ------------------------------ helpers ------------------------------ */
 
-function sanitizePhone(value: string): string {
-  return value.replace(/\D+/g, '')
+type PhoneComposition = {
+  countryCode: string
+  localNumber: string
+  e164: string
+}
+
+function composePhoneNumber(countryCode: string, localNumber: string): PhoneComposition {
+  const trimmedCountry = (countryCode || '').trim()
+  const trimmedLocal = (localNumber || '').trim()
+
+  let normalizedCountry = trimmedCountry.replace(/^00/, '+').replace(/[^+\d]/g, '')
+  if (normalizedCountry && !normalizedCountry.startsWith('+')) {
+    normalizedCountry = `+${normalizedCountry.replace(/^\++/, '')}`
+  }
+  if (normalizedCountry === '+') {
+    normalizedCountry = ''
+  }
+
+  const normalizedLocal = trimmedLocal.replace(/\D+/g, '')
+  const e164 = normalizedCountry && normalizedLocal ? `${normalizedCountry}${normalizedLocal}` : ''
+
+  return {
+    countryCode: normalizedCountry,
+    localNumber: normalizedLocal,
+    e164,
+  }
 }
 function persistActiveStoreId(storeId: string, uid: string) {
   persistActiveStoreIdForUser(uid, storeId)
@@ -64,10 +97,20 @@ async function upsertTeamMemberDocs(params: {
   user: User
   role: 'owner' | 'staff'
   phone?: string | null
+  phoneCountryCode?: string | null
+  phoneLocalNumber?: string | null
   company?: string | null
   preferExisting?: boolean
 }) {
-  const { user, role, phone = null, company = null, preferExisting = true } = params
+  const {
+    user,
+    role,
+    phone = null,
+    phoneCountryCode = null,
+    phoneLocalNumber = null,
+    company = null,
+    preferExisting = true,
+  } = params
   const uidRef = doc(db, 'teamMembers', user.uid)
   const lastSeenAt = serverTimestamp()
 
@@ -98,6 +141,8 @@ async function upsertTeamMemberDocs(params: {
     uid: user.uid,
     email: user.email ?? null,
     phone,
+    phoneCountryCode,
+    phoneLocalNumber,
     role,
     company: company ?? null,
     storeId,
@@ -212,6 +257,7 @@ export default function App() {
   const [role, setRole] = useState<'owner' | 'staff'>('staff')
   const [company, setCompany] = useState('')
 
+  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE)
   const [phone, setPhone] = useState('')
   const [normalizedPhone, setNormalizedPhone] = useState('')
 
@@ -314,7 +360,7 @@ export default function App() {
     return () => navigator.serviceWorker.removeEventListener('message', handleMessage)
   }, [publish])
 
-  async function persistOwnerSideDocs(nextUser: User, storeId: string, phone: string) {
+  async function persistOwnerSideDocs(nextUser: User, storeId: string, phone: PhoneComposition) {
     // Optional: create a matching customers record
     try {
       const preferredDisplayName = nextUser.displayName?.trim() || (nextUser.email ?? '')
@@ -325,7 +371,9 @@ export default function App() {
           name: preferredDisplayName,
           displayName: preferredDisplayName,
           email: (nextUser.email ?? '').toLowerCase(),
-          phone,
+          phone: phone.e164 || null,
+          phoneCountryCode: phone.countryCode || null,
+          phoneLocalNumber: phone.localNumber || null,
           status: 'active',
           role: 'client',
           createdAt: serverTimestamp(),
@@ -343,7 +391,8 @@ export default function App() {
     const sanitizedEmail = email.trim()
     const sanitizedPassword = password.trim()
     const sanitizedConfirmPassword = confirmPassword.trim()
-    const sanitizedPhone = sanitizePhone(phone)
+    const phoneDetails = composePhoneNumber(countryCode, phone)
+    const sanitizedPhone = phoneDetails.e164
     const sanitizedCompany = company.trim()
 
     setEmail(sanitizedEmail)
@@ -356,7 +405,8 @@ export default function App() {
         : getSignupValidationError(sanitizedEmail, sanitizedPassword, sanitizedConfirmPassword, sanitizedPhone, sanitizedCompany)
 
     if (mode === 'signup') {
-      setPhone(sanitizedPhone)
+      setCountryCode(phoneDetails.countryCode || DEFAULT_COUNTRY_CODE)
+      setPhone(phoneDetails.localNumber)
       setNormalizedPhone(sanitizedPhone)
       if (!sanitizedPhone) {
         setStatus({ tone: 'error', message: 'Enter your phone number.' })
@@ -393,6 +443,8 @@ export default function App() {
           role,
           company: sanitizedCompany,
           phone: sanitizedPhone,
+          phoneCountryCode: phoneDetails.countryCode || null,
+          phoneLocalNumber: phoneDetails.localNumber || null,
           preferExisting: false,
         })
 
@@ -401,6 +453,8 @@ export default function App() {
           storeId,
           contact: {
             phone: sanitizedPhone || null,
+            phoneCountryCode: phoneDetails.countryCode || null,
+            phoneLocalNumber: phoneDetails.localNumber || null,
             firstSignupEmail: (nextUser.email ?? '').toLowerCase() || null,
             company: sanitizedCompany || null,
             ownerName,
@@ -408,7 +462,7 @@ export default function App() {
         })
 
         // Optional additional doc for UX
-        await persistOwnerSideDocs(nextUser, storeId, sanitizedPhone)
+        await persistOwnerSideDocs(nextUser, storeId, phoneDetails)
 
         await afterSignupBootstrap(storeId)
 
@@ -425,6 +479,7 @@ export default function App() {
       setPhone('')
       setCompany('')
       setNormalizedPhone('')
+      setCountryCode(DEFAULT_COUNTRY_CODE)
 
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
@@ -445,6 +500,7 @@ export default function App() {
     setPhone('')
     setCompany('')
     setNormalizedPhone('')
+    setCountryCode(DEFAULT_COUNTRY_CODE)
   }
 
   const appStyle: React.CSSProperties = { minHeight: '100dvh' }
@@ -560,31 +616,56 @@ export default function App() {
 
                   <div className="form__field">
                     <label htmlFor="phone">Phone</label>
-                    <input
-                      id="phone"
-                      value={phone}
-                      onChange={e => {
-                        const next = e.target.value
-                        setPhone(next)
-                        setNormalizedPhone(sanitizePhone(next))
-                      }}
-                      onBlur={() =>
-                        setPhone(current => {
-                          const trimmed = current.trim()
-                          const sanitized = sanitizePhone(trimmed)
-                          setNormalizedPhone(sanitized)
-                          return sanitized
-                        })
-                      }
-                      type="tel"
-                      autoComplete="tel"
-                      inputMode="tel"
-                      placeholder="(555) 123-4567"
-                      required
-                      disabled={isLoading}
-                      aria-invalid={phone.length > 0 && normalizedPhone.length === 0}
-                      aria-describedby="phone-hint"
-                    />
+                    <div className="form__phone-row">
+                      <div className="form__phone-country">
+                        <label className="visually-hidden" htmlFor="country-code">
+                          Country code
+                        </label>
+                        <select
+                          id="country-code"
+                          value={countryCode}
+                          onChange={e => {
+                            const nextCode = e.target.value
+                            setCountryCode(nextCode)
+                            const composed = composePhoneNumber(nextCode, phone)
+                            setNormalizedPhone(composed.e164)
+                          }}
+                          disabled={isLoading}
+                        >
+                          {COUNTRY_OPTIONS.map(option => (
+                            <option key={option.code} value={option.code}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <input
+                        id="phone"
+                        value={phone}
+                        onChange={e => {
+                          const next = e.target.value
+                          setPhone(next)
+                          const composed = composePhoneNumber(countryCode, next)
+                          setNormalizedPhone(composed.e164)
+                        }}
+                        onBlur={() =>
+                          setPhone(current => {
+                            const trimmed = current.trim()
+                            const composed = composePhoneNumber(countryCode, trimmed)
+                            setNormalizedPhone(composed.e164)
+                            return composed.localNumber
+                          })
+                        }
+                        type="tel"
+                        autoComplete="tel"
+                        inputMode="tel"
+                        placeholder="(555) 123-4567"
+                        required
+                        disabled={isLoading}
+                        aria-invalid={phone.length > 0 && normalizedPhone.length === 0}
+                        aria-describedby="phone-hint"
+                      />
+                    </div>
                     <p className="form__hint" id="phone-hint">
                       We’ll use this to tailor your onboarding.
                     </p>

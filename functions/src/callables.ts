@@ -8,6 +8,8 @@ const db = defaultDb
 
 type ContactPayload = {
   phone?: unknown
+  phoneCountryCode?: unknown
+  phoneLocalNumber?: unknown
   firstSignupEmail?: unknown
 }
 

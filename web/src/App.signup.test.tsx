@@ -164,6 +164,12 @@ describe('App signup cleanup', () => {
     firestore.getDocMock.mockImplementation(async () => ({ exists: () => false }))
     access.afterSignupBootstrap.mockReset()
     access.afterSignupBootstrap.mockImplementation(async (rawPayload?: unknown) => {
+      if (typeof rawPayload === 'string') {
+        if (!rawPayload.trim()) {
+          throw new Error('storeId required for bootstrap')
+        }
+        return
+      }
       const payload = (rawPayload ?? {}) as {
         storeId?: string
         contact?: { ownerName?: string | null; company?: string | null }
@@ -222,6 +228,8 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
       await user.selectOptions(screen.getByLabelText(/Role/i), 'owner')
       await user.type(screen.getByLabelText(/Company/i), 'Sedifex')
+      await user.selectOptions(screen.getByLabelText(/Country code/i), '+44')
+      expect((screen.getByLabelText(/Country code/i) as HTMLSelectElement).value).toBe('+44')
       await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -263,6 +271,8 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
       await user.selectOptions(screen.getByLabelText(/Role/i), 'owner')
       await user.type(screen.getByLabelText(/Company/i), 'Sedifex')
+      await user.selectOptions(screen.getByLabelText(/Country code/i), '+44')
+      expect((screen.getByLabelText(/Country code/i) as HTMLSelectElement).value).toBe('+44')
       await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -271,7 +281,7 @@ describe('App signup cleanup', () => {
 
     const storeId = 'store-test-use'
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
-    await waitFor(() => expect(mocks.afterSignupBootstrap).toHaveBeenCalledWith(storeId))
+    await waitFor(() => expect(access.afterSignupBootstrap).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(createdUser.getIdToken).toHaveBeenCalledWith(true))
     const { docRefByPath, setDocMock } = firestore
     const ownerDocKey = `teamMembers/${createdUser.uid}`
@@ -298,7 +308,9 @@ describe('App signup cleanup', () => {
         storeId,
         role: 'owner',
         company: 'Sedifex',
-        phone: '5551234567',
+        phone: '+445551234567',
+        phoneCountryCode: '+44',
+        phoneLocalNumber: '5551234567',
         email: 'owner@example.com',
         invitedBy: createdUser.uid,
         firstSignupEmail: 'owner@example.com',
@@ -321,7 +333,9 @@ describe('App signup cleanup', () => {
         name: 'owner@example.com',
         displayName: 'owner@example.com',
         email: 'owner@example.com',
-        phone: '5551234567',
+        phone: '+445551234567',
+        phoneCountryCode: '+44',
+        phoneLocalNumber: '5551234567',
         status: 'active',
         role: 'client',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
@@ -345,16 +359,19 @@ describe('App signup cleanup', () => {
     )
     expect(storeOptions).toEqual({ merge: true })
 
-    expect(access.afterSignupBootstrap).toHaveBeenCalledTimes(1)
     expect(access.afterSignupBootstrap).toHaveBeenCalledWith({
       storeId,
       contact: {
-        phone: '5551234567',
+        phone: '+445551234567',
+        phoneCountryCode: '+44',
+        phoneLocalNumber: '5551234567',
         firstSignupEmail: 'owner@example.com',
         company: 'Sedifex',
         ownerName: 'Owner account',
       },
     })
+
+    expect(access.afterSignupBootstrap).toHaveBeenCalledWith(storeId)
 
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({ tone: 'success', message: expect.stringMatching(/All set/i) }),
