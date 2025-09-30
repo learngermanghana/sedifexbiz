@@ -1,6 +1,9 @@
+require('ts-node/register/transpile-only')
+
 const assert = require('assert')
 const Module = require('module')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
+const { DEFAULT_CURRENCY_CODE } = require('../../shared/currency')
 
 let currentDefaultDb
 const apps = []
@@ -91,7 +94,7 @@ async function runOwnerUpdateTest() {
   assert.strictEqual(storeDoc.name, 'Sedifex Labs')
   assert.strictEqual(storeDoc.displayName, 'Sedifex Labs')
   assert.strictEqual(storeDoc.timezone, 'Africa/Accra')
-  assert.strictEqual(storeDoc.currency, 'GHS')
+  assert.strictEqual(storeDoc.currency, DEFAULT_CURRENCY_CODE)
   assert.ok(storeDoc.updatedAt, 'Expected updatedAt to be set')
 }
 

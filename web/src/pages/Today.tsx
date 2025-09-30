@@ -1,5 +1,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import {
   collection,
@@ -17,6 +18,7 @@ import {
 
 import { db } from '../firebase'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
+import { formatCurrency } from '@shared/currency'
 
 export function formatDateKey(date: Date) {
   const year = date.getFullYear()
@@ -218,13 +220,6 @@ function mapActivity(docSnapshot: QueryDocumentSnapshot<DocumentData>): Activity
     actor,
     at,
   }
-}
-
-function formatCurrency(value: number) {
-  return `GHS ${value.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`
 }
 
 function formatNumber(value: number) {

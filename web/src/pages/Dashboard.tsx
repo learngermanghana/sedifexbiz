@@ -1,5 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { DEFAULT_CURRENCY_SYMBOL } from '@shared/currency'
 
 import Sparkline from '../components/Sparkline'
 import { useStoreMetrics } from '../hooks/useStoreMetrics'
@@ -369,7 +370,7 @@ export default function Dashboard() {
               }}
             >
               <label style={{ display: 'grid', gap: 6, fontSize: 13, color: '#475569' }} htmlFor="goal-revenue">
-                <span style={{ fontWeight: 600 }}>Revenue goal (GHS)</span>
+                <span style={{ fontWeight: 600 }}>Revenue goal ({DEFAULT_CURRENCY_SYMBOL})</span>
                 <input
                   id="goal-revenue"
                   type="number"

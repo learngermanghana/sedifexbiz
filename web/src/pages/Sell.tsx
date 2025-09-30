@@ -27,6 +27,7 @@ import {
 } from '../utils/offlineCache'
 import { ensureCustomerLoyalty, normalizeCustomerLoyalty, type CustomerLoyalty } from '../utils/customerLoyalty'
 import { buildSimplePdf } from '../utils/pdf'
+import { formatCurrency } from '@shared/currency'
 
 type Product = {
   id: string
@@ -183,7 +184,7 @@ function formatTenderBreakdown(tenders: Record<string, number>): string {
   const entries = normalizeTenderEntries(tenders)
   if (!entries.length) return ''
   return entries
-    .map(entry => `${formatTenderMethod(entry.method)} GHS ${entry.amount.toFixed(2)}`)
+    .map(entry => `${formatTenderMethod(entry.method)} ${formatCurrency(entry.amount)}`)
     .join(' • ')
 }
 
@@ -395,17 +396,17 @@ export default function Sell() {
     lines.push('')
     lines.push('Items:')
     receipt.items.forEach(line => {
-      lines.push(`  • ${line.qty} × ${line.name} — GHS ${(line.qty * line.price).toFixed(2)}`)
+      lines.push(`  • ${line.qty} × ${line.name} — ${formatCurrency(line.qty * line.price)}`)
     })
 
     lines.push('')
-    lines.push(`Subtotal: GHS ${receipt.subtotal.toFixed(2)}`)
+    lines.push(`Subtotal: ${formatCurrency(receipt.subtotal)}`)
     const receiptTenderTotal = getTenderTotal(receipt.tenders)
-    lines.push(`Paid: GHS ${receiptTenderTotal.toFixed(2)}`)
+    lines.push(`Paid: ${formatCurrency(receiptTenderTotal)}`)
     normalizeTenderEntries(receipt.tenders).forEach(entry => {
-      lines.push(`  ${formatTenderMethod(entry.method)} — GHS ${entry.amount.toFixed(2)}`)
+      lines.push(`  ${formatTenderMethod(entry.method)} — ${formatCurrency(entry.amount)}`)
     })
-    lines.push(`Change: GHS ${receipt.changeDue.toFixed(2)}`)
+    lines.push(`Change: ${formatCurrency(receipt.changeDue)}`)
     lines.push('')
     lines.push(`Sale #${receipt.saleId}`)
     lines.push('Thank you for shopping with us!')
@@ -801,7 +802,7 @@ export default function Sell() {
         </div>
         <div className="sell-page__total" aria-live="polite">
           <span className="sell-page__total-label">Subtotal</span>
-          <span className="sell-page__total-value">GHS {subtotal.toFixed(2)}</span>
+          <span className="sell-page__total-value">{formatCurrency(subtotal)}</span>
         </div>
       </header>
 
@@ -846,9 +847,7 @@ export default function Sell() {
             {filtered.length ? (
               filtered.map(p => {
                 const hasPrice = typeof p.price === 'number' && Number.isFinite(p.price)
-                const priceText = hasPrice
-                  ? `GHS ${p.price.toFixed(2)}`
-                  : 'Price unavailable'
+                const priceText = hasPrice ? formatCurrency(p.price ?? 0) : 'Price unavailable'
                 const actionLabel = hasPrice ? 'Add' : 'Set price to sell'
                 return (
                   <button
@@ -906,7 +905,7 @@ export default function Sell() {
                             onChange={e => setQty(line.productId, Number(e.target.value))}
                           />
                         </td>
-                        <td className="sell-page__numeric">GHS {(line.price * line.qty).toFixed(2)}</td>
+                        <td className="sell-page__numeric">{formatCurrency(line.price * line.qty)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -915,7 +914,7 @@ export default function Sell() {
 
               <div className="sell-page__summary">
                 <span>Total</span>
-                <strong>GHS {subtotal.toFixed(2)}</strong>
+                <strong>{formatCurrency(subtotal)}</strong>
               </div>
 
               <div className="sell-page__form-grid">
@@ -989,18 +988,18 @@ export default function Sell() {
               <div className="sell-page__payment-summary" aria-live="polite">
                 <div>
                   <span className="sell-page__summary-label">Amount due</span>
-                  <strong>GHS {subtotal.toFixed(2)}</strong>
+                  <strong>{formatCurrency(subtotal)}</strong>
                 </div>
                 <div>
                   <span className="sell-page__summary-label">Paid</span>
-                  <strong>GHS {tenderTotal.toFixed(2)}</strong>
+                  <strong>{formatCurrency(tenderTotal)}</strong>
                   {tenderBreakdown && (
                     <span className="sell-page__payment-breakdown">{tenderBreakdown}</span>
                   )}
                 </div>
                 <div className={`sell-page__change${isCashShort ? ' is-short' : ''}`}>
                   <span className="sell-page__summary-label">{isCashShort ? 'Short' : 'Change due'}</span>
-                  <strong>GHS {changeDue.toFixed(2)}</strong>
+                  <strong>{formatCurrency(changeDue)}</strong>
                 </div>
               </div>
 
@@ -1108,7 +1107,7 @@ export default function Sell() {
                   <tr key={line.productId}>
                     <td>{line.name}</td>
                     <td>{line.qty}</td>
-                    <td>GHS {(line.qty * line.price).toFixed(2)}</td>
+                    <td>{formatCurrency(line.qty * line.price)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1117,18 +1116,18 @@ export default function Sell() {
             <div className="receipt-print__summary">
               <div>
                 <span>Subtotal</span>
-                <strong>GHS {receipt.subtotal.toFixed(2)}</strong>
+                <strong>{formatCurrency(receipt.subtotal)}</strong>
               </div>
               <div>
                 <span>Paid</span>
-                <strong>GHS {getTenderTotal(receipt.tenders).toFixed(2)}</strong>
+                <strong>{formatCurrency(getTenderTotal(receipt.tenders))}</strong>
                 {formatTenderBreakdown(receipt.tenders) && (
                   <span className="receipt-print__tenders">{formatTenderBreakdown(receipt.tenders)}</span>
                 )}
               </div>
               <div>
                 <span>Change</span>
-                <strong>GHS {receipt.changeDue.toFixed(2)}</strong>
+                <strong>{formatCurrency(receipt.changeDue)}</strong>
               </div>
             </div>
 

@@ -21,6 +21,7 @@ import { ensureCustomerLoyalty, type CustomerLoyalty } from '../utils/customerLo
 import { useAuthUser } from './useAuthUser'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import { useToast } from '../components/ToastProvider'
+import { formatCurrency } from '@shared/currency'
 import {
   CUSTOMER_CACHE_LIMIT,
   PRODUCT_CACHE_LIMIT,
@@ -209,10 +210,7 @@ function endOfMonth(date: Date) {
 }
 
 function formatAmount(value: number) {
-  return `GHS ${value.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`
+  return formatCurrency(value)
 }
 
 function formatHourRange(hour: number) {

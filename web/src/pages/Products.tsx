@@ -28,6 +28,7 @@ import {
   type ProductImportOperation,
 } from './productsImport'
 import './Products.css'
+import { formatCurrency } from '@shared/currency'
 
 interface ReceiptDetails {
   qty?: number | null
@@ -839,7 +840,7 @@ export default function Products() {
                       <td>{product.sku || '—'}</td>
                       <td>{
                         typeof product.price === 'number' && Number.isFinite(product.price)
-                          ? `GHS ${product.price.toFixed(2)}`
+                          ? formatCurrency(product.price)
                           : '—'
                       }</td>
                       <td>{stockCount}</td>

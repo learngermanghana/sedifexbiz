@@ -17,6 +17,7 @@ import { Link } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import './Customers.css'
+import { formatCurrency } from '@shared/currency'
 import {
   CUSTOMER_CACHE_LIMIT,
   SALES_CACHE_LIMIT,
@@ -155,7 +156,7 @@ function formatTenderSummary(tenders: Record<string, unknown>): string | null {
   const entries = normalizeTenderEntries(tenders)
   if (!entries.length) return null
   return entries
-    .map(entry => `${formatTenderMethod(entry.method)} GHS ${entry.amount.toFixed(2)}`)
+    .map(entry => `${formatTenderMethod(entry.method)} ${formatCurrency(entry.amount)}`)
     .join(' • ')
 }
 
@@ -443,15 +444,7 @@ export default function Customers() {
     }
   }, [customers, editingCustomerId])
 
-  const currencyFormatter = useMemo(
-    () =>
-      new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'GHS',
-        minimumFractionDigits: 2,
-      }),
-    []
-  )
+  const currencyFormatter = useMemo(() => (amount: number) => formatCurrency(amount), [])
 
   const allTags = useMemo(() => {
     const tagSet = new Set<string>()
@@ -1080,7 +1073,7 @@ export default function Customers() {
                         </td>
                         <td>{visitCount}</td>
                         <td>{lastVisit ? lastVisit.toLocaleDateString() : '—'}</td>
-                        <td>{visitCount ? currencyFormatter.format(totalSpend) : '—'}</td>
+                        <td>{visitCount ? currencyFormatter(totalSpend) : '—'}</td>
                         <td className="customers-page__table-actions">
                           <button
                             type="button"
@@ -1179,7 +1172,7 @@ export default function Customers() {
                   <dt>Total spend</dt>
                   <dd>
                     {selectedCustomerStats.visits
-                      ? currencyFormatter.format(selectedCustomerStats.totalSpend)
+                      ? currencyFormatter(selectedCustomerStats.totalSpend)
                       : '—'}
                   </dd>
                 </div>
@@ -1199,7 +1192,7 @@ export default function Customers() {
                           <span className="customers-page__history-primary">
                             {entry.createdAt ? entry.createdAt.toLocaleString() : 'Unknown date'}
                           </span>
-                          <span className="customers-page__history-total">{currencyFormatter.format(entry.total)}</span>
+                          <span className="customers-page__history-total">{currencyFormatter(entry.total)}</span>
                         </div>
                         <div className="customers-page__history-meta">
                           {entry.tenderSummary

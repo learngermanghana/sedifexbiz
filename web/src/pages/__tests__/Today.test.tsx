@@ -3,8 +3,11 @@ import React from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
-
+import { formatCurrency } from '@shared/currency'
 import Today, { formatDateKey } from '../Today'
+
+const currencyText = (value: number) => formatCurrency(value)
+const signedCurrency = (value: number) => `${value >= 0 ? '+' : '-'}${formatCurrency(Math.abs(value))}`
 
 const mockUseActiveStoreContext = vi.fn(() => ({
   storeId: 'store-123',
@@ -228,22 +231,22 @@ describe('Today page', () => {
     const expectedPreviousKey = formatDateKey(previousDate)
 
     await waitFor(() => {
-      expect(screen.getByText('GHS 480.50')).toBeInTheDocument()
+      expect(screen.getByText(currencyText(480.5))).toBeInTheDocument()
     })
 
     expect(screen.getByText('8 sales')).toBeInTheDocument()
     expect(screen.getByText('Sales variance')).toBeInTheDocument()
-    expect(screen.getByText('+GHS 20.50')).toBeInTheDocument()
-    expect(screen.getByText('+4.5% vs GHS 460.00 yesterday')).toBeInTheDocument()
+    expect(screen.getByText(signedCurrency(20.5))).toBeInTheDocument()
+    expect(screen.getByText(`+4.5% vs ${currencyText(460)} yesterday`)).toBeInTheDocument()
     expect(screen.getByText('Average basket size')).toBeInTheDocument()
-    expect(screen.getByText('GHS 60.06')).toBeInTheDocument()
+    expect(screen.getByText(currencyText(60.06))).toBeInTheDocument()
     expect(screen.getByText('Across 8 sales')).toBeInTheDocument()
     expect(screen.getByText('Card payments')).toBeInTheDocument()
     expect(screen.getByText('Cash payments')).toBeInTheDocument()
     expect(screen.getByText('New customers')).toBeInTheDocument()
     expect(screen.getByText('Top products')).toBeInTheDocument()
     expect(screen.getByText('Cold Brew')).toBeInTheDocument()
-    expect(screen.getByText('GHS 220.00 · 18 units sold')).toBeInTheDocument()
+    expect(screen.getByText(`${currencyText(220)} · 18 units sold`)).toBeInTheDocument()
 
     expect(screen.getByText('Sold 3 iced coffees')).toBeInTheDocument()
     expect(screen.getByText(/sale • Lila •/i)).toBeInTheDocument()
@@ -297,10 +300,10 @@ describe('Today page', () => {
       expect(screen.getByText('Sales variance')).toBeInTheDocument()
     })
 
-    expect(screen.getByText('+GHS 0.00')).toBeInTheDocument()
+    expect(screen.getByText(signedCurrency(0))).toBeInTheDocument()
     expect(screen.getByText('No sales recorded today or yesterday')).toBeInTheDocument()
     expect(screen.getByText('Average basket size')).toBeInTheDocument()
-    expect(screen.getAllByText('GHS 0.00').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(currencyText(0)).length).toBeGreaterThan(0)
     expect(screen.getByText('No sales recorded today')).toBeInTheDocument()
     expect(screen.getByText('No product sales recorded today.')).toBeInTheDocument()
   })

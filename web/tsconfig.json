@@ -17,10 +17,15 @@
     "types": [
       "vite/client",
       "vitest/globals"
-    ]
+    ],
+    "baseUrl": "./",
+    "paths": {
+      "@shared/*": ["../shared/*"]
+    }
   },
   "include": [
     "src",
-    "tests"
+    "tests",
+    "../shared"
   ]
 }
