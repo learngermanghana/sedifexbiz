@@ -46,6 +46,7 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 - Enable **Authentication → Phone** and **Email/Password** (optional).
 - Enable **Firestore** and publish `firestore.rules`.
 - Create a second project for production later (e.g., `sedifex-prod`).
+- Schedule the `runNightlyDataHygiene` Cloud Function via Cloud Scheduler (daily at 03:00 UTC) so summaries are recomputed and activity logs stay clean. Monitor for failures in Cloud Logging / Error Reporting.
 
 ## Testing
 - Run unit and integration tests from the `web/` directory with `npm run test`.

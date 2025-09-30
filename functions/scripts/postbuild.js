@@ -27,3 +27,7 @@ const compiledFunctionsRoot = path.join(libDir, 'functions')
 if (fs.existsSync(compiledFunctionsRoot)) {
   fs.rmSync(compiledFunctionsRoot, { recursive: true, force: true })
 }
+
+const compiledSharedDir = path.join(libDir, 'shared')
+const sharedDestination = path.join(__dirname, '..', '..', 'shared')
+copyRecursive(compiledSharedDir, sharedDestination)

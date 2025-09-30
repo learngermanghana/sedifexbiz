@@ -56,6 +56,64 @@ const applyMerge = (existing = {}, updates = {}) => {
   return result
 }
 
+const getFieldValue = (record, fieldPath) => {
+  if (!record || typeof record !== 'object') {
+    return undefined
+  }
+  if (!fieldPath) {
+    return record
+  }
+  const segments = fieldPath.split('.')
+  let current = record
+  for (const segment of segments) {
+    if (!current || typeof current !== 'object') {
+      return undefined
+    }
+    current = current[segment]
+    if (current === undefined) {
+      return undefined
+    }
+  }
+  return current
+}
+
+const normalizeComparableValue = value => {
+  if (value && typeof value === 'object') {
+    if (typeof value._millis === 'number') {
+      return value._millis
+    }
+    if (typeof value._seconds === 'number') {
+      const nanos = typeof value._nanoseconds === 'number' ? value._nanoseconds : 0
+      return value._seconds * 1000 + nanos / 1_000_000
+    }
+  }
+  if (value && typeof value.toMillis === 'function') {
+    try {
+      return value.toMillis()
+    } catch (error) {
+      return value
+    }
+  }
+  return value
+}
+
+const compareWithOperator = (left, operator, right) => {
+  switch (operator) {
+    case '==':
+      return left === right
+    case '<':
+      return left < right
+    case '<=':
+      return left <= right
+    case '>':
+      return left > right
+    case '>=':
+      return left >= right
+    default:
+      throw new Error(`Unsupported operator: ${operator}`)
+  }
+}
+
 class MockTimestamp {
   constructor(millis = Date.now()) {
     this._millis = millis
@@ -140,6 +198,112 @@ class MockDocumentReference {
   }
 }
 
+class MockQueryDocumentSnapshot {
+  constructor(db, path, data) {
+    this._db = db
+    this.ref = new MockDocumentReference(db, path)
+    this.id = this.ref.id
+    this._data = clone(data)
+  }
+
+  data() {
+    return this._data ? clone(this._data) : undefined
+  }
+
+  get(field) {
+    const value = this._data ? getFieldValue(this._data, field) : undefined
+    return value === undefined ? undefined : clone(value)
+  }
+}
+
+class MockQuerySnapshot {
+  constructor(docs) {
+    this.docs = docs
+    this.size = docs.length
+    this.empty = docs.length === 0
+  }
+
+  forEach(callback, thisArg) {
+    this.docs.forEach(doc => {
+      callback.call(thisArg, doc)
+    })
+  }
+}
+
+class MockQuery {
+  constructor(db, path, constraints = [], orderings = [], limitValue = null) {
+    this._db = db
+    this._path = path
+    this._constraints = constraints
+    this._orderings = orderings
+    this._limit = typeof limitValue === 'number' ? limitValue : null
+  }
+
+  where(field, opStr, value) {
+    return new MockQuery(
+      this._db,
+      this._path,
+      [...this._constraints, { field, opStr, value }],
+      this._orderings,
+      this._limit,
+    )
+  }
+
+  orderBy(field, direction = 'asc') {
+    return new MockQuery(
+      this._db,
+      this._path,
+      this._constraints,
+      [...this._orderings, { field, direction }],
+      this._limit,
+    )
+  }
+
+  limit(count) {
+    return new MockQuery(this._db, this._path, this._constraints, this._orderings, count)
+  }
+
+  async get() {
+    const entries = this._db.listCollection(this._path)
+    let results = entries.filter(entry => {
+      return this._constraints.every(constraint => {
+        const fieldValue = getFieldValue(entry.data, constraint.field)
+        const left = normalizeComparableValue(fieldValue)
+        const right = normalizeComparableValue(constraint.value)
+        return compareWithOperator(left, constraint.opStr, right)
+      })
+    })
+
+    for (const ordering of this._orderings) {
+      if (!ordering || !ordering.field) {
+        continue
+      }
+      const direction = ordering.direction === 'desc' ? -1 : 1
+      results = results.sort((a, b) => {
+        const left = normalizeComparableValue(getFieldValue(a.data, ordering.field))
+        const right = normalizeComparableValue(getFieldValue(b.data, ordering.field))
+        if (left === right) {
+          return 0
+        }
+        if (left === undefined) {
+          return -1 * direction
+        }
+        if (right === undefined) {
+          return 1 * direction
+        }
+        return left < right ? -1 * direction : 1 * direction
+      })
+    }
+
+    if (typeof this._limit === 'number') {
+      results = results.slice(0, this._limit)
+    }
+
+    const docs = results.map(entry => new MockQueryDocumentSnapshot(this._db, `${this._path}/${entry.id}`, entry.data))
+    return new MockQuerySnapshot(docs)
+  }
+}
+
 class MockCollectionReference {
   constructor(db, path) {
     this._db = db
@@ -149,6 +313,18 @@ class MockCollectionReference {
   doc(id) {
     const docId = id || this._db.generateId()
     return new MockDocumentReference(this._db, `${this._path}/${docId}`)
+  }
+
+  where(field, opStr, value) {
+    return new MockQuery(this._db, this._path, [{ field, opStr, value }], [])
+  }
+
+  orderBy(field, direction = 'asc') {
+    return new MockQuery(this._db, this._path, [], [{ field, direction }])
+  }
+
+  async get() {
+    return new MockQuery(this._db, this._path).get()
   }
 }
 
