@@ -66,6 +66,11 @@ function loadFunctionsModule() {
 
 async function runOwnerUpdateTest() {
   currentDefaultDb = new MockFirestore({
+    'teamMembers/owner-1': {
+      uid: 'owner-1',
+      storeId: 'store-123',
+      role: 'owner',
+    },
     'stores/store-123': {
       name: 'Sedifex Coffee',
       displayName: 'Sedifex Coffee',
@@ -100,6 +105,11 @@ async function runOwnerUpdateTest() {
 
 async function runNonOwnerRejectionTest() {
   currentDefaultDb = new MockFirestore({
+    'teamMembers/staff-1': {
+      uid: 'staff-1',
+      storeId: 'store-456',
+      role: 'staff',
+    },
     'stores/store-456': {
       name: 'Test Store',
       displayName: 'Test Store',
@@ -132,6 +142,11 @@ async function runNonOwnerRejectionTest() {
 
 async function runInvalidTimezoneTest() {
   currentDefaultDb = new MockFirestore({
+    'teamMembers/owner-2': {
+      uid: 'owner-2',
+      storeId: 'store-789',
+      role: 'owner',
+    },
     'stores/store-789': {
       name: 'Example',
       displayName: 'Example',
@@ -163,10 +178,80 @@ async function runInvalidTimezoneTest() {
   assert.match(error.message, /valid iana timezone/i)
 }
 
+async function runMissingMembershipTest() {
+  currentDefaultDb = new MockFirestore({
+    'stores/store-000': {
+      name: 'Ghost Store',
+      displayName: 'Ghost Store',
+      timezone: 'UTC',
+      currency: 'USD',
+    },
+  })
+
+  const { updateStoreProfile } = loadFunctionsModule()
+  const context = {
+    auth: {
+      uid: 'ghost-user',
+      token: { role: 'owner', activeStoreId: 'store-000' },
+    },
+  }
+
+  let error
+  try {
+    await updateStoreProfile.run(
+      { storeId: 'store-000', name: 'Ghost Store', timezone: 'UTC', currency: 'USD' },
+      context,
+    )
+  } catch (err) {
+    error = err
+  }
+
+  assert.ok(error, 'Expected missing membership to throw')
+  assert.strictEqual(error.code, 'permission-denied')
+}
+
+async function runMissingStoreAssignmentTest() {
+  currentDefaultDb = new MockFirestore({
+    'teamMembers/owner-3': {
+      uid: 'owner-3',
+      role: 'owner',
+    },
+    'stores/store-001': {
+      name: 'Configless Store',
+      displayName: 'Configless Store',
+      timezone: 'UTC',
+      currency: 'USD',
+    },
+  })
+
+  const { updateStoreProfile } = loadFunctionsModule()
+  const context = {
+    auth: {
+      uid: 'owner-3',
+      token: { role: 'owner', activeStoreId: 'store-001' },
+    },
+  }
+
+  let error
+  try {
+    await updateStoreProfile.run(
+      { storeId: 'store-001', name: 'Configless', timezone: 'UTC', currency: 'USD' },
+      context,
+    )
+  } catch (err) {
+    error = err
+  }
+
+  assert.ok(error, 'Expected missing store assignment to throw')
+  assert.strictEqual(error.code, 'failed-precondition')
+}
+
 async function main() {
   await runOwnerUpdateTest()
   await runNonOwnerRejectionTest()
   await runInvalidTimezoneTest()
+  await runMissingMembershipTest()
+  await runMissingStoreAssignmentTest()
   console.log('updateStoreProfile tests passed')
 }
 

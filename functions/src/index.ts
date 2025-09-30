@@ -1,6 +1,6 @@
 import * as functions from 'firebase-functions'
 import { applyRoleClaims } from './customClaims'
-import { admin, defaultDb, rosterDb } from './firestore'
+import { admin, defaultDb, getStoreContext, rosterDb, type StoreContext } from './firestore'
 import { fetchClientRowByEmail, getDefaultSpreadsheetId, normalizeHeader } from './googleSheets'
 import { deriveStoreIdFromContext, withCallableErrorLogging } from './telemetry'
 
@@ -763,6 +763,14 @@ type RevokeStaffAccessPayload = {
   uid?: unknown
 }
 
+type ReceiveStockPayload = {
+  productId?: unknown
+  qty?: unknown
+  supplier?: unknown
+  reference?: unknown
+  unitCost?: unknown
+}
+
 const VALID_ROLES = new Set(['owner', 'staff'])
 const INACTIVE_WORKSPACE_MESSAGE =
   'Your Sedifex workspace contract is not active. Reach out to your Sedifex administrator to restore access.'
@@ -886,31 +894,30 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
   }
 }
 
-function getRoleFromToken(token: Record<string, unknown> | undefined) {
-  const role = typeof token?.role === 'string' ? (token.role as string) : null
-  return role && VALID_ROLES.has(role) ? role : null
-}
-
 function assertAuthenticated(context: functions.https.CallableContext) {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Login required')
   }
 }
 
-function assertOwnerAccess(context: functions.https.CallableContext) {
+async function resolveStoreContext(
+  context: functions.https.CallableContext,
+): Promise<StoreContext> {
   assertAuthenticated(context)
-  const role = getRoleFromToken(context.auth!.token as Record<string, unknown>)
-  if (role !== 'owner') {
-    throw new functions.https.HttpsError('permission-denied', 'Owner access required')
-  }
+  const uid = context.auth!.uid
+  return getStoreContext(uid)
 }
 
-function assertStaffAccess(context: functions.https.CallableContext) {
-  assertAuthenticated(context)
-  const role = getRoleFromToken(context.auth!.token as Record<string, unknown>)
-  if (!role) {
-    throw new functions.https.HttpsError('permission-denied', 'Staff access required')
+async function assertOwnerAccess(context: functions.https.CallableContext): Promise<StoreContext> {
+  const storeContext = await resolveStoreContext(context)
+  if (storeContext.role !== 'owner') {
+    throw new functions.https.HttpsError('permission-denied', 'Owner access required')
   }
+  return storeContext
+}
+
+function assertStaffAccess(context: functions.https.CallableContext): Promise<StoreContext> {
+  return resolveStoreContext(context)
 }
 
 function normalizeManageStaffPayload(data: ManageStaffPayload) {
@@ -1826,9 +1833,12 @@ export const manageStaffAccount = functions.https.onCall(
   withCallableErrorLogging(
     FIREBASE_CALLABLES.MANAGE_STAFF_ACCOUNT,
     async (data, context) => {
-      assertOwnerAccess(context)
+      const requester = await assertOwnerAccess(context)
 
       const { storeId, email, role, password } = normalizeManageStaffPayload(data as ManageStaffPayload)
+      if (storeId !== requester.storeId) {
+        throw new functions.https.HttpsError('permission-denied', 'Cannot manage staff for this workspace')
+      }
       const invitedBy = context.auth?.uid ?? null
       const { record, created } = await ensureAuthUser(email, password)
 
@@ -1880,9 +1890,12 @@ export const revokeStaffAccess = functions.https.onCall(
   withCallableErrorLogging(
     FIREBASE_CALLABLES.REVOKE_STAFF_ACCESS,
     async (data, context) => {
-      assertOwnerAccess(context)
+      const requester = await assertOwnerAccess(context)
 
       const { storeId, uid } = normalizeRevokeStaffAccessPayload(data as RevokeStaffAccessPayload)
+      if (storeId !== requester.storeId) {
+        throw new functions.https.HttpsError('permission-denied', 'Cannot revoke access for this workspace')
+      }
 
       const memberRef = rosterDb.collection('teamMembers').doc(uid)
       const memberSnap = await memberRef.get()
@@ -1936,11 +1949,14 @@ export const updateStoreProfile = functions.https.onCall(
   withCallableErrorLogging(
     FIREBASE_CALLABLES.UPDATE_STORE_PROFILE,
     async (data, context) => {
-      assertOwnerAccess(context)
+      const requester = await assertOwnerAccess(context)
 
       const { storeId, name, timezone, currency } = normalizeUpdateStoreProfilePayload(
         data as UpdateStoreProfilePayload,
       )
+      if (storeId !== requester.storeId) {
+        throw new functions.https.HttpsError('permission-denied', 'Cannot update this workspace')
+      }
 
       const storeRef = db.collection('stores').doc(storeId)
       const snapshot = await storeRef.get()
@@ -1983,9 +1999,10 @@ export const receiveStock = functions.https.onCall(
   withCallableErrorLogging(
     FIREBASE_CALLABLES.RECEIVE_STOCK,
     async (data, context) => {
-      assertStaffAccess(context)
+      const requester = await assertStaffAccess(context)
 
-      const { productId, qty, supplier, reference, unitCost } = data || {}
+      const payload = (data ?? {}) as ReceiveStockPayload
+      const { productId, qty, supplier, reference, unitCost } = payload
 
       const productIdStr = typeof productId === 'string' ? productId : null
       if (!productIdStr) {
@@ -2027,7 +2044,20 @@ export const receiveStock = functions.https.onCall(
         }
 
         const productStoreIdRaw = pSnap.get('storeId')
-        const productStoreId = typeof productStoreIdRaw === 'string' ? productStoreIdRaw.trim() : null
+        const productStoreId = typeof productStoreIdRaw === 'string' ? productStoreIdRaw.trim() : ''
+        if (!productStoreId) {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'Product is missing a workspace assignment',
+          )
+        }
+
+        if (productStoreId !== requester.storeId) {
+          throw new functions.https.HttpsError(
+            'permission-denied',
+            'Cannot receive stock for another workspace',
+          )
+        }
 
         const currentStock = Number(pSnap.get('stockCount') || 0)
         const nextStock = currentStock + amount
@@ -2053,7 +2083,7 @@ export const receiveStock = functions.https.onCall(
           totalCost,
           receivedBy: context.auth?.uid ?? null,
           createdAt: timestamp,
-          storeId: productStoreId,
+          storeId: requester.storeId,
         })
 
         tx.set(ledgerRef, {
@@ -2061,7 +2091,7 @@ export const receiveStock = functions.https.onCall(
           qtyChange: amount,
           type: 'receipt',
           refId: receiptRef.id,
-          storeId: productStoreId,
+          storeId: requester.storeId,
           createdAt: timestamp,
         })
       })
