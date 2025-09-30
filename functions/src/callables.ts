@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions'
 import { applyRoleClaims } from './customClaims'
 import { admin, defaultDb, rosterDb } from './firestore'
 import { deriveStoreIdFromContext, withCallableErrorLogging } from './telemetry'
+import { FIREBASE_CALLABLES } from '../../shared/firebaseCallables'
 
 const db = defaultDb
 
@@ -56,7 +57,7 @@ function normalizeContact(contact: ContactPayload | undefined) {
 
 export const backfillMyStore = functions.https.onCall(
   withCallableErrorLogging(
-    'backfillMyStore',
+    FIREBASE_CALLABLES.BACKFILL_MY_STORE,
     async (data, context) => {
       if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in first.')
 

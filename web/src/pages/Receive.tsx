@@ -8,6 +8,7 @@ import './Receive.css'
 import { queueCallableRequest } from '../utils/offlineQueue'
 import { loadCachedProducts, saveCachedProducts, PRODUCT_CACHE_LIMIT } from '../utils/offlineCache'
 import { useToast } from '../components/ToastProvider'
+import { FIREBASE_CALLABLES } from '@shared/firebaseCallables'
 
 type Product = {
   id: string
@@ -53,7 +54,10 @@ export default function Receive() {
   const statusTimeoutRef = useRef<number | null>(null)
   const [pendingReceipts, setPendingReceipts] = useState<Record<string, PendingReceipt>>({})
   const pendingReceiptsRef = useRef(pendingReceipts)
-  const receiveStock = useMemo(() => httpsCallable(functions, 'receiveStock'), [])
+  const receiveStock = useMemo(
+    () => httpsCallable(functions, FIREBASE_CALLABLES.RECEIVE_STOCK),
+    [],
+  )
   const { publish } = useToast()
 
   useEffect(() => {
@@ -223,7 +227,11 @@ export default function Receive() {
     } catch (error) {
       console.error('[receive] Failed to update stock', error)
       if (isOfflineError(error)) {
-        const queued = await queueCallableRequest('receiveStock', payload, 'receipt')
+        const queued = await queueCallableRequest(
+          FIREBASE_CALLABLES.RECEIVE_STOCK,
+          payload,
+          'receipt',
+        )
         if (queued) {
           setQty('')
           setSupplier('')
