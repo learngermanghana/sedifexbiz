@@ -72,6 +72,10 @@ class MockTimestamp {
   toMillis() {
     return this._millis
   }
+
+  toDate() {
+    return new Date(this._millis)
+  }
 }
 
 class MockDocSnapshot {

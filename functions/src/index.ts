@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions'
 import { applyRoleClaims } from './customClaims'
 import { admin, defaultDb, rosterDb } from './firestore'
 import { fetchClientRowByEmail, getDefaultSpreadsheetId, normalizeHeader } from './googleSheets'
+import { deriveStoreIdFromContext, withCallableErrorLogging } from './telemetry'
 
 const db = defaultDb
 
@@ -959,20 +960,45 @@ async function handleStoreBootstrap(
   return { ok: true, storeId }
 }
 
-export const initializeStore = functions.https.onCall(async (data, context) => {
-  return handleStoreBootstrap((data ?? {}) as InitializeStorePayload, context)
-})
+export const initializeStore = functions.https.onCall(
+  withCallableErrorLogging(
+    'initializeStore',
+    async (data, context) => handleStoreBootstrap((data ?? {}) as InitializeStorePayload, context),
+    {
+      resolveStoreId: (rawData, context) => {
+        const payload = (rawData ?? {}) as { storeId?: unknown }
+        const candidate = typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
+        if (candidate) return candidate
+        return deriveStoreIdFromContext(context) ?? context.auth?.uid ?? null
+      },
+    },
+  ),
+)
 
-export const afterSignupBootstrap = functions.https.onCall(async (data, context) => {
-  return handleStoreBootstrap((data ?? {}) as InitializeStorePayload, context)
-})
+export const afterSignupBootstrap = functions.https.onCall(
+  withCallableErrorLogging(
+    'afterSignupBootstrap',
+    async (data, context) => handleStoreBootstrap((data ?? {}) as InitializeStorePayload, context),
+    {
+      resolveStoreId: (rawData, context) => {
+        const payload = (rawData ?? {}) as { storeId?: unknown }
+        const candidate = typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
+        if (candidate) return candidate
+        return deriveStoreIdFromContext(context) ?? context.auth?.uid ?? null
+      },
+    },
+  ),
+)
 
-export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
-  assertAuthenticated(context)
+export const resolveStoreAccess = functions.https.onCall(
+  withCallableErrorLogging(
+    'resolveStoreAccess',
+    async (data, context) => {
+      assertAuthenticated(context)
 
-  const uid = context.auth!.uid
-  const token = context.auth!.token as Record<string, unknown>
-  const emailFromToken = typeof token.email === 'string' ? (token.email as string).toLowerCase() : null
+      const uid = context.auth!.uid
+      const token = context.auth!.token as Record<string, unknown>
+      const emailFromToken = typeof token.email === 'string' ? (token.email as string).toLowerCase() : null
 
   const rawPayload = (data ?? {}) as { storeId?: unknown } | unknown
   let requestedStoreId: string | null = null
@@ -1276,116 +1302,195 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     products: productResults.map(item => ({ id: item.id, data: serializeFirestoreData(item.data) })),
     customers: customerResults.map(item => ({ id: item.id, data: serializeFirestoreData(item.data) })),
   }
-})
+    },
+    {
+      resolveStoreId: (rawData, context) => {
+        if (rawData && typeof rawData === 'object' && 'storeId' in (rawData as Record<string, unknown>)) {
+          const candidate = (rawData as { storeId?: unknown }).storeId
+          if (typeof candidate === 'string') {
+            const trimmed = candidate.trim()
+            if (trimmed) {
+              return trimmed
+            }
+          }
+        }
+        const fromContext = deriveStoreIdFromContext(context)
+        if (fromContext) return fromContext
+        return context.auth?.uid ?? null
+      },
+    },
+  ),
+)
 
-export const manageStaffAccount = functions.https.onCall(async (data, context) => {
-  assertOwnerAccess(context)
+export const manageStaffAccount = functions.https.onCall(
+  withCallableErrorLogging(
+    'manageStaffAccount',
+    async (data, context) => {
+      assertOwnerAccess(context)
 
-  const { storeId, email, role, password } = normalizeManageStaffPayload(data as ManageStaffPayload)
-  const invitedBy = context.auth?.uid ?? null
-  const { record, created } = await ensureAuthUser(email, password)
+      const { storeId, email, role, password } = normalizeManageStaffPayload(data as ManageStaffPayload)
+      const invitedBy = context.auth?.uid ?? null
+      const { record, created } = await ensureAuthUser(email, password)
 
-  const memberRef = rosterDb.collection('teamMembers').doc(record.uid)
-  const memberSnap = await memberRef.get()
-  const timestamp = admin.firestore.FieldValue.serverTimestamp()
+      const memberRef = rosterDb.collection('teamMembers').doc(record.uid)
+      const memberSnap = await memberRef.get()
+      const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
-  const memberData: admin.firestore.DocumentData = {
-    uid: record.uid,
-    email,
-    storeId,
-    role,
-    invitedBy,
-    updatedAt: timestamp,
-  }
+      const memberData: admin.firestore.DocumentData = {
+        uid: record.uid,
+        email,
+        storeId,
+        role,
+        invitedBy,
+        updatedAt: timestamp,
+      }
 
-  if (!memberSnap.exists) {
-    memberData.createdAt = timestamp
-  }
+      if (!memberSnap.exists) {
+        memberData.createdAt = timestamp
+      }
 
-  await memberRef.set(memberData, { merge: true })
-  return { ok: true, role, email, uid: record.uid, created, storeId }
-})
+      await memberRef.set(memberData, { merge: true })
+      return { ok: true, role, email, uid: record.uid, created, storeId }
+    },
+    {
+      resolveStoreId: (rawData, context) => {
+        if (rawData && typeof rawData === 'object' && 'storeId' in (rawData as Record<string, unknown>)) {
+          const candidate = (rawData as { storeId?: unknown }).storeId
+          if (typeof candidate === 'string') {
+            const trimmed = candidate.trim()
+            if (trimmed) {
+              return trimmed
+            }
+          }
+        }
+        const fromContext = deriveStoreIdFromContext(context)
+        if (fromContext) return fromContext
+        return context.auth?.uid ?? null
+      },
+    },
+  ),
+)
 
-export const receiveStock = functions.https.onCall(async (data, context) => {
-  assertStaffAccess(context)
+export const receiveStock = functions.https.onCall(
+  withCallableErrorLogging(
+    'receiveStock',
+    async (data, context) => {
+      assertStaffAccess(context)
 
-  const { productId, qty, supplier, reference, unitCost } = data || {}
+      const { productId, qty, supplier, reference, unitCost } = data || {}
 
-  const productIdStr = typeof productId === 'string' ? productId : null
-  if (!productIdStr) throw new functions.https.HttpsError('invalid-argument', 'A product must be selected')
+      const productIdStr = typeof productId === 'string' ? productId : null
+      if (!productIdStr) {
+        throw new functions.https.HttpsError('invalid-argument', 'A product must be selected')
+      }
 
-  const amount = Number(qty)
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new functions.https.HttpsError('invalid-argument', 'Quantity must be greater than zero')
-  }
+      const amount = Number(qty)
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new functions.https.HttpsError('invalid-argument', 'Quantity must be greater than zero')
+      }
 
-  const normalizedSupplier = typeof supplier === 'string' ? supplier.trim() : ''
-  if (!normalizedSupplier) throw new functions.https.HttpsError('invalid-argument', 'Supplier is required')
+      const normalizedSupplier = typeof supplier === 'string' ? supplier.trim() : ''
+      if (!normalizedSupplier) {
+        throw new functions.https.HttpsError('invalid-argument', 'Supplier is required')
+      }
 
-  const normalizedReference = typeof reference === 'string' ? reference.trim() : ''
-  if (!normalizedReference) throw new functions.https.HttpsError('invalid-argument', 'Reference number is required')
+      const normalizedReference = typeof reference === 'string' ? reference.trim() : ''
+      if (!normalizedReference) {
+        throw new functions.https.HttpsError('invalid-argument', 'Reference number is required')
+      }
 
-  let normalizedUnitCost: number | null = null
-  if (unitCost !== undefined && unitCost !== null && unitCost !== '') {
-    const parsedCost = Number(unitCost)
-    if (!Number.isFinite(parsedCost) || parsedCost < 0) {
-      throw new functions.https.HttpsError('invalid-argument', 'Cost must be zero or greater when provided')
-    }
-    normalizedUnitCost = parsedCost
-  }
+      let normalizedUnitCost: number | null = null
+      if (unitCost !== undefined && unitCost !== null && unitCost !== '') {
+        const parsedCost = Number(unitCost)
+        if (!Number.isFinite(parsedCost) || parsedCost < 0) {
+          throw new functions.https.HttpsError('invalid-argument', 'Cost must be zero or greater when provided')
+        }
+        normalizedUnitCost = parsedCost
+      }
 
-  const productRef = db.collection('products').doc(productIdStr)
-  const receiptRef = db.collection('receipts').doc()
-  const ledgerRef = db.collection('ledger').doc()
+      const productRef = db.collection('products').doc(productIdStr)
+      const receiptRef = db.collection('receipts').doc()
+      const ledgerRef = db.collection('ledger').doc()
 
-  await db.runTransaction(async tx => {
-    const pSnap = await tx.get(productRef)
-    if (!pSnap.exists) {
-      throw new functions.https.HttpsError('failed-precondition', 'Bad product')
-    }
+      await db.runTransaction(async tx => {
+        const pSnap = await tx.get(productRef)
+        if (!pSnap.exists) {
+          throw new functions.https.HttpsError('failed-precondition', 'Bad product')
+        }
 
-    const productStoreIdRaw = pSnap.get('storeId')
-    const productStoreId = typeof productStoreIdRaw === 'string' ? productStoreIdRaw.trim() : null
+        const productStoreIdRaw = pSnap.get('storeId')
+        const productStoreId = typeof productStoreIdRaw === 'string' ? productStoreIdRaw.trim() : null
 
-    const currentStock = Number(pSnap.get('stockCount') || 0)
-    const nextStock = currentStock + amount
-    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+        const currentStock = Number(pSnap.get('stockCount') || 0)
+        const nextStock = currentStock + amount
+        const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
-    tx.update(productRef, {
-      stockCount: nextStock,
-      updatedAt: timestamp,
-      lastReceivedAt: timestamp,
-      lastReceivedQty: amount,
-      lastReceivedCost: normalizedUnitCost,
-    })
+        tx.update(productRef, {
+          stockCount: nextStock,
+          updatedAt: timestamp,
+          lastReceivedAt: timestamp,
+          lastReceivedQty: amount,
+          lastReceivedCost: normalizedUnitCost,
+        })
 
-    const totalCost =
-      normalizedUnitCost === null ? null : Math.round((normalizedUnitCost * amount + Number.EPSILON) * 100) / 100
+        const totalCost =
+          normalizedUnitCost === null ? null : Math.round((normalizedUnitCost * amount + Number.EPSILON) * 100) / 100
 
-    tx.set(receiptRef, {
-      productId: productIdStr,
-      qty: amount,
-      supplier: normalizedSupplier,
-      reference: normalizedReference,
-      unitCost: normalizedUnitCost,
-      totalCost,
-      receivedBy: context.auth?.uid ?? null,
-      createdAt: timestamp,
-      storeId: productStoreId,
-    })
+        tx.set(receiptRef, {
+          productId: productIdStr,
+          qty: amount,
+          supplier: normalizedSupplier,
+          reference: normalizedReference,
+          unitCost: normalizedUnitCost,
+          totalCost,
+          receivedBy: context.auth?.uid ?? null,
+          createdAt: timestamp,
+          storeId: productStoreId,
+        })
 
-    tx.set(ledgerRef, {
-      productId: productIdStr,
-      qtyChange: amount,
-      type: 'receipt',
-      refId: receiptRef.id,
-      storeId: productStoreId,
-      createdAt: timestamp,
-    })
-  })
+        tx.set(ledgerRef, {
+          productId: productIdStr,
+          qtyChange: amount,
+          type: 'receipt',
+          refId: receiptRef.id,
+          storeId: productStoreId,
+          createdAt: timestamp,
+        })
+      })
 
-  return { ok: true, receiptId: receiptRef.id }
-})
+      return { ok: true, receiptId: receiptRef.id }
+    },
+    {
+      resolveStoreId: async (rawData, context) => {
+        const fromContext = deriveStoreIdFromContext(context)
+        if (fromContext) return fromContext
+
+        if (rawData && typeof rawData === 'object' && 'productId' in (rawData as Record<string, unknown>)) {
+          const candidate = (rawData as { productId?: unknown }).productId
+          const productIdValue = typeof candidate === 'string' ? candidate.trim() : ''
+          if (productIdValue) {
+            try {
+              const productSnap = await db.collection('products').doc(productIdValue).get()
+              const storeIdRaw = productSnap?.get('storeId')
+              if (typeof storeIdRaw === 'string') {
+                const trimmed = storeIdRaw.trim()
+                if (trimmed) {
+                  return trimmed
+                }
+              }
+            } catch (error) {
+              functions.logger.warn('[receiveStock] Failed to resolve product storeId for telemetry', {
+                error,
+              })
+            }
+          }
+        }
+
+        return context.auth?.uid ?? null
+      },
+    },
+  ),
+)
 
 export const onSaleCreate = functions.firestore
   .document('sales/{saleId}')
