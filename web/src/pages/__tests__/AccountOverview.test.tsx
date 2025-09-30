@@ -10,6 +10,8 @@ vi.mock('../../components/ToastProvider', () => ({
   useToast: () => ({ publish: mockPublish }),
 }))
 
+const ACTIVE_STORE_ID = 'store-123'
+
 const mockUseActiveStoreContext = vi.fn()
 vi.mock('../../context/ActiveStoreProvider', () => ({
   useActiveStoreContext: () => mockUseActiveStoreContext(),
@@ -41,6 +43,32 @@ const getDocMock = vi.fn()
 const getDocsMock = vi.fn()
 const queryMock = vi.fn((ref: unknown, ...clauses: unknown[]) => ({ ref, clauses }))
 const whereMock = vi.fn((field: string, op: string, value: unknown) => ({ field, op, value }))
+
+function expectStoreScopedQuery(
+  collectionPath: string,
+  storeId: string,
+  additionalWhereClauses: Array<{ field: string; op: string; value: unknown }> = [],
+) {
+  const call = queryMock.mock.calls.find(([collectionRef]) => {
+    const ref = collectionRef as { path?: string } | undefined
+    return ref?.path === collectionPath
+  })
+
+  expect(call).toBeTruthy()
+  const [, ...clauses] = (call ?? []) as Array<{ field?: string; op?: string; value?: unknown }>
+  const whereClauses = clauses.filter(clause => {
+    const candidate = clause as { field?: string; op?: string }
+    return typeof candidate?.field === 'string' && typeof candidate?.op === 'string'
+  })
+
+  expect(whereClauses).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ field: 'storeId', op: '==', value: storeId }),
+      ...additionalWhereClauses.map(expected => expect.objectContaining(expected)),
+    ]),
+  )
+  expect(whereClauses).toHaveLength(1 + additionalWhereClauses.length)
+}
 
 vi.mock('firebase/firestore', () => ({
   Timestamp: class {},
@@ -90,7 +118,7 @@ describe('AccountOverview', () => {
     whereMock.mockClear()
 
     mockUseActiveStoreContext.mockReturnValue({
-      storeId: 'store-123',
+      storeId: ACTIVE_STORE_ID,
       isLoading: false,
       error: null,
       memberships: [],
@@ -142,7 +170,7 @@ describe('AccountOverview', () => {
         },
       ],
     })
-    mockUpdateStoreProfile.mockResolvedValue({ ok: true, storeId: 'store-123' })
+    mockUpdateStoreProfile.mockResolvedValue({ ok: true, storeId: ACTIVE_STORE_ID })
   })
 
   it('allows owners to update the store profile and manage team invitations', async () => {
@@ -152,7 +180,7 @@ describe('AccountOverview', () => {
           id: 'm-1',
           uid: 'owner-1',
           role: 'owner',
-          storeId: 'store-123',
+          storeId: ACTIVE_STORE_ID,
           email: 'owner@example.com',
           phone: null,
           invitedBy: null,
@@ -166,6 +194,9 @@ describe('AccountOverview', () => {
     })
 
     render(<AccountOverview />)
+    await waitFor(() => {
+      expectStoreScopedQuery('teamMembers', ACTIVE_STORE_ID)
+    })
     await act(async () => {
       await Promise.resolve()
     })
@@ -182,7 +213,7 @@ describe('AccountOverview', () => {
     expect(screen.getAllByRole('button', { name: /revoke access/i })).toHaveLength(1)
 
 
-    expect(screen.getByText('store-123')).toBeInTheDocument()
+    expect(screen.getByText(ACTIVE_STORE_ID)).toBeInTheDocument()
     expect(screen.getByText('Sedifex')).toBeInTheDocument()
     expect(screen.getByText('2023-01-01')).toBeInTheDocument()
     expect(screen.getByText('2023-12-31')).toBeInTheDocument()
@@ -199,7 +230,7 @@ describe('AccountOverview', () => {
 
     await waitFor(() => {
       expect(mockManageStaffAccount).toHaveBeenCalledWith({
-        storeId: 'store-123',
+        storeId: ACTIVE_STORE_ID,
         email: 'new-user@example.com',
         role: 'staff',
         password: 'Secret123!',
@@ -217,7 +248,7 @@ describe('AccountOverview', () => {
           id: 'm-1',
           uid: 'owner-1',
           role: 'owner',
-          storeId: 'store-123',
+          storeId: ACTIVE_STORE_ID,
           email: 'owner@example.com',
           phone: null,
           invitedBy: null,
@@ -231,9 +262,12 @@ describe('AccountOverview', () => {
     })
 
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    mockRevokeStaffAccess.mockResolvedValue({ ok: true, storeId: 'store-123', uid: 'member-2' })
+    mockRevokeStaffAccess.mockResolvedValue({ ok: true, storeId: ACTIVE_STORE_ID, uid: 'member-2' })
 
     render(<AccountOverview />)
+    await waitFor(() => {
+      expectStoreScopedQuery('teamMembers', ACTIVE_STORE_ID)
+    })
     await act(async () => {
       await Promise.resolve()
     })
@@ -249,7 +283,7 @@ describe('AccountOverview', () => {
     expect(confirmSpy).toHaveBeenCalledWith('Revoke access for staff@example.com?')
 
     await waitFor(() =>
-      expect(mockRevokeStaffAccess).toHaveBeenCalledWith({ storeId: 'store-123', uid: 'member-2' }),
+      expect(mockRevokeStaffAccess).toHaveBeenCalledWith({ storeId: ACTIVE_STORE_ID, uid: 'member-2' }),
     )
 
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
@@ -265,7 +299,7 @@ describe('AccountOverview', () => {
           id: 'm-1',
           uid: 'owner-1',
           role: 'owner',
-          storeId: 'store-123',
+          storeId: ACTIVE_STORE_ID,
           email: 'owner@example.com',
           phone: null,
           invitedBy: null,
@@ -279,6 +313,9 @@ describe('AccountOverview', () => {
     })
 
     render(<AccountOverview />)
+    await waitFor(() => {
+      expectStoreScopedQuery('teamMembers', ACTIVE_STORE_ID)
+    })
     await act(async () => {
       await Promise.resolve()
     })
@@ -324,7 +361,7 @@ describe('AccountOverview', () => {
           id: 'm-2',
           uid: 'staff-1',
           role: 'staff',
-          storeId: 'store-123',
+          storeId: ACTIVE_STORE_ID,
           email: 'staff@example.com',
           phone: null,
           invitedBy: null,
@@ -352,6 +389,9 @@ describe('AccountOverview', () => {
     })
 
     render(<AccountOverview />)
+    await waitFor(() => {
+      expectStoreScopedQuery('teamMembers', ACTIVE_STORE_ID)
+    })
     await act(async () => {
       await Promise.resolve()
     })

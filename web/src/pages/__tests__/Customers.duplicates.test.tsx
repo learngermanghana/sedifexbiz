@@ -30,8 +30,10 @@ vi.mock('../../firebase', () => ({
   db: {},
 }))
 
+const ACTIVE_STORE_ID = 'store-123'
+
 const mockUseActiveStoreContext = vi.fn(() => ({
-  storeId: 'store-123',
+  storeId: ACTIVE_STORE_ID,
   isLoading: false,
   error: null,
   memberships: [],
@@ -91,6 +93,29 @@ const docMock = vi.fn((...args: unknown[]) => {
 
 const serverTimestampMock = vi.fn(() => 'mock-server-timestamp')
 
+function expectStoreScopedQuery(
+  collectionPath: string,
+  storeId: string,
+  additionalWhereClauses: Array<{ field: string; op: string; value: unknown }> = [],
+) {
+  const call = queryMock.mock.calls.find(([collectionRef]) => {
+    const ref = collectionRef as { path?: string } | undefined
+    return ref?.path === collectionPath
+  })
+
+  expect(call).toBeTruthy()
+  const [, ...clauses] = (call ?? []) as Array<{ type?: string; field?: string; op?: string; value?: unknown }>
+  const whereClauses = clauses.filter(clause => clause?.type === 'where')
+
+  expect(whereClauses).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ field: 'storeId', op: '==', value: storeId }),
+      ...additionalWhereClauses.map(expected => expect.objectContaining(expected)),
+    ]),
+  )
+  expect(whereClauses).toHaveLength(1 + additionalWhereClauses.length)
+}
+
 vi.mock('firebase/firestore', () => ({
   collection: (
     ...args: Parameters<typeof collectionMock>
@@ -132,11 +157,18 @@ describe('Customers duplicate handling', () => {
     customerDocs = []
     addDocMock.mockClear()
     updateDocMock.mockClear()
+    deleteDocMock.mockClear()
     serverTimestampMock.mockClear()
     mockLoadCachedCustomers.mockClear()
     mockSaveCachedCustomers.mockClear()
     mockLoadCachedSales.mockClear()
     mockSaveCachedSales.mockClear()
+    collectionMock.mockClear()
+    queryMock.mockClear()
+    whereMock.mockClear()
+    orderByMock.mockClear()
+    limitMock.mockClear()
+    onSnapshotMock.mockClear()
   })
 
   it('updates an existing customer when the email matches', async () => {
@@ -159,6 +191,11 @@ describe('Customers duplicate handling', () => {
       </MemoryRouter>,
     )
 
+    await waitFor(() => {
+      expectStoreScopedQuery('customers', ACTIVE_STORE_ID)
+      expectStoreScopedQuery('sales', ACTIVE_STORE_ID)
+    })
+
     const nameInput = await screen.findByLabelText(/Full name/i)
     await user.clear(nameInput)
     await user.type(nameInput, 'Ada Lovelace')
@@ -180,7 +217,7 @@ describe('Customers duplicate handling', () => {
     expect(updateDocMock.mock.calls[0]?.[1]).toMatchObject({
       email: 'ada@example.com',
       name: 'Ada Lovelace',
-      storeId: 'store-123',
+      storeId: ACTIVE_STORE_ID,
     })
 
     await screen.findByText('Customer already exists. Updated their details instead.')
@@ -206,6 +243,11 @@ describe('Customers duplicate handling', () => {
       </MemoryRouter>,
     )
 
+    await waitFor(() => {
+      expectStoreScopedQuery('customers', ACTIVE_STORE_ID)
+      expectStoreScopedQuery('sales', ACTIVE_STORE_ID)
+    })
+
     const nameInput = await screen.findByLabelText(/Full name/i)
     await user.clear(nameInput)
     await user.type(nameInput, 'Kwame Asante')
@@ -227,7 +269,7 @@ describe('Customers duplicate handling', () => {
     expect(updateDocMock.mock.calls[0]?.[1]).toMatchObject({
       phone: '020-000-0000',
       name: 'Kwame Asante',
-      storeId: 'store-123',
+      storeId: ACTIVE_STORE_ID,
     })
 
     await screen.findByText('Customer already exists. Updated their details instead.')
@@ -243,6 +285,11 @@ describe('Customers duplicate handling', () => {
       </MemoryRouter>,
     )
 
+    await waitFor(() => {
+      expectStoreScopedQuery('customers', ACTIVE_STORE_ID)
+      expectStoreScopedQuery('sales', ACTIVE_STORE_ID)
+    })
+
     const nameInput = await screen.findByLabelText(/Full name/i)
     await user.clear(nameInput)
     await user.type(nameInput, 'New Customer')
@@ -252,6 +299,7 @@ describe('Customers duplicate handling', () => {
 
     await waitFor(() => expect(addDocMock).toHaveBeenCalledTimes(1))
     const payload = addDocMock.mock.calls[0]?.[1] as Record<string, unknown>
+    expect(payload.storeId).toBe(ACTIVE_STORE_ID)
     expect(payload.loyalty).toEqual({ points: 0, lastVisitAt: null })
   })
 })

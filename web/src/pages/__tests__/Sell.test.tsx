@@ -36,8 +36,10 @@ vi.mock('../../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
+const ACTIVE_STORE_ID = 'store-1'
+
 const mockUseActiveStoreContext = vi.fn(() => ({
-  storeId: 'store-1',
+  storeId: ACTIVE_STORE_ID,
   isLoading: false,
   error: null,
   memberships: [],
@@ -91,6 +93,29 @@ const docMock = vi.fn((...args: unknown[]) => {
 const runTransactionMock = vi.fn(async () => {})
 const serverTimestampMock = vi.fn(() => 'server-timestamp')
 
+function expectStoreScopedQuery(
+  collectionPath: string,
+  storeId: string,
+  additionalWhereClauses: Array<{ field: string; op: string; value: unknown }> = [],
+) {
+  const call = queryMock.mock.calls.find(([collectionRef]) => {
+    const ref = collectionRef as { path?: string } | undefined
+    return ref?.path === collectionPath
+  })
+
+  expect(call).toBeTruthy()
+  const [, ...clauses] = (call ?? []) as Array<{ type?: string; field?: string; op?: string; value?: unknown }>
+  const whereClauses = clauses.filter(clause => clause?.type === 'where')
+
+  expect(whereClauses).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ field: 'storeId', op: '==', value: storeId }),
+      ...additionalWhereClauses.map(expected => expect.objectContaining(expected)),
+    ]),
+  )
+  expect(whereClauses).toHaveLength(1 + additionalWhereClauses.length)
+}
+
 vi.mock('firebase/firestore', () => ({
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
@@ -135,7 +160,7 @@ describe('Sell page barcode scanner', () => {
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'cashier@example.com' })
     mockUseActiveStoreContext.mockReset()
     mockUseActiveStoreContext.mockReturnValue({
-      storeId: 'store-1',
+      storeId: ACTIVE_STORE_ID,
       isLoading: false,
       error: null,
       memberships: [],
@@ -187,6 +212,8 @@ describe('Sell page barcode scanner', () => {
     )
 
     await waitFor(() => expect(onSnapshotMock).toHaveBeenCalled())
+    expectStoreScopedQuery('products', ACTIVE_STORE_ID)
+    expectStoreScopedQuery('customers', ACTIVE_STORE_ID)
 
     await waitFor(() => expect(productSnapshot).toBeTruthy())
 
@@ -235,6 +262,8 @@ describe('Sell page barcode scanner', () => {
     )
 
     await waitFor(() => expect(productSnapshot).toBeTruthy())
+    expectStoreScopedQuery('products', ACTIVE_STORE_ID)
+    expectStoreScopedQuery('customers', ACTIVE_STORE_ID)
 
     await act(async () => {
       productSnapshot?.({ docs: [createProductDoc('product-2', { sku: 'KNOWN-1', price: 5 })] })
@@ -270,6 +299,8 @@ describe('Sell page barcode scanner', () => {
     )
 
     await waitFor(() => expect(productSnapshot).toBeTruthy())
+    expectStoreScopedQuery('products', ACTIVE_STORE_ID)
+    expectStoreScopedQuery('customers', ACTIVE_STORE_ID)
 
     await act(async () => {
       productSnapshot?.({ docs: [createProductDoc('product-3', { sku: '654321', price: 7 })] })
@@ -355,6 +386,10 @@ describe('Sell page barcode scanner', () => {
       </MemoryRouter>,
     )
 
+    await waitFor(() => expect(onSnapshotMock).toHaveBeenCalled())
+    expectStoreScopedQuery('products', ACTIVE_STORE_ID)
+    expectStoreScopedQuery('customers', ACTIVE_STORE_ID)
+
     const addButton = await screen.findByRole('button', { name: /Test Product/i })
     await user.click(addButton)
 
@@ -374,8 +409,21 @@ describe('Sell page barcode scanner', () => {
       expect(customerUpdate).toBeTruthy()
     })
 
+    const saleWrite = sets.find(entry => entry.ref.path === 'sales/auto-id')
+    expect(saleWrite?.data).toMatchObject({ storeId: ACTIVE_STORE_ID, branchId: ACTIVE_STORE_ID })
+
+    const saleItemWrite = sets.find(entry => entry.ref.path.startsWith('saleItems/'))
+    expect(saleItemWrite?.data).toMatchObject({ storeId: ACTIVE_STORE_ID })
+
+    const stockWrite = sets.find(entry => entry.ref.path.startsWith('stock/'))
+    expect(stockWrite?.data).toMatchObject({ storeId: ACTIVE_STORE_ID })
+
+    const ledgerWrite = sets.find(entry => entry.ref.path.startsWith('ledger/'))
+    expect(ledgerWrite?.data).toMatchObject({ storeId: ACTIVE_STORE_ID })
+
     const customerUpdate = updates.find(entry => entry.ref.path === 'customers/customer-1')!
     expect(customerUpdate.data).toMatchObject({
+      storeId: ACTIVE_STORE_ID,
       'loyalty.lastVisitAt': 'server-timestamp',
       'loyalty.points': 7,
       updatedAt: 'server-timestamp',
