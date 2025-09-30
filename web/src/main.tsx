@@ -14,6 +14,7 @@ import Onboarding from './pages/Onboarding'
 import Today from './pages/Today'
 import AccountOverview from './pages/AccountOverview'
 import { ToastProvider } from './components/ToastProvider'
+import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { ActiveStoreProvider } from './context/ActiveStoreProvider'
 
 const router = createHashRouter([
@@ -42,7 +43,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ToastProvider>
       <ActiveStoreProvider>
-        <RouterProvider router={router} />
+        <AppErrorBoundary>
+          <RouterProvider router={router} />
+        </AppErrorBoundary>
       </ActiveStoreProvider>
     </ToastProvider>
   </React.StrictMode>,
