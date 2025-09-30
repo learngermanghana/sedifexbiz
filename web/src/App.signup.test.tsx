@@ -114,6 +114,7 @@ vi.mock('firebase/auth', () => ({
     mocks.createUserWithEmailAndPassword(...args),
   signInWithEmailAndPassword: (...args: unknown[]) =>
     mocks.signInWithEmailAndPassword(...args),
+  signOut: (...args: unknown[]) => mocks.auth.signOut(...args),
   onAuthStateChanged: (_auth: unknown, callback: (user: User | null) => void) => {
     mocks.listeners.push(callback)
     callback(mocks.auth.currentUser)
@@ -474,12 +475,21 @@ describe('App signup cleanup', () => {
 
     expect(access.afterSignupBootstrap).toHaveBeenCalledWith(storeId)
 
+    await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
+    expect(mocks.auth.currentUser).toBeNull()
+
     expect(mocks.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ tone: 'success', message: expect.stringMatching(/All set/i) }),
+      expect.objectContaining({
+        tone: 'success',
+        message: expect.stringMatching(/log in to continue/i),
+      }),
     )
     const storageKey = getActiveStoreStorageKey(createdUser.uid)
     expect(localStorageSetItemSpy).toHaveBeenCalledWith(storageKey, storeId)
-    expect(window.localStorage.getItem(storageKey)).toBe(storeId)
+    expect(window.localStorage.getItem(storageKey)).toBeNull()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Create account/i })).not.toBeInTheDocument(),
+    )
   })
 
   it('creates a team member profile when logging in without an existing doc', async () => {
