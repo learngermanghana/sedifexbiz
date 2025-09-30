@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore'
 
 import { db } from '../firebase'
+import { ensureCustomerLoyalty, type CustomerLoyalty } from '../utils/customerLoyalty'
 import { useAuthUser } from './useAuthUser'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import { useToast } from '../components/ToastProvider'
@@ -61,7 +62,10 @@ type CustomerRecord = {
   displayName?: string
   createdAt?: Timestamp | Date | null
   storeId?: string | null
+  loyalty: CustomerLoyalty
 }
+
+type FirestoreCustomerRecord = Omit<CustomerRecord, 'loyalty'> & { loyalty?: unknown }
 
 type GoalTargets = {
   revenueTarget: number
@@ -567,10 +571,10 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       }
     }
 
-    loadCachedCustomers<CustomerRecord>({ storeId: activeStoreId })
+    loadCachedCustomers<FirestoreCustomerRecord>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
-          setCustomers(cached)
+          setCustomers(cached.map(entry => ensureCustomerLoyalty(entry)))
         }
       })
       .catch(error => {
@@ -586,10 +590,12 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     )
 
     const unsubscribe = onSnapshot(q, snapshot => {
-      const rows: CustomerRecord[] = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<CustomerRecord, 'id'>),
-      }))
+      const rows: CustomerRecord[] = snapshot.docs.map(docSnap =>
+        ensureCustomerLoyalty({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<FirestoreCustomerRecord, 'id'>),
+        }),
+      )
       setCustomers(rows)
       saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[metrics] Failed to cache customers', error)

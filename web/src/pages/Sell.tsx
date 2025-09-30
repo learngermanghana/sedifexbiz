@@ -25,6 +25,7 @@ import {
   saveCachedCustomers,
   saveCachedProducts,
 } from '../utils/offlineCache'
+import { ensureCustomerLoyalty, normalizeCustomerLoyalty, type CustomerLoyalty } from '../utils/customerLoyalty'
 import { buildSimplePdf } from '../utils/pdf'
 
 type Product = {
@@ -46,7 +47,10 @@ type Customer = {
   notes?: string
   createdAt?: unknown
   updatedAt?: unknown
+  loyalty: CustomerLoyalty
 }
+
+type FirestoreCustomer = Omit<Customer, 'loyalty'> & { loyalty?: unknown }
 type ReceiptData = {
   saleId: string
   createdAt: Date
@@ -183,6 +187,14 @@ function formatTenderBreakdown(tenders: Record<string, number>): string {
     .join(' • ')
 }
 
+function calculateEarnedLoyaltyPoints(total: number): number {
+  if (!Number.isFinite(total) || total <= 0) {
+    return 0
+  }
+  // Placeholder for future earning rules. Keep scaffolded structure consistent for now.
+  return 0
+}
+
 export default function Sell() {
   const user = useAuthUser()
   const { storeId: activeStoreId, storeChangeToken } = useActiveStoreContext()
@@ -296,11 +308,12 @@ export default function Sell() {
       }
     }
 
-    loadCachedCustomers<Customer>({ storeId: activeStoreId })
+    loadCachedCustomers<FirestoreCustomer>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
+          const normalized = cached.map(entry => ensureCustomerLoyalty(entry))
           setCustomers(
-            [...cached].sort((a, b) =>
+            [...normalized].sort((a, b) =>
               getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
                 sensitivity: 'base',
               }),
@@ -321,7 +334,9 @@ export default function Sell() {
     )
 
     const unsubscribe = onSnapshot(q, snap => {
-      const rows = snap.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Customer) }))
+      const rows = snap.docs.map(docSnap =>
+        ensureCustomerLoyalty({ id: docSnap.id, ...(docSnap.data() as FirestoreCustomer) }),
+      )
       saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[sell] Failed to cache customers', error)
       })
@@ -564,6 +579,8 @@ export default function Sell() {
         }
       : null
 
+    const loyaltyPointsEarned = calculateEarnedLoyaltyPoints(subtotal)
+
     try {
       await runTransaction(db, async transaction => {
         const existingSale = await transaction.get(saleRef)
@@ -704,6 +721,45 @@ export default function Sell() {
         }
         for (const { ref, data } of productUpdates) {
           transaction.update(ref, data)
+        }
+
+        if (selectedCustomer) {
+          const customerRef = doc(db, 'customers', selectedCustomer.id)
+          const customerSnapshot = await transaction.get(customerRef)
+          const customerExists =
+            customerSnapshot &&
+            (typeof customerSnapshot.exists === 'function'
+              ? customerSnapshot.exists()
+              : customerSnapshot.exists)
+
+          const existingData =
+            typeof customerSnapshot?.data === 'function'
+              ? customerSnapshot.data()
+              : (customerSnapshot?.data as Record<string, unknown> | undefined)
+
+          const loyaltySource =
+            existingData && typeof existingData === 'object' && 'loyalty' in existingData
+              ? (existingData as { loyalty?: unknown }).loyalty
+              : undefined
+
+          const normalizedLoyalty = normalizeCustomerLoyalty(loyaltySource)
+          const nextPoints = Math.max(0, normalizedLoyalty.points + loyaltyPointsEarned)
+
+          if (customerExists) {
+            transaction.update(customerRef, {
+              'loyalty.lastVisitAt': timestamp,
+              'loyalty.points': nextPoints,
+              updatedAt: timestamp,
+            })
+          } else {
+            transaction.set(customerRef, {
+              loyalty: {
+                points: nextPoints,
+                lastVisitAt: timestamp,
+              },
+              updatedAt: timestamp,
+            })
+          }
         }
       })
 
