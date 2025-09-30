@@ -124,6 +124,16 @@ class MockDocumentReference {
       this._db.setRaw(this.path, applyMerge({}, data))
     }
   }
+
+  async update(data) {
+    const existing = this._db.getRaw(this.path)
+    if (!existing) {
+      const error = new Error('Document does not exist')
+      error.code = 'not-found'
+      throw error
+    }
+    this._db.setRaw(this.path, applyMerge(existing, data))
+  }
 }
 
 class MockCollectionReference {

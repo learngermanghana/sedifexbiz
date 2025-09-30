@@ -14,7 +14,7 @@ import {
 import { db } from '../firebase'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
-import { manageStaffAccount } from '../controllers/storeController'
+import { manageStaffAccount, updateStoreProfile } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -168,6 +168,11 @@ export default function AccountOverview() {
   const [profile, setProfile] = useState<StoreProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
+  const [profileName, setProfileName] = useState('')
+  const [profileTimezone, setProfileTimezone] = useState('')
+  const [profileCurrency, setProfileCurrency] = useState('')
+  const [profileFormError, setProfileFormError] = useState<string | null>(null)
+  const [profileSubmitting, setProfileSubmitting] = useState(false)
 
   const [roster, setRoster] = useState<RosterMember[]>([])
   const [rosterLoading, setRosterLoading] = useState(false)
@@ -191,6 +196,9 @@ export default function AccountOverview() {
     if (!storeId) {
       setProfile(null)
       setProfileError(null)
+      setProfileName('')
+      setProfileTimezone('')
+      setProfileCurrency('')
       return
     }
 
@@ -228,6 +236,19 @@ export default function AccountOverview() {
       cancelled = true
     }
   }, [storeId, publish, storeChangeToken])
+
+  useEffect(() => {
+    if (!profile) {
+      setProfileName('')
+      setProfileTimezone('')
+      setProfileCurrency('')
+      return
+    }
+
+    setProfileName(profile.displayName ?? profile.name ?? '')
+    setProfileTimezone(profile.timezone ?? '')
+    setProfileCurrency(profile.currency ?? '')
+  }, [profile])
 
   useEffect(() => {
     if (!storeId) {
@@ -277,6 +298,11 @@ export default function AccountOverview() {
     setFormError(null)
     setSubmitting(false)
     setRosterVersion(0)
+    setProfileName('')
+    setProfileTimezone('')
+    setProfileCurrency('')
+    setProfileFormError(null)
+    setProfileSubmitting(false)
   }, [storeChangeToken])
 
   function validateForm() {
@@ -344,6 +370,76 @@ export default function AccountOverview() {
     }
   }
 
+  async function handleProfileSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (profileSubmitting) return
+
+    if (!storeId) {
+      const message = 'A storeId is required to update the workspace profile.'
+      setProfileFormError(message)
+      publish({ message, tone: 'error' })
+      return
+    }
+
+    const trimmedName = profileName.trim()
+    if (!trimmedName) {
+      const message = 'Enter a workspace name.'
+      setProfileFormError(message)
+      publish({ message, tone: 'error' })
+      return
+    }
+
+    const trimmedTimezone = profileTimezone.trim()
+    if (!trimmedTimezone) {
+      const message = 'Enter a valid timezone.'
+      setProfileFormError(message)
+      publish({ message, tone: 'error' })
+      return
+    }
+
+    const trimmedCurrency = profileCurrency.trim()
+    if (!trimmedCurrency) {
+      const message = 'Enter a currency code.'
+      setProfileFormError(message)
+      publish({ message, tone: 'error' })
+      return
+    }
+
+    setProfileSubmitting(true)
+    setProfileFormError(null)
+
+    try {
+      await updateStoreProfile({
+        storeId,
+        name: trimmedName,
+        timezone: trimmedTimezone,
+        currency: trimmedCurrency,
+      })
+
+      setProfile(current =>
+        current
+          ? {
+              ...current,
+              name: trimmedName,
+              displayName: trimmedName,
+              timezone: trimmedTimezone,
+              currency: trimmedCurrency,
+            }
+          : current,
+      )
+
+      publish({ message: 'Workspace profile updated.', tone: 'success' })
+    } catch (error) {
+      console.error('Failed to update store profile', error)
+      const message =
+        error instanceof Error ? error.message : 'We could not update the workspace profile.'
+      setProfileFormError(message)
+      publish({ message, tone: 'error' })
+    } finally {
+      setProfileSubmitting(false)
+    }
+  }
+
   if (storeError) {
     return <div role="alert">{storeError}</div>
   }
@@ -380,48 +476,135 @@ export default function AccountOverview() {
       {profile && (
         <section aria-labelledby="account-overview-profile">
           <h2 id="account-overview-profile">Store profile</h2>
-          <dl className="account-overview__grid">
-            <div>
-              <dt>Workspace name</dt>
-              <dd>{formatValue(profile.displayName ?? profile.name)}</dd>
-            </div>
-            <div>
-              <dt>Email</dt>
-              <dd>{formatValue(profile.email)}</dd>
-            </div>
-            <div>
-              <dt>Phone</dt>
-              <dd>{formatValue(profile.phone)}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{formatValue(profile.status)}</dd>
-            </div>
-            <div>
-              <dt>Timezone</dt>
-              <dd>{formatValue(profile.timezone)}</dd>
-            </div>
-            <div>
-              <dt>Currency</dt>
-              <dd>{formatValue(profile.currency)}</dd>
-            </div>
-            <div>
-              <dt>Address</dt>
-              <dd>
-                {[profile.addressLine1, profile.addressLine2, profile.city, profile.region, profile.postalCode, profile.country]
-                  .filter(Boolean)
-                  .join(', ') || '—'}
-              </dd>
-            </div>
-            <div>
-              <dt>Created</dt>
-              <dd>{formatTimestamp(profile.createdAt)}</dd>
-            </div>
-            <div>
-              <dt>Updated</dt>
-              <dd>{formatTimestamp(profile.updatedAt)}</dd>
-            </div>
-          </dl>
+          {isOwner ? (
+            <>
+              <form
+                onSubmit={handleProfileSubmit}
+                className="account-overview__form"
+                data-testid="store-profile-form"
+              >
+                <fieldset disabled={profileSubmitting}>
+                  <legend className="sr-only">Update workspace profile</legend>
+                  <div className="account-overview__form-grid">
+                    <label>
+                      <span>Workspace name</span>
+                      <input
+                        type="text"
+                        value={profileName}
+                        onChange={event => setProfileName(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span>Timezone</span>
+                      <input
+                        type="text"
+                        value={profileTimezone}
+                        onChange={event => setProfileTimezone(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span>Currency</span>
+                      <input
+                        type="text"
+                        value={profileCurrency}
+                        onChange={event => setProfileCurrency(event.target.value)}
+                        maxLength={6}
+                      />
+                    </label>
+                    <button type="submit" className="button button--primary">
+                      {profileSubmitting ? 'Saving…' : 'Save changes'}
+                    </button>
+                  </div>
+                  {profileFormError && (
+                    <p className="account-overview__form-error" role="alert">
+                      {profileFormError}
+                    </p>
+                  )}
+                </fieldset>
+              </form>
+              <dl className="account-overview__grid">
+                <div>
+                  <dt>Email</dt>
+                  <dd>{formatValue(profile.email)}</dd>
+                </div>
+                <div>
+                  <dt>Phone</dt>
+                  <dd>{formatValue(profile.phone)}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{formatValue(profile.status)}</dd>
+                </div>
+                <div>
+                  <dt>Timezone</dt>
+                  <dd>{formatValue(profile.timezone)}</dd>
+                </div>
+                <div>
+                  <dt>Currency</dt>
+                  <dd>{formatValue(profile.currency)}</dd>
+                </div>
+                <div>
+                  <dt>Address</dt>
+                  <dd>
+                    {[profile.addressLine1, profile.addressLine2, profile.city, profile.region, profile.postalCode, profile.country]
+                      .filter(Boolean)
+                      .join(', ') || '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Created</dt>
+                  <dd>{formatTimestamp(profile.createdAt)}</dd>
+                </div>
+                <div>
+                  <dt>Updated</dt>
+                  <dd>{formatTimestamp(profile.updatedAt)}</dd>
+                </div>
+              </dl>
+            </>
+          ) : (
+            <dl className="account-overview__grid" data-testid="store-profile-readonly">
+              <div>
+                <dt>Workspace name</dt>
+                <dd>{formatValue(profile.displayName ?? profile.name)}</dd>
+              </div>
+              <div>
+                <dt>Email</dt>
+                <dd>{formatValue(profile.email)}</dd>
+              </div>
+              <div>
+                <dt>Phone</dt>
+                <dd>{formatValue(profile.phone)}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{formatValue(profile.status)}</dd>
+              </div>
+              <div>
+                <dt>Timezone</dt>
+                <dd>{formatValue(profile.timezone)}</dd>
+              </div>
+              <div>
+                <dt>Currency</dt>
+                <dd>{formatValue(profile.currency)}</dd>
+              </div>
+              <div>
+                <dt>Address</dt>
+                <dd>
+                  {[profile.addressLine1, profile.addressLine2, profile.city, profile.region, profile.postalCode, profile.country]
+                    .filter(Boolean)
+                    .join(', ') || '—'}
+                </dd>
+              </div>
+              <div>
+                <dt>Created</dt>
+                <dd>{formatTimestamp(profile.createdAt)}</dd>
+              </div>
+              <div>
+                <dt>Updated</dt>
+                <dd>{formatTimestamp(profile.updatedAt)}</dd>
+              </div>
+            </dl>
+          )}
         </section>
       )}
 

@@ -20,9 +20,12 @@ vi.mock('../../hooks/useMemberships', () => ({
 }))
 
 const mockManageStaffAccount = vi.fn()
+const mockUpdateStoreProfile = vi.fn()
 vi.mock('../../controllers/storeController', () => ({
   manageStaffAccount: (...args: Parameters<typeof mockManageStaffAccount>) =>
     mockManageStaffAccount(...args),
+  updateStoreProfile: (...args: Parameters<typeof mockUpdateStoreProfile>) =>
+    mockUpdateStoreProfile(...args),
 }))
 
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
@@ -73,6 +76,7 @@ describe('AccountOverview', () => {
     mockUseActiveStoreContext.mockReset()
     mockUseMemberships.mockReset()
     mockManageStaffAccount.mockReset()
+    mockUpdateStoreProfile.mockReset()
     collectionMock.mockClear()
     docMock.mockClear()
     getDocMock.mockReset()
@@ -92,6 +96,7 @@ describe('AccountOverview', () => {
     getDocMock.mockResolvedValue({
       exists: () => true,
       data: () => ({
+        name: 'Sedifex Coffee',
         displayName: 'Sedifex Coffee',
         company: 'Sedifex',
         status: 'Active',
@@ -101,6 +106,7 @@ describe('AccountOverview', () => {
         paymentStatus: 'Paid',
         amountPaid: 1000,
         currency: 'GHS',
+        timezone: 'Africa/Accra',
         billingPlan: 'Monthly',
         paymentProvider: 'Stripe',
         createdAt: { toDate: () => new Date('2023-01-01T00:00:00Z') },
@@ -121,9 +127,10 @@ describe('AccountOverview', () => {
         },
       ],
     })
+    mockUpdateStoreProfile.mockResolvedValue({ ok: true, storeId: 'store-123' })
   })
 
-  it('allows owners to manage team invitations', async () => {
+  it('allows owners to update the store profile and manage team invitations', async () => {
     mockUseMemberships.mockReturnValue({
       memberships: [
         {
@@ -155,6 +162,7 @@ describe('AccountOverview', () => {
     expect(screen.getByRole('columnheader', { name: /last seen/i })).toBeInTheDocument()
     expect(screen.getByText(expectedLastSeen)).toBeInTheDocument()
 
+
     expect(screen.getByText('store-123')).toBeInTheDocument()
     expect(screen.getByText('Sedifex')).toBeInTheDocument()
     expect(screen.getByText('2023-01-01')).toBeInTheDocument()
@@ -165,7 +173,6 @@ describe('AccountOverview', () => {
     const form = await screen.findByTestId('account-invite-form')
     expect(form).toBeInTheDocument()
 
-    const user = userEvent.setup()
     await user.type(screen.getByLabelText(/email/i), 'new-user@example.com')
     await user.selectOptions(screen.getByLabelText(/role/i), 'staff')
     await user.type(screen.getByLabelText(/password/i), 'Secret123!')
@@ -182,6 +189,65 @@ describe('AccountOverview', () => {
 
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
     expect(mockPublish).toHaveBeenCalledWith({ message: 'Team member updated.', tone: 'success' })
+  })
+
+  it('prevents profile updates when required fields are missing', async () => {
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-1',
+          uid: 'owner-1',
+          role: 'owner',
+          storeId: 'store-123',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+
+    render(<AccountOverview />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
+
+    const workspaceInput = await screen.findByLabelText(/workspace name/i)
+    const timezoneInput = screen.getByLabelText(/timezone/i)
+    const currencyInput = screen.getByLabelText(/currency/i)
+
+    const user = userEvent.setup()
+    await user.clear(workspaceInput)
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+
+    expect(mockUpdateStoreProfile).not.toHaveBeenCalled()
+    await waitFor(() =>
+      expect(mockPublish).toHaveBeenCalledWith({ message: 'Enter a workspace name.', tone: 'error' }),
+    )
+
+    await user.type(workspaceInput, 'Sedifex Coffee')
+    await user.clear(timezoneInput)
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+
+    expect(mockUpdateStoreProfile).not.toHaveBeenCalled()
+    await waitFor(() =>
+      expect(mockPublish).toHaveBeenCalledWith({ message: 'Enter a valid timezone.', tone: 'error' }),
+    )
+
+    await user.type(timezoneInput, 'Africa/Accra')
+    await user.clear(currencyInput)
+    await user.click(screen.getByRole('button', { name: /save changes/i }))
+
+    expect(mockUpdateStoreProfile).not.toHaveBeenCalled()
+    await waitFor(() =>
+      expect(mockPublish).toHaveBeenCalledWith({ message: 'Enter a currency code.', tone: 'error' }),
+    )
   })
 
   it('renders a read-only roster for staff members', async () => {
@@ -229,10 +295,12 @@ describe('AccountOverview', () => {
     expect(screen.queryByTestId('account-invite-form')).not.toBeInTheDocument()
     expect(screen.getByText(/read-only access/i)).toBeInTheDocument()
 
+
     const row = await screen.findByTestId('account-roster-member-1')
     const cells = within(row).getAllByRole('cell')
     expect(cells).toHaveLength(5)
     const expectedFallbackLastSeen = new Date('2023-01-10T12:00:00Z').toLocaleString()
     expect(cells[4]).toHaveTextContent(expectedFallbackLastSeen)
+
   })
 })
