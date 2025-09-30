@@ -30,6 +30,24 @@ service cloud.firestore {
         : null;
     }
 
+    function tokenStoreId() {
+      return request.auth != null
+        && request.auth.token != null
+        && request.auth.token.storeId is string
+        && request.auth.token.storeId != ''
+        ? request.auth.token.storeId
+        : null;
+    }
+
+    function tokenMatchesStore(storeId) {
+      let requestStoreId = tokenStoreId();
+      return requestStoreId != null && storeId != null && requestStoreId == storeId;
+    }
+
+    function tokenMatchesStoreData(data) {
+      return tokenMatchesStore(storeIdFromData(data));
+    }
+
     function memberRole(member) {
       return membershipExists(member) && member.data.role is string && member.data.role != ''
         ? member.data.role
@@ -72,8 +90,7 @@ service cloud.firestore {
     }
 
     function canReadStoreDocument(storeId) {
-      let member = getRequesterMembership();
-      return hasStoreAccess(member, storeId);
+      return resource != null && tokenMatchesStoreData(resource.data);
     }
 
     function canManageStoreDocument(storeId) {
@@ -83,7 +100,7 @@ service cloud.firestore {
 
     function canReadStoreResource() {
       let storeId = storeIdFromData(resource.data);
-      return storeId != null && hasStoreAccess(getRequesterMembership(), storeId);
+      return tokenMatchesStore(storeId);
     }
 
     function requestMaintainsStoreIdConsistency() {
