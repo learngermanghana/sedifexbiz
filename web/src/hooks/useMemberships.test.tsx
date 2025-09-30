@@ -16,6 +16,8 @@ const collectionMock = vi.fn(() => ({ type: 'collection' }))
 const whereMock = vi.fn(() => ({ type: 'where' }))
 const queryMock = vi.fn(() => ({ type: 'query' }))
 const getDocsMock = vi.fn()
+const docMock = vi.fn(() => ({ type: 'doc' }))
+const getDocMock = vi.fn()
 
 vi.mock('firebase/firestore', () => ({
   Timestamp: class MockTimestamp {},
@@ -23,6 +25,12 @@ vi.mock('firebase/firestore', () => ({
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   getDocs: (...args: Parameters<typeof getDocsMock>) => getDocsMock(...args),
+  doc: (...args: Parameters<typeof docMock>) => docMock(...args),
+  getDoc: (...args: Parameters<typeof getDocMock>) => getDocMock(...args),
+}))
+
+vi.mock('../config/teamMembers', () => ({
+  OVERRIDE_TEAM_MEMBER_DOC_ID: '',
 }))
 
 describe('useMemberships', () => {
@@ -32,6 +40,9 @@ describe('useMemberships', () => {
     whereMock.mockClear()
     queryMock.mockClear()
     getDocsMock.mockReset()
+    docMock.mockClear()
+    getDocMock.mockReset()
+    getDocMock.mockResolvedValue({ exists: () => false })
   })
 
   it('returns an empty membership list when the user is not authenticated', async () => {
@@ -144,5 +155,41 @@ describe('useMemberships', () => {
 
     expect(whereMock).toHaveBeenNthCalledWith(1, 'uid', '==', 'user-789')
     expect(whereMock).toHaveBeenNthCalledWith(2, 'storeId', '==', 'active-store')
+  })
+
+  it('includes fallback membership documents without a uid when a store is assigned', async () => {
+    mockUseAuthUser.mockReturnValue({ uid: 'user-abc' })
+
+    getDocsMock.mockResolvedValue({ docs: [] })
+
+    getDocMock.mockResolvedValueOnce({
+      id: 'user-abc',
+      exists: () => true,
+      data: () => ({
+        storeId: 'store-fallback',
+        role: 'owner',
+      }),
+    })
+
+    const { result } = renderHook(() => useMemberships(null))
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    expect(result.current.memberships).toEqual([
+      {
+        id: 'user-abc',
+        uid: 'user-abc',
+        role: 'owner',
+        storeId: 'store-fallback',
+        email: null,
+        phone: null,
+        invitedBy: null,
+        firstSignupEmail: null,
+        createdAt: null,
+        updatedAt: null,
+      },
+    ])
   })
 })
