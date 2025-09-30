@@ -282,6 +282,31 @@ describe('App signup cleanup', () => {
     const user = userEvent.setup()
     const { user: createdUser } = createTestUser()
 
+    const storeId = 'sedifex-test-use'
+    const ownerDocKey = `teamMembers/${createdUser.uid}`
+    const storeDocKey = `stores/${storeId}`
+    const seededTeamMember = { seededField: 'team-seeded-value' }
+    const seededStore = { seededField: 'store-seeded-value' }
+
+    firestore.docDataByPath.set(ownerDocKey, { ...seededTeamMember })
+    firestore.docDataByPath.set(storeDocKey, { ...seededStore })
+
+    const originalGetDoc = firestore.getDocMock.getMockImplementation()
+    if (originalGetDoc) {
+      let shouldBypassStoreCheck = true
+      firestore.getDocMock.mockImplementation(async ref => {
+        if (shouldBypassStoreCheck && ref.path === storeDocKey) {
+          shouldBypassStoreCheck = false
+          return {
+            exists: () => false,
+            data: () => undefined,
+            get: () => undefined,
+          }
+        }
+        return originalGetDoc(ref)
+      })
+    }
+
     mocks.createUserWithEmailAndPassword.mockImplementation(async () => {
       mocks.auth.currentUser = createdUser
       mocks.listeners.forEach(listener => listener(createdUser))
@@ -310,15 +335,12 @@ describe('App signup cleanup', () => {
       await user.click(screen.getByRole('button', { name: /Create account/i }))
     })
 
-    const storeId = 'sedifex-test-use'
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
     await waitFor(() => expect(access.afterSignupBootstrap).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(createdUser.getIdToken).toHaveBeenCalledWith(true))
     const { docRefByPath, setDocMock } = firestore
-    const ownerDocKey = `teamMembers/${createdUser.uid}`
     const overrideDocKey = 'teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2'
     const customerDocKey = `customers/${createdUser.uid}`
-    const storeDocKey = `stores/${storeId}`
 
     const ownerDocRef = docRefByPath.get(ownerDocKey)
     const overrideDocRef = docRefByPath.get(overrideDocKey)
@@ -389,6 +411,24 @@ describe('App signup cleanup', () => {
       }),
     )
     expect(storeOptions).toEqual({ merge: true })
+
+    const mergedOwnerData = firestore.docDataByPath.get(ownerDocKey)
+    expect(mergedOwnerData).toEqual(
+      expect.objectContaining({
+        ...seededTeamMember,
+        uid: createdUser.uid,
+        storeId,
+      }),
+    )
+
+    const mergedStoreData = firestore.docDataByPath.get(storeDocKey)
+    expect(mergedStoreData).toEqual(
+      expect.objectContaining({
+        ...seededStore,
+        storeId,
+        ownerId: createdUser.uid,
+      }),
+    )
 
     expect(access.afterSignupBootstrap).toHaveBeenCalledWith({
       storeId,
