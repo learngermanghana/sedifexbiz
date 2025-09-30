@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import type { User } from 'firebase/auth'
+
 import SheetAccessGuard from './SheetAccessGuard'
-import { OVERRIDE_TEAM_MEMBER_DOC_ID } from './config/teamMembers'
+import { useMemberships } from './hooks/useMemberships'
 
 const authMocks = vi.hoisted(() => {
   const state = {
@@ -45,6 +46,21 @@ const activeStoreMocks = vi.hoisted(() => ({
   clearActiveStoreIdForUser: vi.fn(),
 }))
 
+const membershipHookMocks = vi.hoisted(() => {
+  const state = {
+    response: { loading: false, error: null as unknown, memberships: [] as unknown[] },
+    useMemberships: vi.fn((_: string | null | undefined) => state.response),
+    setResponse(response: { loading: boolean; error: unknown; memberships: unknown[] }) {
+      state.response = response
+    },
+    reset() {
+      state.response = { loading: false, error: null, memberships: [] }
+      state.useMemberships.mockClear()
+    },
+  }
+  return state
+})
+
 vi.mock('./firebase', () => ({
   auth: authMocks.auth,
   db: {},
@@ -77,6 +93,11 @@ vi.mock('./utils/activeStoreStorage', () => ({
     activeStoreMocks.clearActiveStoreIdForUser(...args),
 }))
 
+vi.mock('./hooks/useMemberships', () => ({
+  useMemberships: (...args: Parameters<typeof membershipHookMocks.useMemberships>) =>
+    membershipHookMocks.useMemberships(...args),
+}))
+
 function createUser(): User {
   return {
     uid: 'test-user',
@@ -84,23 +105,38 @@ function createUser(): User {
   } as unknown as User
 }
 
+function MembershipProbe() {
+  useMemberships(null)
+  return <p>Child content</p>
+}
+
 describe('SheetAccessGuard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMocks.listeners.splice(0, authMocks.listeners.length)
     firestoreMocks.reset()
+    membershipHookMocks.reset()
     authMocks.auth.currentUser = null
   })
 
-  it('grants access when the override document contains the workspace assignment', async () => {
+  it('persists the active store when a membership assignment exists', async () => {
     const user = createUser()
     authMocks.auth.currentUser = user
 
-    if (!OVERRIDE_TEAM_MEMBER_DOC_ID) {
-      throw new Error('Test requires a non-empty override document id')
-    }
+    membershipHookMocks.setResponse({
+      loading: false,
+      error: null,
+      memberships: [
+        {
+          id: 'membership-1',
+          uid: user.uid,
+          storeId: 'store-123',
+          role: 'owner',
+        },
+      ],
+    })
 
-    firestoreMocks.dataByPath.set(`teamMembers/${OVERRIDE_TEAM_MEMBER_DOC_ID}`, {
+    firestoreMocks.dataByPath.set(`teamMembers/${user.uid}`, {
       storeId: 'store-123',
       status: 'active',
       contractStatus: 'signed',
@@ -108,7 +144,7 @@ describe('SheetAccessGuard', () => {
 
     render(
       <SheetAccessGuard>
-        <p>Child content</p>
+        <MembershipProbe />
       </SheetAccessGuard>,
     )
 
@@ -118,9 +154,33 @@ describe('SheetAccessGuard', () => {
 
     expect(screen.getByText('Child content')).toBeInTheDocument()
     expect(authMocks.signOut).not.toHaveBeenCalled()
+    expect(activeStoreMocks.clearActiveStoreIdForUser).not.toHaveBeenCalled()
     expect(activeStoreMocks.persistActiveStoreIdForUser).toHaveBeenCalledWith(
       user.uid,
       'store-123',
     )
+  })
+
+  it('clears the active store and signs out when no membership assignment is found', async () => {
+    const user = createUser()
+    authMocks.auth.currentUser = user
+
+    membershipHookMocks.setResponse({ loading: false, error: null, memberships: [] })
+
+    render(
+      <SheetAccessGuard>
+        <MembershipProbe />
+      </SheetAccessGuard>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'We could not find a workspace assignment for this account.',
+      ),
+    )
+
+    expect(authMocks.signOut).toHaveBeenCalledWith(authMocks.auth)
+    expect(activeStoreMocks.persistActiveStoreIdForUser).not.toHaveBeenCalled()
+    expect(activeStoreMocks.clearActiveStoreIdForUser).toHaveBeenCalledWith(user.uid)
   })
 })
