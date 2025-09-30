@@ -7,6 +7,7 @@ type AppErrorBoundaryProps = {
 
 type AppErrorBoundaryState = {
   hasError: boolean
+  error?: Error
 }
 
 type InternalBoundaryProps = {
@@ -18,11 +19,13 @@ type InternalBoundaryProps = {
 class InternalErrorBoundary extends Component<InternalBoundaryProps, AppErrorBoundaryState> {
   state: AppErrorBoundaryState = {
     hasError: false,
+    error: undefined,
   }
 
-  static getDerivedStateFromError(_error: Error): AppErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
     return {
       hasError: true,
+      error,
     }
   }
 
@@ -31,16 +34,25 @@ class InternalErrorBoundary extends Component<InternalBoundaryProps, AppErrorBou
   }
 
   handleTryAgain = () => {
-    this.setState({ hasError: false })
+    this.setState({
+      hasError: false,
+      error: undefined,
+    })
     this.props.onReset?.()
   }
 
   render() {
     if (this.state.hasError) {
       return (
-        <div role="alert" className="app-error-boundary">
+        <div role="alert" aria-live="polite" aria-atomic="true" className="app-error-boundary">
           <h1>Something went wrong</h1>
           <p>We hit a snag while loading this section. Please try again.</p>
+          {import.meta.env.DEV && this.state.error?.message ? (
+            <p className="app-error-boundary__details">
+              <strong>Details:</strong>{' '}
+              <span data-testid="app-error-boundary-details">{this.state.error.message}</span>
+            </p>
+          ) : null}
           <button type="button" onClick={this.handleTryAgain}>
             Try again
           </button>

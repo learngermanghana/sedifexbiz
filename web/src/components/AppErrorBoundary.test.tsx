@@ -42,6 +42,7 @@ describe('AppErrorBoundary', () => {
 
     expect(await screen.findByRole('heading', { name: /something went wrong/i })).toBeInTheDocument()
     expect(screen.getByText('App chrome')).toBeInTheDocument()
+    expect(screen.getByTestId('app-error-boundary-details')).toHaveTextContent('Kaboom!')
     expect(toast.publish).toHaveBeenCalledWith(
       expect.objectContaining({
         tone: 'error',
