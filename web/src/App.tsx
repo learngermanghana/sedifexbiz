@@ -19,7 +19,7 @@ import {
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
 import { afterSignupBootstrap } from './controllers/accessController'
-import { generateUniqueStoreId } from './controllers/onboarding'
+import { createInitialOwnerAndStore, generateUniqueStoreId } from './controllers/onboarding'
 import { AuthUserContext } from './hooks/useAuthUser'
 import {
   clearActiveStoreIdForUser,
@@ -438,18 +438,50 @@ export default function App() {
         const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
 
-        // Create team member with selected role + company; auto storeId
-        const { storeId } = await upsertTeamMemberDocs({
+        // Create team member + store record and refresh auth token before continuing
+        const storeId = await createInitialOwnerAndStore({
           user: nextUser,
           role,
           company: sanitizedCompany,
-          phone: sanitizedPhone,
-          phoneCountryCode: phoneDetails.countryCode || null,
-          phoneLocalNumber: phoneDetails.localNumber || null,
-          preferExisting: false,
+          email: sanitizedEmail,
         })
 
+        try {
+          await nextUser.getIdToken(true)
+        } catch (error) {
+          console.warn('[auth] Unable to refresh ID token after signup', error)
+        }
+
         const ownerName = resolveOwnerName(nextUser)
+        const activityTimestamp = serverTimestamp()
+        const teamMemberContactPayload = {
+          phone: sanitizedPhone || null,
+          phoneCountryCode: phoneDetails.countryCode || null,
+          phoneLocalNumber: phoneDetails.localNumber || null,
+          firstSignupEmail: (nextUser.email ?? '').toLowerCase() || null,
+          company: sanitizedCompany || null,
+          invitedBy: nextUser.uid,
+          lastSeenAt: activityTimestamp,
+          updatedAt: activityTimestamp,
+        }
+
+        await setDoc(doc(db, 'teamMembers', nextUser.uid), teamMemberContactPayload, { merge: true })
+
+        if (OVERRIDE_MEMBER_DOC_ID) {
+          await setDoc(
+            doc(db, 'teamMembers', OVERRIDE_MEMBER_DOC_ID),
+            {
+              ...teamMemberContactPayload,
+              uid: nextUser.uid,
+              storeId,
+              role,
+              email: nextUser.email ?? null,
+              name: ownerName,
+            },
+            { merge: true },
+          )
+        }
+
         await afterSignupBootstrap({
           storeId,
           contact: {
@@ -467,7 +499,6 @@ export default function App() {
 
         await afterSignupBootstrap(storeId)
 
-        try { await nextUser.getIdToken(true) } catch {}
         setOnboardingStatus(nextUser.uid, 'pending')
       }
 
