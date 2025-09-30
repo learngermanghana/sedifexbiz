@@ -38,6 +38,7 @@ import { parseCsv } from '../utils/csv'
 type Customer = {
   id: string
   name: string
+  storeId: string
   displayName?: string
   phone?: string
   email?: string

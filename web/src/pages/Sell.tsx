@@ -42,6 +42,7 @@ type CartLine = { productId: string; name: string; price: number; qty: number }
 type Customer = {
   id: string
   name: string
+  storeId: string
   displayName?: string
   phone?: string
   email?: string
@@ -749,12 +750,14 @@ export default function Sell() {
 
           if (customerExists) {
             transaction.update(customerRef, {
+              storeId: activeStoreId,
               'loyalty.lastVisitAt': timestamp,
               'loyalty.points': nextPoints,
               updatedAt: timestamp,
             })
           } else {
             transaction.set(customerRef, {
+              storeId: activeStoreId,
               loyalty: {
                 points: nextPoints,
                 lastVisitAt: timestamp,
