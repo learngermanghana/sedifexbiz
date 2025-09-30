@@ -1,22 +1,12 @@
 import * as functions from 'firebase-functions'
 import { admin, defaultDb } from './firestore'
+import { formatDailySummaryKey } from '../../shared/dateKeys'
 
 type CallableContext = functions.https.CallableContext
-
-const DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'UTC',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-})
 
 const MAX_SANITIZE_DEPTH = 4
 const MAX_ARRAY_SAMPLE = 5
 const MAX_OBJECT_KEYS = 25
-
-function formatDateKey(timestamp: admin.firestore.Timestamp): string {
-  return DATE_FORMATTER.format(timestamp.toDate())
-}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -145,7 +135,7 @@ export async function logCallableError<T>({
 }: CallableErrorLogInput<T>): Promise<void> {
   try {
     const timestamp = admin.firestore.Timestamp.now()
-    const dateKey = formatDateKey(timestamp)
+    const dateKey = formatDailySummaryKey(timestamp.toDate(), { timeZone: 'UTC' })
     const logDocRef = defaultDb.collection('logs').doc(dateKey)
     await logDocRef.set({ dateKey, createdAt: timestamp }, { merge: true })
     const eventsCollection = logDocRef.collection('events')

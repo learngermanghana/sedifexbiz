@@ -4,7 +4,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 
 
-import Today, { formatDateKey } from '../Today'
+import Today from '../Today'
+import { formatDailySummaryKey } from '../../../../shared/dateKeys'
 
 const mockUseActiveStoreContext = vi.fn(() => ({
   storeId: 'store-123',
@@ -222,10 +223,10 @@ describe('Today page', () => {
       </MemoryRouter>,
     )
 
-    const expectedKey = formatDateKey(new Date())
+    const expectedKey = formatDailySummaryKey(new Date())
     const previousDate = new Date()
     previousDate.setDate(previousDate.getDate() - 1)
-    const expectedPreviousKey = formatDateKey(previousDate)
+    const expectedPreviousKey = formatDailySummaryKey(previousDate)
 
     await waitFor(() => {
       expect(screen.getByText('GHS 480.50')).toBeInTheDocument()

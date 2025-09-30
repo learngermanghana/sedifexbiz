@@ -16,6 +16,7 @@ import {
   type Timestamp,
 } from 'firebase/firestore'
 
+import { formatDailySummaryKey } from '../../../shared/dateKeys'
 import { db } from '../firebase'
 import { ensureCustomerLoyalty, type CustomerLoyalty } from '../utils/customerLoyalty'
 import { useAuthUser } from './useAuthUser'
@@ -241,10 +242,6 @@ function enumerateDaysBetween(start: Date, end: Date) {
   return days
 }
 
-function formatDateKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
 function getSaleSortValue(sale: SaleRecord) {
   return asDate(sale.createdAt)?.getTime() ?? 0
 }
@@ -301,7 +298,7 @@ function buildDailyMetricSeries(
   sales.forEach(sale => {
     const created = asDate(sale.createdAt)
     if (!created) return
-    const key = formatDateKey(created)
+    const key = formatDailySummaryKey(created)
     const bucket = buckets.get(key) ?? { revenue: 0, count: 0 }
     bucket.revenue += sale.total ?? 0
     bucket.count += 1
@@ -309,7 +306,7 @@ function buildDailyMetricSeries(
   })
 
   return enumerateDaysBetween(start, end).map(day => {
-    const bucket = buckets.get(formatDateKey(day))
+    const bucket = buckets.get(formatDailySummaryKey(day))
     if (!bucket) {
       return 0
     }
