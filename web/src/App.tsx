@@ -32,6 +32,7 @@ import type { QueueRequestType } from './utils/offlineQueue'
 /* ------------------------------ config ------------------------------ */
 /** If you want to ALSO mirror the team member to a fixed doc id, put it here. */
 const OVERRIDE_MEMBER_DOC_ID = 'l8Rbmym8aBVMwL6NpZHntjBHmCo2' // set '' to disable
+const LEGACY_STORE_BACKFILL_KEY_PREFIX = 'legacy-store-backfill/'
 
 /* ------------------------------ constants ------------------------------ */
 
@@ -88,6 +89,76 @@ function persistActiveStoreId(storeId: string, uid: string) {
 function resolveOwnerName(user: User): string {
   const displayName = user.displayName?.trim()
   return displayName && displayName.length > 0 ? displayName : OWNER_NAME_FALLBACK
+}
+
+type ServerTimestampSentinel = ReturnType<typeof serverTimestamp>
+
+function getLegacyStoreBackfillKey(uid: string): string {
+  return `${LEGACY_STORE_BACKFILL_KEY_PREFIX}${uid}`
+}
+
+function hasCompletedLegacyStoreBackfill(uid: string): boolean {
+  if (typeof window === 'undefined') {
+    return true
+  }
+  try {
+    return window.localStorage.getItem(getLegacyStoreBackfillKey(uid)) === '1'
+  } catch (error) {
+    console.warn('[store] Failed to inspect legacy store backfill flag', error)
+    return true
+  }
+}
+
+function markLegacyStoreBackfillComplete(uid: string) {
+  if (typeof window === 'undefined') {
+    return
+  }
+  try {
+    window.localStorage.setItem(getLegacyStoreBackfillKey(uid), '1')
+  } catch (error) {
+    console.warn('[store] Failed to persist legacy store backfill flag', error)
+  }
+}
+
+function shouldAttemptLegacyStoreBackfill(uid: string): boolean {
+  return Boolean(uid) && !hasCompletedLegacyStoreBackfill(uid)
+}
+
+async function ensureLegacyStoreDoc(params: {
+  storeId: string
+  user: User
+  timestamp: ServerTimestampSentinel
+}) {
+  const { storeId, user, timestamp } = params
+  if (!storeId || !user.uid || !shouldAttemptLegacyStoreBackfill(user.uid)) {
+    return
+  }
+
+  let shouldMarkCompletion = false
+  try {
+    const storeRef = doc(db, 'stores', storeId)
+    const snapshot = await getDoc(storeRef)
+    if (!snapshot.exists()) {
+      await setDoc(
+        storeRef,
+        {
+          storeId,
+          ownerId: user.uid,
+          ownerEmail: user.email ?? null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        { merge: true },
+      )
+    }
+    shouldMarkCompletion = true
+  } catch (error) {
+    console.warn(`[store] Failed to backfill legacy store doc for "${storeId}"`, error)
+  }
+
+  if (shouldMarkCompletion) {
+    markLegacyStoreBackfillComplete(user.uid)
+  }
 }
 /** Ensure teamMembers/{uid} exists; optionally mirror to fixed ID. */
 async function upsertTeamMemberDocs(params: {
@@ -160,6 +231,8 @@ async function upsertTeamMemberDocs(params: {
   if (OVERRIDE_MEMBER_DOC_ID) {
     await setDoc(doc(db, 'teamMembers', OVERRIDE_MEMBER_DOC_ID), payload, { merge: true })
   }
+
+  await ensureLegacyStoreDoc({ storeId, user, timestamp })
 
   persistActiveStoreId(storeId, user.uid)
   return { storeId, role }

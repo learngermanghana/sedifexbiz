@@ -352,27 +352,40 @@ describe('App signup cleanup', () => {
     expect(customerDocRef).toBeDefined()
     expect(storeDocRef).toBeDefined()
 
-    const ownerCall = setDocMock.mock.calls.find(([ref]) => ref === ownerDocRef)
-    expect(ownerCall).toBeDefined()
-    const [, ownerPayload, ownerOptions] = ownerCall!
-    expect(ownerPayload).toEqual(
+    const ownerCalls = setDocMock.mock.calls.filter(([ref]) => ref === ownerDocRef)
+    expect(ownerCalls.length).toBeGreaterThanOrEqual(1)
+    const ownerInitialCall = ownerCalls[0]
+    const [, ownerInitialPayload, ownerInitialOptions] = ownerInitialCall
+    expect(ownerInitialPayload).toEqual(
       expect.objectContaining({
         uid: createdUser.uid,
         storeId,
         role: 'owner',
-        company: 'Sedifex',
-        phone: '+445551234567',
-        phoneCountryCode: '+44',
-        phoneLocalNumber: '5551234567',
         email: 'owner@example.com',
-        invitedBy: createdUser.uid,
-        firstSignupEmail: 'owner@example.com',
-        name: 'Owner account',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
       }),
     )
-    expect(ownerOptions).toEqual({ merge: true })
+    expect(ownerInitialOptions).toEqual({ merge: true })
+
+    const ownerContactCall = ownerCalls.find(([, payload]) =>
+      Boolean((payload as Record<string, unknown>).phone),
+    )
+    expect(ownerContactCall).toBeDefined()
+    const [, ownerContactPayload, ownerContactOptions] = ownerContactCall!
+    expect(ownerContactPayload).toEqual(
+      expect.objectContaining({
+        company: 'Sedifex',
+        phone: '+445551234567',
+        phoneCountryCode: '+44',
+        phoneLocalNumber: '5551234567',
+        invitedBy: createdUser.uid,
+        firstSignupEmail: 'owner@example.com',
+        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        lastSeenAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+      }),
+    )
+    expect(ownerContactOptions).toEqual({ merge: true })
 
     const overrideCall = setDocMock.mock.calls.find(([ref]) => ref === overrideDocRef)
     expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
@@ -397,20 +410,37 @@ describe('App signup cleanup', () => {
     )
     expect(customerOptions).toEqual({ merge: true })
 
-    const storeCall = setDocMock.mock.calls.find(([ref]) => ref === storeDocRef)
-    expect(storeCall).toBeDefined()
-    const [, storePayload, storeOptions] = storeCall!
-    expect(storePayload).toEqual(
+    const storeCalls = setDocMock.mock.calls.filter(([ref]) => ref === storeDocRef)
+    expect(storeCalls.length).toBeGreaterThanOrEqual(1)
+    const storeInitialCall = storeCalls[0]
+    const [, storeInitialPayload, storeInitialOptions] = storeInitialCall
+    expect(storeInitialPayload).toEqual(
       expect.objectContaining({
         storeId,
         ownerId: createdUser.uid,
-        company: 'Sedifex',
-        ownerName: 'Owner account',
+        ownerEmail: 'owner@example.com',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
       }),
     )
-    expect(storeOptions).toEqual({ merge: true })
+    expect(storeInitialOptions).toEqual({ merge: true })
+
+    const storeEnrichedCall = storeCalls.find(([, payload]) =>
+      (payload as Record<string, unknown>).ownerName !== undefined,
+    )
+    expect(storeEnrichedCall).toBeDefined()
+    const [, storeEnrichedPayload, storeEnrichedOptions] = storeEnrichedCall!
+    expect(storeEnrichedPayload).toEqual(
+      expect.objectContaining({
+        storeId,
+        ownerId: createdUser.uid,
+        ownerName: 'Owner account',
+        company: 'Sedifex',
+        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+      }),
+    )
+    expect(storeEnrichedOptions).toEqual({ merge: true })
 
     const mergedOwnerData = firestore.docDataByPath.get(ownerDocKey)
     expect(mergedOwnerData).toEqual(
@@ -483,9 +513,11 @@ describe('App signup cleanup', () => {
     const { docRefByPath, setDocMock } = firestore
     const profileDocRef = docRefByPath.get(`teamMembers/${existingUser.uid}`)
     const overrideDocRef = docRefByPath.get('teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2')
+    const storeDocRef = docRefByPath.get(`stores/${storeId}`)
 
     expect(profileDocRef).toBeDefined()
     expect(overrideDocRef).toBeDefined()
+    expect(storeDocRef).toBeDefined()
 
     const profileCall = setDocMock.mock.calls.find(([ref]) => ref === profileDocRef)
     expect(profileCall).toBeDefined()
@@ -503,9 +535,26 @@ describe('App signup cleanup', () => {
     expect(overrideCall).toBeDefined()
     expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
 
+    const storeCall = setDocMock.mock.calls.find(([ref]) => ref === storeDocRef)
+    expect(storeCall).toBeDefined()
+    const [, storePayload, storeOptions] = storeCall!
+    expect(storePayload).toEqual(
+      expect.objectContaining({
+        storeId,
+        ownerId: existingUser.uid,
+        ownerEmail: 'owner@example.com',
+        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+      }),
+    )
+    expect(storeOptions).toEqual({ merge: true })
+
     const storageKey = getActiveStoreStorageKey(existingUser.uid)
     expect(localStorageSetItemSpy).toHaveBeenCalledWith(storageKey, storeId)
     expect(window.localStorage.getItem(storageKey)).toBe(storeId)
+    const backfillKey = 'legacy-store-backfill/test-user'
+    expect(localStorageSetItemSpy).toHaveBeenCalledWith(backfillKey, '1')
+    expect(window.localStorage.getItem(backfillKey)).toBe('1')
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({ tone: 'success', message: expect.stringMatching(/Welcome back/i) }),
     )
