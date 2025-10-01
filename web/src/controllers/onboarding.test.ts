@@ -91,6 +91,9 @@ describe('createInitialOwnerAndStore', () => {
       email: 'custom-owner@example.com',
       role: 'staff',
       company: 'Sedifex Incorporated',
+      country: 'Canada',
+      city: 'Toronto',
+      phoneCountryCode: '+1',
     })
 
     expect(storeId).toBe('sedifex-incorporated-owner-12')
@@ -104,6 +107,9 @@ describe('createInitialOwnerAndStore', () => {
       email: 'custom-owner@example.com',
       company: 'Sedifex Incorporated',
       name: 'Store Owner',
+      country: 'Canada',
+      city: 'Toronto',
+      phoneCountryCode: '+1',
     })
 
     const storeDoc = firestore.docDataByPath.get(`stores/${storeId}`)
@@ -113,6 +119,9 @@ describe('createInitialOwnerAndStore', () => {
       ownerEmail: 'custom-owner@example.com',
       ownerName: 'Store Owner',
       company: 'Sedifex Incorporated',
+      country: 'Canada',
+      city: 'Toronto',
+      phoneCountryCode: '+1',
     })
   })
 

@@ -121,6 +121,9 @@ type CreateInitialOwnerAndStoreParams = {
   email?: string | null
   role?: string
   company?: string | null
+  country?: string | null
+  city?: string | null
+  phoneCountryCode?: string | null
 }
 
 export async function createInitialOwnerAndStore(
@@ -131,10 +134,16 @@ export async function createInitialOwnerAndStore(
     email: emailOverride = null,
     role = 'owner',
     company: companyOverride = null,
+    country: countryOverride = null,
+    city: cityOverride = null,
+    phoneCountryCode: phoneCountryCodeOverride = null,
   } = params
 
   const uid = user.uid
   const company = companyOverride ?? null
+  const country = countryOverride ?? null
+  const city = cityOverride ?? null
+  const phoneCountryCode = phoneCountryCodeOverride ?? null
   const resolvedEmail = emailOverride ?? user.email ?? null
   const ownerName = user.displayName?.trim() || OWNER_NAME_FALLBACK
 
@@ -162,6 +171,18 @@ export async function createInitialOwnerAndStore(
     teamMemberPayload.company = company
   }
 
+  if (country !== null) {
+    teamMemberPayload.country = country
+  }
+
+  if (city !== null) {
+    teamMemberPayload.city = city
+  }
+
+  if (phoneCountryCode !== null) {
+    teamMemberPayload.phoneCountryCode = phoneCountryCode
+  }
+
   await setDoc(doc(db, 'teamMembers', uid), teamMemberPayload, { merge: true })
 
   const storePayload: Record<string, unknown> = {
@@ -178,6 +199,18 @@ export async function createInitialOwnerAndStore(
 
   if (company !== null) {
     storePayload.company = company
+  }
+
+  if (country !== null) {
+    storePayload.country = country
+  }
+
+  if (city !== null) {
+    storePayload.city = city
+  }
+
+  if (phoneCountryCode !== null) {
+    storePayload.phoneCountryCode = phoneCountryCode
   }
 
   await setDoc(doc(db, 'stores', storeId), storePayload, { merge: true })

@@ -206,7 +206,13 @@ describe('App signup cleanup', () => {
       }
       const payload = rawPayload as {
         storeId?: string
-        contact?: { ownerName?: string | null; company?: string | null }
+        contact?: {
+          ownerName?: string | null
+          company?: string | null
+          country?: string | null
+          city?: string | null
+          phoneCountryCode?: string | null
+        }
       }
       if (typeof payload.storeId !== 'string' || !payload.storeId) {
         throw new Error('storeId required for bootstrap')
@@ -221,6 +227,9 @@ describe('App signup cleanup', () => {
           ownerId: mocks.auth.currentUser?.uid ?? null,
           ownerName: payload.contact?.ownerName ?? null,
           company: payload.contact?.company ?? null,
+          country: payload.contact?.country ?? null,
+          city: payload.contact?.city ?? null,
+          phoneCountryCode: payload.contact?.phoneCountryCode ?? null,
           createdAt,
           updatedAt,
         },
@@ -262,9 +271,14 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
       await user.selectOptions(screen.getByLabelText(/Role/i), 'owner')
       await user.type(screen.getByLabelText(/Company/i), 'Sedifex')
-      await user.selectOptions(screen.getByLabelText(/Country code/i), '+44')
-      expect((screen.getByLabelText(/Country code/i) as HTMLSelectElement).value).toBe('+44')
-      await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
+      await user.type(screen.getByLabelText(/^Country$/i), ' United Kingdom ')
+      await user.type(screen.getByLabelText(/^City$/i), ' London ')
+      const dialingInput = screen.getByLabelText(/Country code/i)
+      await user.clear(dialingInput)
+      await user.type(dialingInput, ' 0044 ')
+      const phoneInput = screen.getByLabelText(/Phone/i)
+      await user.click(phoneInput)
+      await user.type(phoneInput, ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
       await user.click(screen.getByRole('button', { name: /Create account/i }))
@@ -337,9 +351,14 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
       await user.selectOptions(screen.getByLabelText(/Role/i), 'owner')
       await user.type(screen.getByLabelText(/Company/i), 'Sedifex')
-      await user.selectOptions(screen.getByLabelText(/Country code/i), '+44')
-      expect((screen.getByLabelText(/Country code/i) as HTMLSelectElement).value).toBe('+44')
-      await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
+      await user.type(screen.getByLabelText(/^Country$/i), ' United Kingdom ')
+      await user.type(screen.getByLabelText(/^City$/i), ' London ')
+      const dialingInput = screen.getByLabelText(/Country code/i)
+      await user.clear(dialingInput)
+      await user.type(dialingInput, ' 0044 ')
+      const phoneInput = screen.getByLabelText(/Phone/i)
+      await user.click(phoneInput)
+      await user.type(phoneInput, ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
       await user.click(screen.getByRole('button', { name: /Create account/i }))
@@ -373,6 +392,10 @@ describe('App signup cleanup', () => {
         role: 'owner',
         email: 'owner@example.com',
         name: 'Owner account',
+        company: 'Sedifex',
+        country: 'United Kingdom',
+        city: 'London',
+        phoneCountryCode: '+44',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
       }),
@@ -388,6 +411,8 @@ describe('App signup cleanup', () => {
       expect.objectContaining({
         name: 'Owner account',
         company: 'Sedifex',
+        country: 'United Kingdom',
+        city: 'London',
         phone: '+445551234567',
         phoneCountryCode: '+44',
         phoneLocalNumber: '5551234567',
@@ -414,6 +439,8 @@ describe('App signup cleanup', () => {
         phone: '+445551234567',
         phoneCountryCode: '+44',
         phoneLocalNumber: '5551234567',
+        country: 'United Kingdom',
+        city: 'London',
         status: 'active',
         role: 'client',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
@@ -431,6 +458,10 @@ describe('App signup cleanup', () => {
         storeId,
         ownerId: createdUser.uid,
         ownerEmail: 'owner@example.com',
+        company: 'Sedifex',
+        country: 'United Kingdom',
+        city: 'London',
+        phoneCountryCode: '+44',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
       }),
@@ -448,6 +479,9 @@ describe('App signup cleanup', () => {
         ownerId: createdUser.uid,
         ownerName: 'Owner account',
         company: 'Sedifex',
+        country: 'United Kingdom',
+        city: 'London',
+        phoneCountryCode: '+44',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
       }),
@@ -461,6 +495,12 @@ describe('App signup cleanup', () => {
         uid: createdUser.uid,
         storeId,
         name: 'Owner account',
+        company: 'Sedifex',
+        country: 'United Kingdom',
+        city: 'London',
+        phone: '+445551234567',
+        phoneCountryCode: '+44',
+        phoneLocalNumber: '5551234567',
       }),
     )
 
@@ -470,6 +510,10 @@ describe('App signup cleanup', () => {
         ...seededStore,
         storeId,
         ownerId: createdUser.uid,
+        company: 'Sedifex',
+        country: 'United Kingdom',
+        city: 'London',
+        phoneCountryCode: '+44',
       }),
     )
 
@@ -481,6 +525,8 @@ describe('App signup cleanup', () => {
         phoneLocalNumber: '5551234567',
         firstSignupEmail: 'owner@example.com',
         company: 'Sedifex',
+        country: 'United Kingdom',
+        city: 'London',
         ownerName: 'Owner account',
       },
     })
@@ -529,16 +575,11 @@ describe('App signup cleanup', () => {
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
 
     const storeId = 'owner-example-com-test-use'
-    const { docRefByPath, setDocMock } = firestore
-    const profileDocRef = docRefByPath.get(`teamMembers/${existingUser.uid}`)
-    const overrideDocRef = docRefByPath.get('teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2')
-    const storeDocRef = docRefByPath.get(`stores/${storeId}`)
+    const { setDocMock } = firestore
 
-    expect(profileDocRef).toBeDefined()
-    expect(overrideDocRef).toBeDefined()
-    expect(storeDocRef).toBeDefined()
-
-    const profileCall = setDocMock.mock.calls.find(([ref]) => ref === profileDocRef)
+    const profileCall = setDocMock.mock.calls.find(
+      ([ref]) => (ref as { path?: string } | undefined)?.path === `teamMembers/${existingUser.uid}`,
+    )
     expect(profileCall).toBeDefined()
     const [, profilePayload, profileOptions] = profileCall!
     expect(profilePayload).toEqual(
@@ -550,11 +591,15 @@ describe('App signup cleanup', () => {
     )
     expect(profileOptions).toEqual({ merge: true })
 
-    const overrideCall = setDocMock.mock.calls.find(([ref]) => ref === overrideDocRef)
+    const overrideCall = setDocMock.mock.calls.find(
+      ([ref]) => (ref as { path?: string } | undefined)?.path === 'teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2',
+    )
     expect(overrideCall).toBeDefined()
     expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
 
-    const storeCall = setDocMock.mock.calls.find(([ref]) => ref === storeDocRef)
+    const storeCall = setDocMock.mock.calls.find(
+      ([ref]) => (ref as { path?: string } | undefined)?.path === `stores/${storeId}`,
+    )
     expect(storeCall).toBeDefined()
     const [, storePayload, storeOptions] = storeCall!
     expect(storePayload).toEqual(

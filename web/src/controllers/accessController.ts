@@ -26,6 +26,8 @@ type ContactPayload = {
   firstSignupEmail?: string | null
   company?: string | null
   ownerName?: string | null
+  country?: string | null
+  city?: string | null
 }
 
 type AfterSignupBootstrapPayload = {
@@ -109,6 +111,14 @@ export async function afterSignupBootstrap(payload?: AfterSignupBootstrapPayload
 
     if (payload.contact.ownerName !== undefined) {
       contact.ownerName = payload.contact.ownerName
+    }
+
+    if (payload.contact.country !== undefined) {
+      contact.country = payload.contact.country
+    }
+
+    if (payload.contact.city !== undefined) {
+      contact.city = payload.contact.city
     }
 
     if (Object.keys(contact).length > 0) {
