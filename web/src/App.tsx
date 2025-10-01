@@ -913,6 +913,56 @@ export default function App() {
             ))}
           </div>
         </section>
+
+        <section className="app__info-grid" aria-labelledby="app-info-heading">
+          <h2 id="app-info-heading">Why retailers choose Sedifex</h2>
+          <article className="info-card">
+            <h3>About Sedifex</h3>
+            <p>
+              Sedifex keeps fast-moving retailers aligned with a connected operating system for sales, inventory,
+              and store communication. We work with multi-location teams that need reliable insights without the
+              spreadsheets.
+            </p>
+            <p className="info-card__caption">Headquartered in Austin with teams across North America.</p>
+          </article>
+          <article className="info-card">
+            <h3>Mission &amp; values</h3>
+            <p>We believe every retail team deserves data they can trust and workflows that reduce busywork.</p>
+            <ul className="info-card__list">
+              <li>Give operators clarity in the moment they need to act.</li>
+              <li>Design software that works beautifully on any device in the store.</li>
+              <li>Earn trust with transparent pricing and accountable support.</li>
+            </ul>
+          </article>
+          <article className="info-card">
+            <h3>Implementation &amp; support</h3>
+            <p>
+              Onboarding specialists migrate your data, train your team, and monitor adoption milestones so you can
+              launch with confidence.
+            </p>
+            <ul className="info-card__list">
+              <li>Guided setup checklist and go-live review.</li>
+              <li>Role-based training sessions with recordings.</li>
+              <li>
+                Dedicated support channel with{' '}
+                <span aria-hidden="true">&lt;24 hr</span>
+                <span className="visually-hidden">under twenty-four hour</span> response.
+              </li>
+            </ul>
+            <a className="info-card__cta" href="mailto:hello@sedifex.com">Talk with our team</a>
+          </article>
+          <article className="info-card">
+            <h3>Security &amp; reliability</h3>
+            <p>
+              Enterprise-grade authentication, audit trails, and automated backups protect every transaction and
+              keep your data resilient.
+            </p>
+            <p>
+              Sedifex is hosted on SOC 2 compliant infrastructure with regional redundancy and role-based access
+              controls.
+            </p>
+          </article>
+        </section>
       </main>
     )
   }
