@@ -772,6 +772,8 @@ type ContactPayload = {
   firstSignupEmail?: unknown
   company?: unknown
   ownerName?: unknown
+  country?: unknown
+  city?: unknown
 }
 
 type InitializeStorePayload = {
@@ -817,12 +819,16 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
   let hasFirstSignupEmail = false
   let hasCompany = false
   let hasOwnerName = false
+  let hasCountry = false
+  let hasCity = false
   let phone: string | null | undefined
   let phoneCountryCode: string | null | undefined
   let phoneLocalNumber: string | null | undefined
   let firstSignupEmail: string | null | undefined
   let company: string | null | undefined
   let ownerName: string | null | undefined
+  let country: string | null | undefined
+  let city: string | null | undefined
 
   if (contact && typeof contact === 'object') {
     if ('phone' in contact) {
@@ -911,6 +917,32 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
         throw new functions.https.HttpsError('invalid-argument', 'Owner name must be a string when provided')
       }
     }
+
+    if ('country' in contact) {
+      hasCountry = true
+      const raw = (contact as Record<string, unknown>).country
+      if (raw === null || raw === undefined || raw === '') {
+        country = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        country = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError('invalid-argument', 'Country must be a string when provided')
+      }
+    }
+
+    if ('city' in contact) {
+      hasCity = true
+      const raw = (contact as Record<string, unknown>).city
+      if (raw === null || raw === undefined || raw === '') {
+        city = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        city = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError('invalid-argument', 'City must be a string when provided')
+      }
+    }
   }
 
   return {
@@ -926,6 +958,10 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
     hasCompany,
     ownerName,
     hasOwnerName,
+    country,
+    hasCountry,
+    city,
+    hasCity,
   }
 }
 
@@ -1132,6 +1168,10 @@ async function handleStoreBootstrap(
     typeof existingData.company === 'string' ? (existingData.company as string).trim() : ''
   const existingMemberName =
     typeof existingData.name === 'string' ? (existingData.name as string).trim() : ''
+  const existingMemberCountry =
+    typeof existingData.country === 'string' ? (existingData.country as string).trim() : ''
+  const existingMemberCity =
+    typeof existingData.city === 'string' ? (existingData.city as string).trim() : ''
   const existingStoreId =
     typeof existingData.storeId === 'string' && existingData.storeId.trim() !== ''
       ? (existingData.storeId as string)
@@ -1163,6 +1203,18 @@ async function handleStoreBootstrap(
     memberData.company = existingMemberCompany
   }
 
+  if (contact.hasCountry) {
+    memberData.country = contact.country ?? null
+  } else if (!memberSnap.exists && existingMemberCountry) {
+    memberData.country = existingMemberCountry
+  }
+
+  if (contact.hasCity) {
+    memberData.city = contact.city ?? null
+  } else if (!memberSnap.exists && existingMemberCity) {
+    memberData.city = existingMemberCity
+  }
+
   if (contact.hasOwnerName) {
     memberData.name = contact.ownerName ?? null
   } else if (!memberSnap.exists && existingMemberName) {
@@ -1182,6 +1234,10 @@ async function handleStoreBootstrap(
     typeof existingStore.company === 'string' ? (existingStore.company as string).trim() : ''
   const existingStoreOwnerName =
     typeof existingStore.ownerName === 'string' ? (existingStore.ownerName as string).trim() : ''
+  const existingStoreCountry =
+    typeof existingStore.country === 'string' ? (existingStore.country as string).trim() : ''
+  const existingStoreCity =
+    typeof existingStore.city === 'string' ? (existingStore.city as string).trim() : ''
 
   const resolvedCompany = contact.hasCompany
     ? contact.company ?? null
@@ -1193,6 +1249,20 @@ async function handleStoreBootstrap(
     ? contact.ownerName ?? null
     : existingMemberName || existingStoreOwnerName
     ? (existingMemberName || existingStoreOwnerName)
+    : null
+
+  const fallbackCountry = existingMemberCountry || existingStoreCountry
+  const resolvedCountry = contact.hasCountry
+    ? contact.country ?? null
+    : fallbackCountry
+    ? fallbackCountry
+    : null
+
+  const fallbackCity = existingMemberCity || existingStoreCity
+  const resolvedCity = contact.hasCity
+    ? contact.city ?? null
+    : fallbackCity
+    ? fallbackCity
     : null
 
   const storeData: admin.firestore.DocumentData = {
@@ -1211,6 +1281,22 @@ async function handleStoreBootstrap(
 
   if (resolvedCompany) {
     storeData.company = resolvedCompany
+  }
+
+  if (contact.hasCountry) {
+    storeData.country = contact.country ?? null
+  } else if (resolvedCountry !== null) {
+    storeData.country = resolvedCountry
+  }
+
+  if (contact.hasCity) {
+    storeData.city = contact.city ?? null
+  } else if (resolvedCity !== null) {
+    storeData.city = resolvedCity
+  }
+
+  if (contact.hasPhoneCountryCode) {
+    storeData.phoneCountryCode = contact.phoneCountryCode ?? null
   }
 
   await storeRef.set(storeData, { merge: true })
