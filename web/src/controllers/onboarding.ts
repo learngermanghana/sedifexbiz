@@ -119,7 +119,6 @@ export async function generateUniqueStoreId(params: {
 type CreateInitialOwnerAndStoreParams = {
   user: Pick<User, 'uid' | 'email' | 'displayName'>
   email?: string | null
-  role?: string
   company?: string | null
   country?: string | null
   city?: string | null
@@ -132,7 +131,6 @@ export async function createInitialOwnerAndStore(
   const {
     user,
     email: emailOverride = null,
-    role = 'owner',
     company: companyOverride = null,
     country: countryOverride = null,
     city: cityOverride = null,
@@ -157,7 +155,7 @@ export async function createInitialOwnerAndStore(
   const teamMemberPayload: Record<string, unknown> = {
     uid,
     storeId,
-    role,
+    role: 'owner',
     email: resolvedEmail,
     updatedAt,
     createdAt,

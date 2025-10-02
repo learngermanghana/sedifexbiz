@@ -89,7 +89,6 @@ describe('createInitialOwnerAndStore', () => {
     const storeId = await createInitialOwnerAndStore({
       user,
       email: 'custom-owner@example.com',
-      role: 'staff',
       company: 'Sedifex Incorporated',
       country: 'Canada',
       city: 'Toronto',
@@ -103,7 +102,7 @@ describe('createInitialOwnerAndStore', () => {
     expect(teamMemberDoc).toMatchObject({
       uid: user.uid,
       storeId,
-      role: 'staff',
+      role: 'owner',
       email: 'custom-owner@example.com',
       company: 'Sedifex Incorporated',
       name: 'Store Owner',
