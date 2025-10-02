@@ -14,7 +14,6 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
-import { OVERRIDE_TEAM_MEMBER_DOC_ID } from '../config/teamMembers'
 
 export type Membership = {
   id: string
@@ -121,10 +120,6 @@ export function useMemberships(activeStoreId?: string | null) {
         }
 
         const fallbackRefs = [doc(db, 'teamMembers', user.uid)]
-
-        if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
-          fallbackRefs.push(doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID))
-        }
 
         for (const ref of fallbackRefs) {
           try {

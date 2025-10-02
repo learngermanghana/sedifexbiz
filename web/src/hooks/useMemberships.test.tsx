@@ -29,10 +29,6 @@ vi.mock('firebase/firestore', () => ({
   getDoc: (...args: Parameters<typeof getDocMock>) => getDocMock(...args),
 }))
 
-vi.mock('../config/teamMembers', () => ({
-  OVERRIDE_TEAM_MEMBER_DOC_ID: '',
-}))
-
 describe('useMemberships', () => {
   beforeEach(() => {
     mockUseAuthUser.mockReset()
