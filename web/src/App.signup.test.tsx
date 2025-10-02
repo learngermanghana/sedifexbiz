@@ -1,674 +1,1091 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+// web/src/App.tsx
+import React, { useEffect, useRef, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { MemoryRouter } from 'react-router-dom'
-import { act, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { getActiveStoreStorageKey } from './utils/activeStoreStorage'
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+} from 'firebase/auth'
+import { doc, getDoc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
+import { FirebaseError } from 'firebase/app'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { auth, db } from './firebase'
+import './App.css'
+import './pwa'
+import { useToast } from './components/ToastProvider'
+import {
+  configureAuthPersistence,
+  persistSession,
+  refreshSessionHeartbeat,
+} from './controllers/sessionController'
+import { afterSignupBootstrap } from './controllers/accessController'
+import { createInitialOwnerAndStore, generateUniqueStoreId } from './controllers/onboarding'
+import { AuthUserContext } from './hooks/useAuthUser'
+import {
+  clearActiveStoreIdForUser,
+  clearLegacyActiveStoreId,
+  persistActiveStoreIdForUser,
+} from './utils/activeStoreStorage'
+import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
+import type { QueueRequestType } from './utils/offlineQueue'
+import { OVERRIDE_TEAM_MEMBER_DOC_ID } from './config/teamMembers'
 
-/** ---------------- hoisted state/mocks ---------------- */
-const mocks = vi.hoisted(() => {
-  const state = {
-    listeners: [] as Array<(user: User | null) => void>,
-    auth: {
-      currentUser: null as User | null,
-      signOut: vi.fn(async () => {
-        state.auth.currentUser = null
-        state.listeners.forEach(listener => listener(state.auth.currentUser))
-      }),
-    },
-    createUserWithEmailAndPassword: vi.fn(),
-    signInWithEmailAndPassword: vi.fn(),
-    configureAuthPersistence: vi.fn(async () => {}),
-    persistSession: vi.fn(async () => {}),
-    refreshSessionHeartbeat: vi.fn(async () => {}),
-    publish: vi.fn(),
-    afterSignupBootstrap: vi.fn(async () => {}),
-  }
-  return state
-})
+/* ------------------------------ config ------------------------------ */
+const LEGACY_STORE_BACKFILL_KEY_PREFIX = 'legacy-store-backfill/'
 
-const firestore = vi.hoisted(() => {
-  const docRefByPath = new Map<string, { path: string }>()
-  const docDataByPath = new Map<string, Record<string, unknown>>()
-  let timestampCallCount = 0
+/* ------------------------------ constants ------------------------------ */
 
-  const docMock = vi.fn((_: unknown, ...segments: string[]) => {
-    const key = segments.join('/')
-    if (!docRefByPath.has(key)) {
-      docRefByPath.set(key, { path: key })
-    }
-    return docRefByPath.get(key)!
-  })
+type AuthMode = 'login' | 'signup'
+type StatusTone = 'idle' | 'loading' | 'success' | 'error'
+interface StatusState { tone: StatusTone; message: string }
 
-  const setDocImplementation = async (
-    ref: { path: string },
-    data: Record<string, unknown>,
-    options?: { merge?: boolean },
-  ) => {
-    const existing = docDataByPath.get(ref.path)
-    const nextValue = options?.merge && existing ? { ...existing, ...data } : { ...data }
-    docDataByPath.set(ref.path, nextValue)
-  }
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PASSWORD_MIN_LENGTH = 8
+const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
+const OWNER_NAME_FALLBACK = 'Owner account'
+const DEFAULT_DIALING_CODE = '+1'
 
-  const updateDocImplementation = async (
-    ref: { path: string },
-    data: Record<string, unknown>,
-  ) => {
-    const existing = docDataByPath.get(ref.path) ?? {}
-    docDataByPath.set(ref.path, { ...existing, ...data })
-  }
+/* ------------------------------ helpers ------------------------------ */
 
-  const getDocImplementation = async (ref: { path: string }) => {
-    const stored = docDataByPath.get(ref.path)
-    return {
-      exists: () => stored !== undefined,
-      data: () => (stored ? { ...stored } : undefined),
-      get: (field: string) => (stored ? (stored as Record<string, unknown>)[field] : undefined),
-    }
-  }
-
-  const setDocMock = vi.fn(setDocImplementation)
-  const updateDocMock = vi.fn(updateDocImplementation)
-  const getDocMock = vi.fn(getDocImplementation)
-
-  const serverTimestampMock = vi.fn(() => {
-    timestampCallCount += 1
-    return { __type: 'serverTimestamp', order: timestampCallCount }
-  })
-
-  return {
-    docMock,
-    setDocMock,
-    updateDocMock,
-    getDocMock,
-    serverTimestampMock,
-    docRefByPath,
-    docDataByPath,
-    reset() {
-      docMock.mockClear()
-      setDocMock.mockClear()
-      updateDocMock.mockClear()
-      getDocMock.mockClear()
-      serverTimestampMock.mockClear()
-      docRefByPath.clear()
-      docDataByPath.clear()
-      timestampCallCount = 0
-      getDocMock.mockImplementation(getDocImplementation)
-    },
-  }
-})
-
-const access = vi.hoisted(() => ({
-  afterSignupBootstrap: vi.fn(),
-}))
-
-/** ---------------- module mocks ---------------- */
-vi.mock('./firebase', () => ({
-  auth: mocks.auth,
-  db: {},
-  functions: {},
-}))
-
-vi.mock('firebase/auth', () => ({
-  createUserWithEmailAndPassword: (...args: unknown[]) =>
-    mocks.createUserWithEmailAndPassword(...args),
-  signInWithEmailAndPassword: (...args: unknown[]) =>
-    mocks.signInWithEmailAndPassword(...args),
-  signOut: (...args: unknown[]) => mocks.auth.signOut(...args),
-  onAuthStateChanged: (_auth: unknown, callback: (user: User | null) => void) => {
-    mocks.listeners.push(callback)
-    callback(mocks.auth.currentUser)
-    return () => {}
-  },
-}))
-
-vi.mock('firebase/firestore', () => ({
-  doc: (...args: Parameters<typeof firestore.docMock>) => firestore.docMock(...args),
-  setDoc: (...args: Parameters<typeof firestore.setDocMock>) => firestore.setDocMock(...args),
-  updateDoc: (...args: Parameters<typeof firestore.updateDocMock>) => firestore.updateDocMock(...args),
-  getDoc: (...args: Parameters<typeof firestore.getDocMock>) => firestore.getDocMock(...args),
-  serverTimestamp: (
-    ...args: Parameters<typeof firestore.serverTimestampMock>
-  ) => firestore.serverTimestampMock(...args),
-  Timestamp: class MockTimestamp {
-    static fromMillis(value: number) {
-      return { __type: 'timestamp', millis: value }
-    }
-  },
-}))
-
-vi.mock('./controllers/sessionController', async () => {
-  const actual = await vi.importActual<typeof import('./controllers/sessionController')>(
-    './controllers/sessionController',
-  )
-  return {
-    ...actual,
-    configureAuthPersistence: (...args: unknown[]) => mocks.configureAuthPersistence(...args),
-    persistSession: async (...args: Parameters<typeof actual.persistSession>) => {
-      await mocks.persistSession(...args)
-      return actual.persistSession(...args)
-    },
-    refreshSessionHeartbeat: (...args: unknown[]) => mocks.refreshSessionHeartbeat(...args),
-  }
-})
-
-vi.mock('./controllers/accessController', () => ({
-  afterSignupBootstrap: (...args: unknown[]) => mocks.afterSignupBootstrap(...args),
-}))
-
-vi.mock('./components/ToastProvider', () => ({
-  useToast: () => ({ publish: mocks.publish }),
-}))
-
-vi.mock('./controllers/accessController', async () => {
-  const actual = await vi.importActual<typeof import('./controllers/accessController')>(
-    './controllers/accessController',
-  )
-  return {
-    ...actual,
-    afterSignupBootstrap: (...args: unknown[]) => access.afterSignupBootstrap(...args),
-  }
-})
-
-/** ---------------- imports after mocks ---------------- */
-import App from './App'
-import { generateUniqueStoreId } from './controllers/onboarding'
-
-/** ---------------- helpers ---------------- */
-function createTestUser() {
-  const deleteFn = vi.fn(async () => {})
-  const testUser = {
-    uid: 'test-user',
-    email: 'owner@example.com',
-    delete: deleteFn,
-    getIdToken: vi.fn(async (_force?: boolean) => 'token'),
-  } as unknown as User
-  return { user: testUser, deleteFn }
+type PhoneComposition = {
+  dialingCode: string
+  localNumber: string
+  e164: string
 }
 
-let localStorageSetItemSpy: ReturnType<typeof vi.spyOn>
+function trimText(value: string): string {
+  return value.trim()
+}
 
-describe('App signup cleanup', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.auth.currentUser = null
-    mocks.listeners.splice(0, mocks.listeners.length)
-    firestore.reset()
-    access.afterSignupBootstrap.mockReset()
-    let bootstrapCallCount = 0
-    access.afterSignupBootstrap.mockImplementation(async (rawPayload?: unknown) => {
-      bootstrapCallCount += 1
-      if (bootstrapCallCount > 1) {
-        throw new Error('afterSignupBootstrap should only be called once')
-      }
-      if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
-        throw new Error('afterSignupBootstrap payload must be an object')
-      }
-      const payload = rawPayload as {
-        storeId?: string
-        contact?: {
-          ownerName?: string | null
-          company?: string | null
-          country?: string | null
-          city?: string | null
-          phoneCountryCode?: string | null
-        }
-      }
-      if (typeof payload.storeId !== 'string' || !payload.storeId) {
-        throw new Error('storeId required for bootstrap')
-      }
-      const storeRef = firestore.docMock(null, 'stores', payload.storeId)
-      const createdAt = firestore.serverTimestampMock()
-      const updatedAt = firestore.serverTimestampMock()
-      await firestore.setDocMock(
+function composePhoneNumber(dialingCode: string, localNumber: string): PhoneComposition {
+  const trimmedCountry = trimText(dialingCode || '')
+  const trimmedLocal = (localNumber || '').trim()
+
+  let normalizedCountry = trimmedCountry.replace(/^00/, '+').replace(/[^+\d]/g, '')
+  if (normalizedCountry && !normalizedCountry.startsWith('+')) {
+    normalizedCountry = `+${normalizedCountry.replace(/^\++/, '')}`
+  }
+  if (normalizedCountry === '+') {
+    normalizedCountry = ''
+  }
+
+  const normalizedLocal = trimmedLocal.replace(/\D+/g, '')
+  const e164 = normalizedCountry && normalizedLocal ? `${normalizedCountry}${normalizedLocal}` : ''
+
+  return {
+    dialingCode: normalizedCountry,
+    localNumber: normalizedLocal,
+    e164,
+  }
+}
+function persistActiveStoreId(storeId: string, uid: string) {
+  persistActiveStoreIdForUser(uid, storeId)
+}
+function resolveOwnerName(user: User): string {
+  const displayName = user.displayName?.trim()
+  return displayName && displayName.length > 0 ? displayName : OWNER_NAME_FALLBACK
+}
+
+type ServerTimestampSentinel = ReturnType<typeof serverTimestamp>
+
+function getLegacyStoreBackfillKey(uid: string): string {
+  return `${LEGACY_STORE_BACKFILL_KEY_PREFIX}${uid}`
+}
+
+function hasCompletedLegacyStoreBackfill(uid: string): boolean {
+  if (typeof window === 'undefined') {
+    return true
+  }
+  try {
+    return window.localStorage.getItem(getLegacyStoreBackfillKey(uid)) === '1'
+  } catch (error) {
+    console.warn('[store] Failed to inspect legacy store backfill flag', error)
+    return true
+  }
+}
+
+function markLegacyStoreBackfillComplete(uid: string) {
+  if (typeof window === 'undefined') {
+    return
+  }
+  try {
+    window.localStorage.setItem(getLegacyStoreBackfillKey(uid), '1')
+  } catch (error) {
+    console.warn('[store] Failed to persist legacy store backfill flag', error)
+  }
+}
+
+function shouldAttemptLegacyStoreBackfill(uid: string): boolean {
+  return Boolean(uid) && !hasCompletedLegacyStoreBackfill(uid)
+}
+
+async function ensureLegacyStoreDoc(params: {
+  storeId: string
+  user: User
+  timestamp: ServerTimestampSentinel
+}) {
+  const { storeId, user, timestamp } = params
+  if (!storeId || !user.uid || !shouldAttemptLegacyStoreBackfill(user.uid)) {
+    return
+  }
+
+  let shouldMarkCompletion = false
+  try {
+    const storeRef = doc(db, 'stores', storeId)
+    const snapshot = await getDoc(storeRef)
+    if (!snapshot.exists()) {
+      await setDoc(
         storeRef,
         {
-          storeId: payload.storeId,
-          ownerId: mocks.auth.currentUser?.uid ?? null,
-          ownerName: payload.contact?.ownerName ?? null,
-          company: payload.contact?.company ?? null,
-          country: payload.contact?.country ?? null,
-          city: payload.contact?.city ?? null,
-          phoneCountryCode: payload.contact?.phoneCountryCode ?? null,
-          createdAt,
-          updatedAt,
+          storeId,
+          ownerId: user.uid,
+          ownerEmail: user.email ?? null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
         },
         { merge: true },
       )
-    })
+    }
+    shouldMarkCompletion = true
+  } catch (error) {
+    console.warn(`[store] Failed to backfill legacy store doc for "${storeId}"`, error)
+  }
 
-    window.localStorage.clear()
-    localStorageSetItemSpy = vi.spyOn(Storage.prototype, 'setItem')
-  })
+  if (shouldMarkCompletion) {
+    markLegacyStoreBackfillComplete(user.uid)
+  }
+}
 
-  afterEach(() => {
-    localStorageSetItemSpy.mockRestore()
-  })
+/** Ensure teamMembers/{uid} exists; optionally mirror to fixed ID. */
+async function upsertTeamMemberDocs(params: {
+  user: User
+  role: 'owner' | 'staff'
+  phone?: string | null
+  phoneCountryCode?: string | null
+  phoneLocalNumber?: string | null
+  company?: string | null
+  country?: string | null
+  city?: string | null
+  preferExisting?: boolean
+}) {
+  const {
+    user,
+    role,
+    phone = null,
+    phoneCountryCode = null,
+    phoneLocalNumber = null,
+    company = null,
+    country = null,
+    city = null,
+    preferExisting = true,
+  } = params
+  const uidRef = doc(db, 'teamMembers', user.uid)
+  const lastSeenAt = serverTimestamp()
 
-  it('surfaces signup errors without deleting the new account', async () => {
-    const user = userEvent.setup()
-    const { user: createdUser, deleteFn } = createTestUser()
-
-    mocks.createUserWithEmailAndPassword.mockImplementation(async () => {
-      mocks.auth.currentUser = createdUser
-      mocks.listeners.forEach(listener => listener(createdUser))
-      return { user: createdUser }
-    })
-
-    mocks.persistSession.mockRejectedValueOnce(new Error('Unable to persist session'))
-
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
-
-    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
-    await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
-
-    await act(async () => {
-      await user.click(screen.getByRole('tab', { name: /Sign up/i }))
-      await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.selectOptions(screen.getByLabelText(/Role/i), 'owner')
-      await user.type(screen.getByLabelText(/Company/i), 'Sedifex')
-      await user.type(screen.getByLabelText(/^Country$/i), ' United Kingdom ')
-      await user.type(screen.getByLabelText(/^City$/i), ' London ')
-      const dialingInput = screen.getByLabelText(/Country code/i)
-      await user.clear(dialingInput)
-      await user.type(dialingInput, ' 0044 ')
-      const phoneInput = screen.getByLabelText(/Phone/i)
-      await user.click(phoneInput)
-      await user.type(phoneInput, ' (555) 123-4567 ')
-      await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
-      await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
-      await user.click(screen.getByRole('button', { name: /Create account/i }))
-    })
-
-    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
-
-    expect(deleteFn).not.toHaveBeenCalled()
-
-    await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
-    expect(mocks.auth.currentUser).toBeNull()
-
-    expect(mocks.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ tone: 'error', message: 'Unable to persist session' }),
-    )
-    expect(localStorageSetItemSpy).not.toHaveBeenCalled()
-
-    await waitFor(() =>
-      expect(screen.getByRole('tab', { name: /Log in/i })).toHaveAttribute('aria-selected', 'true'),
-    )
-    expect(screen.queryByRole('button', { name: /Create account/i })).not.toBeInTheDocument()
-  })
-
-  it('creates team member and customer records after a successful signup', async () => {
-    const user = userEvent.setup()
-    const { user: createdUser } = createTestUser()
-
-    const storeId = 'sedifex-test-use'
-    const ownerDocKey = `teamMembers/${createdUser.uid}`
-    const storeDocKey = `stores/${storeId}`
-    const seededTeamMember = { seededField: 'team-seeded-value' }
-    const seededStore = { seededField: 'store-seeded-value' }
-
-    firestore.docDataByPath.set(ownerDocKey, { ...seededTeamMember })
-    firestore.docDataByPath.set(storeDocKey, { ...seededStore })
-
-    const originalGetDoc = firestore.getDocMock.getMockImplementation()
-    if (originalGetDoc) {
-      let shouldBypassStoreCheck = true
-      firestore.getDocMock.mockImplementation(async ref => {
-        if (shouldBypassStoreCheck && ref.path === storeDocKey) {
-          shouldBypassStoreCheck = false
-          return {
-            exists: () => false,
-            data: () => undefined,
-            get: () => undefined,
-          }
+  // Try to reuse existing storeId if present
+  if (preferExisting) {
+    const snap = await getDoc(uidRef)
+    if (snap.exists()) {
+      const existingStoreId = String(snap.get('storeId') || '')
+      if (existingStoreId) {
+        await setDoc(uidRef, { lastSeenAt }, { merge: true })
+        persistActiveStoreId(existingStoreId, user.uid)
+        // Optionally mirror to fixed doc for your analytics/admin
+        if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
+          await setDoc(
+            doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID),
+            { ...snap.data(), lastSeenAt, updatedAt: serverTimestamp() },
+            { merge: true },
+          )
         }
-        return originalGetDoc(ref)
-      })
+        return { storeId: existingStoreId, role: (snap.get('role') as 'owner' | 'staff') || role }
+      }
+    }
+  }
+
+  const storeId = await generateUniqueStoreId({
+    uid: user.uid,
+    company,
+    email: user.email ?? null,
+  })
+  const timestamp = serverTimestamp()
+  const payload = {
+    uid: user.uid,
+    email: user.email ?? null,
+    phone,
+    phoneCountryCode,
+    phoneLocalNumber,
+    role,
+    company: company ?? null,
+    country,
+    city,
+    storeId,
+    name: resolveOwnerName(user),
+    firstSignupEmail: (user.email ?? '').toLowerCase() || null,
+    invitedBy: user.uid,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    lastSeenAt,
+  }
+
+  await setDoc(uidRef, payload, { merge: true })
+
+  if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
+    await setDoc(doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID), payload, { merge: true })
+  }
+
+  await ensureLegacyStoreDoc({ storeId, user, timestamp })
+
+  persistActiveStoreId(storeId, user.uid)
+  return { storeId, role }
+}
+
+/** Optional seed helper kept for future use */
+type SeededDocument = { id: string; data: Record<string, unknown> }
+const TIMESTAMP_FIELD_KEYS = new Set(['createdAt', 'updatedAt', 'receivedAt'])
+function normalizeSeededDocumentData(data: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  Object.entries(data).forEach(([key, value]) => {
+    if (value === undefined) return
+    if (value === null) { result[key] = null; return }
+    if (TIMESTAMP_FIELD_KEYS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
+      result[key] = Timestamp.fromMillis(value); return
+    }
+    if (Array.isArray(value)) {
+      result[key] = value.map(item =>
+        item && typeof item === 'object' && !Array.isArray(item)
+          ? normalizeSeededDocumentData(item as Record<string, unknown>)
+          : item)
+      return
+    }
+    if (typeof value === 'object') {
+      result[key] = normalizeSeededDocumentData(value as Record<string, unknown>); return
+    }
+    result[key] = value
+  })
+  return result
+}
+
+/* ----------------------------- validation ----------------------------- */
+
+interface PasswordStrength {
+  isLongEnough: boolean
+  hasUppercase: boolean
+  hasLowercase: boolean
+  hasNumber: boolean
+  hasSymbol: boolean
+}
+function evaluatePasswordStrength(password: string): PasswordStrength {
+  return {
+    isLongEnough: password.length >= PASSWORD_MIN_LENGTH,
+    hasUppercase: /[A-Z]/.test(password),
+    hasLowercase: /[a-z]/.test(password),
+    hasNumber: /\d/.test(password),
+    hasSymbol: /[^A-Za-z0-9]/.test(password),
+  }
+}
+function getLoginValidationError(email: string, password: string): string | null {
+  if (!email) return 'Enter your email.'
+  if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
+  if (!password) return 'Enter your password.'
+  return null
+}
+function getSignupValidationError(
+  email: string,
+  password: string,
+  confirmPassword: string,
+  phone: string,
+  company: string,
+  country: string,
+  city: string,
+  dialingCode: string,
+): string | null {
+  if (!email) return 'Enter your email.'
+  if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
+  if (!password) return 'Create a password to continue.'
+  const s = evaluatePasswordStrength(password)
+  if (!s.isLongEnough) return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`
+  if (!s.hasUppercase) return 'Password must include an uppercase letter.'
+  if (!s.hasLowercase) return 'Password must include a lowercase letter.'
+  if (!s.hasNumber) return 'Password must include a number.'
+  if (!s.hasSymbol) return 'Password must include a symbol.'
+  if (!confirmPassword) return 'Confirm your password.'
+  if (password !== confirmPassword) return 'Passwords do not match.'
+  if (!phone) return 'Enter your phone number.'
+  if (!company.trim()) return 'Enter your company name.'
+  if (!country.trim()) return 'Enter your country.'
+  if (!city.trim()) return 'Enter your city.'
+  if (!dialingCode.trim()) return 'Enter your dialing code.'
+  return null
+}
+
+/* ----------------------------- UI helpers ----------------------------- */
+
+type QueueCompletedMessage = { type: 'QUEUE_REQUEST_COMPLETED'; requestType?: unknown }
+type QueueFailedMessage = { type: 'QUEUE_REQUEST_FAILED'; requestType?: unknown; error?: unknown }
+function isRecord(v: unknown): v is Record<string, unknown> { return typeof v === 'object' && v !== null }
+function isQueueCompletedMessage(v: unknown): v is QueueCompletedMessage { return isRecord(v) && (v as any).type === 'QUEUE_REQUEST_COMPLETED' }
+function isQueueFailedMessage(v: unknown): v is QueueFailedMessage { return isRecord(v) && (v as any).type === 'QUEUE_REQUEST_FAILED' }
+function getQueueRequestLabel(requestType: unknown): string { return requestType === 'receipt' ? 'stock receipt' : 'sale' }
+function normalizeQueueError(v: unknown): string | null { if (typeof v === 'string') { const t = v.trim(); if (t) return t } return null }
+
+/* --------------------------------- App --------------------------------- */
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(null)
+  const previousUidRef = useRef<string | null>(null)
+  const [isAuthReady, setIsAuthReady] = useState(false)
+
+  const [mode, setMode] = useState<AuthMode>('login')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+
+  // new fields
+  const [role, setRole] = useState<'owner' | 'staff'>('owner')
+  const [company, setCompany] = useState('')
+  const [country, setCountry] = useState('')
+  const [city, setCity] = useState('')
+  const [dialingCode, setDialingCode] = useState(DEFAULT_DIALING_CODE)
+  const [phone, setPhone] = useState('')
+  const [normalizedPhone, setNormalizedPhone] = useState('')
+
+  const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
+  const isLoading = status.tone === 'loading'
+  const { publish } = useToast()
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  const normalizedEmail = email.trim()
+  const normalizedPassword = password.trim()
+  const normalizedConfirmPassword = confirmPassword.trim()
+  const normalizedCompany = trimText(company)
+  const normalizedCountry = trimText(country)
+  const normalizedCity = trimText(city)
+  const normalizedDialingCode = trimText(dialingCode)
+
+  const strength = evaluatePasswordStrength(normalizedPassword)
+  const checklist = [
+    { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: strength.isLongEnough },
+    { id: 'uppercase', label: 'Includes an uppercase letter', passed: strength.hasUppercase },
+    { id: 'lowercase', label: 'Includes a lowercase letter', passed: strength.hasLowercase },
+    { id: 'number', label: 'Includes a number', passed: strength.hasNumber },
+    { id: 'symbol', label: 'Includes a symbol', passed: strength.hasSymbol },
+  ] as const
+  const meetsAll = checklist.every(c => c.passed)
+
+  const isSignupFormValid =
+    EMAIL_PATTERN.test(normalizedEmail) &&
+    normalizedPassword.length > 0 &&
+    meetsAll &&
+    normalizedConfirmPassword.length > 0 &&
+    normalizedPassword === normalizedConfirmPassword &&
+    normalizedPhone.length > 0 &&
+    normalizedCompany.length > 0 &&
+    normalizedCountry.length > 0 &&
+    normalizedCity.length > 0 &&
+    normalizedDialingCode.length > 0
+
+  const isLoginFormValid =
+    EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
+
+  const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
+
+  /* auth lifecycle */
+  useEffect(() => {
+    configureAuthPersistence(auth).catch(() => {})
+    const unsubscribe = onAuthStateChanged(auth, nextUser => {
+      const previousUid = previousUidRef.current
+
+      if (!nextUser) {
+        if (previousUid) {
+          clearActiveStoreIdForUser(previousUid)
+        }
+        clearLegacyActiveStoreId()
+      } else if (previousUid && previousUid !== nextUser.uid) {
+        clearActiveStoreIdForUser(previousUid)
+      }
+
+      previousUidRef.current = nextUser?.uid ?? null
+      setUser(nextUser)
+      setIsAuthReady(true)
+    })
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    if (!user) return
+    refreshSessionHeartbeat(user).catch(() => {})
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
+    const status = getOnboardingStatus(user.uid)
+    if (status === 'pending' && location.pathname !== '/onboarding') {
+      navigate('/onboarding', { replace: true })
+    }
+  }, [location.pathname, navigate, user])
+
+  useEffect(() => {
+    document.title = mode === 'login' ? 'Sedifex — Log in' : 'Sedifex — Sign up'
+  }, [mode])
+
+  /* sw queue notifications */
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data
+      if (!isRecord(data)) return
+      if (isQueueCompletedMessage(data)) {
+        const label = getQueueRequestLabel((data as any).requestType)
+        publish({ message: `Queued ${label} synced successfully.`, tone: 'success' })
+        return
+      }
+      if (isQueueFailedMessage(data)) {
+        const label = getQueueRequestLabel((data as any).requestType)
+        const detail = normalizeQueueError((data as any).error)
+        publish({
+          message: detail ? `We couldn't sync the queued ${label}. ${detail}` : `We couldn't sync the queued ${label}. Please try again.`,
+          tone: 'error',
+          duration: 8000,
+        })
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', handleMessage)
+    return () => navigator.serviceWorker.removeEventListener('message', handleMessage)
+  }, [publish])
+
+  async function persistOwnerSideDocs(
+    nextUser: User,
+    storeId: string,
+    phone: PhoneComposition,
+    location: { country: string | null; city: string | null; dialingCode: string | null },
+  ) {
+    // Optional: create a matching customers record
+    try {
+      const preferredDisplayName = nextUser.displayName?.trim() || (nextUser.email ?? '')
+      await setDoc(
+        doc(db, 'customers', nextUser.uid),
+        {
+          storeId,
+          name: preferredDisplayName,
+          displayName: preferredDisplayName,
+          email: (nextUser.email ?? '').toLowerCase(),
+          phone: phone.e164 || null,
+          phoneCountryCode: location.dialingCode ?? phone.dialingCode ?? null,
+          phoneLocalNumber: phone.localNumber || null,
+          country: location.country,
+          city: location.city,
+          status: 'active',
+          role: 'client',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      )
+    } catch (error) {
+      console.warn('[customers] Unable to upsert customer record', error)
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const sanitizedEmail = email.trim()
+    const sanitizedPassword = password.trim()
+    const sanitizedConfirmPassword = confirmPassword.trim()
+    const sanitizedCountry = trimText(country)
+    const sanitizedCity = trimText(city)
+    const sanitizedDialingCodeInput = trimText(dialingCode)
+    const phoneDetails = composePhoneNumber(sanitizedDialingCodeInput, phone)
+    const sanitizedPhone = phoneDetails.e164
+    const sanitizedCompany = trimText(company)
+
+    setEmail(sanitizedEmail)
+    setPassword(sanitizedPassword)
+    if (mode === 'signup') {
+      setConfirmPassword(sanitizedConfirmPassword)
+      setCountry(sanitizedCountry)
+      setCity(sanitizedCity)
+      setDialingCode(phoneDetails.dialingCode || sanitizedDialingCodeInput || DEFAULT_DIALING_CODE)
     }
 
-    mocks.createUserWithEmailAndPassword.mockImplementation(async () => {
-      mocks.auth.currentUser = createdUser
-      mocks.listeners.forEach(listener => listener(createdUser))
-      return { user: createdUser }
-    })
+    const validationError =
+      mode === 'login'
+        ? getLoginValidationError(sanitizedEmail, sanitizedPassword)
+        : getSignupValidationError(
+            sanitizedEmail,
+            sanitizedPassword,
+            sanitizedConfirmPassword,
+            sanitizedPhone,
+            sanitizedCompany,
+            sanitizedCountry,
+            sanitizedCity,
+            phoneDetails.dialingCode || sanitizedDialingCodeInput,
+          )
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
+    if (mode === 'signup') {
+      setPhone(phoneDetails.localNumber)
+      setNormalizedPhone(sanitizedPhone)
+      if (!sanitizedDialingCodeInput && !phoneDetails.dialingCode) {
+        setStatus({ tone: 'error', message: 'Enter your dialing code.' })
+        return
+      }
+      if (!sanitizedPhone) {
+        setStatus({ tone: 'error', message: 'Enter your phone number.' })
+        return
+      }
+    }
+
+    if (validationError) {
+      setStatus({ tone: 'error', message: validationError })
+      return
+    }
+
+    setStatus({ tone: 'loading', message: mode === 'login' ? 'Signing you in…' : 'Creating your account…' })
+
+    try {
+      if (mode === 'login') {
+        const { user: nextUser } = await signInWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
+        await persistSession(nextUser)
+
+        // Load or create team member doc (no sheet involved)
+        await upsertTeamMemberDocs({
+          user: nextUser,
+          role: 'owner', // fallback if missing — real role stored in Firestore
+          preferExisting: true,
+        })
+
+        setStatus({ tone: 'success', message: 'Welcome back! Redirecting…' })
+      } else {
+        const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
+
+        await persistSession(nextUser)
+
+        // Create team member + store record and refresh auth token before continuing
+        const storeId = await createInitialOwnerAndStore({
+          user: nextUser,
+          role,
+          company: sanitizedCompany,
+          email: sanitizedEmail,
+          country: sanitizedCountry,
+          city: sanitizedCity,
+          phoneCountryCode: phoneDetails.dialingCode || null,
+        })
+
+        try {
+          await nextUser.getIdToken(true)
+        } catch (error) {
+          console.warn('[auth] Unable to refresh ID token after signup', error)
+        }
+
+        const ownerName = resolveOwnerName(nextUser)
+        const activityTimestamp = serverTimestamp()
+        const teamMemberContactPayload = {
+          name: ownerName,
+          phone: sanitizedPhone || null,
+          phoneCountryCode: phoneDetails.dialingCode || null,
+          phoneLocalNumber: phoneDetails.localNumber || null,
+          firstSignupEmail: (nextUser.email ?? '').toLowerCase() || null,
+          company: sanitizedCompany || null,
+          country: sanitizedCountry || null,
+          city: sanitizedCity || null,
+          invitedBy: nextUser.uid,
+          lastSeenAt: activityTimestamp,
+          updatedAt: activityTimestamp,
+        }
+
+        await setDoc(doc(db, 'teamMembers', nextUser.uid), teamMemberContactPayload, { merge: true })
+
+        if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
+          await setDoc(
+            doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID),
+            {
+              ...teamMemberContactPayload,
+              uid: nextUser.uid,
+              storeId,
+              role,
+              email: nextUser.email ?? null,
+              name: ownerName,
+            },
+            { merge: true },
+          )
+        }
+
+        await afterSignupBootstrap({
+          storeId,
+          contact: {
+            phone: sanitizedPhone || null,
+            phoneCountryCode: phoneDetails.dialingCode || null,
+            phoneLocalNumber: phoneDetails.localNumber || null,
+            firstSignupEmail: (nextUser.email ?? '').toLowerCase() || null,
+            company: sanitizedCompany || null,
+            country: sanitizedCountry || null,
+            city: sanitizedCity || null,
+            ownerName,
+          },
+        })
+
+        // Optional additional doc for UX
+        await persistOwnerSideDocs(nextUser, storeId, phoneDetails, {
+          country: sanitizedCountry || null,
+          city: sanitizedCity || null,
+          dialingCode: phoneDetails.dialingCode || null,
+        })
+
+        setOnboardingStatus(nextUser.uid, 'pending')
+
+        // Keep the user signed in and move forward immediately
+        navigate('/onboarding', { replace: true })
+        setStatus({ tone: 'success', message: 'Welcome! Redirecting…' })
+      }
+
+      // Clear form fields
+      setPassword('')
+      setConfirmPassword('')
+      setPhone('')
+      setCompany('')
+      setCountry('')
+      setCity('')
+      setRole('owner')
+      setNormalizedPhone('')
+      setDialingCode(DEFAULT_DIALING_CODE)
+
+    } catch (err: unknown) {
+      setStatus({ tone: 'error', message: getErrorMessage(err) })
+    }
+  }
+
+  useEffect(() => {
+    if (!status.message) return
+    if (status.tone === 'success' || status.tone === 'error') {
+      publish({ tone: status.tone, message: status.message })
+    }
+  }, [publish, status.message, status.tone])
+
+  function handleModeChange(nextMode: AuthMode) {
+    setMode(nextMode)
+    setStatus({ tone: 'idle', message: '' })
+    setConfirmPassword('')
+    setPhone('')
+    setCompany('')
+    setCountry('')
+    setCity('')
+    setRole('owner')
+    setNormalizedPhone('')
+    setDialingCode(DEFAULT_DIALING_CODE)
+  }
+
+  const appStyle: React.CSSProperties = { minHeight: '100dvh' }
+
+  if (!isAuthReady) {
+    return (
+      <main className="app" style={appStyle}>
+        <div className="app__card">
+          <p className="form__hint">Checking your session…</p>
+        </div>
+      </main>
     )
+  }
 
-    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
-    await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
+  if (!user) {
+    const isSignup = mode === 'signup'
+    return (
+      <main className="app" style={appStyle}>
+        <div className="app__layout">
+          <div className="app__card">
+            <div className="app__brand">
+              <span className="app__logo">Sx</span>
+              <div>
+                <h1 className="app__title">Sedifex</h1>
+                <p className="app__tagline">Sell faster. <span className="app__highlight">Count smarter.</span></p>
+              </div>
+            </div>
 
-    await act(async () => {
-      await user.click(screen.getByRole('tab', { name: /Sign up/i }))
-      await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.selectOptions(screen.getByLabelText(/Role/i), 'owner')
-      await user.type(screen.getByLabelText(/Company/i), 'Sedifex')
-      await user.type(screen.getByLabelText(/^Country$/i), ' United Kingdom ')
-      await user.type(screen.getByLabelText(/^City$/i), ' London ')
-      const dialingInput = screen.getByLabelText(/Country code/i)
-      await user.clear(dialingInput)
-      await user.type(dialingInput, ' 0044 ')
-      const phoneInput = screen.getByLabelText(/Phone/i)
-      await user.click(phoneInput)
-      await user.type(phoneInput, ' (555) 123-4567 ')
-      await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
-      await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
-      await user.click(screen.getByRole('button', { name: /Create account/i }))
-    })
+            <div className="app__pill-group" role="list">
+              <span className="app__pill" role="listitem">Realtime visibility</span>
+              <span className="app__pill" role="listitem">Multi-location ready</span>
+              <span className="app__pill" role="listitem">Floor-friendly UI</span>
+            </div>
 
-    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
-    await waitFor(() => expect(access.afterSignupBootstrap).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(createdUser.getIdToken).toHaveBeenCalledWith(true))
-    const { docRefByPath, setDocMock } = firestore
-    const overrideDocKey = 'teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2'
-    const customerDocKey = `customers/${createdUser.uid}`
+            <p className="form__hint">
+              {isSignup
+                ? 'Create an account to start tracking sales and inventory in minutes.'
+                : 'Welcome back! Sign in to keep your stock moving.'}
+            </p>
 
-    const ownerDocRef = docRefByPath.get(ownerDocKey)
-    const overrideDocRef = docRefByPath.get(overrideDocKey)
-    const customerDocRef = docRefByPath.get(customerDocKey)
-    const storeDocRef = docRefByPath.get(storeDocKey)
+            <div className="toggle-group" role="tablist" aria-label="Authentication mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={!isSignup}
+                className={`toggle-button${!isSignup ? ' is-active' : ''}`}
+                onClick={() => handleModeChange('login')}
+                disabled={isLoading}
+              >
+                Log in
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={isSignup}
+                className={`toggle-button${isSignup ? ' is-active' : ''}`}
+                onClick={() => handleModeChange('signup')}
+                disabled={isLoading}
+              >
+                Sign up
+              </button>
+            </div>
 
-    expect(ownerDocRef).toBeDefined()
-    expect(overrideDocRef).toBeDefined()
-    expect(customerDocRef).toBeDefined()
-    expect(storeDocRef).toBeDefined()
+            <form className="form" onSubmit={handleSubmit} aria-busy={isLoading} noValidate>
+              <div className="form__field">
+                <label htmlFor="email">Email</label>
+                <input
+                  id="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  onBlur={() => setEmail(current => current.trim())}
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  required
+                  disabled={isLoading}
+                  inputMode="email"
+                  aria-invalid={email.length > 0 && !EMAIL_PATTERN.test(normalizedEmail)}
+                />
+              </div>
 
-    const ownerCalls = setDocMock.mock.calls.filter(([ref]) => ref === ownerDocRef)
-    expect(ownerCalls.length).toBeGreaterThanOrEqual(1)
-    const ownerInitialCall = ownerCalls[0]
-    const [, ownerInitialPayload, ownerInitialOptions] = ownerInitialCall
-    expect(ownerInitialPayload).toEqual(
-      expect.objectContaining({
-        uid: createdUser.uid,
-        storeId,
-        role: 'owner',
-        email: 'owner@example.com',
-        name: 'Owner account',
-        company: 'Sedifex',
-        country: 'United Kingdom',
-        city: 'London',
-        phoneCountryCode: '+44',
-        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
+              {isSignup && (
+                <>
+                  <div className="form__field">
+                    <label htmlFor="role">Role</label>
+                    <select
+                      id="role"
+                      value={role}
+                      onChange={e => setRole(e.target.value as 'owner' | 'staff')}
+                      disabled={isLoading}
+                    >
+                      <option value="owner">Owner</option>
+                      <option value="staff">Staff</option>
+                    </select>
+                    <p className="form__hint">We’ll use this to set your workspace permissions.</p>
+                  </div>
+
+                  <div className="form__field">
+                    <label htmlFor="company">Company</label>
+                    <input
+                      id="company"
+                      value={company}
+                      onChange={e => setCompany(e.target.value)}
+                      onBlur={() => setCompany(current => current.trim())}
+                      type="text"
+                      autoComplete="organization"
+                      placeholder="Acme Retail"
+                      required
+                      disabled={isLoading}
+                      aria-invalid={company.length > 0 && !normalizedCompany}
+                    />
+                  </div>
+
+                  <div className="form__field">
+                    <label htmlFor="country">Country</label>
+                    <input
+                      id="country"
+                      value={country}
+                      onChange={e => setCountry(e.target.value)}
+                      onBlur={() => setCountry(current => trimText(current))}
+                      type="text"
+                      autoComplete="country-name"
+                      placeholder="United States"
+                      required
+                      disabled={isLoading}
+                      aria-invalid={country.length > 0 && !normalizedCountry}
+                    />
+                  </div>
+
+                  <div className="form__field">
+                    <label htmlFor="city">City</label>
+                    <input
+                      id="city"
+                      value={city}
+                      onChange={e => setCity(e.target.value)}
+                      onBlur={() => setCity(current => trimText(current))}
+                      type="text"
+                      autoComplete="address-level2"
+                      placeholder="New York"
+                      required
+                      disabled={isLoading}
+                      aria-invalid={city.length > 0 && !normalizedCity}
+                    />
+                  </div>
+
+                  <div className="form__field">
+                    <label htmlFor="phone">Phone</label>
+                    <div className="form__phone-row">
+                      <div className="form__phone-country">
+                        <label className="visually-hidden" htmlFor="country-code">
+                          Country code
+                        </label>
+                        <input
+                          id="country-code"
+                          value={dialingCode}
+                          onChange={e => {
+                            const nextCode = e.target.value
+                            setDialingCode(nextCode)
+                            const composed = composePhoneNumber(nextCode, phone)
+                            setNormalizedPhone(composed.e164)
+                          }}
+                          onBlur={() =>
+                            setDialingCode(current => {
+                              const trimmed = trimText(current)
+                              const composed = composePhoneNumber(trimmed, phone)
+                              setNormalizedPhone(composed.e164)
+                              return composed.dialingCode || trimmed
+                            })
+                          }
+                          type="text"
+                          autoComplete="tel-country-code"
+                          inputMode="tel"
+                          placeholder="+1"
+                          required
+                          disabled={isLoading}
+                          aria-invalid={dialingCode.length > 0 && !normalizedDialingCode}
+                        />
+                      </div>
+                      <input
+                        id="phone"
+                        value={phone}
+                        onChange={e => {
+                          const next = e.target.value
+                          setPhone(next)
+                          const composed = composePhoneNumber(dialingCode, next)
+                          setNormalizedPhone(composed.e164)
+                        }}
+                        onBlur={() =>
+                          setPhone(current => {
+                            const trimmed = current.trim()
+                            const composed = composePhoneNumber(dialingCode, trimmed)
+                            setNormalizedPhone(composed.e164)
+                            return composed.localNumber
+                          })
+                        }
+                        type="tel"
+                        autoComplete="tel"
+                        inputMode="tel"
+                        placeholder="(555) 123-4567"
+                        required
+                        disabled={isLoading}
+                        aria-invalid={phone.length > 0 && normalizedPhone.length === 0}
+                        aria-describedby="phone-hint"
+                      />
+                    </div>
+                    <p className="form__hint" id="phone-hint">
+                      We’ll use this to tailor your onboarding.
+                    </p>
+                  </div>
+                </>
+              )}
+
+              <div className="form__field">
+                <label htmlFor="password">Password</label>
+                <input
+                  id="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  onBlur={() => setPassword(current => current.trim())}
+                  type="password"
+                  autoComplete={isSignup ? 'new-password' : 'current-password'}
+                  placeholder="Use a strong password"
+                  required
+                  disabled={isLoading}
+                  aria-invalid={isSignup && normalizedPassword.length > 0 && !meetsAll}
+                  aria-describedby={isSignup ? 'password-guidelines' : undefined}
+                />
+                {isSignup && (
+                  <ul className="form__hint-list" id="password-guidelines">
+                    {[
+                      { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: strength.isLongEnough },
+                      { id: 'uppercase', label: 'Includes an uppercase letter', passed: strength.hasUppercase },
+                      { id: 'lowercase', label: 'Includes a lowercase letter', passed: strength.hasLowercase },
+                      { id: 'number', label: 'Includes a number', passed: strength.hasNumber },
+                      { id: 'symbol', label: 'Includes a symbol', passed: strength.hasSymbol },
+                    ].map(item => (
+                      <li key={item.id} data-complete={item.passed}>
+                        <span className={`form__hint-indicator${item.passed ? ' is-valid' : ''}`}>
+                          {item.passed ? '✓' : '•'}
+                        </span>
+                        {item.label}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {isSignup && (
+                <div className="form__field">
+                  <label htmlFor="confirm-password">Confirm password</label>
+                  <input
+                    id="confirm-password"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    onBlur={() => setConfirmPassword(current => current.trim())}
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Re-enter your password"
+                    required
+                    disabled={isLoading}
+                    aria-invalid={
+                      normalizedConfirmPassword.length > 0 &&
+                      normalizedPassword !== normalizedConfirmPassword
+                    }
+                    aria-describedby="confirm-password-hint"
+                  />
+                  <p className="form__hint" id="confirm-password-hint">
+                    Must match the password exactly.
+                  </p>
+                </div>
+              )}
+
+              <button className="primary-button" type="submit" disabled={isSubmitDisabled}>
+                {isLoading
+                  ? isSignup ? 'Creating account…' : 'Signing in…'
+                  : isSignup ? 'Create account' : 'Log in'}
+              </button>
+            </form>
+
+            {status.tone !== 'idle' && status.message && (
+              <p
+                className={`status status--${status.tone}`}
+                role={status.tone === 'error' ? 'alert' : 'status'}
+                aria-live={status.tone === 'error' ? 'assertive' : 'polite'}
+              >
+                {status.message}
+              </p>
+            )}
+          </div>
+
+          <aside className="app__visual" aria-hidden="true">
+            <img src={LOGIN_IMAGE_URL} alt="Team members organizing inventory packages in a warehouse" loading="lazy" />
+            <div className="app__visual-overlay" />
+            <div className="app__visual-caption">
+              <span className="app__visual-pill">Operations snapshot</span>
+              <h2>Stay synced from the floor to finance</h2>
+              <p>
+                <Link className="app__visual-link" to="/sell">Live sales</Link>,{' '}
+                <Link className="app__visual-link" to="/products">inventory alerts</Link>, and{' '}
+                <Link className="app__visual-link" to="/close-day">smart counts</Link>{' '}
+                help your whole team stay aligned from any device.
+              </p>
+            </div>
+          </aside>
+        </div>
+
+        <section className="app__features" aria-label="Sedifex workspace pages">
+          <header className="app__features-header">
+            <h2>Explore the workspace</h2>
+            <p>Every Sedifex page is built to keep retail operations synchronized—from the sales floor to finance.</p>
+          </header>
+          <div className="app__features-grid" role="list">
+            {[
+              { path: '/products', name: 'Products', description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.' },
+              { path: '/sell', name: 'Sell', description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.' },
+              { path: '/receive', name: 'Receive', description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.' },
+              { path: '/customers', name: 'Customers', description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.' },
+              { path: '/close-day', name: 'Close Day', description: 'Tie out cash, settle registers, and share end-of-day reports with finance in one view.' },
+            ].map(feature => (
+              <Link key={feature.path} className="feature-card" to={feature.path} role="listitem" aria-label={`Open the ${feature.name} page`}>
+                <div className="feature-card__body">
+                  <h3>{feature.name}</h3>
+                  <p>{feature.description}</p>
+                </div>
+                <span className="feature-card__cta" aria-hidden="true">Visit {feature.name}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        <section className="app__info-grid" aria-labelledby="app-info-heading">
+          <h2 id="app-info-heading">Why retailers choose Sedifex</h2>
+          <article className="info-card">
+            <h3>About Sedifex</h3>
+            <p>
+              Sedifex keeps fast-moving retailers aligned with a connected operating system for sales, inventory,
+              and store communication. We work with multi-location teams that need reliable insights without the
+              spreadsheets.
+            </p>
+            <p className="info-card__caption">Headquartered in Austin with teams across North America.</p>
+          </article>
+          <article className="info-card">
+            <h3>Mission &amp; values</h3>
+            <p>We believe every retail team deserves data they can trust and workflows that reduce busywork.</p>
+            <ul className="info-card__list">
+              <li>Give operators clarity in the moment they need to act.</li>
+              <li>Design software that works beautifully on any device in the store.</li>
+              <li>Earn trust with transparent pricing and accountable support.</li>
+            </ul>
+          </article>
+          <article className="info-card">
+            <h3>Implementation &amp; support</h3>
+            <p>
+              Onboarding specialists migrate your data, train your team, and monitor adoption milestones so you can
+              launch with confidence.
+            </p>
+            <ul className="info-card__list">
+              <li>Guided setup checklist and go-live review.</li>
+              <li>Role-based training sessions with recordings.</li>
+              <li>
+                Dedicated support channel with{' '}
+                <span aria-hidden="true">&lt;24 hr</span>
+                <span className="visually-hidden">under twenty-four hour</span> response.
+              </li>
+            </ul>
+            <a className="info-card__cta" href="mailto:hello@sedifex.com">Talk with our team</a>
+          </article>
+          <article className="info-card">
+            <h3>Security &amp; reliability</h3>
+            <p>
+              Enterprise-grade authentication, audit trails, and automated backups protect every transaction and
+              keep your data resilient.
+            </p>
+            <p>
+              Sedifex is hosted on SOC 2 compliant infrastructure with regional redundancy and role-based access
+              controls.
+            </p>
+          </article>
+        </section>
+      </main>
     )
-    expect(ownerInitialOptions).toEqual({ merge: true })
+  }
 
-    const ownerContactCall = ownerCalls.find(([, payload]) =>
-      Boolean((payload as Record<string, unknown>).phone),
-    )
-    expect(ownerContactCall).toBeDefined()
-    const [, ownerContactPayload, ownerContactOptions] = ownerContactCall!
-    expect(ownerContactPayload).toEqual(
-      expect.objectContaining({
-        name: 'Owner account',
-        company: 'Sedifex',
-        country: 'United Kingdom',
-        city: 'London',
-        phone: '+445551234567',
-        phoneCountryCode: '+44',
-        phoneLocalNumber: '5551234567',
-        invitedBy: createdUser.uid,
-        firstSignupEmail: 'owner@example.com',
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        lastSeenAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
-    )
-    expect(ownerContactOptions).toEqual({ merge: true })
+  return (
+    <AuthUserContext.Provider value={user}>
+      <Outlet />
+    </AuthUserContext.Provider>
+  )
+}
 
-    const overrideCall = setDocMock.mock.calls.find(([ref]) => ref === overrideDocRef)
-    expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
+/* ------------------------------ error text ------------------------------ */
 
-    const customerCall = setDocMock.mock.calls.find(([ref]) => ref === customerDocRef)
-    expect(customerCall).toBeDefined()
-    const [, customerPayload, customerOptions] = customerCall!
-    expect(customerPayload).toEqual(
-      expect.objectContaining({
-        storeId,
-        name: 'owner@example.com',
-        displayName: 'owner@example.com',
-        email: 'owner@example.com',
-        phone: '+445551234567',
-        phoneCountryCode: '+44',
-        phoneLocalNumber: '5551234567',
-        country: 'United Kingdom',
-        city: 'London',
-        status: 'active',
-        role: 'client',
-        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
-    )
-    expect(customerOptions).toEqual({ merge: true })
-
-    const storeCalls = setDocMock.mock.calls.filter(([ref]) => ref === storeDocRef)
-    expect(storeCalls.length).toBeGreaterThanOrEqual(1)
-    const storeInitialCall = storeCalls[0]
-    const [, storeInitialPayload, storeInitialOptions] = storeInitialCall
-    expect(storeInitialPayload).toEqual(
-      expect.objectContaining({
-        storeId,
-        ownerId: createdUser.uid,
-        ownerEmail: 'owner@example.com',
-        company: 'Sedifex',
-        country: 'United Kingdom',
-        city: 'London',
-        phoneCountryCode: '+44',
-        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
-    )
-    expect(storeInitialOptions).toEqual({ merge: true })
-
-    const storeEnrichedCall = storeCalls.find(([, payload]) =>
-      (payload as Record<string, unknown>).ownerName !== undefined,
-    )
-    expect(storeEnrichedCall).toBeDefined()
-    const [, storeEnrichedPayload, storeEnrichedOptions] = storeEnrichedCall!
-    expect(storeEnrichedPayload).toEqual(
-      expect.objectContaining({
-        storeId,
-        ownerId: createdUser.uid,
-        ownerName: 'Owner account',
-        company: 'Sedifex',
-        country: 'United Kingdom',
-        city: 'London',
-        phoneCountryCode: '+44',
-        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
-    )
-    expect(storeEnrichedOptions).toEqual({ merge: true })
-
-    const mergedOwnerData = firestore.docDataByPath.get(ownerDocKey)
-    expect(mergedOwnerData).toEqual(
-      expect.objectContaining({
-        ...seededTeamMember,
-        uid: createdUser.uid,
-        storeId,
-        name: 'Owner account',
-        company: 'Sedifex',
-        country: 'United Kingdom',
-        city: 'London',
-        phone: '+445551234567',
-        phoneCountryCode: '+44',
-        phoneLocalNumber: '5551234567',
-      }),
-    )
-
-    const mergedStoreData = firestore.docDataByPath.get(storeDocKey)
-    expect(mergedStoreData).toEqual(
-      expect.objectContaining({
-        ...seededStore,
-        storeId,
-        ownerId: createdUser.uid,
-        company: 'Sedifex',
-        country: 'United Kingdom',
-        city: 'London',
-        phoneCountryCode: '+44',
-      }),
-    )
-
-    expect(access.afterSignupBootstrap).toHaveBeenCalledWith({
-      storeId,
-      contact: {
-        phone: '+445551234567',
-        phoneCountryCode: '+44',
-        phoneLocalNumber: '5551234567',
-        firstSignupEmail: 'owner@example.com',
-        company: 'Sedifex',
-        country: 'United Kingdom',
-        city: 'London',
-        ownerName: 'Owner account',
-      },
-    })
-    await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
-    expect(mocks.auth.currentUser).toBeNull()
-
-    expect(mocks.publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tone: 'success',
-        message: expect.stringMatching(/log in to continue/i),
-      }),
-    )
-    const storageKey = getActiveStoreStorageKey(createdUser.uid)
-    expect(localStorageSetItemSpy).toHaveBeenCalledWith(storageKey, storeId)
-    expect(window.localStorage.getItem(storageKey)).toBeNull()
-    await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /Create account/i })).not.toBeInTheDocument(),
-    )
-  })
-
-  it('creates a team member profile when logging in without an existing doc', async () => {
-    const user = userEvent.setup()
-    const { user: existingUser } = createTestUser()
-
-    mocks.signInWithEmailAndPassword.mockImplementation(async () => {
-      mocks.auth.currentUser = existingUser
-      return { user: existingUser }
-    })
-
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
-
-    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
-    await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
-
-    await act(async () => {
-      await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
-      await user.click(screen.getByRole('button', { name: /Log in/i }))
-    })
-
-    await waitFor(() => expect(mocks.signInWithEmailAndPassword).toHaveBeenCalled())
-    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
-
-    const storeId = 'owner-example-com-test-use'
-    const { setDocMock } = firestore
-
-    const profileCall = setDocMock.mock.calls.find(
-      ([ref]) => (ref as { path?: string } | undefined)?.path === `teamMembers/${existingUser.uid}`,
-    )
-    expect(profileCall).toBeDefined()
-    const [, profilePayload, profileOptions] = profileCall!
-    expect(profilePayload).toEqual(
-      expect.objectContaining({
-        uid: existingUser.uid,
-        storeId,
-        role: 'owner',
-      }),
-    )
-    expect(profileOptions).toEqual({ merge: true })
-
-    const overrideCall = setDocMock.mock.calls.find(
-      ([ref]) => (ref as { path?: string } | undefined)?.path === 'teamMembers/l8Rbmym8aBVMwL6NpZHntjBHmCo2',
-    )
-    expect(overrideCall).toBeDefined()
-    expect(overrideCall?.[1]).toEqual(expect.objectContaining({ storeId }))
-
-    const storeCall = setDocMock.mock.calls.find(
-      ([ref]) => (ref as { path?: string } | undefined)?.path === `stores/${storeId}`,
-    )
-    expect(storeCall).toBeDefined()
-    const [, storePayload, storeOptions] = storeCall!
-    expect(storePayload).toEqual(
-      expect.objectContaining({
-        storeId,
-        ownerId: existingUser.uid,
-        ownerEmail: 'owner@example.com',
-        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
-    )
-    expect(storeOptions).toEqual({ merge: true })
-
-    const storageKey = getActiveStoreStorageKey(existingUser.uid)
-    expect(localStorageSetItemSpy).toHaveBeenCalledWith(storageKey, storeId)
-    expect(window.localStorage.getItem(storageKey)).toBe(storeId)
-    const backfillKey = 'legacy-store-backfill/test-user'
-    expect(localStorageSetItemSpy).toHaveBeenCalledWith(backfillKey, '1')
-    expect(window.localStorage.getItem(backfillKey)).toBe('1')
-    expect(mocks.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ tone: 'success', message: expect.stringMatching(/Welcome back/i) }),
-    )
-  })
-})
-
-describe('generateUniqueStoreId', () => {
-  beforeEach(() => {
-    firestore.reset()
-    window.localStorage.clear()
-  })
-
-  it('produces distinct IDs when the preferred slug is already owned by another user', async () => {
-    const firstUid = 'duplicate-uid-1234'
-    const secondUid = 'duplicate_uid_1234'
-
-    const firstStoreId = await generateUniqueStoreId({
-      uid: firstUid,
-      company: 'Sedifex',
-      email: 'owner-one@example.com',
-    })
-    expect(firstStoreId).toBe('sedifex-duplicat')
-    expect(window.localStorage.getItem(getActiveStoreStorageKey(firstUid))).toBe(firstStoreId)
-    firestore.docDataByPath.set(`stores/${firstStoreId}`, { ownerId: firstUid })
-
-    const secondStoreId = await generateUniqueStoreId({
-      uid: secondUid,
-      company: 'Sedifex',
-      email: 'owner-two@example.com',
-    })
-
-    expect(secondStoreId).toBe('sedifex-duplicat-2')
-    expect(secondStoreId).not.toBe(firstStoreId)
-    expect(window.localStorage.getItem(getActiveStoreStorageKey(secondUid))).toBe(secondStoreId)
-    expect(window.localStorage.getItem(getActiveStoreStorageKey(firstUid))).toBe(firstStoreId)
-  })
-
-  it('reuses the slug when the existing store belongs to the same user', async () => {
-    const uid = 'duplicate-uid-1234'
-    const storeId = await generateUniqueStoreId({ uid, company: 'Sedifex', email: 'owner@example.com' })
-    expect(window.localStorage.getItem(getActiveStoreStorageKey(uid))).toBe(storeId)
-    firestore.docDataByPath.set(`stores/${storeId}`, { ownerId: uid })
-
-    const nextStoreId = await generateUniqueStoreId({
-      uid,
-      company: 'Sedifex',
-      email: 'owner@example.com',
-    })
-
-    expect(nextStoreId).toBe(storeId)
-    expect(window.localStorage.getItem(getActiveStoreStorageKey(uid))).toBe(storeId)
-  })
-})
+function getErrorMessage(error: unknown): string {
+  if (error instanceof FirebaseError) {
+    const code = error.code || ''
+    switch (code) {
+      case 'auth/invalid-credential':
+      case 'auth/wrong-password':
+      case 'auth/user-not-found':
+        return 'Incorrect email or password.'
+      case 'auth/too-many-requests':
+        return 'Too many attempts. Please wait a moment and try again.'
+      case 'auth/network-request-failed':
+        return 'Network error. Please check your connection and try again.'
+      case 'auth/email-already-in-use':
+        return 'An account already exists with this email.'
+      case 'auth/weak-password':
+        return 'Please choose a stronger password. It must be at least 8 characters and include uppercase, lowercase, number, and symbol.'
+      default:
+        return (error as any).message || 'Something went wrong. Please try again.'
+    }
+  }
+  if (error instanceof Error) return error.message || 'Something went wrong. Please try again.'
+  if (typeof error === 'string') return error
+  return 'Something went wrong. Please try again.'
+}
