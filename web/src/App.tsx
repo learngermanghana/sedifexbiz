@@ -324,7 +324,6 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState('')
 
   // new fields
-  const [role, setRole] = useState<'owner' | 'staff'>('owner')
   const [company, setCompany] = useState('')
   const [country, setCountry] = useState('')
   const [city, setCity] = useState('')
@@ -547,7 +546,6 @@ export default function App() {
         // 1) Create the store and get the id
         const storeId = await createInitialOwnerAndStore({
           user: nextUser,
-          role,
           company: sanitizedCompany,
           email: sanitizedEmail,
           country: sanitizedCountry,
@@ -564,7 +562,7 @@ export default function App() {
             uid: nextUser.uid,
             email: (nextUser.email ?? '').toLowerCase(),
             name: ownerName,
-            role,            // 'owner' | 'staff'
+            role: 'owner',
             storeId,         // REQUIRED
             invitedBy: nextUser.uid,
             createdAt: now,
@@ -582,7 +580,7 @@ export default function App() {
               uid: nextUser.uid,
               email: (nextUser.email ?? '').toLowerCase(),
               name: ownerName,
-              role,
+              role: 'owner',
               storeId,
               invitedBy: nextUser.uid,
               updatedAt: serverTimestamp(),
@@ -650,7 +648,6 @@ export default function App() {
       setCompany('')
       setCountry('')
       setCity('')
-      setRole('owner')
       setNormalizedPhone('')
       setDialingCode(DEFAULT_DIALING_CODE)
 
@@ -684,7 +681,6 @@ export default function App() {
     setCompany('')
     setCountry('')
     setCity('')
-    setRole('owner')
     setNormalizedPhone('')
     setDialingCode(DEFAULT_DIALING_CODE)
   }
@@ -771,17 +767,7 @@ export default function App() {
               {isSignup && (
                 <>
                   <div className="form__field">
-                    <label htmlFor="role">Role</label>
-                    <select
-                      id="role"
-                      value={role}
-                      onChange={e => setRole(e.target.value as 'owner' | 'staff')}
-                      disabled={isLoading}
-                    >
-                      <option value="owner">Owner</option>
-                      <option value="staff">Staff</option>
-                    </select>
-                    <p className="form__hint">We’ll use this to set your workspace permissions.</p>
+                    <p className="form__hint">We’ll set you up as the workspace owner.</p>
                   </div>
 
                   <div className="form__field">
