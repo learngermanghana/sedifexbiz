@@ -1,5 +1,8 @@
+rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
     function getMembership() {
       return request.auth != null
         ? get(/databases/$(database)/documents/teamMembers/$(request.auth.uid))
@@ -71,27 +74,24 @@ service cloud.firestore {
     }
 
     function canReadStoreDocument() {
-      let member = getMembership();
-      return membershipExists(member) && resourceMatchesStore(member);
+      return membershipExists(getMembership()) && resourceMatchesStore(getMembership());
     }
 
     function canOwnerModifyStoreDocument() {
-      let member = getMembership();
-      return membershipExists(member)
-        && isOwner(member)
+      return membershipExists(getMembership())
+        && isOwner(getMembership())
         && (
-          (request.resource == null && resourceMatchesStore(member))
-          || requestMatchesStore(member)
+          (request.resource == null && resourceMatchesStore(getMembership()))
+          || requestMatchesStore(getMembership())
         );
     }
 
     function canStaffModifyStoreDocument() {
-      let member = getMembership();
-      return membershipExists(member)
-        && hasStaffRole(member)
+      return membershipExists(getMembership())
+        && hasStaffRole(getMembership())
         && (
-          (request.resource == null && resourceMatchesStore(member))
-          || requestMatchesStore(member)
+          (request.resource == null && resourceMatchesStore(getMembership()))
+          || requestMatchesStore(getMembership())
         );
     }
 
@@ -102,10 +102,9 @@ service cloud.firestore {
         && (
           request.auth.uid == memberId
           || (
-            let requester = getMembership();
-            membershipExists(requester)
-              && isOwner(requester)
-              && matchesMembershipStore(requester, storeIdFromData(resource.data))
+            membershipExists(getMembership())
+              && isOwner(getMembership())
+              && matchesMembershipStore(getMembership(), storeIdFromData(resource.data))
           )
         );
 
@@ -115,10 +114,9 @@ service cloud.firestore {
         && requestHasValidRole()
         && (
           (
-            let requester = getMembership();
-            membershipExists(requester)
-              && isOwner(requester)
-              && matchesMembershipStore(requester, storeIdFromData(request.resource.data))
+            membershipExists(getMembership())
+              && isOwner(getMembership())
+              && matchesMembershipStore(getMembership(), storeIdFromData(request.resource.data))
           )
           || (
             request.auth.uid == memberId
@@ -132,40 +130,33 @@ service cloud.firestore {
         && storeIdFromData(request.resource.data) == storeIdFromData(resource.data)
         && requestHasValidRole()
         && (
-          let requester = getMembership();
-          membershipExists(requester)
-            && isOwner(requester)
-            && matchesMembershipStore(requester, storeIdFromData(resource.data))
+          membershipExists(getMembership())
+            && isOwner(getMembership())
+            && matchesMembershipStore(getMembership(), storeIdFromData(resource.data))
         );
 
       allow delete: if request.auth != null
         && resource != null
         && (
-          let requester = getMembership();
-          membershipExists(requester)
-            && isOwner(requester)
-            && matchesMembershipStore(requester, storeIdFromData(resource.data))
+          membershipExists(getMembership())
+            && isOwner(getMembership())
+            && matchesMembershipStore(getMembership(), storeIdFromData(resource.data))
         );
     }
 
     match /stores/{storeId} {
       allow read: if (
-        let requester = getMembership();
-        membershipExists(requester)
-          && matchesMembershipStore(requester, storeId)
+        membershipExists(getMembership())
+          && matchesMembershipStore(getMembership(), storeId)
       );
 
       allow write: if (
-        let requester = getMembership();
-        membershipExists(requester)
-          && isOwner(requester)
-          && matchesMembershipStore(requester, storeId)
+        membershipExists(getMembership())
+          && isOwner(getMembership())
+          && matchesMembershipStore(getMembership(), storeId)
           && (
             (request.resource == null && resource != null && storeIdFromData(resource.data) == storeId)
-            || (
-              request.resource != null
-              && storeIdFromData(request.resource.data) == storeId
-            )
+            || (request.resource != null && storeIdFromData(request.resource.data) == storeId)
           )
       );
 
