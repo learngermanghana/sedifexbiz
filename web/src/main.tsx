@@ -13,6 +13,7 @@ import Customers from './pages/Customers'
 import Onboarding from './pages/Onboarding'
 import Today from './pages/Today'
 import AccountOverview from './pages/AccountOverview'
+import Gate from './pages/Gate'
 import { ToastProvider } from './components/ToastProvider'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { ActiveStoreProvider } from './context/ActiveStoreProvider'
@@ -26,15 +27,15 @@ const router = createHashRouter([
       </SheetAccessGuard>
     ),
     children: [
-      { index: true, element: <Shell><Dashboard /></Shell> },
-      { path: 'today',    element: <Shell><Today /></Shell> },
-      { path: 'products',  element: <Shell><Products /></Shell> },
-      { path: 'sell',      element: <Shell><Sell /></Shell> },
-      { path: 'receive',   element: <Shell><Receive /></Shell> },
-      { path: 'customers', element: <Shell><Customers /></Shell> },
-      { path: 'close-day', element: <Shell><CloseDay /></Shell> },
+      { index: true, element: <Shell><Gate><Dashboard /></Gate></Shell> },
+      { path: 'today',    element: <Shell><Gate><Today /></Gate></Shell> },
+      { path: 'products',  element: <Shell><Gate><Products /></Gate></Shell> },
+      { path: 'sell',      element: <Shell><Gate><Sell /></Gate></Shell> },
+      { path: 'receive',   element: <Shell><Gate><Receive /></Gate></Shell> },
+      { path: 'customers', element: <Shell><Gate><Customers /></Gate></Shell> },
+      { path: 'close-day', element: <Shell><Gate><CloseDay /></Gate></Shell> },
       { path: 'onboarding', element: <Shell><Onboarding /></Shell> },
-      { path: 'account',   element: <Shell><AccountOverview /></Shell> },
+      { path: 'account',   element: <Shell><Gate><AccountOverview /></Gate></Shell> },
     ],
   },
 ])
