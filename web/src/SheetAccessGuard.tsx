@@ -41,6 +41,42 @@ function snapshotFromData(data: Record<string, unknown> | undefined): TeamMember
   return { storeId, status, contractStatus }
 }
 
+const MEMBERSHIP_RETRY_ATTEMPTS = 3
+const MEMBERSHIP_RETRY_DELAY_MS = 1000
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+type ActiveTeamMemberSnapshot = TeamMemberSnapshot & { storeId: string }
+
+async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMemberSnapshot> {
+  let lastSnapshot: TeamMemberSnapshot | null = null
+
+  for (let attempt = 0; attempt < MEMBERSHIP_RETRY_ATTEMPTS; attempt++) {
+    const snapshot = await loadTeamMember(user)
+    lastSnapshot = snapshot
+
+    if (snapshot.storeId && isWorkspaceActive(snapshot)) {
+      return { ...snapshot, storeId: snapshot.storeId }
+    }
+
+    if (attempt < MEMBERSHIP_RETRY_ATTEMPTS - 1) {
+      await delay(MEMBERSHIP_RETRY_DELAY_MS)
+    }
+  }
+
+  if (!lastSnapshot || !lastSnapshot.storeId) {
+    throw new Error('We could not find a workspace assignment for this account.')
+  }
+
+  if (!isWorkspaceActive(lastSnapshot)) {
+    throw new Error('Your Sedifex workspace contract is not active.')
+  }
+
+  throw new Error('Access denied.')
+}
+
 async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
   const uidRef = doc(db, 'teamMembers', user.uid)
   const uidSnapshot = await getDoc(uidRef)
@@ -89,36 +125,61 @@ export default function SheetAccessGuard({ children }: { children: React.ReactNo
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user: User | null) => {
-      if (!user) {
-        setError(null)
-        setReady(true)
-        return
-      }
+    let isMounted = true
+    let currentRequest = 0
 
-      try {
-        setError(null)
-        const member = await loadTeamMember(user)
-        if (!member.storeId) {
-          throw new Error('We could not find a workspace assignment for this account.')
+    const unsubscribe = onAuthStateChanged(auth, (user: User | null) => {
+      currentRequest += 1
+      const requestId = currentRequest
+
+      const run = async () => {
+        if (!user) {
+          if (!isMounted || requestId !== currentRequest) {
+            return
+          }
+          setError(null)
+          setReady(true)
+          return
         }
 
-        if (!isWorkspaceActive(member)) {
-          throw new Error('Your Sedifex workspace contract is not active.')
+        if (!isMounted || requestId !== currentRequest) {
+          return
         }
 
-        persistActiveStoreIdForUser(user.uid, member.storeId)
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : 'Access denied.'
-        setError(message)
-        await signOut(auth)
-        clearActiveStoreIdForUser(user.uid)
-      } finally {
-        setReady(true)
+        setReady(false)
+        setError(null)
+
+        try {
+          const member = await loadActiveTeamMemberWithRetries(user)
+          if (!isMounted || requestId !== currentRequest) {
+            return
+          }
+
+          persistActiveStoreIdForUser(user.uid, member.storeId)
+          setError(null)
+        } catch (e: unknown) {
+          if (!isMounted || requestId !== currentRequest) {
+            return
+          }
+
+          const message = e instanceof Error ? e.message : 'Access denied.'
+          setError(message)
+          await signOut(auth)
+          clearActiveStoreIdForUser(user.uid)
+        } finally {
+          if (isMounted && requestId === currentRequest) {
+            setReady(true)
+          }
+        }
       }
+
+      void run()
     })
 
-    return () => unsubscribe()
+    return () => {
+      isMounted = false
+      unsubscribe()
+    }
   }, [])
 
   if (!ready) return <p>Checking workspace access…</p>
