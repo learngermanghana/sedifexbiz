@@ -658,13 +658,14 @@ export default function App() {
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
     } finally {
+      // Ensure signup does NOT leave the user logged in
       if (createdSignupUser) {
         try {
           await signOut(auth)
         } catch (signOutError) {
           console.warn('[auth] Failed to sign out after signup cleanup', signOutError)
         }
-        setMode('login')
+        setMode('login') // switch UI to Login
       }
     }
   }
