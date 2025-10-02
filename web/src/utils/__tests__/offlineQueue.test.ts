@@ -7,7 +7,7 @@ vi.mock('../../config/firebaseEnv', () => ({
     projectId: 'demo-project',
     storageBucket: 'demo-project.appspot.com',
     appId: 'test-app-id',
-    functionsRegion: 'us-central1',
+    functionsRegion: 'europe-west1',
   },
 }))
 
@@ -19,6 +19,7 @@ describe('offlineQueue', () => {
   const originalNavigator = globalThis.navigator
   let postMessageMock: ReturnType<typeof vi.fn>
   let queueCallableRequest: (typeof import('../offlineQueue'))['queueCallableRequest']
+  let getCallableEndpoint: (typeof import('../offlineQueue'))['getCallableEndpoint']
 
   beforeEach(async () => {
     vi.resetModules()
@@ -37,7 +38,7 @@ describe('offlineQueue', () => {
       writable: true,
     })
 
-    ;({ queueCallableRequest } = await import('../offlineQueue'))
+    ;({ queueCallableRequest, getCallableEndpoint } = await import('../offlineQueue'))
   })
 
   afterEach(() => {
@@ -59,5 +60,14 @@ describe('offlineQueue', () => {
     expect(queued).toBe(true)
     const firstMessage = postMessageMock.mock.calls[0]?.[0]
     expect(firstMessage?.payload?.requestType).toBe('sale')
+    expect(firstMessage?.payload?.endpoint).toBe(
+      'https://europe-west1-demo-project.cloudfunctions.net/processSale'
+    )
+  })
+
+  it('builds callable endpoint using the configured functions region', () => {
+    expect(getCallableEndpoint('generateReport')).toBe(
+      'https://europe-west1-demo-project.cloudfunctions.net/generateReport'
+    )
   })
 })
