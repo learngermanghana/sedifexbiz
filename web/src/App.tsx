@@ -29,7 +29,6 @@ import {
 } from './utils/activeStoreStorage'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 import type { QueueRequestType } from './utils/offlineQueue'
-import { OVERRIDE_TEAM_MEMBER_DOC_ID } from './config/teamMembers'
 
 /* ------------------------------ config ------------------------------ */
 const LEGACY_STORE_BACKFILL_KEY_PREFIX = 'legacy-store-backfill/'
@@ -156,7 +155,7 @@ async function ensureLegacyStoreDoc(params: {
     markLegacyStoreBackfillComplete(user.uid)
   }
 }
-/** Ensure teamMembers/{uid} exists; optionally mirror to fixed ID. */
+/** Ensure teamMembers/{uid} exists. */
 async function upsertTeamMemberDocs(params: {
   user: User
   role: 'owner' | 'staff'
@@ -190,14 +189,6 @@ async function upsertTeamMemberDocs(params: {
       if (existingStoreId) {
         await setDoc(uidRef, { lastSeenAt }, { merge: true })
         persistActiveStoreId(existingStoreId, user.uid)
-        // Optionally mirror to fixed doc for your analytics/admin
-        if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
-          await setDoc(
-            doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID),
-            { ...snap.data(), lastSeenAt, updatedAt: serverTimestamp() },
-            { merge: true },
-          )
-        }
         return { storeId: existingStoreId, role: (snap.get('role') as 'owner' | 'staff') || role }
       }
     }
@@ -229,10 +220,6 @@ async function upsertTeamMemberDocs(params: {
   }
 
   await setDoc(uidRef, payload, { merge: true })
-
-  if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
-    await setDoc(doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID), payload, { merge: true })
-  }
 
   await ensureLegacyStoreDoc({ storeId, user, timestamp })
 
@@ -598,21 +585,6 @@ export default function App() {
         }
 
         await setDoc(doc(db, 'teamMembers', nextUser.uid), teamMemberContactPayload, { merge: true })
-
-        if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
-          await setDoc(
-            doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID),
-            {
-              ...teamMemberContactPayload,
-              uid: nextUser.uid,
-              storeId,
-              role,
-              email: nextUser.email ?? null,
-              name: ownerName,
-            },
-            { merge: true },
-          )
-        }
 
         await afterSignupBootstrap({
           storeId,
