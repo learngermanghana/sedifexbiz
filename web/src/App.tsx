@@ -29,6 +29,7 @@ import {
 } from './utils/activeStoreStorage'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 import type { QueueRequestType } from './utils/offlineQueue'
+import { OVERRIDE_TEAM_MEMBER_DOC_ID } from './config/teamMembers'
 
 /* ------------------------------ config ------------------------------ */
 const LEGACY_STORE_BACKFILL_KEY_PREFIX = 'legacy-store-backfill/'
@@ -65,18 +66,12 @@ function composePhoneNumber(dialingCode: string, localNumber: string): PhoneComp
   if (normalizedCountry && !normalizedCountry.startsWith('+')) {
     normalizedCountry = `+${normalizedCountry.replace(/^\++/, '')}`
   }
-  if (normalizedCountry === '+') {
-    normalizedCountry = ''
-  }
+  if (normalizedCountry === '+') normalizedCountry = ''
 
   const normalizedLocal = trimmedLocal.replace(/\D+/g, '')
   const e164 = normalizedCountry && normalizedLocal ? `${normalizedCountry}${normalizedLocal}` : ''
 
-  return {
-    dialingCode: normalizedCountry,
-    localNumber: normalizedLocal,
-    e164,
-  }
+  return { dialingCode: normalizedCountry, localNumber: normalizedLocal, e164 }
 }
 function persistActiveStoreId(storeId: string, uid: string) {
   persistActiveStoreIdForUser(uid, storeId)
@@ -93,26 +88,19 @@ function getLegacyStoreBackfillKey(uid: string): string {
 }
 
 function hasCompletedLegacyStoreBackfill(uid: string): boolean {
-  if (typeof window === 'undefined') {
-    return true
-  }
+  if (typeof window === 'undefined') return true
   try {
     return window.localStorage.getItem(getLegacyStoreBackfillKey(uid)) === '1'
-  } catch (error) {
-    console.warn('[store] Failed to inspect legacy store backfill flag', error)
+  } catch {
     return true
   }
 }
 
 function markLegacyStoreBackfillComplete(uid: string) {
-  if (typeof window === 'undefined') {
-    return
-  }
+  if (typeof window === 'undefined') return
   try {
     window.localStorage.setItem(getLegacyStoreBackfillKey(uid), '1')
-  } catch (error) {
-    console.warn('[store] Failed to persist legacy store backfill flag', error)
-  }
+  } catch {}
 }
 
 function shouldAttemptLegacyStoreBackfill(uid: string): boolean {
@@ -125,9 +113,7 @@ async function ensureLegacyStoreDoc(params: {
   timestamp: ServerTimestampSentinel
 }) {
   const { storeId, user, timestamp } = params
-  if (!storeId || !user.uid || !shouldAttemptLegacyStoreBackfill(user.uid)) {
-    return
-  }
+  if (!storeId || !user.uid || !shouldAttemptLegacyStoreBackfill(user.uid)) return
 
   let shouldMarkCompletion = false
   try {
@@ -150,12 +136,10 @@ async function ensureLegacyStoreDoc(params: {
   } catch (error) {
     console.warn(`[store] Failed to backfill legacy store doc for "${storeId}"`, error)
   }
-
-  if (shouldMarkCompletion) {
-    markLegacyStoreBackfillComplete(user.uid)
-  }
+  if (shouldMarkCompletion) markLegacyStoreBackfillComplete(user.uid)
 }
-/** Ensure teamMembers/{uid} exists. */
+
+/** Ensure teamMembers/{uid} exists; optionally mirror to fixed ID. */
 async function upsertTeamMemberDocs(params: {
   user: User
   role: 'owner' | 'staff'
@@ -189,6 +173,13 @@ async function upsertTeamMemberDocs(params: {
       if (existingStoreId) {
         await setDoc(uidRef, { lastSeenAt }, { merge: true })
         persistActiveStoreId(existingStoreId, user.uid)
+        if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
+          await setDoc(
+            doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID),
+            { ...snap.data(), lastSeenAt, updatedAt: serverTimestamp() },
+            { merge: true },
+          )
+        }
         return { storeId: existingStoreId, role: (snap.get('role') as 'owner' | 'staff') || role }
       }
     }
@@ -220,6 +211,10 @@ async function upsertTeamMemberDocs(params: {
   }
 
   await setDoc(uidRef, payload, { merge: true })
+
+  if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
+    await setDoc(doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID), payload, { merge: true })
+  }
 
   await ensureLegacyStoreDoc({ storeId, user, timestamp })
 
@@ -448,7 +443,6 @@ export default function App() {
     phone: PhoneComposition,
     location: { country: string | null; city: string | null; dialingCode: string | null },
   ) {
-    // Optional: create a matching customers record
     try {
       const preferredDisplayName = nextUser.displayName?.trim() || (nextUser.email ?? '')
       await setDoc(
@@ -537,10 +531,9 @@ export default function App() {
         const { user: nextUser } = await signInWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
         await persistSession(nextUser)
 
-        // Load or create team member doc (no sheet involved)
         await upsertTeamMemberDocs({
           user: nextUser,
-          role: 'owner', // fallback if missing — real role stored in Firestore
+          role: 'owner',
           preferExisting: true,
         })
 
@@ -551,7 +544,7 @@ export default function App() {
 
         await persistSession(nextUser)
 
-        // Create team member + store record and refresh auth token before continuing
+        // 1) Create the store and get the id
         const storeId = await createInitialOwnerAndStore({
           user: nextUser,
           role,
@@ -562,29 +555,64 @@ export default function App() {
           phoneCountryCode: phoneDetails.dialingCode || null,
         })
 
+        // 2) Ensure teamMembers/{uid} has storeId + role immediately (required by rules)
+        const now = serverTimestamp()
+        const ownerName = resolveOwnerName(nextUser)
+        await setDoc(
+          doc(db, 'teamMembers', nextUser.uid),
+          {
+            uid: nextUser.uid,
+            email: (nextUser.email ?? '').toLowerCase(),
+            name: ownerName,
+            role,            // 'owner' | 'staff'
+            storeId,         // REQUIRED
+            invitedBy: nextUser.uid,
+            createdAt: now,
+            updatedAt: now,
+            lastSeenAt: now,
+          },
+          { merge: true }
+        )
+
+        // Mirror (optional)
+        if (OVERRIDE_TEAM_MEMBER_DOC_ID) {
+          await setDoc(
+            doc(db, 'teamMembers', OVERRIDE_TEAM_MEMBER_DOC_ID),
+            {
+              uid: nextUser.uid,
+              email: (nextUser.email ?? '').toLowerCase(),
+              name: ownerName,
+              role,
+              storeId,
+              invitedBy: nextUser.uid,
+              updatedAt: serverTimestamp(),
+              lastSeenAt: serverTimestamp(),
+            },
+            { merge: true }
+          )
+        }
+
         try {
           await nextUser.getIdToken(true)
         } catch (error) {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
 
-        const ownerName = resolveOwnerName(nextUser)
-        const activityTimestamp = serverTimestamp()
-        const teamMemberContactPayload = {
-          name: ownerName,
-          phone: sanitizedPhone || null,
-          phoneCountryCode: phoneDetails.dialingCode || null,
-          phoneLocalNumber: phoneDetails.localNumber || null,
-          firstSignupEmail: (nextUser.email ?? '').toLowerCase() || null,
-          company: sanitizedCompany || null,
-          country: sanitizedCountry || null,
-          city: sanitizedCity || null,
-          invitedBy: nextUser.uid,
-          lastSeenAt: activityTimestamp,
-          updatedAt: activityTimestamp,
-        }
-
-        await setDoc(doc(db, 'teamMembers', nextUser.uid), teamMemberContactPayload, { merge: true })
+        // 3) Add/merge contact fields (keep storeId/role intact)
+        await setDoc(
+          doc(db, 'teamMembers', nextUser.uid),
+          {
+            phone: sanitizedPhone || null,
+            phoneCountryCode: phoneDetails.dialingCode || null,
+            phoneLocalNumber: phoneDetails.localNumber || null,
+            firstSignupEmail: (nextUser.email ?? '').toLowerCase() || null,
+            company: sanitizedCompany || null,
+            country: sanitizedCountry || null,
+            city: sanitizedCity || null,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        )
 
         await afterSignupBootstrap({
           storeId,
@@ -600,7 +628,6 @@ export default function App() {
           },
         })
 
-        // Optional additional doc for UX
         await persistOwnerSideDocs(nextUser, storeId, phoneDetails, {
           country: sanitizedCountry || null,
           city: sanitizedCity || null,
@@ -630,14 +657,14 @@ export default function App() {
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
     } finally {
-      // Ensure signup does NOT leave the user logged in
+      // Do NOT keep users signed in after signup
       if (createdSignupUser) {
         try {
           await signOut(auth)
         } catch (signOutError) {
           console.warn('[auth] Failed to sign out after signup cleanup', signOutError)
         }
-        setMode('login') // switch UI to Login
+        setMode('login')
       }
     }
   }
@@ -809,9 +836,7 @@ export default function App() {
                     <label htmlFor="phone">Phone</label>
                     <div className="form__phone-row">
                       <div className="form__phone-country">
-                        <label className="visually-hidden" htmlFor="country-code">
-                          Country code
-                        </label>
+                        <label className="visually-hidden" htmlFor="country-code">Country code</label>
                         <input
                           id="country-code"
                           value={dialingCode}
