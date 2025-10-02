@@ -22,7 +22,7 @@ import {
   type Auth,
 } from 'firebase/auth'
 
-const projectId = process.env.GCLOUD_PROJECT ?? 'demo-sedifex'
+const projectId = process.env.GCLOUD_PROJECT ?? 'sedifex-ac2b0'
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080'
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '127.0.0.1:9099'
 const shouldRunEmulatorSuite = process.env.RUN_FIRESTORE_EMULATOR_TESTS === '1'
