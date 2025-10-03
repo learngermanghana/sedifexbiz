@@ -1,22 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../config/firebaseEnv', () => ({
-  firebaseEnv: {
-    apiKey: 'test',
-    authDomain: 'test.firebaseapp.com',
-    projectId: 'demo-project',
-    storageBucket: 'demo-project.appspot.com',
-    appId: 'test-app-id',
-    functionsRegion: 'europe-west1',
+vi.mock('../../config/supabaseEnv', () => ({
+  supabaseEnv: {
+    url: 'https://demo.supabase.co',
+    anonKey: 'anon-test',
+    functionsUrl: 'https://demo.supabase.co/functions/v1',
   },
 }))
 
-const getSessionMock = vi.fn(async () => ({ data: { session: null }, error: null }))
 
 vi.mock('../../supabaseClient', () => ({
   supabase: {
     auth: {
-      getSession: (...args: unknown[]) => getSessionMock(...args),
+      getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+
     },
   },
 }))
@@ -68,13 +65,13 @@ describe('offlineQueue', () => {
     const firstMessage = postMessageMock.mock.calls[0]?.[0]
     expect(firstMessage?.payload?.requestType).toBe('sale')
     expect(firstMessage?.payload?.endpoint).toBe(
-      'https://europe-west1-demo-project.cloudfunctions.net/processSale'
+      'https://demo.supabase.co/functions/v1/processSale'
     )
   })
 
   it('builds callable endpoint using the configured functions region', () => {
     expect(getCallableEndpoint('generateReport')).toBe(
-      'https://europe-west1-demo-project.cloudfunctions.net/generateReport'
+      'https://demo.supabase.co/functions/v1/generateReport'
     )
   })
 })

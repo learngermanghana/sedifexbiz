@@ -13,6 +13,7 @@
     "test:rules:vitest": "vitest run tests/firestore.rules.emulator.test.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
     "firebase": "^10.13.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

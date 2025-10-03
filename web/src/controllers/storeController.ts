@@ -1,7 +1,7 @@
 // web/src/controllers/storeController.ts
-import { httpsCallable } from 'firebase/functions'
-import { functions } from '../firebase'
-import { FIREBASE_CALLABLES } from '@shared/firebaseCallables'
+import { SUPABASE_FUNCTIONS, type SupabaseEndpointDefinition } from '@shared/firebaseCallables'
+
+import { supabase } from '../supabaseClient'
 
 type ManageStaffAccountPayload = {
   storeId: string
@@ -42,29 +42,51 @@ type RevokeStaffAccessResult = {
   uid: string
 }
 
+async function invokeSupabaseEdgeFunction<Payload, Result>(
+  definition: SupabaseEndpointDefinition,
+  payload: Payload,
+): Promise<Result> {
+  const { data, error } = await supabase.functions.invoke<Result>(definition.name, { body: payload })
+
+  if (error) {
+    throw error
+  }
+
+  if (data && typeof data === 'object' && 'error' in (data as Record<string, unknown>)) {
+    const details = (data as { error?: unknown }).error as unknown
+    const message =
+      typeof details === 'string'
+        ? details
+        : details && typeof details === 'object' && 'message' in (details as Record<string, unknown>)
+          ? String((details as Record<string, unknown>).message)
+          : 'Supabase function reported an error'
+    throw new Error(message)
+  }
+
+  if (data === null || data === undefined) {
+    throw new Error(`No response returned from ${definition.name}`)
+  }
+
+  return data as Result
+}
+
 export async function manageStaffAccount(payload: ManageStaffAccountPayload) {
-  const callable = httpsCallable<ManageStaffAccountPayload, ManageStaffAccountResult>(
-    functions,
-    FIREBASE_CALLABLES.MANAGE_STAFF_ACCOUNT,
+  return invokeSupabaseEdgeFunction<ManageStaffAccountPayload, ManageStaffAccountResult>(
+    SUPABASE_FUNCTIONS.MANAGE_STAFF_ACCOUNT,
+    payload,
   )
-  const response = await callable(payload)
-  return response.data
 }
 
 export async function updateStoreProfile(payload: UpdateStoreProfilePayload) {
-  const callable = httpsCallable<UpdateStoreProfilePayload, UpdateStoreProfileResult>(
-    functions,
-    FIREBASE_CALLABLES.UPDATE_STORE_PROFILE,
+  return invokeSupabaseEdgeFunction<UpdateStoreProfilePayload, UpdateStoreProfileResult>(
+    SUPABASE_FUNCTIONS.UPDATE_STORE_PROFILE,
+    payload,
   )
-  const response = await callable(payload)
-  return response.data
 }
 
 export async function revokeStaffAccess(payload: RevokeStaffAccessPayload) {
-  const callable = httpsCallable<RevokeStaffAccessPayload, RevokeStaffAccessResult>(
-    functions,
-    FIREBASE_CALLABLES.REVOKE_STAFF_ACCESS,
+  return invokeSupabaseEdgeFunction<RevokeStaffAccessPayload, RevokeStaffAccessResult>(
+    SUPABASE_FUNCTIONS.REVOKE_STAFF_ACCESS,
+    payload,
   )
-  const response = await callable(payload)
-  return response.data
 }
