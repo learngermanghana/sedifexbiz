@@ -21,7 +21,6 @@ import { db } from '../firebase'
 import { ensureCustomerLoyalty, type CustomerLoyalty } from '../utils/customerLoyalty'
 import { useAuthUser } from './useAuthUser'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
-import { useToast } from '../components/ToastProvider'
 import { formatCurrency } from '@shared/currency'
 import {
   CUSTOMER_CACHE_LIMIT,
@@ -317,7 +316,6 @@ function buildDailyMetricSeries(
 export function useStoreMetrics(): UseStoreMetricsResult {
   const authUser = useAuthUser()
   const { storeId: activeStoreId } = useActiveStoreContext()
-  const { publish } = useToast()
 
   const [sales, setSales] = useState<SaleRecord[]>([])
   const [products, setProducts] = useState<ProductRecord[]>([])
@@ -502,14 +500,14 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     fetchSalesForRange().catch(error => {
       if (!cancelled) {
         console.warn('[metrics] Failed to fetch sales for range', error)
-        publish({ tone: 'error', message: 'Failed to refresh sales metrics.' })
+        console.error('Failed to refresh sales metrics.')
       }
     })
 
     return () => {
       cancelled = true
     }
-  }, [activeStoreId, combinedRange.start, combinedRange.end, publish])
+  }, [activeStoreId, combinedRange.start, combinedRange.end])
 
   useEffect(() => {
     let cancelled = false
@@ -904,7 +902,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   async function handleGoalSubmit(event: FormEvent) {
     event.preventDefault()
     if (!activeStoreId) {
-      publish({ tone: 'error', message: 'Select a store to save goals.' })
+      console.warn('Select a store to save goals.')
       return
     }
 
@@ -942,10 +940,10 @@ export function useStoreMetrics(): UseStoreMetricsResult {
         revenueTarget: String(revenueTarget),
         customerTarget: String(customerTarget),
       })
-      publish({ tone: 'success', message: `Goals updated for ${goalMonthLabel}.` })
+      console.info(`Goals updated for ${goalMonthLabel}.`)
     } catch (error) {
       console.error('[metrics] Unable to save goals', error)
-      publish({ tone: 'error', message: 'Unable to save goals right now.' })
+      console.error('Unable to save goals right now.')
     } finally {
       setIsSavingGoals(false)
     }
