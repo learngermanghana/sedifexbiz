@@ -1,18 +1,7 @@
 // web/src/hooks/useMemberships.ts
 import { useEffect, useState } from 'react'
-import {
-  Timestamp,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  where,
-  type DocumentData,
-  type DocumentSnapshot,
-  type QueryDocumentSnapshot,
-} from 'firebase/firestore'
-import { db } from '../firebase'
+import { Timestamp } from 'firebase/firestore'
+import { querySupabase } from '../supabaseClient'
 import { useAuthUser } from './useAuthUser'
 
 export type Membership = {
@@ -33,34 +22,57 @@ function normalizeRole(role: unknown): Membership['role'] {
   return 'staff'
 }
 
-function mapMembershipData(
-  id: string,
-  rawData: DocumentData | undefined,
-): Membership {
-  const data = rawData ?? {}
+function normalizeString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
 
-  const createdAt = data.createdAt instanceof Timestamp ? data.createdAt : null
-  const updatedAt = data.updatedAt instanceof Timestamp ? data.updatedAt : null
-  const storeId = typeof data.storeId === 'string' && data.storeId.trim() !== '' ? data.storeId : null
+function parseTimestamp(value: unknown): Timestamp | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const parsed = Date.parse(value)
+  if (Number.isNaN(parsed)) {
+    return null
+  }
+
+  return Timestamp.fromMillis(parsed)
+}
+
+type SupabaseMembershipRow = {
+  id: string
+  uid: string | null
+  email: string | null
+  role: string | null
+  store_id: string | null
+  phone: string | null
+  invited_by: string | null
+  first_signup_email: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+function mapMembershipRow(row: SupabaseMembershipRow): Membership {
+  const id = normalizeString(row.id) ?? row.id.trim()
+  const uid = normalizeString(row.uid) ?? id
+  const storeId = normalizeString(row.store_id)
 
   return {
     id,
-    uid: typeof data.uid === 'string' && data.uid.trim() ? data.uid : id,
-    role: normalizeRole(data.role),
+    uid,
+    role: normalizeRole(row.role),
     storeId,
-    email: typeof data.email === 'string' ? data.email : null,
-    phone: typeof data.phone === 'string' ? data.phone : null,
-    invitedBy: typeof data.invitedBy === 'string' ? data.invitedBy : null,
-    firstSignupEmail: typeof data.firstSignupEmail === 'string' ? data.firstSignupEmail : null,
-    createdAt,
-    updatedAt,
+    email: normalizeString(row.email),
+    phone: normalizeString(row.phone),
+    invitedBy: normalizeString(row.invited_by),
+    firstSignupEmail: normalizeString(row.first_signup_email),
+    createdAt: parseTimestamp(row.created_at),
+    updatedAt: parseTimestamp(row.updated_at),
   }
-}
-
-function mapMembershipSnapshot(
-  snapshot: QueryDocumentSnapshot<DocumentData> | DocumentSnapshot<DocumentData>,
-): Membership {
-  return mapMembershipData(snapshot.id, snapshot.data())
 }
 
 export function useMemberships(activeStoreId?: string | null) {
@@ -97,43 +109,42 @@ export function useMemberships(activeStoreId?: string | null) {
       }
 
       try {
-        const membersRef = collection(db, 'teamMembers')
-        const constraints = [where('uid', '==', user.uid)]
         const normalizedStoreId =
           typeof activeStoreId === 'string' && activeStoreId.trim() !== ''
-            ? activeStoreId
+            ? activeStoreId.trim()
             : null
 
+        const params = new URLSearchParams()
+        params.set(
+          'select',
+          [
+            'id',
+            'uid',
+            'email',
+            'role',
+            'store_id',
+            'phone',
+            'invited_by',
+            'first_signup_email',
+            'created_at',
+            'updated_at',
+          ].join(','),
+        )
+        params.set('uid', `eq.${user.uid}`)
+        params.append('order', 'updated_at.desc')
+
         if (normalizedStoreId) {
-          constraints.push(where('storeId', '==', normalizedStoreId))
+          params.set('store_id', `eq.${normalizedStoreId}`)
         }
 
-        const membershipsQuery = query(membersRef, ...constraints)
-        const snapshot = await getDocs(membershipsQuery)
+        const rows = await querySupabase<SupabaseMembershipRow>('team_memberships_view', params)
 
         if (cancelled) return
 
         const membershipsById = new Map<string, Membership>()
-        for (const docSnapshot of snapshot.docs) {
-          const membership = mapMembershipSnapshot(docSnapshot)
+        for (const row of rows) {
+          const membership = mapMembershipRow(row)
           membershipsById.set(membership.id, membership)
-        }
-
-        const fallbackRefs = [doc(db, 'teamMembers', user.uid)]
-
-        for (const ref of fallbackRefs) {
-          try {
-            const fallbackSnapshot = await getDoc(ref)
-            if (fallbackSnapshot.exists()) {
-              const membership = mapMembershipSnapshot(fallbackSnapshot)
-              if (membership.storeId) {
-                membershipsById.set(membership.id, membership)
-              }
-            }
-          } catch (fallbackError) {
-            // Ignore fallback errors to avoid masking the primary query results.
-            console.error(fallbackError)
-          }
         }
 
         setMemberships(Array.from(membershipsById.values()))

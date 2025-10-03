@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { onAuthStateChanged, signOut, type User } from 'firebase/auth'
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
-import { auth, db } from './firebase'
+import { auth } from './firebase'
+import { callSupabaseRpc } from './supabaseClient'
 import { clearActiveStoreIdForUser, persistActiveStoreIdForUser } from './utils/activeStoreStorage'
 
 type TeamMemberSnapshot = {
@@ -26,18 +26,6 @@ function normalizeString(value: unknown): string | null {
     return trimmed ? trimmed : null
   }
   return null
-}
-
-function snapshotFromData(data: Record<string, unknown> | undefined): TeamMemberSnapshot {
-  if (!data) {
-    return { storeId: null, status: null, contractStatus: null }
-  }
-
-  const storeId = normalizeString(data['storeId'])
-  const status = normalizeString(data['status'])
-  const contractStatus = normalizeString(data['contractStatus'])
-
-  return { storeId, status, contractStatus }
 }
 
 const MEMBERSHIP_RETRY_ATTEMPTS = 3
@@ -76,27 +64,30 @@ async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMe
   throw new Error('Access denied.')
 }
 
+type SupabaseActiveMembership = {
+  member_id: string | null
+  store_id: string | null
+  status: string | null
+  contract_status: string | null
+}
+
 async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
-  const uidRef = doc(db, 'teamMembers', user.uid)
-  const uidSnapshot = await getDoc(uidRef)
-
-  if (uidSnapshot.exists()) {
-    return snapshotFromData(uidSnapshot.data())
-  }
-
   const email = normalizeString(user.email)
-  if (!email) {
+
+  const data = await callSupabaseRpc<SupabaseActiveMembership>('get_active_team_membership', {
+    p_uid: user.uid,
+    p_email: email,
+  })
+
+  if (!data) {
     return { storeId: null, status: null, contractStatus: null }
   }
 
-  const membersRef = collection(db, 'teamMembers')
-  const candidates = await getDocs(query(membersRef, where('email', '==', email)))
-  const match = candidates.docs[0]
-  if (!match) {
-    return { storeId: null, status: null, contractStatus: null }
+  return {
+    storeId: normalizeString(data.store_id),
+    status: normalizeString(data.status),
+    contractStatus: normalizeString(data.contract_status),
   }
-
-  return snapshotFromData(match.data())
 }
 
 function isWorkspaceActive({ status, contractStatus }: TeamMemberSnapshot): boolean {

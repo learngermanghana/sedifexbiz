@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 
 import { useMemberships } from './useMemberships'
@@ -8,37 +8,16 @@ vi.mock('./useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-vi.mock('../firebase', () => ({
-  db: {},
-}))
-
-const collectionMock = vi.fn(() => ({ type: 'collection' }))
-const whereMock = vi.fn(() => ({ type: 'where' }))
-const queryMock = vi.fn(() => ({ type: 'query' }))
-const getDocsMock = vi.fn()
-const docMock = vi.fn(() => ({ type: 'doc' }))
-const getDocMock = vi.fn()
-
-vi.mock('firebase/firestore', () => ({
-  Timestamp: class MockTimestamp {},
-  collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
-  where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
-  query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
-  getDocs: (...args: Parameters<typeof getDocsMock>) => getDocsMock(...args),
-  doc: (...args: Parameters<typeof docMock>) => docMock(...args),
-  getDoc: (...args: Parameters<typeof getDocMock>) => getDocMock(...args),
-}))
-
 describe('useMemberships', () => {
+  const originalFetch = global.fetch
+
   beforeEach(() => {
     mockUseAuthUser.mockReset()
-    collectionMock.mockClear()
-    whereMock.mockClear()
-    queryMock.mockClear()
-    getDocsMock.mockReset()
-    docMock.mockClear()
-    getDocMock.mockReset()
-    getDocMock.mockResolvedValue({ exists: () => false })
+    global.fetch = vi.fn()
+  })
+
+  afterEach(() => {
+    global.fetch = originalFetch
   })
 
   it('returns an empty membership list when the user is not authenticated', async () => {
@@ -52,28 +31,31 @@ describe('useMemberships', () => {
 
     expect(result.current.error).toBeNull()
     expect(result.current.memberships).toEqual([])
-    expect(collectionMock).not.toHaveBeenCalled()
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
   it('loads memberships for the authenticated user and normalizes the document shape', async () => {
     mockUseAuthUser.mockReturnValue({ uid: 'user-123' })
 
-    const membershipDoc = {
-      id: 'member-doc',
-      data: () => ({
-        uid: 'user-123',
-        role: 'staff',
-        storeId: 'store-abc',
-        email: 'member@example.com',
-        phone: '+1234567890',
-        invitedBy: 'owner-1',
-        firstSignupEmail: 'owner@example.com',
-        createdAt: null,
-        updatedAt: null,
-      }),
-    }
-
-    getDocsMock.mockResolvedValue({ docs: [membershipDoc] })
+    ;(global.fetch as unknown as vi.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => [
+        {
+          id: 'member-doc',
+          uid: 'user-123',
+          role: 'staff',
+          store_id: 'store-abc',
+          email: 'member@example.com',
+          phone: '+1234567890',
+          invited_by: 'owner-1',
+          first_signup_email: 'owner@example.com',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-02T00:00:00Z',
+        },
+      ],
+    })
 
     const { result } = renderHook(() => useMemberships(null))
 
@@ -81,11 +63,10 @@ describe('useMemberships', () => {
       expect(result.current.loading).toBe(false)
     })
 
-    expect(collectionMock).toHaveBeenCalledWith({}, 'teamMembers')
-    expect(whereMock).toHaveBeenCalledTimes(1)
-    expect(whereMock).toHaveBeenCalledWith('uid', '==', 'user-123')
-    expect(queryMock).toHaveBeenCalledWith({ type: 'collection' }, { type: 'where' })
-    expect(getDocsMock).toHaveBeenCalled()
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    const [url] = (global.fetch as unknown as vi.Mock).mock.calls[0]
+    expect(url).toContain('/rest/v1/team_memberships_view')
+    expect(url).toContain('uid=eq.user-123')
 
     expect(result.current.memberships).toEqual([
       {
@@ -97,24 +78,35 @@ describe('useMemberships', () => {
         phone: '+1234567890',
         invitedBy: 'owner-1',
         firstSignupEmail: 'owner@example.com',
-        createdAt: null,
-        updatedAt: null,
+        createdAt: expect.anything(),
+        updatedAt: expect.anything(),
       },
     ])
     expect(result.current.error).toBeNull()
   })
 
-  it('falls back to the document id and null values when fields are missing', async () => {
+  it('falls back to the membership id and null values when fields are missing', async () => {
     mockUseAuthUser.mockReturnValue({ uid: 'user-456' })
 
-    const membershipDoc = {
-      id: 'user-456',
-      data: () => ({
-        role: 'unknown-role',
-      }),
-    }
-
-    getDocsMock.mockResolvedValue({ docs: [membershipDoc] })
+    ;(global.fetch as unknown as vi.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => [
+        {
+          id: 'user-456',
+          uid: null,
+          role: 'unknown-role',
+          store_id: null,
+          email: null,
+          phone: null,
+          invited_by: null,
+          first_signup_email: null,
+          created_at: null,
+          updated_at: null,
+        },
+      ],
+    })
 
     const { result } = renderHook(() => useMemberships(null))
 
@@ -141,30 +133,44 @@ describe('useMemberships', () => {
   it('filters memberships by active store when provided', async () => {
     mockUseAuthUser.mockReturnValue({ uid: 'user-789' })
 
-    getDocsMock.mockResolvedValue({ docs: [] })
+    ;(global.fetch as unknown as vi.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => [],
+    })
 
     renderHook(() => useMemberships('active-store'))
 
     await waitFor(() => {
-      expect(queryMock).toHaveBeenCalled()
+      expect(global.fetch).toHaveBeenCalled()
     })
 
-    expect(whereMock).toHaveBeenNthCalledWith(1, 'uid', '==', 'user-789')
-    expect(whereMock).toHaveBeenNthCalledWith(2, 'storeId', '==', 'active-store')
+    const [url] = (global.fetch as unknown as vi.Mock).mock.calls[0]
+    expect(url).toContain('store_id=eq.active-store')
   })
 
   it('includes fallback membership documents without a uid when a store is assigned', async () => {
     mockUseAuthUser.mockReturnValue({ uid: 'user-abc' })
 
-    getDocsMock.mockResolvedValue({ docs: [] })
-
-    getDocMock.mockResolvedValueOnce({
-      id: 'user-abc',
-      exists: () => true,
-      data: () => ({
-        storeId: 'store-fallback',
-        role: 'owner',
-      }),
+    ;(global.fetch as unknown as vi.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => [
+        {
+          id: 'member-1',
+          uid: null,
+          role: 'owner',
+          store_id: 'store-fallback',
+          email: null,
+          phone: null,
+          invited_by: null,
+          first_signup_email: null,
+          created_at: null,
+          updated_at: null,
+        },
+      ],
     })
 
     const { result } = renderHook(() => useMemberships(null))
@@ -175,8 +181,8 @@ describe('useMemberships', () => {
 
     expect(result.current.memberships).toEqual([
       {
-        id: 'user-abc',
-        uid: 'user-abc',
+        id: 'member-1',
+        uid: 'member-1',
         role: 'owner',
         storeId: 'store-fallback',
         email: null,
