@@ -10,16 +10,7 @@ import './Workspace.css'
 
 type NavItem = { to: string; label: string; end?: boolean }
 
-const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/today', label: 'Today' },
-  { to: '/products', label: 'Products' },
-  { to: '/sell', label: 'Sell' },
-  { to: '/receive', label: 'Receive' },
-  { to: '/customers', label: 'Customers' },
-  { to: '/close-day', label: 'Close Day' },
-  { to: '/account', label: 'Account' },
-]
+const NAV_ITEMS: NavItem[] = [{ to: 'sell', label: 'Sell', end: true }]
 
 function navLinkClass(isActive: boolean) {
   return `shell__nav-link${isActive ? ' is-active' : ''}`
@@ -152,6 +143,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const storeSelectValue = activeStoreId ?? ''
 
+  const [sellNavItem] = NAV_ITEMS
+
   const handleStoreChange = useCallback(
     (event: React.ChangeEvent<HTMLSelectElement>) => {
       const value = event.target.value
@@ -179,16 +172,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
 
           <nav className="shell__nav" aria-label="Primary">
-            {NAV_ITEMS.map(item => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) => navLinkClass(isActive)}
-              >
-                {item.label}
-              </NavLink>
-            ))}
+            <NavLink
+              to={sellNavItem.to}
+              end={sellNavItem.end}
+              className={({ isActive }) => navLinkClass(isActive)}
+            >
+              {sellNavItem.label}
+            </NavLink>
           </nav>
 
           <div className="shell__controls">
