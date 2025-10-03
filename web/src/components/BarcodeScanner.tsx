@@ -7,13 +7,15 @@ export type ScanResult = {
   source: ScanResultSource
 }
 
-export type BarcodeScannerProps = {
+type DivProps = Omit<ComponentPropsWithoutRef<'div'>, 'onError'>
+
+export type BarcodeScannerProps = DivProps & {
   className?: string
   enableCameraFallback?: boolean
   manualEntryLabel?: string
   onScan?: (result: ScanResult) => void
   onError?: (message: string) => void
-} & ComponentPropsWithoutRef<'div'>
+}
 
 export default function BarcodeScanner(_props: BarcodeScannerProps) {
   return null
