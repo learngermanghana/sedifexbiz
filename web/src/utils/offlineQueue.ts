@@ -1,8 +1,7 @@
-import { firebaseEnv } from '../config/firebaseEnv'
-import { auth } from '../firebase'
+import { supabaseEnv } from '../config/supabaseEnv'
+import { supabase } from '../supabaseClient'
 
-const FUNCTIONS_REGION = firebaseEnv.functionsRegion
-const PROJECT_ID = firebaseEnv.projectId
+const FUNCTIONS_BASE_URL = supabaseEnv.functionsUrl
 
 const SYNC_TAG = 'sync-pending-requests'
 
@@ -26,10 +25,14 @@ function getController(registration: ServiceWorkerRegistration) {
 }
 
 export function getCallableEndpoint(functionName: string) {
-  if (!PROJECT_ID) {
-    throw new Error('Missing Firebase project configuration')
+  if (!FUNCTIONS_BASE_URL) {
+    throw new Error('Missing Supabase function configuration')
   }
-  return `https://${FUNCTIONS_REGION}-${PROJECT_ID}.cloudfunctions.net/${functionName}`
+  const normalized = functionName.replace(/^\/+/, '').trim()
+  if (!normalized) {
+    throw new Error('Function name is required')
+  }
+  return `${FUNCTIONS_BASE_URL}/${normalized}`
 }
 
 export async function queueCallableRequest(
@@ -50,7 +53,11 @@ export async function queueCallableRequest(
 
     let authToken: string | null = null
     try {
-      authToken = await auth.currentUser?.getIdToken() ?? null
+      const { data, error } = await supabase.auth.getSession()
+      if (error) {
+        throw error
+      }
+      authToken = data?.session?.access_token ?? null
     } catch (error) {
       console.warn('[offline-queue] Unable to read auth token for queued request', error)
     }

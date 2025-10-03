@@ -1,8 +1,9 @@
-// web/src/controllers/accessController.ts
-import { httpsCallable } from 'firebase/functions'
 import { doc, getDoc } from 'firebase/firestore'
-import { auth, db, functions } from '../firebase'
-import { FIREBASE_CALLABLES } from '@shared/firebaseCallables'
+// web/src/controllers/accessController.ts
+import { SUPABASE_FUNCTIONS, type SupabaseEndpointDefinition } from '@shared/firebaseCallables'
+
+import { auth, db } from '../firebase'
+import { supabase } from '../supabaseClient'
 
 export type ResolveStoreAccessSuccess = {
   ok: true
@@ -35,10 +36,28 @@ type AfterSignupBootstrapPayload = {
   contact?: ContactPayload
 }
 
-const afterSignupBootstrapCallable = httpsCallable<AfterSignupBootstrapPayload, void>(
-  functions,
-  FIREBASE_CALLABLES.AFTER_SIGNUP_BOOTSTRAP,
-)
+async function invokeSupabaseEdgeFunction<Payload>(
+  definition: SupabaseEndpointDefinition,
+  payload: Payload | undefined,
+): Promise<void> {
+  const body = payload === undefined ? undefined : payload
+  const { data, error } = await supabase.functions.invoke<unknown>(definition.name, { body })
+
+  if (error) {
+    throw error
+  }
+
+  if (data && typeof data === 'object' && 'error' in (data as Record<string, unknown>)) {
+    const details = (data as { error?: unknown }).error
+    const message =
+      typeof details === 'string'
+        ? details
+        : details && typeof details === 'object' && 'message' in (details as Record<string, unknown>)
+          ? String((details as Record<string, unknown>).message)
+          : 'Supabase function reported an error'
+    throw new Error(message)
+  }
+}
 
 export async function resolveStoreAccess(): Promise<ResolveStoreAccessResult> {
   const user = auth.currentUser
@@ -73,7 +92,7 @@ export async function resolveStoreAccess(): Promise<ResolveStoreAccessResult> {
 
 export async function afterSignupBootstrap(payload?: AfterSignupBootstrapPayload): Promise<void> {
   if (!payload) {
-    await afterSignupBootstrapCallable(undefined)
+    await invokeSupabaseEdgeFunction(SUPABASE_FUNCTIONS.AFTER_SIGNUP_BOOTSTRAP, undefined)
     return
   }
 
@@ -127,5 +146,5 @@ export async function afterSignupBootstrap(payload?: AfterSignupBootstrapPayload
   }
 
   const callablePayload = Object.keys(normalized).length > 0 ? normalized : undefined
-  await afterSignupBootstrapCallable(callablePayload)
+  await invokeSupabaseEdgeFunction(SUPABASE_FUNCTIONS.AFTER_SIGNUP_BOOTSTRAP, callablePayload)
 }

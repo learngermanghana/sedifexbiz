@@ -6,7 +6,6 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore'
-import { getFunctions } from 'firebase/functions'
 import { getStorage } from 'firebase/storage'
 
 import { firebaseEnv } from './config/firebaseEnv'
@@ -45,7 +44,6 @@ try {
 export const db = initializeFirestore(app, firestoreSettings)
 
 export const storage = getStorage(app)
-export const functions = getFunctions(app, firebaseEnv.functionsRegion)
 
 export function setupRecaptcha(containerId = 'recaptcha-container') {
   return new RecaptchaVerifier(auth, containerId, { size: 'invisible' })
