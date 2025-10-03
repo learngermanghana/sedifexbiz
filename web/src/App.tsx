@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged } from 'firebase/auth'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
 import { auth } from './firebase'
 import './pwa'
 import { useToast } from './components/ToastProvider'
 import { configureAuthPersistence, refreshSessionHeartbeat } from './controllers/sessionController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { clearActiveStoreIdForUser, clearLegacyActiveStoreId } from './utils/activeStoreStorage'
-import { getOnboardingStatus } from './utils/onboarding'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -54,8 +53,6 @@ export default function App() {
   const previousUidRef = useRef<string | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
   const { publish } = useToast()
-  const navigate = useNavigate()
-  const location = useLocation()
 
   useEffect(() => {
     configureAuthPersistence(auth).catch(() => {})
@@ -82,14 +79,6 @@ export default function App() {
     if (!user) return
     refreshSessionHeartbeat(user).catch(() => {})
   }, [user])
-
-  useEffect(() => {
-    if (!user) return
-    const status = getOnboardingStatus(user.uid)
-    if (status === 'pending' && location.pathname !== '/onboarding') {
-      navigate('/onboarding', { replace: true })
-    }
-  }, [location.pathname, navigate, user])
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return

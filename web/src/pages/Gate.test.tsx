@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 
 import Gate from './Gate';
 
 const mockUseActiveStoreContext = vi.fn();
 const mockUseMemberships = vi.fn();
-const navigateMock = vi.fn();
 
 const ownerMembership = {
   id: 'membership-1',
@@ -20,15 +19,6 @@ const ownerMembership = {
   updatedAt: null,
 };
 
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
-
-  return {
-    ...actual,
-    useNavigate: () => navigateMock,
-  };
-});
-
 vi.mock('../context/ActiveStoreProvider', () => ({
   useActiveStoreContext: () => mockUseActiveStoreContext(),
 }));
@@ -39,7 +29,6 @@ vi.mock('../hooks/useMemberships', () => ({
 
 describe('Gate', () => {
   beforeEach(() => {
-    navigateMock.mockReset();
     mockUseActiveStoreContext.mockReset();
     mockUseMemberships.mockReset();
     mockUseActiveStoreContext.mockReturnValue({
@@ -69,7 +58,6 @@ describe('Gate', () => {
     render(<Gate />);
 
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
-    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("renders an error message when memberships can't be fetched", () => {
@@ -80,10 +68,9 @@ describe('Gate', () => {
 
     expect(screen.getByRole('heading', { name: /couldn't load your workspace/i })).toBeInTheDocument();
     expect(screen.getByText(/failed to load memberships/i)).toBeInTheDocument();
-    expect(navigateMock).not.toHaveBeenCalled();
   });
 
-  it('navigates to onboarding when there are no memberships', async () => {
+  it('informs the user when there are no memberships', () => {
     mockUseMemberships.mockReturnValue({ loading: false, error: null, memberships: [] });
 
     render(
@@ -92,12 +79,9 @@ describe('Gate', () => {
       </Gate>,
     );
 
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith('/onboarding', { replace: true });
-    });
-
-    expect(navigateMock).toHaveBeenCalledTimes(1);
-
+    expect(
+      screen.getByRole('heading', { name: /you're not part of a workspace yet/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('protected')).not.toBeInTheDocument();
   });
 
@@ -107,6 +91,5 @@ describe('Gate', () => {
     render(<Gate>{child}</Gate>);
 
     expect(screen.getByTestId('app')).toBeInTheDocument();
-    expect(navigateMock).not.toHaveBeenCalled();
   });
 });
