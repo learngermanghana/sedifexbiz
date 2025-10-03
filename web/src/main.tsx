@@ -10,7 +10,6 @@ import Sell from './pages/Sell'
 import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
-import Onboarding from './pages/Onboarding'
 import Today from './pages/Today'
 import AccountOverview from './pages/AccountOverview'
 import Gate from './pages/Gate'
@@ -34,7 +33,6 @@ const router = createHashRouter([
       { path: 'receive',   element: <Shell><Gate><Receive /></Gate></Shell> },
       { path: 'customers', element: <Shell><Gate><Customers /></Gate></Shell> },
       { path: 'close-day', element: <Shell><Gate><CloseDay /></Gate></Shell> },
-      { path: 'onboarding', element: <Shell><Onboarding /></Shell> },
       { path: 'account',   element: <Shell><Gate><AccountOverview /></Gate></Shell> },
     ],
   },
