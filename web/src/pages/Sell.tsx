@@ -15,7 +15,6 @@ import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import './Sell.css'
-import { Link } from 'react-router-dom'
 import BarcodeScanner, { ScanResult } from '../components/BarcodeScanner'
 import {
   CUSTOMER_CACHE_LIMIT,
@@ -956,8 +955,7 @@ export default function Sell() {
                     ))}
                   </select>
               <p className="field__hint">
-                Need to add someone new? Manage records on the{' '}
-                <Link to="/customers" className="sell-page__customers-link">Customers page</Link>.
+                Need to add someone new? Manage customer details from your dashboard before starting a sale.
               </p>
               {selectedCustomer && (
                 <div className="sell-page__loyalty" role="status" aria-live="polite">
@@ -966,12 +964,22 @@ export default function Sell() {
                     Enroll them in your loyalty program or apply any available rewards before completing checkout.
                   </p>
                   <div className="sell-page__loyalty-actions">
-                    <Link to="/customers" className="button button--ghost button--small">
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      disabled
+                      aria-disabled="true"
+                    >
                       Enroll customer
-                    </Link>
-                    <Link to="/customers" className="button button--ghost button--small">
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      disabled
+                      aria-disabled="true"
+                    >
                       Apply rewards
-                    </Link>
+                    </button>
                   </div>
                 </div>
               )}
