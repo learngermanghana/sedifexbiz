@@ -22,7 +22,7 @@ const STORE_ERROR_MESSAGE = 'We could not load your workspace access. Some featu
 
 export function useActiveStore(): ActiveStoreState {
   const user = useAuthUser()
-  const uid = user?.uid ?? null
+  const uid = user?.id ?? null
 
   const [persistedStoreId, setPersistedStoreId] = useState<string | null>(null)
   const [isPersistedLoading, setIsPersistedLoading] = useState(true)

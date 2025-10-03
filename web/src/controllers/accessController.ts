@@ -1,8 +1,9 @@
 // web/src/controllers/accessController.ts
 import { httpsCallable } from 'firebase/functions'
 import { doc, getDoc } from 'firebase/firestore'
-import { auth, db, functions } from '../firebase'
+import { db, functions } from '../firebase'
 import { FIREBASE_CALLABLES } from '@shared/firebaseCallables'
+import { supabase } from '../supabaseClient'
 
 export type ResolveStoreAccessSuccess = {
   ok: true
@@ -41,13 +42,14 @@ const afterSignupBootstrapCallable = httpsCallable<AfterSignupBootstrapPayload, 
 )
 
 export async function resolveStoreAccess(): Promise<ResolveStoreAccessResult> {
-  const user = auth.currentUser
-  if (!user?.uid) {
+  const { data } = await supabase.auth.getSession()
+  const user = data.session?.user
+  if (!user?.id) {
     return { ok: false, error: 'NO_MEMBERSHIP' }
   }
 
   try {
-    const memberSnapshot = await getDoc(doc(db, 'teamMembers', user.uid))
+    const memberSnapshot = await getDoc(doc(db, 'teamMembers', user.id))
     if (!memberSnapshot.exists()) {
       return { ok: false, error: 'NO_MEMBERSHIP' }
     }

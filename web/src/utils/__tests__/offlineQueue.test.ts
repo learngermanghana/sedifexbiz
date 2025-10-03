@@ -11,8 +11,14 @@ vi.mock('../../config/firebaseEnv', () => ({
   },
 }))
 
-vi.mock('../../firebase', () => ({
-  auth: { currentUser: null },
+const getSessionMock = vi.fn(async () => ({ data: { session: null }, error: null }))
+
+vi.mock('../../supabaseClient', () => ({
+  supabase: {
+    auth: {
+      getSession: (...args: unknown[]) => getSessionMock(...args),
+    },
+  },
 }))
 
 describe('offlineQueue', () => {
@@ -23,6 +29,7 @@ describe('offlineQueue', () => {
 
   beforeEach(async () => {
     vi.resetModules()
+    getSessionMock.mockReset()
     postMessageMock = vi.fn()
     const registration = {
       active: { postMessage: postMessageMock },

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
-import { onAuthStateChanged, signOut, type User } from 'firebase/auth'
+import { useEffect, useRef, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
-import { auth, db } from './firebase'
+import { db } from './firebase'
 import { clearActiveStoreIdForUser, persistActiveStoreIdForUser } from './utils/activeStoreStorage'
+import { useAuthUser } from './hooks/useAuthUser'
+import { supabase, type User } from './supabaseClient'
 
 type TeamMemberSnapshot = {
   storeId: string | null
@@ -77,7 +78,7 @@ async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMe
 }
 
 async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
-  const uidRef = doc(db, 'teamMembers', user.uid)
+  const uidRef = doc(db, 'teamMembers', user.id)
   const uidSnapshot = await getDoc(uidRef)
 
   if (uidSnapshot.exists()) {
@@ -114,64 +115,60 @@ function isWorkspaceActive({ status, contractStatus }: TeamMemberSnapshot): bool
 export default function SheetAccessGuard({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const user = useAuthUser()
+  const requestIdRef = useRef(0)
 
   useEffect(() => {
     let isMounted = true
-    let currentRequest = 0
+    requestIdRef.current += 1
+    const requestId = requestIdRef.current
 
-    const unsubscribe = onAuthStateChanged(auth, (user: User | null) => {
-      currentRequest += 1
-      const requestId = currentRequest
-
-      const run = async () => {
-        if (!user) {
-          if (!isMounted || requestId !== currentRequest) {
-            return
-          }
+    const run = async () => {
+      if (!user) {
+        if (isMounted && requestId === requestIdRef.current) {
           setError(null)
           setReady(true)
-          return
         }
-
-        if (!isMounted || requestId !== currentRequest) {
-          return
-        }
-
-        setReady(false)
-        setError(null)
-
-        try {
-          const member = await loadActiveTeamMemberWithRetries(user)
-          if (!isMounted || requestId !== currentRequest) {
-            return
-          }
-
-          persistActiveStoreIdForUser(user.uid, member.storeId)
-          setError(null)
-        } catch (e: unknown) {
-          if (!isMounted || requestId !== currentRequest) {
-            return
-          }
-
-          const message = e instanceof Error ? e.message : 'Access denied.'
-          setError(message)
-          await signOut(auth)
-          clearActiveStoreIdForUser(user.uid)
-        } finally {
-          if (isMounted && requestId === currentRequest) {
-            setReady(true)
-          }
-        }
+        return
       }
 
-      void run()
-    })
+      if (!isMounted || requestId !== requestIdRef.current) {
+        return
+      }
+
+      setReady(false)
+      setError(null)
+
+      try {
+        const member = await loadActiveTeamMemberWithRetries(user)
+        if (!isMounted || requestId !== requestIdRef.current) {
+          return
+        }
+
+        persistActiveStoreIdForUser(user.id, member.storeId)
+        setError(null)
+      } catch (e: unknown) {
+        if (!isMounted || requestId !== requestIdRef.current) {
+          return
+        }
+
+        const message = e instanceof Error ? e.message : 'Access denied.'
+        setError(message)
+        await supabase.auth.signOut()
+        clearActiveStoreIdForUser(user.id)
+      } finally {
+        if (isMounted && requestId === requestIdRef.current) {
+          setReady(true)
+        }
+      }
+    }
+
+    void run()
 
     return () => {
       isMounted = false
-      unsubscribe()
     }
-  }, [])
+  }, [user?.id, user?.email])
 
   if (!ready) return <p>Checking workspace access…</p>
   return (

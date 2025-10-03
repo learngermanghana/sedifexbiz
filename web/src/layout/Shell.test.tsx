@@ -20,12 +20,17 @@ vi.mock('../context/ActiveStoreProvider', () => ({
   useActiveStoreContext: () => mockUseActiveStoreContext(),
 }))
 
-vi.mock('../firebase', () => ({
-  auth: {},
-}))
+const mockSignOut = vi.fn()
 
-vi.mock('firebase/auth', () => ({
-  signOut: vi.fn(),
+vi.mock('../supabaseClient', () => ({
+  supabase: {
+    auth: {
+      signOut: (...args: unknown[]) => {
+        mockSignOut(...args)
+        return Promise.resolve({ error: null })
+      },
+    },
+  },
 }))
 
 function renderShell() {
