@@ -26,6 +26,16 @@ vi.mock('../context/ActiveStoreProvider', () => ({
   useActiveStoreContext: () => mockUseActiveStoreContext(),
 }))
 
+vi.mock(
+  '../components/BarcodeScanner',
+  () => ({
+    __esModule: true,
+    default: () => null,
+    ScanResult: class MockScanResult {},
+  }),
+  { virtual: true },
+)
+
 const originalCreateObjectURL = globalThis.URL.createObjectURL
 const originalRevokeObjectURL = globalThis.URL.revokeObjectURL
 

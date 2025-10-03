@@ -107,6 +107,16 @@ describe('Sell page selectors', () => {
       })
     }
 
+    vi.doMock(
+      '../../src/components/BarcodeScanner',
+      () => ({
+        __esModule: true,
+        default: vi.fn(() => null),
+        ScanResult: class MockScanResult {},
+      }),
+      { virtual: true },
+    )
+
     vi.doMock('../../src/hooks/useAuthUser', () => ({
       useAuthUser: () => mockUseAuthUser(),
     }))
