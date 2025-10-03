@@ -13,7 +13,7 @@ async function run() {
   const adapter = persistence.createMemoryPersistence()
   persistence.setPersistenceAdapter(adapter)
 
-  const { updateStoreProfile } = require('../lib/functions/src/index.js')
+  const { manageStaffAccount } = require('../lib/functions/src/index.js')
 
   await adapter.upsertTeamMember({
     uid: 'owner-1',
@@ -22,30 +22,29 @@ async function run() {
     email: 'owner@example.com',
   })
 
-  await adapter.upsertStore({
-    id: 'store-123',
-    name: 'Original',
-    displayName: 'Original',
-    timezone: 'UTC',
-    currency: 'USD',
-  })
-
   const context = { auth: { uid: 'owner-1', token: { role: 'owner', activeStoreId: 'store-123' } } }
-  const result = await updateStoreProfile.run(
-    { storeId: 'store-123', name: 'Sedifex Labs', timezone: 'Africa/Accra', currency: 'ghs' },
+
+  const response = await manageStaffAccount.run(
+    {
+      storeId: 'store-123',
+      email: 'staff@example.com',
+      role: 'staff',
+      password: 'temporaryPassword123',
+    },
     context,
   )
 
-  assert.deepStrictEqual(result, { ok: true, storeId: 'store-123' })
+  assert.strictEqual(response.ok, true)
+  assert.strictEqual(response.storeId, 'store-123')
+  assert.strictEqual(response.role, 'staff')
 
-  const store = await adapter.getStore('store-123')
-  assert.strictEqual(store?.name, 'Sedifex Labs')
-  assert.strictEqual(store?.displayName, 'Sedifex Labs')
-  assert.strictEqual(store?.timezone, 'Africa/Accra')
-  assert.strictEqual(store?.currency, 'GHS')
+  const staff = await adapter.getTeamMember(response.uid)
+  assert.ok(staff, 'Expected staff membership to be created')
+  assert.strictEqual(staff?.storeId, 'store-123')
+  assert.strictEqual(staff?.role, 'staff')
 
   restoreAdmin()
-  console.log('updateStoreProfile tests passed')
+  console.log('manageStaffAccount tests passed')
 }
 
 run().catch(err => {

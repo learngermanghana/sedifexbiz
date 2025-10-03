@@ -1,4 +1,5 @@
-import { admin, defaultDb, rosterDb } from './firestore'
+import { admin } from './firebaseAdmin'
+import { getPersistence } from './persistence'
 
 export type RoleClaimPayload = {
   uid: string
@@ -14,11 +15,11 @@ function normalizeCompany(value: unknown): string | null {
 
 async function resolveCompanyName(uid: string, storeId: string): Promise<string | null> {
   try {
-    const memberSnap = await rosterDb.collection('teamMembers').doc(uid).get()
-    const storeSnap = storeId ? await defaultDb.collection('stores').doc(storeId).get() : null
-
-    const memberCompany = normalizeCompany(memberSnap?.data()?.company)
-    const storeCompany = normalizeCompany(storeSnap?.data()?.company)
+    const adapter = getPersistence()
+    const member = await adapter.getTeamMember(uid)
+    const store = storeId ? await adapter.getStore(storeId) : null
+    const memberCompany = normalizeCompany(member?.company)
+    const storeCompany = normalizeCompany(store?.company)
     return storeCompany ?? memberCompany ?? null
   } catch (error) {
     console.warn('[customClaims] Failed to resolve company name for claims', { uid, storeId, error })

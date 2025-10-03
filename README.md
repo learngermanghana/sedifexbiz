@@ -4,7 +4,7 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 
 ## What’s inside
 - `web/` — React + Vite + TypeScript PWA
-- `functions/` — Firebase Cloud Functions (Node 20) for store onboarding and stock receipts
+- `functions/` — Cloud Functions (Node 20) for workspace management backed by the Sedifex Data API
 - `firestore.rules` — Multi-tenant security rules scaffold
 - `.github/workflows/` — Optional CI for deploying Functions (if you want to use GitHub Actions)
 
@@ -29,12 +29,11 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
    ```bash
    cd functions
    npm i
-   # Login to Firebase
-   npx firebase login
-   # Set your project
-   npx firebase use sedifex-dev
-   # Deploy
-   npm run deploy
+   # Configure the data API endpoint used by the functions
+   export SEDIFEX_API_URL=https://api.sedifex.dev
+   export SEDIFEX_API_KEY=dev-service-token
+   # Deploy with your preferred tooling (Firebase CLI or Cloud Functions Framework)
+   npm run build
    ```
 
 ## Deploy the PWA (Vercel/Netlify/Firebase Hosting)
@@ -42,25 +41,15 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 - Add the env vars above to your hosting provider.
 - Set your domain `app.sedifex.com` to the deployed frontend.
 
-## Firebase setup notes
-- Enable **Authentication → Phone** and **Email/Password** (optional).
-- Enable **Firestore** and publish `firestore.rules`.
+## Backend setup notes
+- Enable **Authentication → Phone** and **Email/Password** in Firebase Auth (optional).
+- Provision the Sedifex Data API and expose it at `SEDIFEX_API_URL`. The Functions expect REST resources for team members and stores, along with a `callable-logs` endpoint for error telemetry.
 - Create a second project for production later (e.g., `sedifex-prod`).
-- Schedule the `runNightlyDataHygiene` Cloud Function via Cloud Scheduler (daily at 03:00 UTC) so summaries are recomputed and activity logs stay clean. Monitor for failures in Cloud Logging / Error Reporting.
+- Schedule the `runNightlyDataHygiene` Cloud Function via Cloud Scheduler (daily at 03:00 UTC). It now audits the Data API rather than cleaning Firestore collections.
 
 ## Testing
-- Run unit and integration tests from the `web/` directory with `npm run test`.
-- Firestore emulator rules tests are skipped by default. To execute them, start the local Firebase emulators and run tests with
-  `RUN_FIRESTORE_EMULATOR_TESTS=1 npm run test` so the suite can connect to the emulator endpoints.
-
-## Maintenance scripts
-- To backfill missing team memberships and store documents for legacy Auth accounts, run `npm run migrate-missing-members` from the
-  `functions/` directory. The script requires Firebase Admin credentials (e.g., `GOOGLE_APPLICATION_CREDENTIALS`) so it can list
-  all users and write to Firestore.
-
-### Firestore membership documents
-- Store onboarding now relies on membership documents in Firestore. Create one document per workspace under `memberships/{workspaceId}` with fields such as `contractStart`, `contractEnd`, `paymentStatus`, `amountPaid`, and `company`.
-- Ensure date fields are stored as Firestore Timestamps (or ISO strings if ingesting via script) and normalize payment amounts to numbers so Cloud Functions can process billing logic without additional parsing.
+- Run unit and integration tests for the PWA from the `web/` directory with `npm run test`.
+- API-backed Cloud Functions tests live in `functions/` and can be executed with `npm test`. They boot the in-memory persistence adapter instead of relying on Firestore emulators.
 
 ## Branding
 - Name: **Sedifex**
