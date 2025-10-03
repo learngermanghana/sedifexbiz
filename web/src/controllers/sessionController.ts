@@ -14,7 +14,21 @@ export async function configureAuthPersistence(client: SupabaseClient) {
   }
 
   try {
-    await client.auth.setSession()
+    const { data, error } = await client.auth.getSession()
+    if (error) {
+      throw error
+    }
+
+    const session = data.session
+    const accessToken = session?.access_token
+    const refreshToken = session?.refresh_token
+
+    if (accessToken && refreshToken) {
+      await client.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      })
+    }
   } catch (error) {
     console.warn('[auth] Failed to synchronise Supabase session state', error)
   }
