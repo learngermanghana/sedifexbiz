@@ -9,6 +9,7 @@ import {
   where,
   runTransaction,
   serverTimestamp,
+  type DocumentData,
 } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { db } from '../firebase'
@@ -652,9 +653,9 @@ export default function Sell() {
             throw new Error(`${item.name || 'Product'} is unavailable. Refresh your catalog and try again.`)
           }
 
-          const currentStockRaw = typeof productSnapshot.get === 'function'
-            ? productSnapshot.get('stockCount')
-            : (productSnapshot.data?.stockCount ?? productSnapshot.stockCount)
+          const productData: DocumentData | undefined =
+            typeof productSnapshot.data === 'function' ? productSnapshot.data() : undefined
+          const currentStockRaw = productData?.stockCount
           const currentStock = Number(currentStockRaw ?? 0) || 0
           const qtyChange = Math.abs(item.qty)
           const nextStock = currentStock - qtyChange
@@ -735,15 +736,10 @@ export default function Sell() {
               ? customerSnapshot.exists()
               : customerSnapshot.exists)
 
-          const existingData =
-            typeof customerSnapshot?.data === 'function'
-              ? customerSnapshot.data()
-              : (customerSnapshot?.data as Record<string, unknown> | undefined)
+          const existingData: DocumentData | undefined =
+            typeof customerSnapshot?.data === 'function' ? customerSnapshot.data() : undefined
 
-          const loyaltySource =
-            existingData && typeof existingData === 'object' && 'loyalty' in existingData
-              ? (existingData as { loyalty?: unknown }).loyalty
-              : undefined
+          const loyaltySource = existingData?.loyalty
 
           const normalizedLoyalty = normalizeCustomerLoyalty(loyaltySource)
           const nextPoints = Math.max(0, normalizedLoyalty.points + loyaltyPointsEarned)
