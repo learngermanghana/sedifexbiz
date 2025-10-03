@@ -1,13 +1,13 @@
 {
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  },
   "functions": {
     "source": "functions"
   },
   "emulators": {
-    "functions": { "port": 5001 },
-    "firestore": { "port": 8080 }
+    "functions": { "port": 5001 }
+  },
+  "dataServices": {
+    "primary": {
+      "config": "data-service.config.json"
+    }
   }
 }
