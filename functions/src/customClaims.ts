@@ -1,4 +1,5 @@
-import { admin, defaultDb, rosterDb } from './firestore'
+import { supabaseAdmin } from './firestore'
+import { SupabaseFunctionError } from './supabaseError'
 
 export type RoleClaimPayload = {
   uid: string
@@ -6,48 +7,52 @@ export type RoleClaimPayload = {
   storeId: string
 }
 
-function normalizeCompany(value: unknown): string | null {
+function normalizeString(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
 }
 
 async function resolveCompanyName(uid: string, storeId: string): Promise<string | null> {
-  try {
-    const memberSnap = await rosterDb.collection('teamMembers').doc(uid).get()
-    const storeSnap = storeId ? await defaultDb.collection('stores').doc(storeId).get() : null
+  const [{ data: membership }, { data: store }] = await Promise.all([
+    supabaseAdmin
+      .from('store_memberships')
+      .select('company')
+      .eq('user_id', uid)
+      .eq('store_id', storeId)
+      .maybeSingle(),
+    supabaseAdmin.from('stores').select('company').eq('id', storeId).maybeSingle(),
+  ])
 
-    const memberCompany = normalizeCompany(memberSnap?.data()?.company)
-    const storeCompany = normalizeCompany(storeSnap?.data()?.company)
-    return storeCompany ?? memberCompany ?? null
-  } catch (error) {
-    console.warn('[customClaims] Failed to resolve company name for claims', { uid, storeId, error })
-    return null
-  }
+  const memberCompany = normalizeString(membership?.company)
+  const storeCompany = normalizeString(store?.company)
+  return storeCompany ?? memberCompany ?? null
 }
 
 export async function applyRoleClaims({ uid, role, storeId }: RoleClaimPayload) {
-  const userRecord = await admin
-    .auth()
-    .getUser(uid)
-    .catch(() => null)
-  const existingClaims = (userRecord?.customClaims ?? {}) as Record<string, unknown>
-  const nextClaims: Record<string, unknown> = { ...existingClaims }
-
-  nextClaims.role = role
-  nextClaims.activeStoreId = storeId
-
-  const companyName = await resolveCompanyName(uid, storeId)
-  if (companyName) {
-    nextClaims.company = companyName
-  } else {
-    delete nextClaims.company
+  if (!uid) {
+    throw new SupabaseFunctionError('bad-request', 'A user id is required to apply role claims')
   }
 
-  delete nextClaims.stores
-  delete nextClaims.storeId
-  delete nextClaims.roleByStore
+  const metadata: Record<string, unknown> = {
+    role,
+    activeStoreId: storeId,
+  }
 
-  await admin.auth().setCustomUserClaims(uid, nextClaims)
-  return nextClaims
+  const company = await resolveCompanyName(uid, storeId).catch(() => null)
+  if (company) {
+    metadata.company = company
+  }
+
+  const { data, error } = await supabaseAdmin.auth.admin.updateUserById(uid, {
+    app_metadata: metadata,
+  })
+
+  if (error) {
+    throw new SupabaseFunctionError('internal', 'Failed to apply Supabase role metadata', {
+      cause: error,
+    })
+  }
+
+  return data?.user?.app_metadata ?? metadata
 }
