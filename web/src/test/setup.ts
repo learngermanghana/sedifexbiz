@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest'
+import { beforeEach, vi } from 'vitest'
 
 vi.stubEnv('VITE_FB_API_KEY', 'test-api-key')
 vi.stubEnv('VITE_FB_AUTH_DOMAIN', 'sedifex-ac2b0.firebaseapp.com')
