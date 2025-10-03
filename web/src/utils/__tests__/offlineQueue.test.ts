@@ -8,10 +8,12 @@ vi.mock('../../config/supabaseEnv', () => ({
   },
 }))
 
+
 vi.mock('../../supabaseClient', () => ({
   supabase: {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
+
     },
   },
 }))
@@ -24,6 +26,7 @@ describe('offlineQueue', () => {
 
   beforeEach(async () => {
     vi.resetModules()
+    getSessionMock.mockReset()
     postMessageMock = vi.fn()
     const registration = {
       active: { postMessage: postMessageMock },

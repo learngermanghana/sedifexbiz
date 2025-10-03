@@ -56,7 +56,7 @@ describe('useMemberships', () => {
   })
 
   it('loads memberships for the authenticated user and normalizes the document shape', async () => {
-    mockUseAuthUser.mockReturnValue({ uid: 'user-123' })
+    mockUseAuthUser.mockReturnValue({ id: 'user-123' })
 
     const membershipDoc = {
       id: 'member-doc',
@@ -105,7 +105,7 @@ describe('useMemberships', () => {
   })
 
   it('falls back to the document id and null values when fields are missing', async () => {
-    mockUseAuthUser.mockReturnValue({ uid: 'user-456' })
+    mockUseAuthUser.mockReturnValue({ id: 'user-456' })
 
     const membershipDoc = {
       id: 'user-456',
@@ -139,7 +139,7 @@ describe('useMemberships', () => {
   })
 
   it('filters memberships by active store when provided', async () => {
-    mockUseAuthUser.mockReturnValue({ uid: 'user-789' })
+    mockUseAuthUser.mockReturnValue({ id: 'user-789' })
 
     getDocsMock.mockResolvedValue({ docs: [] })
 
@@ -154,7 +154,7 @@ describe('useMemberships', () => {
   })
 
   it('includes fallback membership documents without a uid when a store is assigned', async () => {
-    mockUseAuthUser.mockReturnValue({ uid: 'user-abc' })
+    mockUseAuthUser.mockReturnValue({ id: 'user-abc' })
 
     getDocsMock.mockResolvedValue({ docs: [] })
 

@@ -98,7 +98,7 @@ export function useMemberships(activeStoreId?: string | null) {
 
       try {
         const membersRef = collection(db, 'teamMembers')
-        const constraints = [where('uid', '==', user.uid)]
+        const constraints = [where('uid', '==', user.id)]
         const normalizedStoreId =
           typeof activeStoreId === 'string' && activeStoreId.trim() !== ''
             ? activeStoreId
@@ -119,7 +119,7 @@ export function useMemberships(activeStoreId?: string | null) {
           membershipsById.set(membership.id, membership)
         }
 
-        const fallbackRefs = [doc(db, 'teamMembers', user.uid)]
+        const fallbackRefs = [doc(db, 'teamMembers', user.id)]
 
         for (const ref of fallbackRefs) {
           try {
@@ -153,7 +153,7 @@ export function useMemberships(activeStoreId?: string | null) {
     return () => {
       cancelled = true
     }
-  }, [activeStoreId, user?.uid])
+  }, [activeStoreId, user?.id])
 
   return { loading, memberships, error }
 }

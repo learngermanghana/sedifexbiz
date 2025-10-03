@@ -1,4 +1,6 @@
+
 import { supabaseEnv } from '../config/supabaseEnv'
+
 import { supabase } from '../supabaseClient'
 
 const FUNCTIONS_BASE_URL = supabaseEnv.functionsUrl
@@ -53,11 +55,13 @@ export async function queueCallableRequest(
 
     let authToken: string | null = null
     try {
+
       const { data, error } = await supabase.auth.getSession()
       if (error) {
         throw error
       }
       authToken = data?.session?.access_token ?? null
+
     } catch (error) {
       console.warn('[offline-queue] Unable to read auth token for queued request', error)
     }

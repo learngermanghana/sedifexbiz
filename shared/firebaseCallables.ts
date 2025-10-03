@@ -1,3 +1,4 @@
+
 export type SupabaseEndpointDefinition = {
   type: 'edge-function'
   name: string
@@ -23,3 +24,4 @@ export type SupabaseFunctionName = (typeof SUPABASE_FUNCTIONS)[SupabaseFunctionK
 export const FIREBASE_CALLABLES: Record<SupabaseFunctionKey, SupabaseFunctionName> = Object.fromEntries(
   Object.entries(SUPABASE_FUNCTIONS).map(([key, definition]) => [key, definition.name]),
 ) as Record<SupabaseFunctionKey, SupabaseFunctionName>
+

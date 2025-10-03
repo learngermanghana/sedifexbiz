@@ -1,8 +1,14 @@
-import * as functions from 'firebase-functions'
-import { admin, defaultDb } from './firestore'
-import { formatDailySummaryKey } from '../../shared/dateKeys'
+import { supabaseAdmin } from './firestore'
 
-type CallableContext = functions.https.CallableContext
+export type EdgeFunctionContext = {
+  requestId?: string
+  user?: {
+    id: string
+    email?: string | null
+    app_metadata?: Record<string, unknown>
+  } | null
+  headers?: Record<string, string>
+}
 
 const MAX_SANITIZE_DEPTH = 4
 const MAX_ARRAY_SAMPLE = 5
@@ -43,10 +49,6 @@ function sanitizePayload(value: unknown, depth = 0): unknown {
     return samples
   }
 
-  if (value instanceof admin.firestore.Timestamp) {
-    return 'timestamp'
-  }
-
   if (value instanceof Date) {
     return 'date'
   }
@@ -69,6 +71,27 @@ function sanitizePayload(value: unknown, depth = 0): unknown {
   }
 
   return valueType
+}
+
+export function deriveStoreIdFromContext(context: EdgeFunctionContext): string | null {
+  const metadata = (context.user?.app_metadata ?? {}) as Record<string, unknown>
+  const candidateKeys = ['activeStoreId', 'storeId', 'store_id', 'store', 'sid']
+  for (const key of candidateKeys) {
+    const raw = metadata?.[key]
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim()
+      if (trimmed) return trimmed
+    }
+  }
+  return null
+}
+
+export type CallableErrorLogInput<T> = {
+  route: string
+  context: EdgeFunctionContext
+  data: T
+  error: unknown
+  storeId?: string | null
 }
 
 function sanitizeError(error: unknown): Record<string, unknown> {
@@ -105,27 +128,6 @@ function sanitizeError(error: unknown): Record<string, unknown> {
   return result
 }
 
-export function deriveStoreIdFromContext(context: CallableContext): string | null {
-  const token = (context.auth?.token ?? {}) as Record<string, unknown>
-  const candidateKeys = ['activeStoreId', 'storeId', 'store_id', 'store', 'sid']
-  for (const key of candidateKeys) {
-    const raw = token?.[key]
-    if (typeof raw === 'string') {
-      const trimmed = raw.trim()
-      if (trimmed) return trimmed
-    }
-  }
-  return null
-}
-
-type CallableErrorLogInput<T> = {
-  route: string
-  context: CallableContext
-  data: T
-  error: unknown
-  storeId?: string | null
-}
-
 export async function logCallableError<T>({
   route,
   context,
@@ -133,77 +135,20 @@ export async function logCallableError<T>({
   error,
   storeId,
 }: CallableErrorLogInput<T>): Promise<void> {
-  try {
-    const timestamp = admin.firestore.Timestamp.now()
-    const dateKey = formatDailySummaryKey(timestamp.toDate(), { timeZone: 'UTC' })
-    const logDocRef = defaultDb.collection('logs').doc(dateKey)
-    await logDocRef.set({ dateKey, createdAt: timestamp }, { merge: true })
-    const eventsCollection = logDocRef.collection('events')
-    const docRef = eventsCollection.doc()
+  const payload = {
+    route,
+    store_id: storeId ?? deriveStoreIdFromContext(context),
+    user_id: context.user?.id ?? null,
+    payload_shape: sanitizePayload(data),
+    error: sanitizeError(error),
+    request_id: context.requestId ?? null,
+  }
 
-    const payload = {
-      route,
-      storeId: (storeId ?? deriveStoreIdFromContext(context)) ?? null,
-      authUid: context.auth?.uid ?? null,
-      payloadShape: sanitizePayload(data),
-      error: sanitizeError(error),
-      createdAt: timestamp,
-    }
+  const { error: insertError } = await supabaseAdmin
+    .from('callable_error_events')
+    .insert(payload)
 
-    await docRef.set(payload, { merge: false })
-  } catch (loggingError) {
-    const loggingErrorMessage =
-      loggingError instanceof Error ? loggingError.message : String(loggingError)
-    functions.logger.error('[telemetry] Failed to record callable error', {
-      route,
-      loggingError: loggingErrorMessage,
-    })
+  if (insertError) {
+    console.error('[telemetry] Failed to record callable error', insertError)
   }
 }
-
-type ResolveStoreIdFn<T> = (
-  data: T,
-  context: CallableContext,
-  error: unknown,
-) => string | null | Promise<string | null>
-
-type CallableHandler<T, R> = (data: T, context: CallableContext) => R | Promise<R>
-
-type WithLoggingOptions<T> = {
-  resolveStoreId?: ResolveStoreIdFn<T>
-}
-
-async function safelyResolveStoreId<T>(
-  resolver: ResolveStoreIdFn<T> | undefined,
-  data: T,
-  context: CallableContext,
-  error: unknown,
-): Promise<string | null | undefined> {
-  if (!resolver) return undefined
-  try {
-    return await resolver(data, context, error)
-  } catch (resolveError) {
-    functions.logger.warn('[telemetry] Failed to resolve storeId for callable error', {
-      resolveError,
-    })
-    return undefined
-  }
-}
-
-export function withCallableErrorLogging<T, R>(
-  route: string,
-  handler: CallableHandler<T, R>,
-  options: WithLoggingOptions<T> = {},
-): CallableHandler<T, R> {
-  return (async (data, context) => {
-    try {
-      return await handler(data, context)
-    } catch (error) {
-      const resolvedStoreId = await safelyResolveStoreId(options.resolveStoreId, data, context, error)
-      await logCallableError({ route, context, data, error, storeId: resolvedStoreId ?? undefined })
-      throw error
-    }
-  })
-}
-
-export { sanitizePayload }

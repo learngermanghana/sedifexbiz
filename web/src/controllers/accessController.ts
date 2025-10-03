@@ -1,8 +1,10 @@
 import { doc, getDoc } from 'firebase/firestore'
+
 // web/src/controllers/accessController.ts
 import { SUPABASE_FUNCTIONS, type SupabaseEndpointDefinition } from '@shared/firebaseCallables'
 
 import { auth, db } from '../firebase'
+
 import { supabase } from '../supabaseClient'
 
 export type ResolveStoreAccessSuccess = {
@@ -60,13 +62,14 @@ async function invokeSupabaseEdgeFunction<Payload>(
 }
 
 export async function resolveStoreAccess(): Promise<ResolveStoreAccessResult> {
-  const user = auth.currentUser
-  if (!user?.uid) {
+  const { data } = await supabase.auth.getSession()
+  const user = data.session?.user
+  if (!user?.id) {
     return { ok: false, error: 'NO_MEMBERSHIP' }
   }
 
   try {
-    const memberSnapshot = await getDoc(doc(db, 'teamMembers', user.uid))
+    const memberSnapshot = await getDoc(doc(db, 'teamMembers', user.id))
     if (!memberSnapshot.exists()) {
       return { ok: false, error: 'NO_MEMBERSHIP' }
     }
