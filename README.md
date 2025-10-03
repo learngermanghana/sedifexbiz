@@ -4,8 +4,10 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 
 ## What’s inside
 - `web/` — React + Vite + TypeScript PWA
-- `functions/` — Firebase Cloud Functions (Node 20) for store onboarding and stock receipts
-- `data-service.config.json` — Connection details expected by the backend when talking to Postgres
+
+- `functions/` — Cloud Functions (Node 20) for workspace management backed by the Sedifex Data API
+- `firestore.rules` — Multi-tenant security rules scaffold
+
 - `.github/workflows/` — Optional CI for deploying Functions (if you want to use GitHub Actions)
 
 ## Quick start (local dev)
@@ -35,14 +37,13 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
    ```bash
    cd functions
    npm i
-   # Login to Firebase
-   npx firebase login
-   # Set your project
-   npx firebase use sedifex-dev
-   # Deploy callable/HTTPS functions
-   npm run deploy
-   # Deploy the Cloud Run service that fronts Postgres
-   npm run deploy:backend
+
+   # Configure the data API endpoint used by the functions
+   export SEDIFEX_API_URL=https://api.sedifex.dev
+   export SEDIFEX_API_KEY=dev-service-token
+   # Deploy with your preferred tooling (Firebase CLI or Cloud Functions Framework)
+   npm run build
+
    ```
 
 ## Deploy the PWA (Vercel/Netlify/Firebase Hosting)
@@ -50,20 +51,16 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 - Add the env vars above (Firebase + API endpoint) to your hosting provider.
 - Set your domain `app.sedifex.com` to the deployed frontend.
 
-## Data service setup notes
-- Provision **Postgres** with a production branch and read replica if possible.
-- Keep the `DATABASE_URL` and `DATABASE_POOLER_URL` secrets in Firebase Functions/Cloud Run for production deployments.
-- Schedule the `runNightlyDataHygiene` Cloud Function via Cloud Scheduler (daily at 03:00 UTC) so summaries are recomputed and activity logs stay clean.
+## Backend setup notes
+- Enable **Authentication → Phone** and **Email/Password** in Firebase Auth (optional).
+- Provision the Sedifex Data API and expose it at `SEDIFEX_API_URL`. The Functions expect REST resources for team members and stores, along with a `callable-logs` endpoint for error telemetry.
+- Create a second project for production later (e.g., `sedifex-prod`).
+- Schedule the `runNightlyDataHygiene` Cloud Function via Cloud Scheduler (daily at 03:00 UTC). It now audits the Data API rather than cleaning Firestore collections.
 
 ## Testing
-- Run unit and integration tests from the `web/` directory with `npm run test`.
+- Run unit and integration tests for the PWA from the `web/` directory with `npm run test`.
+- API-backed Cloud Functions tests live in `functions/` and can be executed with `npm test`. They boot the in-memory persistence adapter instead of relying on Firestore emulators.
 
-## Maintenance scripts
-- To backfill missing team memberships and store documents for legacy Auth accounts, run `npm run migrate-missing-members` from the `functions/` directory. The script requires Firebase Admin credentials (e.g., `GOOGLE_APPLICATION_CREDENTIALS`) and access to the Postgres connection env vars so it can join against membership tables.
-
-### Membership records in Postgres
-- Store onboarding now relies on membership rows inside a `memberships` table (schema maintained in Postgres migrations). Create one row per workspace with fields such as `contract_start`, `contract_end`, `payment_status`, `amount_paid`, and `company`.
-- Ensure date fields are stored as timestamps (UTC) and normalize payment amounts to numbers so Cloud Functions can process billing logic without additional parsing.
 
 ## Branding
 - Name: **Sedifex**

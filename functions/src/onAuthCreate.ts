@@ -1,21 +1,19 @@
 import * as functions from 'firebase-functions'
-import { admin, rosterDb } from './firestore'
+import { getPersistence } from './persistence'
 
 export const onAuthCreate = functions.auth.user().onCreate(async user => {
   const uid = user.uid
-  const timestamp = admin.firestore.FieldValue.serverTimestamp()
+  const adapter = getPersistence()
+  const fallbackStoreId = uid
 
-  await rosterDb
-    .collection('teamMembers')
-    .doc(uid)
-    .set(
-      {
-        uid,
-        email: user.email ?? null,
-        phone: user.phoneNumber ?? null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      { merge: true },
-    )
+  const existing = await adapter.getTeamMember(uid)
+  const storeId = existing?.storeId ?? fallbackStoreId
+
+  await adapter.upsertTeamMember({
+    uid,
+    storeId,
+    role: existing?.role ?? 'owner',
+    email: user.email ?? existing?.email ?? null,
+    phone: user.phoneNumber ?? existing?.phone ?? null,
+  })
 })

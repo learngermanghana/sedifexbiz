@@ -1,5 +1,5 @@
 import * as functions from 'firebase-functions'
-import { admin, defaultDb } from './firestore'
+import { getPersistence } from './persistence'
 import { formatDailySummaryKey } from '../../shared/dateKeys'
 
 type CallableContext = functions.https.CallableContext
@@ -41,10 +41,6 @@ function sanitizePayload(value: unknown, depth = 0): unknown {
       samples.push(`[+${value.length - MAX_ARRAY_SAMPLE} more]`)
     }
     return samples
-  }
-
-  if (value instanceof admin.firestore.Timestamp) {
-    return 'timestamp'
   }
 
   if (value instanceof Date) {
@@ -134,26 +130,21 @@ export async function logCallableError<T>({
   storeId,
 }: CallableErrorLogInput<T>): Promise<void> {
   try {
-    const timestamp = admin.firestore.Timestamp.now()
-    const dateKey = formatDailySummaryKey(timestamp.toDate(), { timeZone: 'UTC' })
-    const logDocRef = defaultDb.collection('logs').doc(dateKey)
-    await logDocRef.set({ dateKey, createdAt: timestamp }, { merge: true })
-    const eventsCollection = logDocRef.collection('events')
-    const docRef = eventsCollection.doc()
-
+    const adapter = getPersistence()
+    const now = new Date()
+    const dateKey = formatDailySummaryKey(now, { timeZone: 'UTC' })
     const payload = {
       route,
       storeId: (storeId ?? deriveStoreIdFromContext(context)) ?? null,
       authUid: context.auth?.uid ?? null,
       payloadShape: sanitizePayload(data),
       error: sanitizeError(error),
-      createdAt: timestamp,
+      createdAt: now,
+      dateKey,
     }
-
-    await docRef.set(payload, { merge: false })
+    await adapter.recordCallableError(payload)
   } catch (loggingError) {
-    const loggingErrorMessage =
-      loggingError instanceof Error ? loggingError.message : String(loggingError)
+    const loggingErrorMessage = loggingError instanceof Error ? loggingError.message : String(loggingError)
     functions.logger.error('[telemetry] Failed to record callable error', {
       route,
       loggingError: loggingErrorMessage,

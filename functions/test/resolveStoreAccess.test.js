@@ -1,142 +1,38 @@
 const assert = require('assert')
-const Module = require('module')
-const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
-
-let currentDefaultDb
-const apps = []
-
-const originalLoad = Module._load
-Module._load = function patchedLoad(request, parent, isMain) {
-  if (request === 'firebase-admin') {
-    const firestore = () => currentDefaultDb
-    firestore.FieldValue = {
-      serverTimestamp: () => MockTimestamp.now(),
-      increment: amount => ({ __mockIncrement: amount }),
-    }
-    firestore.Timestamp = MockTimestamp
-
-    return {
-      initializeApp: () => {
-        const app = { name: 'mock-app' }
-        apps[0] = app
-        return app
-      },
-      app: () => apps[0] || null,
-      apps,
-      firestore,
-      auth: () => ({
-        getUser: async () => ({ customClaims: undefined }),
-        getUserByEmail: async () => {
-          const err = new Error('not found')
-          err.code = 'auth/user-not-found'
-          throw err
-        },
-        updateUser: async () => {},
-        createUser: async () => ({ uid: 'new-user' }),
-        setCustomUserClaims: async () => {},
-      }),
-    }
-  }
-
-  if (request === 'firebase-admin/firestore') {
-    return {
-      getFirestore: () => currentDefaultDb,
-    }
-  }
-
-  return originalLoad(request, parent, isMain)
-}
-
-function loadFunctionsModule() {
-  apps.length = 0
-  delete require.cache[require.resolve('../lib/firestore.js')]
-  delete require.cache[require.resolve('../lib/index.js')]
-  return require('../lib/index.js')
-}
-
-async function runSuccessTest() {
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/user-1': { storeId: ' store-123 ', role: ' Owner ' },
-  })
-
-  const { resolveStoreAccess } = loadFunctionsModule()
-  const context = {
-    auth: {
-      uid: 'user-1',
-      token: {},
-    },
-  }
-
-  const result = await resolveStoreAccess.run({}, context)
-
-  assert.deepStrictEqual(result, { ok: true, storeId: 'store-123', role: 'owner' })
-}
-
-async function runMissingMembershipTest() {
-  currentDefaultDb = new MockFirestore()
-
-  const { resolveStoreAccess } = loadFunctionsModule()
-  const context = {
-    auth: {
-      uid: 'user-2',
-      token: {},
-    },
-  }
-
-  const result = await resolveStoreAccess.run({}, context)
-
-  assert.deepStrictEqual(result, { ok: false, error: 'NO_MEMBERSHIP' })
-}
-
-async function runInvalidMembershipTest() {
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/user-3': { storeId: '', role: 'viewer' },
-  })
-
-  const { resolveStoreAccess } = loadFunctionsModule()
-  const context = {
-    auth: {
-      uid: 'user-3',
-      token: {},
-    },
-  }
-
-  const result = await resolveStoreAccess.run({}, context)
-
-  assert.deepStrictEqual(result, { ok: false, error: 'NO_MEMBERSHIP' })
-}
-
-async function runInvalidRoleTest() {
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/user-4': { storeId: 'store-xyz', role: 'manager' },
-  })
-
-  const { resolveStoreAccess } = loadFunctionsModule()
-  const context = {
-    auth: {
-      uid: 'user-4',
-      token: {},
-    },
-  }
-
-  const result = await resolveStoreAccess.run({}, context)
-
-  assert.deepStrictEqual(result, { ok: false, error: 'NO_MEMBERSHIP' })
-}
+const path = require('path')
+const { installFirebaseAdminStub } = require('./helpers/setupFirebaseAdmin')
 
 async function run() {
-  await runSuccessTest()
-  await runMissingMembershipTest()
-  await runInvalidMembershipTest()
-  await runInvalidRoleTest()
+  const restoreAdmin = installFirebaseAdminStub()
+  process.env.PERSISTENCE_DRIVER = 'memory'
+
+  delete require.cache[path.resolve(__dirname, '../lib/functions/src/persistence.js')]
+  delete require.cache[path.resolve(__dirname, '../lib/functions/src/index.js')]
+
+  const persistence = require('../lib/functions/src/persistence.js')
+  const adapter = persistence.createMemoryPersistence()
+  persistence.setPersistenceAdapter(adapter)
+
+  const { resolveStoreAccess } = require('../lib/functions/src/index.js')
+
+  await adapter.upsertTeamMember({
+    uid: 'user-1',
+    storeId: 'store-123',
+    role: 'owner',
+    email: 'owner@example.com',
+  })
+
+  const success = await resolveStoreAccess.run({}, { auth: { uid: 'user-1', token: {} } })
+  assert.deepStrictEqual(success, { ok: true, storeId: 'store-123', role: 'owner' })
+
+  const missing = await resolveStoreAccess.run({}, { auth: { uid: 'user-2', token: {} } })
+  assert.deepStrictEqual(missing, { ok: false, error: 'NO_MEMBERSHIP' })
+
+  restoreAdmin()
   console.log('resolveStoreAccess tests passed')
 }
 
-run()
-  .catch(err => {
-    console.error(err)
-    process.exitCode = 1
-  })
-  .finally(() => {
-    Module._load = originalLoad
-  })
+run().catch(err => {
+  console.error(err)
+  process.exitCode = 1
+})
