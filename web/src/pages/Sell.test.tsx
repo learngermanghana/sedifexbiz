@@ -246,7 +246,7 @@ describe('Sell page', () => {
     mockUseAuthUser.mockReset()
     mockUseActiveStoreContext.mockReset()
     mockUseAuthUser.mockReturnValue({
-      uid: 'cashier-123',
+      id: 'cashier-123',
       email: 'cashier@example.com',
     })
     mockUseActiveStoreContext.mockReturnValue({

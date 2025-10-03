@@ -335,8 +335,8 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   const latestSalesRequestRef = useRef<string>('')
 
   const goalDocumentId = useMemo(
-    () => activeStoreId ?? `user-${authUser?.uid ?? 'default'}`,
-    [activeStoreId, authUser?.uid],
+    () => activeStoreId ?? `user-${authUser?.id ?? 'default'}`,
+    [activeStoreId, authUser?.id],
   )
 
   const today = useMemo(() => new Date(), [])

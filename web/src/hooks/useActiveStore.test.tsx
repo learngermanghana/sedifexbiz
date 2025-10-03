@@ -35,7 +35,7 @@ describe('useActiveStore', () => {
     mockUseMemberships.mockReset()
     mockUseAuthUser.mockReset()
     window.localStorage.clear()
-    mockUseAuthUser.mockReturnValue({ uid: 'user-1' })
+    mockUseAuthUser.mockReturnValue({ id: 'user-1' })
   })
 
   it('prefers the persisted store id when it matches the membership store', async () => {
@@ -110,7 +110,7 @@ describe('useActiveStore', () => {
   })
 
   it('resets the active store when switching to a different user', async () => {
-    let currentUser: { uid: string } = { uid: 'user-1' }
+    let currentUser: { id: string } = { id: 'user-1' }
     mockUseAuthUser.mockImplementation(() => currentUser)
 
     mockUseMemberships.mockImplementation(storeId => {
@@ -118,7 +118,7 @@ describe('useActiveStore', () => {
         return { memberships: [], loading: true, error: null }
       }
 
-      if (currentUser.uid === 'user-1') {
+      if (currentUser.id === 'user-1') {
         return {
           memberships: [createMembership('user-1-store')],
           loading: false,
@@ -143,7 +143,7 @@ describe('useActiveStore', () => {
       expect(result.current.storeId).toBe('user-1-store')
     })
 
-    currentUser = { uid: 'user-2' }
+    currentUser = { id: 'user-2' }
     const user2Key = getActiveStoreStorageKey('user-2')
     window.localStorage.setItem(user2Key, 'user-2-store')
     rerender()

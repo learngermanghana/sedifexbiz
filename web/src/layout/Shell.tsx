@@ -1,12 +1,11 @@
 import React, { useCallback, useId, useMemo } from 'react'
 import { NavLink } from 'react-router-dom'
-import { signOut } from 'firebase/auth'
-import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
 import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import './Shell.css'
 import './Workspace.css'
+import { supabase } from '../supabaseClient'
 
 type NavItem = { to: string; label: string; end?: boolean }
 
@@ -238,7 +237,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 className="button button--primary button--small"
-                onClick={() => signOut(auth)}
+                onClick={() => {
+                  void supabase.auth.signOut()
+                }}
               >
                 Sign out
               </button>

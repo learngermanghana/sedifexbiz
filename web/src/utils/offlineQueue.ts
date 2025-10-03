@@ -1,5 +1,5 @@
 import { firebaseEnv } from '../config/firebaseEnv'
-import { auth } from '../firebase'
+import { supabase } from '../supabaseClient'
 
 const FUNCTIONS_REGION = firebaseEnv.functionsRegion
 const PROJECT_ID = firebaseEnv.projectId
@@ -50,7 +50,8 @@ export async function queueCallableRequest(
 
     let authToken: string | null = null
     try {
-      authToken = await auth.currentUser?.getIdToken() ?? null
+      const { data } = await supabase.auth.getSession()
+      authToken = data.session?.access_token ?? null
     } catch (error) {
       console.warn('[offline-queue] Unable to read auth token for queued request', error)
     }

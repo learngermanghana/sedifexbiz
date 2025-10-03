@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import type { User } from 'firebase/auth'
-import { onAuthStateChanged } from 'firebase/auth'
 import { Outlet } from 'react-router-dom'
-import { auth } from './firebase'
 import './pwa'
 import { useToast } from './components/ToastProvider'
 import { configureAuthPersistence, refreshSessionHeartbeat } from './controllers/sessionController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { clearActiveStoreIdForUser, clearLegacyActiveStoreId } from './utils/activeStoreStorage'
+import { supabase, type Session } from './supabaseClient'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -49,36 +47,37 @@ const loadingStyle: CSSProperties = {
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
   const previousUidRef = useRef<string | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
   const { publish } = useToast()
 
   useEffect(() => {
-    configureAuthPersistence(auth).catch(() => {})
-    const unsubscribe = onAuthStateChanged(auth, nextUser => {
+    configureAuthPersistence(supabase).catch(() => {})
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       const previousUid = previousUidRef.current
+      const nextUid = nextSession?.user?.id ?? null
 
-      if (!nextUser) {
+      if (!nextUid) {
         if (previousUid) {
           clearActiveStoreIdForUser(previousUid)
         }
         clearLegacyActiveStoreId()
-      } else if (previousUid && previousUid !== nextUser.uid) {
+      } else if (previousUid && previousUid !== nextUid) {
         clearActiveStoreIdForUser(previousUid)
       }
 
-      previousUidRef.current = nextUser?.uid ?? null
-      setUser(nextUser)
+      previousUidRef.current = nextUid
+      setSession(nextSession ?? null)
       setIsAuthReady(true)
     })
-    return unsubscribe
+    return () => data.subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
-    if (!user) return
-    refreshSessionHeartbeat(user).catch(() => {})
-  }, [user])
+    if (!session) return
+    refreshSessionHeartbeat(session).catch(() => {})
+  }, [session])
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
@@ -114,7 +113,7 @@ export default function App() {
   }
 
   return (
-    <AuthUserContext.Provider value={user}>
+    <AuthUserContext.Provider value={session?.user ?? null}>
       <Outlet />
     </AuthUserContext.Provider>
   )

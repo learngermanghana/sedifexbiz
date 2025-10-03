@@ -627,14 +627,14 @@ export default function Sell() {
         const saleData = {
           branchId: activeStoreId,
           storeId: activeStoreId,
-          cashierId: user.uid,
+          cashierId: user.id,
           total: subtotal,
           taxTotal: 0,
           tenders: { ...tenders },
           changeDue,
           customer: saleCustomer,
           items: normalizedItems,
-          createdBy: user.uid,
+          createdBy: user.id,
           createdAt: timestamp,
           updatedAt: timestamp,
         }
