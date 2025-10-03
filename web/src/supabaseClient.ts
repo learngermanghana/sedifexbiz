@@ -1,6 +1,9 @@
-
-import { createClient } from '@supabase/supabase-js'
-
+import {
+  createClient,
+  type Session,
+  type SupabaseClient,
+  type User,
+} from '@supabase/supabase-js'
 import { supabaseEnv } from './config/supabaseEnv'
 
 export const supabase = createClient(supabaseEnv.url, supabaseEnv.anonKey, {
@@ -10,3 +13,4 @@ export const supabase = createClient(supabaseEnv.url, supabaseEnv.anonKey, {
   },
 })
 
+export type { Session, SupabaseClient, User }
