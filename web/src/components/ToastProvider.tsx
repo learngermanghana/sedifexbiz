@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
+import { colors, radii, shadows } from '../styles/themeTokens'
 
 type ToastTone = 'success' | 'error' | 'info'
 
@@ -114,19 +115,19 @@ const containerStyle: CSSProperties = {
 const toastStyle: CSSProperties = {
   pointerEvents: 'auto',
   border: 'none',
-  borderRadius: '0.5rem',
+  borderRadius: radii.md,
   padding: '0.75rem 1rem',
   fontSize: '0.875rem',
   fontWeight: 500,
-  color: '#fff',
-  backgroundColor: '#333',
-  boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+  color: colors.textInverse,
+  backgroundColor: colors.surfaceElevated,
+  boxShadow: shadows.overlay,
   cursor: 'pointer',
   textAlign: 'left',
 }
 
 const toneStyles: Record<ToastTone, CSSProperties> = {
-  success: { backgroundColor: '#1b873f' },
-  error: { backgroundColor: '#c53030' },
-  info: { backgroundColor: '#2b6cb0' },
+  success: { backgroundColor: colors.success },
+  error: { backgroundColor: colors.danger },
+  info: { backgroundColor: colors.info },
 }

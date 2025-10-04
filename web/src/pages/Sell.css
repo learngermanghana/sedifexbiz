@@ -3,8 +3,8 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
-  background: #eef2ff;
-  border-radius: 16px;
+  background: var(--color-brand-50, #eef2ff);
+  border-radius: var(--radius-xl, 16px);
   padding: 12px 16px;
   min-width: 160px;
 }
@@ -13,14 +13,14 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #6366f1;
+  color: var(--color-brand-400, #6366f1);
   font-weight: 600;
 }
 
 .sell-page__total-value {
   font-size: 20px;
   font-weight: 700;
-  color: #312e81;
+  color: var(--color-brand-700, #312e81);
 }
 
 .sell-page__grid {
@@ -53,9 +53,9 @@
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  border-radius: 14px;
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  background: var(--color-app-background, #f8fafc);
+  border-radius: var(--radius-lg, 14px);
   padding: 14px 16px;
   text-align: left;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
@@ -63,26 +63,26 @@
 
 .sell-page__product:hover,
 .sell-page__product:focus-visible {
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 18px 40px -26px rgba(99, 102, 241, 0.6);
+  border-color: rgba(var(--color-brand-accent-rgb, 99, 102, 241), 0.4);
+  box-shadow: var(--shadow-brand-lift, 0 18px 40px -26px rgba(99, 102, 241, 0.6));
   transform: translateY(-1px);
 }
 
 .sell-page__product-name {
   font-weight: 600;
-  color: #0f172a;
+  color: var(--color-text-primary, #0f172a);
 }
 
 .sell-page__product-meta {
   display: block;
   font-size: 13px;
-  color: #64748b;
+  color: var(--color-text-muted, #64748b);
   margin-top: 4px;
 }
 
 .sell-page__product-action {
   font-weight: 600;
-  color: #4338ca;
+  color: var(--color-brand-500, #4338ca);
 }
 
 .sell-page__summary {
@@ -95,7 +95,7 @@
 
 .sell-page__summary strong {
   font-size: 20px;
-  color: #111827;
+  color: var(--color-neutral-900, #111827);
 }
 
 .sell-page__numeric {
@@ -124,20 +124,20 @@
 .sell-page__input,
 .sell-page__select {
   padding: 10px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+  border-radius: var(--radius-md, 12px);
   font-size: 15px;
 }
 
 .sell-page__input:focus,
 .sell-page__select:focus {
   outline: none;
-  border-color: rgba(99, 102, 241, 0.6);
-  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.35);
+  border-color: rgba(var(--color-brand-accent-rgb, 99, 102, 241), 0.6);
+  box-shadow: 0 0 0 2px rgba(var(--color-brand-soft-rgb, 129, 140, 248), 0.35);
 }
 
 .sell-page__customers-link {
-  color: #4338ca;
+  color: var(--color-brand-500, #4338ca);
   font-weight: 600;
 }
 
@@ -147,14 +147,14 @@
   gap: 12px;
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--color-border-subtle, #e2e8f0);
 }
 
 .sell-page__payment-breakdown {
   display: block;
   margin-top: 4px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--color-text-muted, #64748b);
 }
 
 @media (min-width: 720px) {
@@ -169,16 +169,16 @@
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--color-text-muted, #64748b);
   margin-bottom: 4px;
 }
 
 .sell-page__change {
-  color: #047857;
+  color: var(--color-success-500, #047857);
 }
 
 .sell-page__change.is-short {
-  color: #b91c1c;
+  color: var(--color-danger-500, #b91c1c);
 }
 
 .sell-page__message {
@@ -190,19 +190,19 @@
 }
 
 .sell-page__message--error {
-  color: #b91c1c;
+  color: var(--color-danger-500, #b91c1c);
 }
 
 .sell-page__message--success {
-  color: #047857;
+  color: var(--color-success-500, #047857);
 }
 
 .sell-page__loyalty {
   margin-top: 12px;
   padding: 12px 14px;
-  border: 1px dashed rgba(67, 56, 202, 0.35);
-  border-radius: 12px;
-  background: rgba(224, 231, 255, 0.4);
+  border: 1px dashed rgba(var(--color-brand-rgb, 67, 56, 202), 0.35);
+  border-radius: var(--radius-md, 12px);
+  background: rgba(var(--color-brand-50-rgb, 224, 231, 255), 0.4);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -210,12 +210,12 @@
 
 .sell-page__loyalty-title {
   font-size: 14px;
-  color: #312e81;
+  color: var(--color-brand-700, #312e81);
 }
 
 .sell-page__loyalty-text {
   font-size: 13px;
-  color: #4338ca;
+  color: var(--color-brand-500, #4338ca);
   margin: 0;
 }
 
@@ -228,9 +228,9 @@
 .sell-page__engagement {
   margin-top: 16px;
   padding: 16px;
-  border: 1px solid #bbf7d0;
-  border-radius: 16px;
-  background: #f0fdf4;
+  border: 1px solid var(--color-success-border, #bbf7d0);
+  border-radius: var(--radius-xl, 16px);
+  background: var(--color-success-bg, #f0fdf4);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -239,14 +239,14 @@
 .sell-page__engagement-title {
   font-size: 16px;
   font-weight: 600;
-  color: #065f46;
+  color: var(--color-success-600, #065f46);
   margin: 0;
 }
 
 .sell-page__engagement-text {
   margin: 0;
   font-size: 14px;
-  color: #047857;
+  color: var(--color-success-500, #047857);
 }
 
 .sell-page__engagement-actions {
@@ -257,14 +257,14 @@
 
 .sell-page__engagement-details {
   font-size: 13px;
-  color: #14532d;
+  color: var(--color-success-deep, #14532d);
 }
 
 .sell-page__engagement-preview {
   margin: 8px 0 0;
   padding: 12px;
-  background: #dcfce7;
-  border-radius: 12px;
+  background: var(--color-success-soft, #dcfce7);
+  border-radius: var(--radius-md, 12px);
   font-family: 'Courier New', Courier, monospace;
   white-space: pre-wrap;
 }
@@ -278,8 +278,8 @@
   position: fixed;
   inset: 0;
   padding: 24px;
-  background: #ffffff;
-  color: #111827;
+  background: var(--color-surface-base, #ffffff);
+  color: var(--color-neutral-900, #111827);
   font-family: 'Courier New', Courier, monospace;
   z-index: -1;
 }
@@ -316,7 +316,7 @@
 .receipt-print__table td {
   padding: 6px 0;
   text-align: left;
-  border-bottom: 1px dashed #d4d4d4;
+  border-bottom: 1px dashed var(--color-border-neutral, #d4d4d4);
 }
 
 .receipt-print__table th:last-child,
@@ -339,7 +339,7 @@
   flex-basis: 100%;
   text-align: right;
   font-size: 13px;
-  color: #475569;
+  color: var(--color-text-secondary, #475569);
   margin-top: 4px;
 }
 

@@ -1,4 +1,5 @@
 import type { CSSProperties, FormEventHandler, ReactNode } from 'react'
+import { colors, gradients, overlays, radii, shadows } from '../../styles/themeTokens'
 
 type AuthFormProps = {
   title: string
@@ -51,10 +52,10 @@ const formStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: '1.5rem',
-  backgroundColor: '#ffffff',
-  borderRadius: '16px',
+  backgroundColor: colors.surface,
+  borderRadius: radii.xl,
   padding: '2.5rem',
-  boxShadow: '0 18px 45px rgba(15, 23, 42, 0.12)',
+  boxShadow: shadows.elevated,
 }
 
 const headerStyle: CSSProperties = {
@@ -67,14 +68,14 @@ const titleStyle: CSSProperties = {
   fontSize: '1.75rem',
   fontWeight: 700,
   margin: 0,
-  color: '#0f172a',
+  color: colors.textPrimary,
 }
 
 const descriptionStyle: CSSProperties = {
   margin: 0,
   fontSize: '1rem',
   lineHeight: 1.5,
-  color: '#475569',
+  color: colors.textSecondary,
 }
 
 const bodyStyle: CSSProperties = {
@@ -86,31 +87,31 @@ const bodyStyle: CSSProperties = {
 const submitStyle: CSSProperties = {
   appearance: 'none',
   border: 'none',
-  borderRadius: '999px',
-  background: 'linear-gradient(135deg, #2563eb, #7c3aed)',
-  color: '#fff',
+  borderRadius: radii.pill,
+  background: gradients.auth,
+  color: colors.textInverse,
   fontSize: '1rem',
   fontWeight: 600,
   padding: '0.85rem 1.5rem',
   cursor: 'pointer',
   transition: 'filter 150ms ease, transform 150ms ease',
-  boxShadow: '0 14px 30px rgba(37, 99, 235, 0.35)',
+  boxShadow: shadows.cta,
 }
 
 const errorStyle: CSSProperties = {
   margin: 0,
   padding: '0.75rem 1rem',
-  borderRadius: '0.75rem',
-  backgroundColor: '#fef2f2',
-  color: '#b91c1c',
+  borderRadius: radii.md,
+  backgroundColor: colors.dangerSurface,
+  color: colors.danger,
   fontSize: '0.95rem',
-  border: '1px solid rgba(248, 113, 113, 0.4)',
+  border: `1px solid ${overlays.dangerOutline}`,
 }
 
 const footerStyle: CSSProperties = {
   textAlign: 'center',
   fontSize: '0.95rem',
-  color: '#475569',
+  color: colors.textSecondary,
 }
 
 if (typeof window !== 'undefined') {
@@ -150,21 +151,21 @@ export const inputGroupStyle: CSSProperties = {
 export const labelStyle: CSSProperties = {
   fontWeight: 600,
   fontSize: '0.95rem',
-  color: '#1e293b',
+  color: colors.textPrimary,
 }
 
 export const inputStyle: CSSProperties = {
-  borderRadius: '0.75rem',
-  border: '1px solid rgba(148, 163, 184, 0.6)',
+  borderRadius: radii.md,
+  border: '1px solid rgba(var(--color-border-input-rgb, 148, 163, 184), 0.6)',
   padding: '0.85rem 1rem',
   fontSize: '1rem',
-  backgroundColor: '#f8fafc',
-  color: '#0f172a',
+  backgroundColor: colors.background,
+  color: colors.textPrimary,
   transition: 'border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease',
 }
 
 export const noteStyle: CSSProperties = {
   fontSize: '0.85rem',
-  color: '#64748b',
+  color: colors.textMuted,
   margin: 0,
 }

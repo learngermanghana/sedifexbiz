@@ -1,0 +1,123 @@
+:root {
+  /* Typography */
+  --font-family-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Base colors */
+  --color-app-background: #f8fafc;
+  --color-surface-base: #ffffff;
+  --color-surface-soft: #eef2ff;
+  --color-surface-muted: #f1f5f9;
+  --color-surface-translucent: rgba(255, 255, 255, 0.92);
+  --color-elevated-surface: #1f2937;
+
+  --color-border-subtle: #e2e8f0;
+  --color-border-muted: #cbd5f5;
+  --color-border-strong: #bbf7d0;
+  --color-border-input-rgb: 148, 163, 184;
+
+  --color-text-primary: #0f172a;
+  --color-text-strong: #1e293b;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  --color-text-subtle: #94a3b8;
+  --color-text-inverse: #ffffff;
+
+  /* Brand palette */
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-400: #6366f1;
+  --color-brand-500: #4338ca;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #312e81;
+  --color-brand-800: #5b21b6;
+  --color-brand-accent: #6366f1;
+  --color-brand-vivid: #7c3aed;
+  --color-brand-50-rgb: 224, 231, 255;
+  --color-brand-soft-rgb: 129, 140, 248;
+  --color-brand-rgb: 67, 56, 202;
+  --color-brand-strong-rgb: 79, 70, 229;
+  --color-brand-accent-rgb: 99, 102, 241;
+  --color-brand-vivid-rgb: 124, 58, 237;
+
+  /* Informational palette */
+  --color-info-500: #1d4ed8;
+  --color-info-600: #2563eb;
+  --color-info-accent: #3b82f6;
+  --color-info-soft: #eff6ff;
+  --color-info-rgb: 37, 99, 235;
+  --color-info-accent-rgb: 59, 130, 246;
+
+  /* Success palette */
+  --color-success-400: #34d399;
+  --color-success-500: #047857;
+  --color-success-600: #065f46;
+  --color-success-700: #15803d;
+  --color-success-deep: #14532d;
+  --color-success-soft: #dcfce7;
+  --color-success-bg: #f0fdf4;
+  --color-success-border: #bbf7d0;
+  --color-success-rgb: 5, 150, 105;
+
+  /* Warning palette */
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-contrast: #92400e;
+  --color-warning-soft: #fff7ed;
+  --color-warning-alt: #fef3c7;
+  --color-warning-accent: #c2410c;
+  --color-warning-rgb: 245, 158, 11;
+
+  /* Danger palette */
+  --color-danger-400: #f87171;
+  --color-danger-500: #b91c1c;
+  --color-danger-600: #991b1b;
+  --color-danger-strong: #7f1d1d;
+  --color-danger-intense: #dc2626;
+  --color-danger-soft: #fef2f2;
+  --color-danger-border: #fecaca;
+  --color-danger-subtle: #fee2e2;
+  --color-danger-rgb: 239, 68, 68;
+  --color-danger-light-rgb: 248, 113, 113;
+  --color-danger-strong-rgb: 185, 28, 28;
+  --color-danger-intense-rgb: 220, 38, 38;
+
+  --color-neutral-900: #111827;
+  --color-border-neutral: #d4d4d4;
+  --color-overlay-rgb: 15, 23, 42;
+
+  /* Gradients */
+  --gradient-brand: linear-gradient(135deg, var(--color-brand-500), var(--color-brand-600));
+  --gradient-info: linear-gradient(135deg, var(--color-info-600), var(--color-info-500));
+  --gradient-success: linear-gradient(135deg, #059669, #047857);
+  --gradient-auth: linear-gradient(135deg, var(--color-info-600), var(--color-brand-vivid, #7c3aed));
+
+  /* Shadows */
+  --shadow-brand-halo: 0 6px 18px rgba(var(--color-brand-rgb), 0.1);
+  --shadow-brand-halo-strong: 0 6px 18px rgba(var(--color-brand-rgb), 0.18);
+  --shadow-brand-focus: 0 6px 18px rgba(var(--color-brand-rgb), 0.25);
+  --shadow-brand-strong: 0 18px 40px -24px rgba(var(--color-brand-rgb), 0.6);
+  --shadow-brand-stronger: 0 20px 44px -22px rgba(var(--color-brand-rgb), 0.8);
+  --shadow-brand-lift: 0 18px 40px -26px rgba(var(--color-brand-accent-rgb), 0.6);
+  --shadow-info-lift: 0 10px 25px rgba(30, 64, 175, 0.18);
+  --shadow-card: 0 24px 60px -40px rgba(var(--color-overlay-rgb), 0.45);
+  --shadow-card-strong: 0 30px 80px -40px rgba(var(--color-overlay-rgb), 0.5);
+  --shadow-elevated: 0 18px 45px rgba(var(--color-overlay-rgb), 0.12);
+  --shadow-overlay: 0 10px 30px rgba(0, 0, 0, 0.2);
+  --shadow-cta: 0 14px 30px rgba(var(--color-info-rgb), 0.35);
+  --shadow-info-strong: 0 18px 40px -24px rgba(var(--color-info-rgb), 0.6);
+  --shadow-info-stronger: 0 20px 44px -22px rgba(var(--color-info-rgb), 0.8);
+  --shadow-success: 0 18px 40px -24px rgba(var(--color-success-rgb), 0.55);
+
+  /* Radii */
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-pill: 999px;
+
+  /* Focus */
+  --focus-ring-primary: 0 0 0 3px rgba(var(--color-brand-rgb), 0.12);
+  --focus-outline-info: rgba(var(--color-info-rgb), 0.6);
+}

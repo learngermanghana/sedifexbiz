@@ -1,4 +1,5 @@
 import { Component, type CSSProperties, type ErrorInfo, type ReactNode } from 'react'
+import { colors, radii } from '../styles/themeTokens'
 
 type AppErrorBoundaryProps = {
   children: ReactNode
@@ -71,9 +72,9 @@ const messageStyle: CSSProperties = {
 
 const buttonStyle: CSSProperties = {
   border: 'none',
-  borderRadius: '0.5rem',
-  backgroundColor: '#2b6cb0',
-  color: '#fff',
+  borderRadius: radii.md,
+  backgroundColor: colors.info,
+  color: colors.textInverse,
   padding: '0.75rem 1.5rem',
   fontSize: '1rem',
   fontWeight: 500,

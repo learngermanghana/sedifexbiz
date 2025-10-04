@@ -4,6 +4,7 @@ import { AuthForm, inputGroupStyle, inputStyle, labelStyle, noteStyle } from '..
 import { useToast } from '../components/ToastProvider'
 import { afterSignupBootstrap } from '../controllers/accessController'
 import { supabase } from '../supabaseClient'
+import { colors, overlays, radii, shadows } from '../styles/themeTokens'
 
 type AuthMode = 'sign-in' | 'sign-up'
 
@@ -261,7 +262,7 @@ const screenStyle: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   padding: '2rem',
-  background: 'radial-gradient(circle at top, rgba(37, 99, 235, 0.08), transparent 55%), #f8fafc',
+  background: `radial-gradient(circle at top, ${overlays.brandTint}, transparent 55%), ${colors.background}`,
 }
 
 const panelStyle: CSSProperties = {
@@ -275,7 +276,7 @@ const panelStyle: CSSProperties = {
 
 const brandStyle: CSSProperties = {
   textAlign: 'center',
-  color: '#0f172a',
+  color: colors.textPrimary,
 }
 
 const logoStyle: CSSProperties = {
@@ -287,14 +288,14 @@ const logoStyle: CSSProperties = {
 const taglineStyle: CSSProperties = {
   margin: '0.5rem 0 0',
   fontSize: '1rem',
-  color: '#475569',
+  color: colors.textSecondary,
 }
 
 const modeToggleStyle: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-  backgroundColor: 'rgba(148, 163, 184, 0.14)',
-  borderRadius: '999px',
+  backgroundColor: overlays.brandOutline,
+  borderRadius: radii.pill,
   padding: '0.25rem',
   gap: '0.25rem',
 }
@@ -302,27 +303,27 @@ const modeToggleStyle: CSSProperties = {
 const modeButtonStyle: CSSProperties = {
   appearance: 'none',
   border: 'none',
-  borderRadius: '999px',
+  borderRadius: radii.pill,
   padding: '0.6rem 1.25rem',
   fontSize: '0.95rem',
   fontWeight: 600,
   backgroundColor: 'transparent',
-  color: '#475569',
+  color: colors.textSecondary,
   cursor: 'pointer',
   transition: 'background-color 150ms ease, color 150ms ease, box-shadow 150ms ease',
 }
 
 const modeButtonActiveStyle: CSSProperties = {
-  backgroundColor: '#fff',
-  color: '#1d4ed8',
-  boxShadow: '0 10px 25px rgba(30, 64, 175, 0.18)',
+  backgroundColor: colors.surface,
+  color: colors.info,
+  boxShadow: shadows.infoLift,
 }
 
 const footerActionButtonStyle: CSSProperties = {
   appearance: 'none',
   background: 'none',
   border: 'none',
-  color: '#2563eb',
+  color: colors.infoStrong,
   fontWeight: 600,
   cursor: 'pointer',
   padding: 0,
