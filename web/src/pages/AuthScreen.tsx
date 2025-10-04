@@ -139,7 +139,7 @@ export default function AuthScreen() {
           return
         }
 
-        if (data.user?.id) {
+        if (data.session && data.user?.id) {
           try {
             await afterSignupBootstrap()
           } catch (bootstrapError) {
