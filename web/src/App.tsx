@@ -51,6 +51,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const previousUidRef = useRef<string | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
+  const [isWorkspaceReady, setIsWorkspaceReady] = useState(false) // NEW
   const { publish } = useToast()
 
   useEffect(() => {
@@ -88,6 +89,50 @@ export default function App() {
     if (!session || !sessionPersistKey) return
     persistSession(session).catch(() => {})
   }, [session, sessionPersistKey])
+
+  // ---------- NEW: ensure the user has a workspace (company + membership) ----------
+  useEffect(() => {
+    if (!session?.user) return
+    setIsWorkspaceReady(false)
+    ;(async () => {
+      // Do I belong to any company?
+      const { data: companies, error } = await supabase
+        .from('companies')
+        .select('id')
+        .limit(1)
+
+      if (error) {
+        console.error(error)
+        publish({ message: 'Could not load workspace.', tone: 'error' })
+        setIsWorkspaceReady(true)
+        return
+      }
+
+      if (!companies || companies.length === 0) {
+        // Create default workspace and membership as owner
+        const { data: company, error: cErr } = await supabase
+          .from('companies')
+          .insert([{ name: 'My Workspace' }])
+          .select()
+          .single()
+
+        if (!cErr && company?.id) {
+          await supabase.from('memberships').insert([{
+            user_id: session.user.id,
+            company_id: company.id,
+            role: 'owner'
+          }])
+          publish({ message: 'Workspace created.', tone: 'success' })
+        } else if (cErr) {
+          console.error(cErr)
+          publish({ message: 'Could not create workspace.', tone: 'error' })
+        }
+      }
+
+      setIsWorkspaceReady(true)
+    })().catch(() => setIsWorkspaceReady(true))
+  }, [session, publish])
+  // -------------------------------------------------------------------------------
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
@@ -127,6 +172,14 @@ export default function App() {
       <AuthUserContext.Provider value={null}>
         <AuthScreen />
       </AuthUserContext.Provider>
+    )
+  }
+
+  if (!isWorkspaceReady) {
+    return (
+      <main style={loadingStyle}>
+        <p>Preparing your workspace…</p>
+      </main>
     )
   }
 
