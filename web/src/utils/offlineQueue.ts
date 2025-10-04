@@ -1,9 +1,6 @@
 
-import { supabaseEnv } from '../config/supabaseEnv'
-
 import { supabase } from '../supabaseClient'
-
-const FUNCTIONS_BASE_URL = supabaseEnv.functionsUrl
+import { getSupabaseFunctionUrl } from '../supabaseFunctionsClient'
 
 const SYNC_TAG = 'sync-pending-requests'
 
@@ -27,14 +24,7 @@ function getController(registration: ServiceWorkerRegistration) {
 }
 
 export function getCallableEndpoint(functionName: string) {
-  if (!FUNCTIONS_BASE_URL) {
-    throw new Error('Missing Supabase function configuration')
-  }
-  const normalized = functionName.replace(/^\/+/, '').trim()
-  if (!normalized) {
-    throw new Error('Function name is required')
-  }
-  return `${FUNCTIONS_BASE_URL}/${normalized}`
+  return getSupabaseFunctionUrl(functionName)
 }
 
 export async function queueCallableRequest(
