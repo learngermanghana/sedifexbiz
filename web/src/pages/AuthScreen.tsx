@@ -1,9 +1,16 @@
-import { useCallback, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
+import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { AuthForm, inputGroupStyle, inputStyle, labelStyle, noteStyle } from '../components/auth/AuthForm'
+import {
+  AuthForm,
+  authFormInputClass,
+  authFormInputGroupClass,
+  authFormLabelClass,
+  authFormNoteClass,
+} from '../components/auth/AuthForm'
 import { useToast } from '../components/ToastProvider'
 import { afterSignupBootstrap } from '../controllers/accessController'
 import { supabase } from '../supabaseClient'
+import './AuthScreen.css'
 
 type AuthMode = 'sign-in' | 'sign-up'
 
@@ -174,25 +181,25 @@ export default function AuthScreen() {
   const footerActionMode: AuthMode = mode === 'sign-in' ? 'sign-up' : 'sign-in'
 
   return (
-    <main style={screenStyle}>
-      <div style={panelStyle}>
-        <div style={brandStyle}>
-          <div style={logoStyle}>Sedifex</div>
-          <p style={taglineStyle}>Sell faster. Count smarter.</p>
+    <main className="auth-screen">
+      <div className="auth-screen__panel">
+        <div className="auth-screen__brand">
+          <div className="auth-screen__logo">Sedifex</div>
+          <p className="auth-screen__tagline">Sell faster. Count smarter.</p>
         </div>
 
-        <div style={modeToggleStyle}>
+        <div className="auth-screen__mode-toggle">
           <button
             type="button"
             onClick={() => toggleMode('sign-in')}
-            style={{ ...modeButtonStyle, ...(mode === 'sign-in' ? modeButtonActiveStyle : {}) }}
+            className={`auth-screen__mode-button${mode === 'sign-in' ? ' is-active' : ''}`}
           >
             Sign in
           </button>
           <button
             type="button"
             onClick={() => toggleMode('sign-up')}
-            style={{ ...modeButtonStyle, ...(mode === 'sign-up' ? modeButtonActiveStyle : {}) }}
+            className={`auth-screen__mode-button${mode === 'sign-up' ? ' is-active' : ''}`}
           >
             Create account
           </button>
@@ -211,7 +218,7 @@ export default function AuthScreen() {
               <button
                 type="button"
                 onClick={() => toggleMode(footerActionMode)}
-                style={footerActionButtonStyle}
+                className="auth-screen__footer-button"
                 disabled={loading}
               >
                 {footerActionButtonLabel}
@@ -219,10 +226,10 @@ export default function AuthScreen() {
             </div>
           }
         >
-          <label style={inputGroupStyle}>
-            <span style={labelStyle}>Email</span>
+          <label className={authFormInputGroupClass}>
+            <span className={authFormLabelClass}>Email</span>
             <input
-              style={inputStyle}
+              className={authFormInputClass}
               type="email"
               name="email"
               autoComplete="email"
@@ -234,10 +241,10 @@ export default function AuthScreen() {
             />
           </label>
 
-          <label style={inputGroupStyle}>
-            <span style={labelStyle}>Password</span>
+          <label className={authFormInputGroupClass}>
+            <span className={authFormLabelClass}>Password</span>
             <input
-              style={inputStyle}
+              className={authFormInputClass}
               type="password"
               name="password"
               autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
@@ -247,83 +254,10 @@ export default function AuthScreen() {
               disabled={loading}
               required
             />
-            <p style={noteStyle}>Use at least {MIN_PASSWORD_LENGTH} characters for a strong password.</p>
+            <p className={authFormNoteClass}>Use at least {MIN_PASSWORD_LENGTH} characters for a strong password.</p>
           </label>
         </AuthForm>
       </div>
     </main>
   )
-}
-
-const screenStyle: CSSProperties = {
-  minHeight: '100dvh',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '2rem',
-  background: 'radial-gradient(circle at top, rgba(37, 99, 235, 0.08), transparent 55%), #f8fafc',
-}
-
-const panelStyle: CSSProperties = {
-  width: '100%',
-  maxWidth: '520px',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '1.5rem',
-  alignItems: 'center',
-}
-
-const brandStyle: CSSProperties = {
-  textAlign: 'center',
-  color: '#0f172a',
-}
-
-const logoStyle: CSSProperties = {
-  fontWeight: 800,
-  fontSize: '2.5rem',
-  letterSpacing: '-0.04em',
-}
-
-const taglineStyle: CSSProperties = {
-  margin: '0.5rem 0 0',
-  fontSize: '1rem',
-  color: '#475569',
-}
-
-const modeToggleStyle: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-  backgroundColor: 'rgba(148, 163, 184, 0.14)',
-  borderRadius: '999px',
-  padding: '0.25rem',
-  gap: '0.25rem',
-}
-
-const modeButtonStyle: CSSProperties = {
-  appearance: 'none',
-  border: 'none',
-  borderRadius: '999px',
-  padding: '0.6rem 1.25rem',
-  fontSize: '0.95rem',
-  fontWeight: 600,
-  backgroundColor: 'transparent',
-  color: '#475569',
-  cursor: 'pointer',
-  transition: 'background-color 150ms ease, color 150ms ease, box-shadow 150ms ease',
-}
-
-const modeButtonActiveStyle: CSSProperties = {
-  backgroundColor: '#fff',
-  color: '#1d4ed8',
-  boxShadow: '0 10px 25px rgba(30, 64, 175, 0.18)',
-}
-
-const footerActionButtonStyle: CSSProperties = {
-  appearance: 'none',
-  background: 'none',
-  border: 'none',
-  color: '#2563eb',
-  fontWeight: 600,
-  cursor: 'pointer',
-  padding: 0,
 }
