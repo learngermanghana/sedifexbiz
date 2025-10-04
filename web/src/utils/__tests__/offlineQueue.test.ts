@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const getSessionMock = vi.fn(async () => ({ data: { session: null }, error: null }))
+
 vi.mock('../../config/supabaseEnv', () => ({
   supabaseEnv: {
     url: 'https://demo.supabase.co',
@@ -8,12 +10,10 @@ vi.mock('../../config/supabaseEnv', () => ({
   },
 }))
 
-
 vi.mock('../../supabaseClient', () => ({
   supabase: {
     auth: {
-      getSession: vi.fn(async () => ({ data: { session: null }, error: null })),
-
+      getSession: getSessionMock,
     },
   },
 }))

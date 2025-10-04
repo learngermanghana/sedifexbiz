@@ -6,6 +6,7 @@ import { SUPABASE_FUNCTIONS, type SupabaseEndpointDefinition } from '@shared/fir
 import { auth, db } from '../firebase'
 
 import { supabase } from '../supabaseClient'
+import { invokeSupabaseFunction } from '../supabaseFunctionsClient'
 
 export type ResolveStoreAccessSuccess = {
   ok: true
@@ -42,8 +43,9 @@ async function invokeSupabaseEdgeFunction<Payload>(
   definition: SupabaseEndpointDefinition,
   payload: Payload | undefined,
 ): Promise<void> {
-  const body = payload === undefined ? undefined : payload
-  const { data, error } = await supabase.functions.invoke<unknown>(definition.name, { body })
+  const { data, error } = await invokeSupabaseFunction<Payload, unknown>(definition.name, {
+    payload,
+  })
 
   if (error) {
     throw error

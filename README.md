@@ -25,6 +25,10 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
    VITE_FB_APP_ID=REPLACE_ME
    VITE_FB_FUNCTIONS_REGION=us-central1
    VITE_DATA_API_URL=http://localhost:8787 # proxy for the Postgres-backed API
+   VITE_SUPABASE_URL=https://YOUR-project.supabase.co
+   VITE_SUPABASE_ANON_KEY=REPLACE_ME
+   # Optional: point to a different Functions deployment (defaults to ${VITE_SUPABASE_URL}/functions/v1)
+   VITE_SUPABASE_FUNCTIONS_URL=https://custom-edge.example.com/functions/v1
    ```
 4. Provision a Postgres database (Neon, Supabase, or Cloud SQL). Copy the connection strings into `functions/.env`:
    ```env

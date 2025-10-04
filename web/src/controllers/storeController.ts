@@ -1,7 +1,7 @@
 // web/src/controllers/storeController.ts
 import { SUPABASE_FUNCTIONS, type SupabaseEndpointDefinition } from '@shared/firebaseCallables'
 
-import { supabase } from '../supabaseClient'
+import { invokeSupabaseFunction } from '../supabaseFunctionsClient'
 
 type ManageStaffAccountPayload = {
   storeId: string
@@ -46,7 +46,9 @@ async function invokeSupabaseEdgeFunction<Payload, Result>(
   definition: SupabaseEndpointDefinition,
   payload: Payload,
 ): Promise<Result> {
-  const { data, error } = await supabase.functions.invoke<Result>(definition.name, { body: payload })
+  const { data, error } = await invokeSupabaseFunction<Payload, Result>(definition.name, {
+    payload,
+  })
 
   if (error) {
     throw error
