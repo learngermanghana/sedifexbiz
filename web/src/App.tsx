@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Outlet } from 'react-router-dom'
 import './pwa'
 import { useToast } from './components/ToastProvider'
-import { configureAuthPersistence, refreshSessionHeartbeat } from './controllers/sessionController'
+import { configureAuthPersistence, persistSession, refreshSessionHeartbeat } from './controllers/sessionController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { clearActiveStoreIdForUser, clearLegacyActiveStoreId } from './utils/activeStoreStorage'
 import { supabase, type Session } from './supabaseClient'
+import AuthScreen from './pages/AuthScreen'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -79,6 +80,15 @@ export default function App() {
     refreshSessionHeartbeat(session).catch(() => {})
   }, [session])
 
+  const sessionPersistKey = session
+    ? `${session.user?.id ?? 'anon'}:${session.access_token ?? 'anon'}`
+    : null
+
+  useEffect(() => {
+    if (!session || !sessionPersistKey) return
+    persistSession(session).catch(() => {})
+  }, [session, sessionPersistKey])
+
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
     const handleMessage = (event: MessageEvent) => {
@@ -112,8 +122,16 @@ export default function App() {
     )
   }
 
+  if (!session) {
+    return (
+      <AuthUserContext.Provider value={null}>
+        <AuthScreen />
+      </AuthUserContext.Provider>
+    )
+  }
+
   return (
-    <AuthUserContext.Provider value={session?.user ?? null}>
+    <AuthUserContext.Provider value={session.user ?? null}>
       <Outlet />
     </AuthUserContext.Provider>
   )
