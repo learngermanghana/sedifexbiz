@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
-import { db } from './firebase'
+import { auth, db } from './firebase'
 import { clearActiveStoreIdForUser, persistActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { useAuthUser } from './hooks/useAuthUser'
-import { supabase, type User } from './supabaseClient'
+import type { User } from 'firebase/auth'
 
 type TeamMemberSnapshot = {
   storeId: string | null
@@ -78,7 +78,7 @@ async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMe
 }
 
 async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
-  const uidRef = doc(db, 'teamMembers', user.id)
+  const uidRef = doc(db, 'teamMembers', user.uid)
   const uidSnapshot = await getDoc(uidRef)
 
   if (uidSnapshot.exists()) {
@@ -145,7 +145,7 @@ export default function SheetAccessGuard({ children }: { children: React.ReactNo
           return
         }
 
-        persistActiveStoreIdForUser(user.id, member.storeId)
+        persistActiveStoreIdForUser(user.uid, member.storeId)
         setError(null)
       } catch (e: unknown) {
         if (!isMounted || requestId !== requestIdRef.current) {
@@ -154,8 +154,8 @@ export default function SheetAccessGuard({ children }: { children: React.ReactNo
 
         const message = e instanceof Error ? e.message : 'Access denied.'
         setError(message)
-        await supabase.auth.signOut()
-        clearActiveStoreIdForUser(user.id)
+        await auth.signOut()
+        clearActiveStoreIdForUser(user.uid)
       } finally {
         if (isMounted && requestId === requestIdRef.current) {
           setReady(true)
@@ -168,7 +168,7 @@ export default function SheetAccessGuard({ children }: { children: React.ReactNo
     return () => {
       isMounted = false
     }
-  }, [user?.id, user?.email])
+  }, [user?.uid, user?.email])
 
   if (!ready) return <p>Checking workspace access…</p>
   return (
