@@ -66,7 +66,17 @@ async function runInitializeStoreCreatesWorkspaceTest() {
     },
   }
 
-  const initResult = await initializeStore.run({}, context)
+  const initResult = await initializeStore.run(
+    {
+      contact: {
+        phone: ' +1 (555) 000-0000 ',
+        firstSignupEmail: 'Fresh.Owner@Example.com',
+        ownerName: ' Fresh Owner ',
+        businessName: ' Fresh Retail ',
+      },
+    },
+    context,
+  )
   assert.strictEqual(initResult.ok, true, 'Expected initializeStore to succeed')
   assert.ok(initResult.storeId, 'Expected initializeStore to return a storeId')
 
@@ -75,8 +85,19 @@ async function runInitializeStoreCreatesWorkspaceTest() {
   assert.strictEqual(storeDoc.ownerId, 'new-owner-uid')
   assert.strictEqual(storeDoc.status, 'Active')
   assert.strictEqual(storeDoc.contractStatus, 'Active')
+  assert.strictEqual(storeDoc.ownerEmail, 'fresh.owner@example.com')
+  assert.strictEqual(storeDoc.ownerName, 'Fresh Owner')
+  assert.strictEqual(storeDoc.displayName, 'Fresh Retail')
+  assert.strictEqual(storeDoc.businessName, 'Fresh Retail')
   assert.ok(storeDoc.updatedAt, 'Expected updatedAt to be set')
   assert.ok(storeDoc.createdAt, 'Expected createdAt to be set on new store')
+
+  const rosterMemberDoc = currentRosterDb.getDoc('teamMembers/new-owner-uid')
+  assert.ok(rosterMemberDoc, 'Expected roster member document to be created')
+  assert.strictEqual(rosterMemberDoc.name, 'Fresh Owner')
+  assert.strictEqual(rosterMemberDoc.companyName, 'Fresh Retail')
+  assert.strictEqual(rosterMemberDoc.phone, '+1 (555) 000-0000')
+  assert.strictEqual(rosterMemberDoc.firstSignupEmail, 'fresh.owner@example.com')
 
   const resolveResult = await resolveStoreAccess.run({}, context)
   assert.strictEqual(resolveResult.ok, true, 'Expected resolveStoreAccess to succeed')

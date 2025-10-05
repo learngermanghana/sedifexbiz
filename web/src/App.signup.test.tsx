@@ -168,6 +168,8 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/Full name/i), 'Morgan Owner')
+      await user.type(screen.getByLabelText(/Business name/i), 'Morgan Retail Co')
       await user.type(screen.getByLabelText(/Phone/i), '5551234567')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -234,6 +236,8 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/Full name/i), 'Morgan Owner')
+      await user.type(screen.getByLabelText(/Business name/i), 'Morgan Retail Co')
       await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -256,6 +260,8 @@ describe('App signup cleanup', () => {
       expect(mocks.initializeStore).toHaveBeenCalledWith({
         phone: '5551234567',
         firstSignupEmail: 'owner@example.com',
+        ownerName: 'Morgan Owner',
+        businessName: 'Morgan Retail Co',
       }),
     )
     await waitFor(() =>
@@ -294,7 +300,8 @@ describe('App signup cleanup', () => {
     expect(ownerPayload).toEqual(
       expect.objectContaining({
         storeId: 'workspace-store-id',
-        name: 'Owner account',
+        name: 'Morgan Owner',
+        companyName: 'Morgan Retail Co',
         phone: '5551234567',
         email: 'owner@example.com',
         role: 'staff',
@@ -328,10 +335,12 @@ describe('App signup cleanup', () => {
     expect(customerPayload).toEqual(
       expect.objectContaining({
         storeId: 'workspace-store-id',
-        name: 'owner@example.com',
-        displayName: 'owner@example.com',
+        name: 'Morgan Retail Co',
+        displayName: 'Morgan Owner',
         email: 'owner@example.com',
         phone: '5551234567',
+        businessName: 'Morgan Retail Co',
+        ownerName: 'Morgan Owner',
         status: 'active',
         role: 'client',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
@@ -395,6 +404,8 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/Full name/i), 'Morgan Owner')
+      await user.type(screen.getByLabelText(/Business name/i), 'Morgan Retail Co')
       await user.type(screen.getByLabelText(/Phone/i), '5551234567')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -406,6 +417,8 @@ describe('App signup cleanup', () => {
       expect(mocks.initializeStore).toHaveBeenCalledWith({
         phone: '5551234567',
         firstSignupEmail: 'owner@example.com',
+        ownerName: 'Morgan Owner',
+        businessName: 'Morgan Retail Co',
       }),
     )
     await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('store-001'))

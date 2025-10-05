@@ -8,6 +8,8 @@ const VALID_ROLES = new Set(['owner', 'staff'])
 type ContactPayload = {
   phone?: unknown
   firstSignupEmail?: unknown
+  ownerName?: unknown
+  businessName?: unknown
 }
 
 type BackfillPayload = {
@@ -17,8 +19,12 @@ type BackfillPayload = {
 function normalizeContact(contact: ContactPayload | undefined) {
   let hasPhone = false
   let hasFirstSignupEmail = false
+  let hasOwnerName = false
+  let hasBusinessName = false
   let phone: string | null | undefined
   let firstSignupEmail: string | null | undefined
+  let ownerName: string | null | undefined
+  let businessName: string | null | undefined
 
   if (contact && typeof contact === 'object') {
     if ('phone' in contact) {
@@ -49,9 +55,44 @@ function normalizeContact(contact: ContactPayload | undefined) {
         )
       }
     }
+
+    if ('ownerName' in contact) {
+      hasOwnerName = true
+      const raw = contact.ownerName
+      if (raw === null || raw === undefined || raw === '') {
+        ownerName = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        ownerName = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError('invalid-argument', 'Owner name must be a string when provided')
+      }
+    }
+
+    if ('businessName' in contact) {
+      hasBusinessName = true
+      const raw = contact.businessName
+      if (raw === null || raw === undefined || raw === '') {
+        businessName = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        businessName = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError('invalid-argument', 'Business name must be a string when provided')
+      }
+    }
   }
 
-  return { phone, hasPhone, firstSignupEmail, hasFirstSignupEmail }
+  return {
+    phone,
+    hasPhone,
+    firstSignupEmail,
+    hasFirstSignupEmail,
+    ownerName,
+    hasOwnerName,
+    businessName,
+    hasBusinessName,
+  }
 }
 
 async function applyRoleClaim(uid: string, role: string) {
@@ -88,6 +129,8 @@ export const backfillMyStore = functions.https.onCall(async (data, context) => {
   const resolvedFirstSignupEmail = contact.hasFirstSignupEmail
     ? contact.firstSignupEmail ?? null
     : email?.toLowerCase() ?? null
+  const resolvedOwnerName = contact.hasOwnerName ? contact.ownerName ?? null : null
+  const resolvedBusinessName = contact.hasBusinessName ? contact.businessName ?? null : null
 
   const memberRef = rosterDb.collection('teamMembers').doc(uid)
   const memberSnap = await memberRef.get()
@@ -108,6 +151,14 @@ export const backfillMyStore = functions.https.onCall(async (data, context) => {
     firstSignupEmail: resolvedFirstSignupEmail,
     invitedBy: uid,
     updatedAt: timestamp,
+  }
+
+  if (resolvedOwnerName !== null) {
+    memberData.name = resolvedOwnerName
+  }
+
+  if (resolvedBusinessName !== null) {
+    memberData.companyName = resolvedBusinessName
   }
 
   if (!memberSnap.exists) {
