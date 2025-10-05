@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
 import {
   AuthForm,
   authFormInputClass,
@@ -9,7 +10,9 @@ import {
 } from '../components/auth/AuthForm'
 import { useToast } from '../components/ToastProvider'
 import { afterSignupBootstrap } from '../controllers/accessController'
-import { supabase } from '../supabaseClient'
+import { persistSession } from '../controllers/sessionController'
+import { auth } from '../firebase'
+import { setOnboardingStatus } from '../utils/onboarding'
 import './AuthScreen.css'
 
 type AuthMode = 'sign-in' | 'sign-up'
@@ -105,57 +108,30 @@ export default function AuthScreen() {
 
       try {
         if (mode === 'sign-in') {
-          const { data, error: signInError } = await supabase.auth.signInWithPassword({
-            email: trimmedEmail,
-            password,
-          })
+          const { user } = await signInWithEmailAndPassword(auth, trimmedEmail, password)
+          await persistSession(user)
 
-          if (signInError) {
-            const message = normalizeError(signInError)
-            setError(message)
-            publish({ message, tone: 'error' })
-            return
-          }
-
-          if (!data.session) {
-            publish({ message: 'Signed in. Loading your workspace…', tone: 'info' })
-          } else {
-            publish({ message: 'Welcome back!', tone: 'success' })
-          }
-
+          publish({ message: 'Welcome back!', tone: 'success' })
           navigate(redirectTo, { replace: true })
           return
         }
 
-        const { data, error: signUpError } = await supabase.auth.signUp({
-          email: trimmedEmail,
-          password,
-        })
+        const { user } = await createUserWithEmailAndPassword(auth, trimmedEmail, password)
+        await persistSession(user)
+        setOnboardingStatus(user.uid, 'pending')
 
-        if (signUpError) {
-          const message = normalizeError(signUpError)
-          setError(message)
-          publish({ message, tone: 'error' })
-          return
+        try {
+          await afterSignupBootstrap()
+        } catch (bootstrapError) {
+          const message = normalizeError(bootstrapError)
+          publish({
+            message: `We created your account but hit a snag syncing workspace data. ${message}`,
+            tone: 'error',
+            duration: 8000,
+          })
         }
 
-        if (data.session && data.user?.id) {
-          try {
-            await afterSignupBootstrap()
-          } catch (bootstrapError) {
-            const message = normalizeError(bootstrapError)
-            publish({
-              message: `We created your account but hit a snag syncing workspace data. ${message}`,
-              tone: 'error',
-              duration: 8000,
-            })
-          }
-        }
-
-        const successMessage = data.session
-          ? 'Account created! Setting things up now…'
-          : 'Check your inbox to confirm your email and finish setting up your account.'
-        publish({ message: successMessage, tone: 'success' })
+        publish({ message: 'Account created! Setting things up now…', tone: 'success' })
 
         navigate(redirectTo, { replace: true })
       } catch (unknownError) {
