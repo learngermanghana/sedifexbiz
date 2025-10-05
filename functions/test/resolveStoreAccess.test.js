@@ -178,6 +178,42 @@ async function runInactiveStatusTest() {
   )
 }
 
+async function runStoreOwnerFallbackTest() {
+  currentDefaultDb = new MockFirestore({
+    'stores/owner-123': { status: 'Active', ownerId: 'legacy-store' },
+  })
+  currentRosterDb = new MockFirestore({
+    'teamMembers/owner@example.com': {
+      email: 'owner@example.com',
+      storeId: 'legacy-store',
+      role: 'Owner',
+    },
+  })
+
+  const { resolveStoreAccess } = loadFunctionsModule()
+  const context = {
+    auth: {
+      uid: 'user-5',
+      token: { email: 'owner@example.com' },
+    },
+  }
+
+  const result = await resolveStoreAccess.run({ storeId: 'legacy-store' }, context)
+
+  assert.strictEqual(result.ok, true)
+  assert.strictEqual(result.storeId, 'legacy-store')
+  assert.strictEqual(result.role, 'owner')
+  assert.strictEqual(result.store.id, 'owner-123')
+
+  const rosterDoc = currentRosterDb.getDoc('teamMembers/user-5')
+  assert.ok(rosterDoc)
+  assert.strictEqual(rosterDoc.storeId, 'legacy-store')
+
+  const storeDoc = currentDefaultDb.getDoc('stores/owner-123')
+  assert.ok(storeDoc)
+  assert.strictEqual(storeDoc.ownerId, 'legacy-store')
+}
+
 async function runStoreIdMismatchTest() {
   currentDefaultDb = new MockFirestore({
     'stores/store-777': { status: 'Active' },
@@ -305,6 +341,7 @@ async function runManagedStaffAccessTest() {
 async function run() {
   await runActiveStatusTest()
   await runInactiveStatusTest()
+  await runStoreOwnerFallbackTest()
   await runStoreIdMismatchTest()
   await runMissingStoreIdTest()
   await runManagedStaffAccessTest()

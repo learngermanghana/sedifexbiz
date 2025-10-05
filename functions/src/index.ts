@@ -642,13 +642,35 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
 
   const storeId = rosterStoreId
 
-  const storeRef = defaultDb.collection('stores').doc(storeId)
-  const storeSnap = await storeRef.get()
+  const storesCollection = defaultDb.collection('stores')
+  let storeRef = storesCollection.doc(storeId)
+  let storeSnap = await storeRef.get()
+
   if (!storeSnap.exists) {
-    throw new functions.https.HttpsError(
-      'failed-precondition',
-      'We could not locate the Sedifex workspace configuration for this store. Reach out to your Sedifex administrator.',
-    )
+    const ownerIdCandidates = [storeId, uid]
+      .map(value => (typeof value === 'string' ? value.trim() : ''))
+      .filter((value): value is string => Boolean(value))
+
+    let fallbackSnap: admin.firestore.QueryDocumentSnapshot<admin.firestore.DocumentData> | null = null
+
+    for (const ownerId of ownerIdCandidates) {
+      const fallbackQuery = await storesCollection.where('ownerId', '==', ownerId).limit(1).get()
+      const match = fallbackQuery.docs[0]
+      if (match) {
+        fallbackSnap = match
+        break
+      }
+    }
+
+    if (fallbackSnap) {
+      storeRef = fallbackSnap.ref
+      storeSnap = fallbackSnap
+    } else {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'We could not locate the Sedifex workspace configuration for this store. Reach out to your Sedifex administrator.',
+      )
+    }
   }
 
   const storeData = (storeSnap.data() ?? {}) as admin.firestore.DocumentData
