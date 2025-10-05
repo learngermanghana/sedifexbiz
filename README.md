@@ -46,9 +46,29 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 - Enable **Firestore** and publish `firestore.rules`.
 - Create a second project for production later (e.g., `sedifex-prod`).
 
-### Workspace access spreadsheet
-- The onboarding Google Sheet should include workspace metadata columns such as `contractStart`, `contractEnd`, `paymentStatus`, `amountPaid`, and `company` for each store row.
-- Date columns can be provided as ISO-like strings (e.g., `2024-01-15`) or spreadsheet serial numbers; payment amounts can include currency symbols and will be normalized automatically.
+### Workspace access records (Firestore)
+- Store workspace metadata in the `workspaces` collection inside Firestore. Each document ID should match the workspace slug used by the app.
+- Include fields such as `company`, `contractStart`, `contractEnd`, `paymentStatus`, and `amountPaid` to control access and billing state.
+- Dates should be saved as Firestore `Timestamp` values (or ISO-8601 strings if writing via scripts), and currency values should be saved as numbers representing the smallest currency unit (e.g., cents).
+
+**Seeding / maintenance steps**
+1. Ensure you have the Firebase CLI installed and are logged in: `npx firebase login`.
+2. Create a JSON seed file with workspace documents, for example:
+   ```json
+   {
+     "workspaces": {
+       "demo-store": {
+         "company": "Demo Store",
+         "contractStart": { ".sv": "timestamp" },
+         "contractEnd": "2024-12-31",
+         "paymentStatus": "paid",
+         "amountPaid": 129900
+       }
+     }
+   }
+   ```
+3. Import the seed data into Firestore: `npx firebase firestore:delete workspaces --project <project-id> --force && npx firebase firestore:import seed.json --project <project-id>`.
+4. For ongoing updates, edit the documents directly in the Firebase console or via your preferred admin tooling.
 
 ## Branding
 - Name: **Sedifex**
