@@ -247,11 +247,67 @@ async function runMissingStoreIdTest() {
   )
 }
 
+async function runManagedStaffAccessTest() {
+  currentDefaultDb = new MockFirestore({
+    'stores/store-003': { status: 'Active' },
+  })
+  currentRosterDb = new MockFirestore({})
+
+  const { manageStaffAccount, resolveStoreAccess } = loadFunctionsModule()
+
+  const ownerContext = {
+    auth: {
+      uid: 'owner-1',
+      token: { role: 'owner' },
+    },
+  }
+
+  const manageResult = await manageStaffAccount.run(
+    { storeId: 'store-003', email: 'staff@example.com', role: 'staff', password: 'password123' },
+    ownerContext,
+  )
+
+  assert.strictEqual(manageResult.ok, true)
+  assert.strictEqual(manageResult.uid, 'new-user')
+
+  const rosterByUid = currentRosterDb.getDoc('teamMembers/new-user')
+  assert.ok(rosterByUid)
+  assert.strictEqual(rosterByUid.storeId, 'store-003')
+  assert.strictEqual(rosterByUid.role, 'staff')
+  assert.strictEqual(rosterByUid.email, 'staff@example.com')
+
+  const rosterByEmail = currentRosterDb.getDoc('teamMembers/staff@example.com')
+  assert.ok(rosterByEmail)
+  assert.strictEqual(rosterByEmail.storeId, 'store-003')
+  assert.strictEqual(rosterByEmail.role, 'staff')
+  assert.strictEqual(rosterByEmail.uid, 'new-user')
+
+  currentRosterDb.setRaw('teamMembers/staff@example.com', undefined)
+
+  const context = {
+    auth: {
+      uid: 'new-user',
+      token: { email: 'staff@example.com' },
+    },
+  }
+
+  const result = await resolveStoreAccess.run({ storeId: 'store-003' }, context)
+
+  assert.strictEqual(result.ok, true)
+  assert.strictEqual(result.storeId, 'store-003')
+  assert.strictEqual(result.role, 'staff')
+
+  const restoredEmailDoc = currentRosterDb.getDoc('teamMembers/staff@example.com')
+  assert.ok(restoredEmailDoc)
+  assert.strictEqual(restoredEmailDoc.uid, 'new-user')
+}
+
 async function run() {
   await runActiveStatusTest()
   await runInactiveStatusTest()
   await runStoreIdMismatchTest()
   await runMissingStoreIdTest()
+  await runManagedStaffAccessTest()
   console.log('resolveStoreAccess tests passed')
 }
 

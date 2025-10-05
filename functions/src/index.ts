@@ -327,20 +327,49 @@ function serializeFirestoreData(data: admin.firestore.DocumentData): Record<stri
 
 export const handleUserCreate = functions.auth.user().onCreate(async user => {
   const uid = user.uid
+  const email = typeof user.email === 'string' ? user.email.toLowerCase() : null
+  const memberRef = rosterDb.collection('teamMembers').doc(uid)
+  const memberSnap = await memberRef.get()
+  const existingData = (memberSnap.data() ?? {}) as admin.firestore.DocumentData
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
-  await rosterDb
-    .collection('teamMembers')
-    .doc(uid)
-    .set(
-      {
-        uid,
-        email: user.email ?? null,
-        phone: user.phoneNumber ?? null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-      { merge: true },
-    )
+
+  const memberData: admin.firestore.DocumentData = {
+    uid,
+    email: user.email ?? existingData.email ?? null,
+    phone: user.phoneNumber ?? existingData.phone ?? null,
+    updatedAt: timestamp,
+  }
+
+  if (!memberSnap.exists) {
+    memberData.createdAt = timestamp
+  }
+
+  await memberRef.set(memberData, { merge: true })
+
+  if (email) {
+    const emailRef = rosterDb.collection('teamMembers').doc(email)
+    const emailSnap = await emailRef.get()
+    const emailData: admin.firestore.DocumentData = {
+      uid,
+      email: user.email ?? existingData.email ?? null,
+      phone: memberData.phone ?? null,
+      updatedAt: timestamp,
+    }
+    const storeId = getOptionalString(existingData.storeId ?? undefined)
+    if (storeId) emailData.storeId = storeId
+    const role = getOptionalString(existingData.role ?? undefined)
+    if (role) emailData.role = role
+    if (typeof existingData.firstSignupEmail === 'string') {
+      emailData.firstSignupEmail = existingData.firstSignupEmail
+    }
+    if (typeof existingData.invitedBy === 'string') {
+      emailData.invitedBy = existingData.invitedBy
+    }
+    if (!emailSnap.exists) {
+      emailData.createdAt = timestamp
+    }
+    await emailRef.set(emailData, { merge: true })
+  }
 })
 
 export const initializeStore = functions.https.onCall(async (data, context) => {
@@ -349,6 +378,7 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   const uid = context.auth!.uid
   const token = context.auth!.token as Record<string, unknown>
   const email = typeof token.email === 'string' ? (token.email as string) : null
+  const normalizedEmail = email ? email.toLowerCase() : null
   const tokenPhone = typeof token.phone_number === 'string' ? (token.phone_number as string) : null
 
   const payload = (data ?? {}) as InitializeStorePayload
@@ -384,6 +414,25 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   }
 
   await memberRef.set(memberData, { merge: true })
+
+  if (normalizedEmail) {
+    const emailRef = rosterDb.collection('teamMembers').doc(normalizedEmail)
+    const emailSnap = await emailRef.get()
+    const emailData: admin.firestore.DocumentData = {
+      uid,
+      email,
+      role: 'owner',
+      storeId,
+      phone: resolvedPhone,
+      firstSignupEmail: resolvedFirstSignupEmail,
+      invitedBy: uid,
+      updatedAt: timestamp,
+    }
+    if (!emailSnap.exists) {
+      emailData.createdAt = timestamp
+    }
+    await emailRef.set(emailData, { merge: true })
+  }
   const claims = await updateUserClaims(uid, 'owner')
 
   return { ok: true, claims, storeId }
@@ -423,18 +472,36 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     )
   }
 
-  const rosterEmailRef = rosterDb.collection('teamMembers').doc(emailFromToken)
-  const rosterEmailSnap = await rosterEmailRef.get()
-  if (!rosterEmailSnap.exists) {
+  const teamMembersCollection = rosterDb.collection('teamMembers')
+  const memberRef = teamMembersCollection.doc(uid)
+  const rosterEmailRef = teamMembersCollection.doc(emailFromToken)
+  const [memberSnap, rosterEmailSnap] = await Promise.all([memberRef.get(), rosterEmailRef.get()])
+  const existingMember = (memberSnap.data() ?? {}) as admin.firestore.DocumentData
+  const emailMember = (rosterEmailSnap.data() ?? {}) as admin.firestore.DocumentData
+
+  if (!memberSnap.exists && !rosterEmailSnap.exists) {
     throw new functions.https.HttpsError(
       'permission-denied',
       'We could not find a workspace assignment for this account. Reach out to your Sedifex administrator.',
     )
   }
 
-  const rosterEntry = (rosterEmailSnap.data() ?? {}) as admin.firestore.DocumentData
-  const rosterStoreId =
-    getOptionalString(rosterEntry.storeId ?? rosterEntry.storeID ?? rosterEntry.store_id ?? undefined) ?? null
+  const rosterStoreIdFromMember =
+    getOptionalString(existingMember.storeId ?? existingMember.storeID ?? existingMember.store_id ?? undefined) ?? null
+  const rosterStoreIdFromEmail =
+    getOptionalString(emailMember.storeId ?? emailMember.storeID ?? emailMember.store_id ?? undefined) ?? null
+
+  let rosterStoreId = rosterStoreIdFromMember ?? rosterStoreIdFromEmail ?? null
+
+  const rosterEntry: admin.firestore.DocumentData = { ...emailMember }
+  for (const [key, value] of Object.entries(existingMember)) {
+    if (value !== undefined) {
+      rosterEntry[key] = value
+    }
+  }
+  if (rosterStoreId) {
+    rosterEntry.storeId = rosterStoreId
+  }
 
   const missingStoreIdMessage =
     'We could not confirm the store ID assigned to your Sedifex workspace. Reach out to your Sedifex administrator.'
@@ -469,9 +536,6 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
 
   const now = admin.firestore.Timestamp.now()
 
-  const memberRef = rosterDb.collection('teamMembers').doc(uid)
-  const memberSnap = await memberRef.get()
-  const existingMember = (memberSnap.data() ?? {}) as admin.firestore.DocumentData
   const memberCreatedAt =
     memberSnap.exists && existingMember.createdAt instanceof admin.firestore.Timestamp
       ? (existingMember.createdAt as admin.firestore.Timestamp)
@@ -612,6 +676,20 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   }
 
   await memberRef.set(memberData, { merge: true })
+  const emailRef = rosterDb.collection('teamMembers').doc(email)
+  const emailSnap = await emailRef.get()
+  const emailData: admin.firestore.DocumentData = {
+    uid: record.uid,
+    email,
+    storeId,
+    role,
+    invitedBy,
+    updatedAt: timestamp,
+  }
+  if (!emailSnap.exists) {
+    emailData.createdAt = timestamp
+  }
+  await emailRef.set(emailData, { merge: true })
   const claims = await updateUserClaims(record.uid, role)
 
   return { ok: true, role, email, uid: record.uid, created, storeId, claims }
