@@ -201,6 +201,93 @@ describe('AccountOverview', () => {
     expect(screen.getByText(/read-only access/i)).toBeInTheDocument()
   })
 
+  it('falls back to ownerId lookup when the store document id differs from the storeId', async () => {
+    mockUseActiveStore.mockReturnValue({ storeId: 'owner-1', isLoading: false, error: null })
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-3',
+          uid: 'owner-1',
+          role: 'owner',
+          storeId: 'owner-1',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+
+    getDocMock.mockResolvedValueOnce({
+      exists: () => false,
+    })
+
+    getDocsMock.mockImplementation(async request => {
+      const ref = (request as { ref?: { path?: string } } | undefined)?.ref
+      if (ref?.path === 'stores') {
+        return {
+          docs: [
+            {
+              id: 'store-document-id',
+              data: () => ({
+                displayName: 'Fallback Coffee',
+                status: 'Active',
+                currency: 'USD',
+                billingPlan: 'Annual',
+                paymentProvider: 'Stripe',
+                createdAt: { toDate: () => new Date('2023-03-01T00:00:00Z') },
+                updatedAt: { toDate: () => new Date('2023-03-02T00:00:00Z') },
+              }),
+            },
+          ],
+        }
+      }
+
+      if (ref?.path === 'teamMembers') {
+        return {
+          docs: [
+            {
+              id: 'member-owner',
+              data: () => ({
+                uid: 'owner-1',
+                storeId: 'owner-1',
+                email: 'owner@example.com',
+                role: 'owner',
+                invitedBy: null,
+                phone: '+1-555-0000',
+                firstSignupEmail: null,
+                updatedAt: { toDate: () => new Date('2023-03-02T00:00:00Z') },
+              }),
+            },
+          ],
+        }
+      }
+
+      return { docs: [] }
+    })
+
+    render(<AccountOverview />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
+
+    expect(queryMock).toHaveBeenCalledWith(
+      { type: 'collection', path: 'stores' },
+      { field: 'ownerId', op: '==', value: 'owner-1' },
+    )
+
+    expect(await screen.findByText('Fallback Coffee')).toBeInTheDocument()
+    const rosterRow = await screen.findByTestId('account-roster-member-owner')
+    expect(rosterRow).toHaveAttribute('data-uid', 'owner-1')
+  })
+
   it('falls back to the document ID when a team member is missing a uid', async () => {
     getDocsMock.mockResolvedValueOnce({
       docs: [

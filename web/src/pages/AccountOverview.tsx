@@ -60,7 +60,9 @@ function isTimestamp(value: unknown): value is Timestamp {
   return typeof value === 'object' && value !== null && typeof (value as Timestamp).toDate === 'function'
 }
 
-function mapStoreSnapshot(snapshot: DocumentSnapshot<DocumentData> | null): StoreProfile | null {
+function mapStoreSnapshot(
+  snapshot: DocumentSnapshot<DocumentData> | QueryDocumentSnapshot<DocumentData> | null,
+): StoreProfile | null {
   if (!snapshot) return null
   const data = snapshot.data()
 
@@ -155,33 +157,48 @@ export default function AccountOverview() {
 
     let cancelled = false
 
-    setProfileLoading(true)
-    setProfileError(null)
+    async function loadProfile() {
+      setProfileLoading(true)
+      setProfileError(null)
 
-    const ref = doc(db, 'stores', storeId)
-    getDoc(ref)
-      .then(snapshot => {
+      try {
+        const ref = doc(db, 'stores', storeId)
+        const snapshot = await getDoc(ref)
         if (cancelled) return
 
         if (snapshot.exists()) {
           const mapped = mapStoreSnapshot(snapshot)
           setProfile(mapped)
           setProfileError(null)
+          return
+        }
+
+        const storesRef = collection(db, 'stores')
+        const fallbackQuery = query(storesRef, where('ownerId', '==', storeId))
+        const fallbackSnapshot = await getDocs(fallbackQuery)
+        if (cancelled) return
+
+        const firstMatch = fallbackSnapshot.docs[0] ?? null
+        if (firstMatch) {
+          const mapped = mapStoreSnapshot(firstMatch)
+          setProfile(mapped)
+          setProfileError(null)
         } else {
           setProfile(null)
           setProfileError('We could not find this workspace profile.')
         }
-      })
-      .catch(error => {
+      } catch (error) {
         if (cancelled) return
         console.error('Failed to load store profile', error)
         setProfile(null)
         setProfileError('We could not load the workspace profile.')
         publish({ message: 'Unable to load store details.', tone: 'error' })
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setProfileLoading(false)
-      })
+      }
+    }
+
+    void loadProfile()
 
     return () => {
       cancelled = true
