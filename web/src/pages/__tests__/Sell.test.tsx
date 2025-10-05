@@ -32,6 +32,7 @@ vi.mock('../../utils/pdf', () => ({
 
 vi.mock('../../firebase', () => ({
   db: {},
+  rosterDb: {},
   functions: {},
 }))
 

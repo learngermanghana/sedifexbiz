@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
-import { auth, db } from './firebase'
+import { auth, rosterDb } from './firebase'
 import { clearActiveStoreIdForUser, persistActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { useAuthUser } from './hooks/useAuthUser'
 import type { User } from 'firebase/auth'
@@ -78,7 +78,7 @@ async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMe
 }
 
 async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
-  const uidRef = doc(db, 'teamMembers', user.uid)
+  const uidRef = doc(rosterDb, 'teamMembers', user.uid)
   const uidSnapshot = await getDoc(uidRef)
 
   if (uidSnapshot.exists()) {
@@ -90,7 +90,7 @@ async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
     return { storeId: null, status: null, contractStatus: null }
   }
 
-  const membersRef = collection(db, 'teamMembers')
+  const membersRef = collection(rosterDb, 'teamMembers')
   const candidates = await getDocs(query(membersRef, where('email', '==', email)))
   const match = candidates.docs[0]
   if (!match) {

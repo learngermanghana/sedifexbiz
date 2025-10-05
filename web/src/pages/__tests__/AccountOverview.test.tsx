@@ -47,6 +47,7 @@ vi.mock('firebase/firestore', () => ({
 
 vi.mock('../../firebase', () => ({
   db: {},
+  rosterDb: {},
 }))
 
 const originalConsoleError = console.error

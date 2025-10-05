@@ -59,6 +59,7 @@ vi.mock('../utils/offlineCache', () => ({
 
 vi.mock('../firebase', () => ({
   db: {},
+  rosterDb: {},
   functions: {},
 }))
 

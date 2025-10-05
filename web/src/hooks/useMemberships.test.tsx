@@ -9,7 +9,7 @@ vi.mock('./useAuthUser', () => ({
 }))
 
 vi.mock('../firebase', () => ({
-  db: {},
+  rosterDb: {},
 }))
 
 const collectionMock = vi.fn(() => ({ type: 'collection' }))
@@ -74,7 +74,7 @@ describe('useMemberships', () => {
       expect(result.current.loading).toBe(false)
     })
 
-    expect(collectionMock).toHaveBeenCalledWith({}, 'teamMembers')
+    expect(collectionMock).toHaveBeenCalledWith(expect.anything(), 'teamMembers')
     expect(whereMock).toHaveBeenCalledWith('uid', '==', 'user-123')
     expect(queryMock).toHaveBeenCalled()
     expect(getDocsMock).toHaveBeenCalled()
