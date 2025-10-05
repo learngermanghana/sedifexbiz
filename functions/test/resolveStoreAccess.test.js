@@ -1,21 +1,10 @@
 const assert = require('assert')
 const Module = require('module')
-const path = require('path')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
 
 let currentDefaultDb
 let currentRosterDb
-let sheetRowMock
 const apps = []
-
-function normalizeHeader(header) {
-  if (typeof header !== 'string') return ''
-  return header
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-}
 
 const originalLoad = Module._load
 Module._load = function patchedLoad(request, parent, isMain) {
@@ -55,46 +44,47 @@ Module._load = function patchedLoad(request, parent, isMain) {
     }
   }
 
-  if (request === './googleSheets' || request.endsWith(`${path.sep}googleSheets`)) {
-    return {
-      fetchClientRowByEmail: async () => sheetRowMock,
-      getDefaultSpreadsheetId: () => 'sheet-123',
-      normalizeHeader,
-    }
-  }
-
   return originalLoad(request, parent, isMain)
 }
 
 function loadFunctionsModule() {
   apps.length = 0
   delete require.cache[require.resolve('../lib/firestore.js')]
-  delete require.cache[require.resolve('../lib/googleSheets.js')]
   delete require.cache[require.resolve('../lib/index.js')]
   return require('../lib/index.js')
 }
 
 async function runActiveStatusTest() {
-  currentDefaultDb = new MockFirestore()
-  currentRosterDb = new MockFirestore()
-  sheetRowMock = {
-    spreadsheetId: 'sheet-123',
-    headers: [],
-    normalizedHeaders: [],
-    values: [],
-    record: {
-      [normalizeHeader('store_id')]: 'store-001',
-      [normalizeHeader('store_status')]: 'Active',
-      [normalizeHeader('role')]: 'Owner',
-      [normalizeHeader('member_email')]: 'owner@example.com',
-      [normalizeHeader('member_name')]: 'Owner One',
-      [normalizeHeader('contractStart')]: '2024-01-15',
-      [normalizeHeader('contract_end')]: '2024-12-31',
-      [normalizeHeader('paymentStatus')]: 'Paid',
-      [normalizeHeader('amountPaid')]: '$1,234.56',
-      [normalizeHeader('company')]: 'Example Company',
+  const expectedContractStart = Date.parse('2024-01-15T00:00:00.000Z')
+  const expectedContractEnd = Date.parse('2024-12-31T00:00:00.000Z')
+
+  currentDefaultDb = new MockFirestore({
+    'stores/store-001': {
+      status: 'Active',
+      contractStart: MockTimestamp.fromMillis(expectedContractStart),
+      contractEnd: MockTimestamp.fromMillis(expectedContractEnd),
+      paymentStatus: 'Paid',
+      amountPaid: 1234.56,
+      company: 'Example Company',
+      seedProducts: [
+        { id: 'store-001-widget', name: 'Widget', price: 100, stockCount: 5 },
+      ],
+      seedCustomers: [
+        { id: 'store-001-alice', name: 'Alice', email: 'alice@example.com' },
+      ],
     },
-  }
+  })
+  currentRosterDb = new MockFirestore({
+    'teamMembers/owner@example.com': {
+      email: 'owner@example.com',
+      storeId: 'store-001',
+      role: 'Owner',
+      name: 'Owner One',
+      phone: '+15555550100',
+      firstSignupEmail: 'owner@example.com',
+      invitedBy: 'admin-user',
+    },
+  })
 
   const { resolveStoreAccess } = loadFunctionsModule()
   const context = {
@@ -109,13 +99,16 @@ async function runActiveStatusTest() {
   assert.strictEqual(result.ok, true)
   assert.strictEqual(result.storeId, 'store-001')
   assert.strictEqual(result.role, 'owner')
-
-  const expectedContractStart = Date.parse('2024-01-15T00:00:00.000Z')
-  const expectedContractEnd = Date.parse('2024-12-31T00:00:00.000Z')
+  assert.ok(!('spreadsheetId' in result))
 
   const rosterDoc = currentRosterDb.getDoc('teamMembers/user-1')
   assert.ok(rosterDoc)
   assert.strictEqual(rosterDoc.storeId, 'store-001')
+  assert.strictEqual(rosterDoc.email, 'owner@example.com')
+
+  const rosterEmailDoc = currentRosterDb.getDoc('teamMembers/owner@example.com')
+  assert.ok(rosterEmailDoc)
+  assert.strictEqual(rosterEmailDoc.uid, 'user-1')
 
   const storeDoc = currentDefaultDb.getDoc('stores/store-001')
   assert.ok(storeDoc)
@@ -126,27 +119,40 @@ async function runActiveStatusTest() {
   assert.strictEqual(storeDoc.amountPaid, 1234.56)
   assert.strictEqual(storeDoc.company, 'Example Company')
 
+  const productDoc = currentDefaultDb.getDoc('products/store-001-widget')
+  assert.ok(productDoc)
+  assert.strictEqual(productDoc.storeId, 'store-001')
+  assert.strictEqual(productDoc.name, 'Widget')
+
+  const customerDoc = currentDefaultDb.getDoc('customers/store-001-alice')
+  assert.ok(customerDoc)
+  assert.strictEqual(customerDoc.storeId, 'store-001')
+  assert.strictEqual(customerDoc.name, 'Alice')
+
   assert.strictEqual(result.store.data.contractStart, expectedContractStart)
   assert.strictEqual(result.store.data.contractEnd, expectedContractEnd)
   assert.strictEqual(result.store.data.paymentStatus, 'Paid')
   assert.strictEqual(result.store.data.amountPaid, 1234.56)
   assert.strictEqual(result.store.data.company, 'Example Company')
+  assert.strictEqual(result.products.length, 1)
+  assert.strictEqual(result.products[0].id, 'store-001-widget')
+  assert.strictEqual(result.customers.length, 1)
+  assert.strictEqual(result.customers[0].id, 'store-001-alice')
 }
 
 async function runInactiveStatusTest() {
-  currentDefaultDb = new MockFirestore()
-  currentRosterDb = new MockFirestore()
-  sheetRowMock = {
-    spreadsheetId: 'sheet-123',
-    headers: [],
-    normalizedHeaders: [],
-    values: [],
-    record: {
-      [normalizeHeader('store_id')]: 'store-002',
-      [normalizeHeader('status')]: 'Contract Terminated',
-      [normalizeHeader('member_email')]: 'owner@example.com',
+  currentDefaultDb = new MockFirestore({
+    'stores/store-002': {
+      status: 'Contract Terminated',
     },
-  }
+  })
+  currentRosterDb = new MockFirestore({
+    'teamMembers/owner@example.com': {
+      email: 'owner@example.com',
+      storeId: 'store-002',
+      role: 'Owner',
+    },
+  })
 
   const { resolveStoreAccess } = loadFunctionsModule()
   const context = {
@@ -173,19 +179,16 @@ async function runInactiveStatusTest() {
 }
 
 async function runStoreIdMismatchTest() {
-  currentDefaultDb = new MockFirestore()
-  currentRosterDb = new MockFirestore()
-  sheetRowMock = {
-    spreadsheetId: 'sheet-123',
-    headers: [],
-    normalizedHeaders: [],
-    values: [],
-    record: {
-      [normalizeHeader('store_id')]: 'store-777',
-      [normalizeHeader('status')]: 'Active',
-      [normalizeHeader('member_email')]: 'owner@example.com',
+  currentDefaultDb = new MockFirestore({
+    'stores/store-777': { status: 'Active' },
+  })
+  currentRosterDb = new MockFirestore({
+    'teamMembers/owner@example.com': {
+      email: 'owner@example.com',
+      storeId: 'store-777',
+      role: 'Owner',
     },
-  }
+  })
 
   const { resolveStoreAccess } = loadFunctionsModule()
   const context = {
@@ -211,18 +214,15 @@ async function runStoreIdMismatchTest() {
 }
 
 async function runMissingStoreIdTest() {
-  currentDefaultDb = new MockFirestore()
-  currentRosterDb = new MockFirestore()
-  sheetRowMock = {
-    spreadsheetId: 'sheet-123',
-    headers: [],
-    normalizedHeaders: [],
-    values: [],
-    record: {
-      status: 'Active',
-      member_email: 'owner@example.com',
+  currentDefaultDb = new MockFirestore({
+    'stores/store-001': { status: 'Active' },
+  })
+  currentRosterDb = new MockFirestore({
+    'teamMembers/owner@example.com': {
+      email: 'owner@example.com',
+      role: 'Owner',
     },
-  }
+  })
 
   const { resolveStoreAccess } = loadFunctionsModule()
   const context = {
