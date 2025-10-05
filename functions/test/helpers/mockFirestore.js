@@ -19,12 +19,21 @@ class MockTimestamp {
 }
 
 class MockDocSnapshot {
-  constructor(data) {
+  constructor(ref, data) {
+    this._ref = ref
     this._data = data
   }
 
   get exists() {
     return this._data !== undefined
+  }
+
+  get id() {
+    return this._ref.id
+  }
+
+  get ref() {
+    return this._ref
   }
 
   data() {
@@ -53,7 +62,7 @@ class MockDocumentReference {
 
   async get() {
     const data = this._db.getRaw(this.path)
-    return new MockDocSnapshot(data ? clone(data) : undefined)
+    return new MockDocSnapshot(this, data ? clone(data) : undefined)
   }
 
   async set(data, options = {}) {
@@ -66,15 +75,61 @@ class MockDocumentReference {
   }
 }
 
-class MockCollectionReference {
-  constructor(db, path) {
+class MockQuery {
+  constructor(db, path, filters = [], limitValue = null) {
     this._db = db
     this._path = path
+    this._filters = filters
+    this._limit = limitValue
+  }
+
+  where(field, op, value) {
+    if (op !== '==') {
+      throw new Error(`Unsupported operator: ${op}`)
+    }
+    return new MockQuery(this._db, this._path, [...this._filters, { field, value }], this._limit)
+  }
+
+  limit(count) {
+    return new MockQuery(this._db, this._path, [...this._filters], count)
+  }
+
+  async get() {
+    const candidates = this._db.listCollection(this._path)
+    const matches = candidates.filter(({ data }) =>
+      this._filters.every(filter => {
+        const value = data ? data[filter.field] : undefined
+        return value === filter.value
+      }),
+    )
+
+    const limited = typeof this._limit === 'number' ? matches.slice(0, this._limit) : matches
+
+    const docs = limited.map(
+      ({ id, data }) => new MockQueryDocumentSnapshot(new MockDocumentReference(this._db, `${this._path}/${id}`), data),
+    )
+
+    return {
+      empty: docs.length === 0,
+      docs,
+    }
+  }
+}
+
+class MockCollectionReference extends MockQuery {
+  constructor(db, path) {
+    super(db, path)
   }
 
   doc(id) {
     const docId = id || this._db.generateId()
     return new MockDocumentReference(this._db, `${this._path}/${docId}`)
+  }
+}
+
+class MockQueryDocumentSnapshot extends MockDocSnapshot {
+  constructor(ref, data) {
+    super(ref, data)
   }
 }
 
@@ -87,7 +142,7 @@ class MockTransaction {
   async get(ref) {
     const pending = this._writes.get(ref.path)
     const base = pending || this._db.getRaw(ref.path)
-    return new MockDocSnapshot(base ? clone(base) : undefined)
+    return new MockDocSnapshot(ref, base ? clone(base) : undefined)
   }
 
   set(ref, data) {
