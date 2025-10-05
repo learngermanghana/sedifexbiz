@@ -1,4 +1,5 @@
 {
+
   "collections": {
     "workspaces": {
       "demo-store": {
@@ -137,6 +138,6 @@
         "createdAt": { "__datatype__": "timestamp", "value": "2024-05-01T08:30:00.000Z" },
         "updatedAt": { "__datatype__": "timestamp", "value": "2024-06-28T09:15:00.000Z" }
       }
-    }
+
   }
 }
