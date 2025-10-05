@@ -450,6 +450,10 @@ export default function App() {
         await persistSession(nextUser)
         try {
           const resolution = await resolveStoreAccess()
+          await persistSession(nextUser, {
+            storeId: resolution.storeId,
+            role: resolution.role,
+          })
           await persistStoreSeedData(resolution)
         } catch (error) {
           console.warn('[auth] Failed to resolve workspace access', error)
@@ -473,6 +477,11 @@ export default function App() {
           await cleanupFailedSignup(nextUser)
           return
         }
+
+        await persistSession(nextUser, {
+          storeId: resolution.storeId,
+          role: resolution.role,
+        })
 
         await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution)
 

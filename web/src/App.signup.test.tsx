@@ -239,7 +239,17 @@ describe('App signup cleanup', () => {
       await user.click(screen.getByRole('button', { name: /Create account/i }))
     })
 
-    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalledTimes(2))
+    const firstPersistCall = mocks.persistSession.mock.calls[0]
+    expect(firstPersistCall?.[0]).toBe(createdUser)
+    expect(firstPersistCall?.[1]).toBeUndefined()
+
+    const secondPersistCall = mocks.persistSession.mock.calls[1]
+    expect(secondPersistCall?.[0]).toBe(createdUser)
+    expect(secondPersistCall?.[1]).toEqual({
+      storeId: 'workspace-store-id',
+      role: 'staff',
+    })
     await waitFor(() =>
       expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('workspace-store-id'),
     )
