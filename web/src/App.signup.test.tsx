@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
     persistSession: vi.fn(async () => {}),
     refreshSessionHeartbeat: vi.fn(async () => {}),
     publish: vi.fn(),
+    initializeStore: vi.fn(),
     resolveStoreAccess: vi.fn(),
   }
   return state
@@ -114,6 +115,7 @@ vi.mock('./components/ToastProvider', () => ({
 }))
 
 vi.mock('./controllers/accessController', () => ({
+  initializeStore: (...args: unknown[]) => mocks.initializeStore(...args),
   resolveStoreAccess: (...args: unknown[]) => mocks.resolveStoreAccess(...args),
 }))
 
@@ -136,6 +138,7 @@ describe('App signup cleanup', () => {
     mocks.auth.currentUser = null
     mocks.listeners.splice(0, mocks.listeners.length)
     firestore.reset()
+    mocks.initializeStore.mockReset()
     mocks.resolveStoreAccess.mockReset()
   })
 
@@ -165,7 +168,6 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.type(screen.getByLabelText(/Store ID/i), 'store-001')
       await user.type(screen.getByLabelText(/Phone/i), '5551234567')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -193,6 +195,7 @@ describe('App signup cleanup', () => {
       return { user: createdUser }
     })
 
+    mocks.initializeStore.mockResolvedValueOnce({ storeId: 'workspace-store-id', claims: {} })
     mocks.resolveStoreAccess.mockResolvedValueOnce({
       ok: true,
       storeId: 'workspace-store-id',
@@ -231,7 +234,6 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.type(screen.getByLabelText(/Store ID/i), '  workspace-store-id  ')
       await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -250,6 +252,12 @@ describe('App signup cleanup', () => {
       storeId: 'workspace-store-id',
       role: 'staff',
     })
+    await waitFor(() =>
+      expect(mocks.initializeStore).toHaveBeenCalledWith({
+        phone: '5551234567',
+        firstSignupEmail: 'owner@example.com',
+      }),
+    )
     await waitFor(() =>
       expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('workspace-store-id'),
     )
@@ -366,6 +374,7 @@ describe('App signup cleanup', () => {
       return { user: createdUser }
     })
 
+    mocks.initializeStore.mockResolvedValueOnce({ storeId: 'store-001', claims: {} })
     mocks.resolveStoreAccess.mockRejectedValueOnce(
       new Error(
         'We could not confirm the store ID assigned to your Sedifex workspace. Reach out to your Sedifex administrator.',
@@ -386,7 +395,6 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.type(screen.getByLabelText(/Store ID/i), 'store-001')
       await user.type(screen.getByLabelText(/Phone/i), '5551234567')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -394,6 +402,12 @@ describe('App signup cleanup', () => {
       await user.click(screen.getByRole('button', { name: /Create account/i }))
     })
 
+    await waitFor(() =>
+      expect(mocks.initializeStore).toHaveBeenCalledWith({
+        phone: '5551234567',
+        firstSignupEmail: 'owner@example.com',
+      }),
+    )
     await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('store-001'))
 
     await waitFor(() => expect(deleteFn).toHaveBeenCalled())

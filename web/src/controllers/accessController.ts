@@ -8,6 +8,21 @@ type RawSeededDocument = {
   data?: unknown
 }
 
+export type InitializeStoreContactPayload = {
+  phone?: string | null
+  firstSignupEmail?: string | null
+}
+
+type InitializeStorePayload = {
+  contact?: InitializeStoreContactPayload
+}
+
+type RawInitializeStoreResponse = {
+  ok?: unknown
+  storeId?: unknown
+  claims?: unknown
+}
+
 type RawResolveStoreAccessResponse = {
   ok?: unknown
   storeId?: unknown
@@ -80,6 +95,11 @@ type ResolveStoreAccessPayload = {
   storeId?: string
 }
 
+const initializeStoreCallable = httpsCallable<
+  InitializeStorePayload,
+  RawInitializeStoreResponse
+>(functions, 'initializeStore')
+
 const resolveStoreAccessCallable = httpsCallable<
   ResolveStoreAccessPayload,
   RawResolveStoreAccessResponse
@@ -117,6 +137,34 @@ export function extractCallableErrorMessage(error: FirebaseError): string | null
       ? withoutFirebasePrefix.slice(colonIndex + 1).trim()
       : withoutFirebasePrefix.trim()
   return normalized || null
+}
+
+export async function initializeStore(contact?: InitializeStoreContactPayload) {
+  let payload: InitializeStorePayload | undefined
+
+  if (contact && (contact.phone !== undefined || contact.firstSignupEmail !== undefined)) {
+    payload = {
+      contact: {
+        phone: contact.phone ?? null,
+        firstSignupEmail: contact.firstSignupEmail ?? null,
+      },
+    }
+  }
+
+  const response = await initializeStoreCallable(payload)
+  const data = response.data ?? {}
+
+  const ok = data.ok === true
+  const storeId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
+
+  if (!ok || !storeId) {
+    throw new Error('Unable to initialize the Sedifex workspace.')
+  }
+
+  return {
+    storeId,
+    claims: data.claims,
+  }
 }
 
 export async function resolveStoreAccess(storeId?: string): Promise<ResolveStoreAccessResult> {
