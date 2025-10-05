@@ -54,7 +54,12 @@ function sanitizePhone(value: string): string {
 
 const OWNER_NAME_FALLBACK = 'Owner account'
 
-function resolveOwnerName(user: User): string {
+function resolveOwnerName(user: User, explicitName?: string | null): string {
+  const trimmedExplicitName = explicitName?.trim()
+  if (trimmedExplicitName) {
+    return trimmedExplicitName
+  }
+
   const displayName = user.displayName?.trim()
   if (displayName && displayName.length > 0) {
     return displayName
@@ -62,24 +67,33 @@ function resolveOwnerName(user: User): string {
   return OWNER_NAME_FALLBACK
 }
 
+type OwnerProfileMetadata = {
+  ownerName?: string | null
+  businessName?: string | null
+}
+
 async function persistTeamMemberMetadata(
   user: User,
   email: string,
   phone: string,
   resolution: ResolveStoreAccessResult,
+  metadata?: OwnerProfileMetadata,
 ) {
   try {
+    const ownerName = resolveOwnerName(user, metadata?.ownerName ?? null)
+    const businessName = metadata?.businessName?.trim()
     await setDoc(
       doc(db, 'teamMembers', user.uid),
       {
         uid: user.uid,
         role: resolution.role,
         storeId: resolution.storeId,
-        name: resolveOwnerName(user),
+        name: ownerName,
         phone,
         email,
         firstSignupEmail: email,
         invitedBy: user.uid,
+        companyName: businessName ?? null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       },
@@ -200,6 +214,8 @@ function getSignupValidationError(
   password: string,
   confirmPassword: string,
   phone: string,
+  ownerName: string,
+  businessName: string,
 ): string | null {
   if (!email) {
     return 'Enter your email.'
@@ -209,6 +225,12 @@ function getSignupValidationError(
   }
   if (!password) {
     return 'Create a password to continue.'
+  }
+  if (!ownerName) {
+    return 'Enter your full name.'
+  }
+  if (!businessName) {
+    return 'Enter your business name.'
   }
   if (!phone) {
     return 'Enter your phone number.'
@@ -289,6 +311,8 @@ export default function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [businessName, setBusinessName] = useState('')
   const [phone, setPhone] = useState('')
   const [normalizedPhone, setNormalizedPhone] = useState('')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
@@ -300,6 +324,8 @@ export default function App() {
   const normalizedEmail = email.trim()
   const normalizedPassword = password.trim()
   const normalizedConfirmPassword = confirmPassword.trim()
+  const normalizedFullName = fullName.trim()
+  const normalizedBusinessName = businessName.trim()
   const hasPhone = normalizedPhone.length > 0
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
   const passwordChecklist = [
@@ -316,6 +342,8 @@ export default function App() {
     normalizedPassword.length > 0 &&
     doesPasswordMeetAllChecks &&
     hasConfirmedPassword &&
+    normalizedFullName.length > 0 &&
+    normalizedBusinessName.length > 0 &&
     hasPhone &&
     normalizedPassword === normalizedConfirmPassword
   const isLoginFormValid =
@@ -395,6 +423,8 @@ export default function App() {
     if (mode === 'signup') setConfirmPassword(sanitizedConfirmPassword)
 
     const sanitizedPhone = sanitizePhone(phone)
+    const sanitizedFullName = fullName.trim()
+    const sanitizedBusinessName = businessName.trim()
 
     const validationError =
       mode === 'login'
@@ -404,11 +434,15 @@ export default function App() {
             sanitizedPassword,
             sanitizedConfirmPassword,
             sanitizedPhone,
+            sanitizedFullName,
+            sanitizedBusinessName,
           )
 
     if (mode === 'signup') {
       setPhone(sanitizedPhone)
       setNormalizedPhone(sanitizedPhone)
+      setFullName(sanitizedFullName)
+      setBusinessName(sanitizedBusinessName)
 
       if (!sanitizedPhone) {
         setStatus({ tone: 'error', message: 'Enter your phone number.' })
@@ -451,8 +485,8 @@ export default function App() {
         const { user: nextUser } = await createUserWithEmailAndPassword(
           auth,
           sanitizedEmail,
-          sanitizedPassword,
-        )
+            sanitizedPassword,
+          )
         await persistSession(nextUser)
 
         let initializedStoreId: string | undefined
@@ -460,6 +494,8 @@ export default function App() {
           const initialization = await initializeStore({
             phone: sanitizedPhone || null,
             firstSignupEmail: sanitizedEmail ? sanitizedEmail.toLowerCase() : null,
+            ownerName: sanitizedFullName || null,
+            businessName: sanitizedBusinessName || null,
           })
           initializedStoreId = initialization.storeId
         } catch (error) {
@@ -485,7 +521,10 @@ export default function App() {
           role: resolution.role,
         })
 
-        await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution)
+        await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution, {
+          ownerName: sanitizedFullName,
+          businessName: sanitizedBusinessName,
+        })
 
         try {
           await persistStoreSeedData(resolution)
@@ -496,15 +535,21 @@ export default function App() {
         }
 
         try {
-          const preferredDisplayName = nextUser.displayName?.trim() || sanitizedEmail
+          const preferredDisplayName =
+            sanitizedFullName || nextUser.displayName?.trim() || sanitizedEmail
+          const resolvedBusinessName = sanitizedBusinessName || null
+          const resolvedOwnerName = sanitizedFullName || preferredDisplayName
+          const customerName = resolvedBusinessName || resolvedOwnerName
           await setDoc(
             doc(db, 'customers', nextUser.uid),
             {
               storeId: resolution.storeId,
-              name: preferredDisplayName,
-              displayName: preferredDisplayName,
+              name: customerName,
+              displayName: resolvedOwnerName,
               email: sanitizedEmail,
               phone: sanitizedPhone,
+              businessName: resolvedBusinessName,
+              ownerName: resolvedOwnerName,
               status: 'active',
               role: 'client',
               createdAt: serverTimestamp(),
@@ -529,6 +574,8 @@ export default function App() {
       })
       setPassword('')
       setConfirmPassword('')
+      setFullName('')
+      setBusinessName('')
       setPhone('')
       setNormalizedPhone('')
     } catch (err: unknown) {
@@ -547,6 +594,8 @@ export default function App() {
     setMode(nextMode)
     setStatus({ tone: 'idle', message: '' })
     setConfirmPassword('')
+    setFullName('')
+    setBusinessName('')
     setPhone('')
     setNormalizedPhone('')
   }
@@ -659,6 +708,48 @@ export default function App() {
                   aria-invalid={email.length > 0 && !EMAIL_PATTERN.test(normalizedEmail)}
                 />
               </div>
+              {mode === 'signup' && (
+                <div className="form__field">
+                  <label htmlFor="full-name">Full name</label>
+                  <input
+                    id="full-name"
+                    value={fullName}
+                    onChange={event => setFullName(event.target.value)}
+                    onBlur={() => setFullName(current => current.trim())}
+                    type="text"
+                    autoComplete="name"
+                    placeholder="Alex Morgan"
+                    required
+                    disabled={isLoading}
+                    aria-invalid={fullName.length > 0 && normalizedFullName.length === 0}
+                    aria-describedby="full-name-hint"
+                  />
+                  <p className="form__hint" id="full-name-hint">
+                    Helps personalize your workspace and invites.
+                  </p>
+                </div>
+              )}
+              {mode === 'signup' && (
+                <div className="form__field">
+                  <label htmlFor="business-name">Business name</label>
+                  <input
+                    id="business-name"
+                    value={businessName}
+                    onChange={event => setBusinessName(event.target.value)}
+                    onBlur={() => setBusinessName(current => current.trim())}
+                    type="text"
+                    autoComplete="organization"
+                    placeholder="Morgan Retail Co."
+                    required
+                    disabled={isLoading}
+                    aria-invalid={businessName.length > 0 && normalizedBusinessName.length === 0}
+                    aria-describedby="business-name-hint"
+                  />
+                  <p className="form__hint" id="business-name-hint">
+                    We’ll tailor onboarding based on your store name.
+                  </p>
+                </div>
+              )}
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="phone">Phone</label>

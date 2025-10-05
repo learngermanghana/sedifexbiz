@@ -11,6 +11,8 @@ type RawSeededDocument = {
 export type InitializeStoreContactPayload = {
   phone?: string | null
   firstSignupEmail?: string | null
+  ownerName?: string | null
+  businessName?: string | null
 }
 
 type InitializeStorePayload = {
@@ -142,12 +144,29 @@ export function extractCallableErrorMessage(error: FirebaseError): string | null
 export async function initializeStore(contact?: InitializeStoreContactPayload) {
   let payload: InitializeStorePayload | undefined
 
-  if (contact && (contact.phone !== undefined || contact.firstSignupEmail !== undefined)) {
-    payload = {
-      contact: {
-        phone: contact.phone ?? null,
-        firstSignupEmail: contact.firstSignupEmail ?? null,
-      },
+  if (contact) {
+    const payloadContact: InitializeStoreContactPayload = {}
+    let hasContactField = false
+
+    if (contact.phone !== undefined) {
+      payloadContact.phone = contact.phone ?? null
+      hasContactField = true
+    }
+    if (contact.firstSignupEmail !== undefined) {
+      payloadContact.firstSignupEmail = contact.firstSignupEmail ?? null
+      hasContactField = true
+    }
+    if (contact.ownerName !== undefined) {
+      payloadContact.ownerName = contact.ownerName ?? null
+      hasContactField = true
+    }
+    if (contact.businessName !== undefined) {
+      payloadContact.businessName = contact.businessName ?? null
+      hasContactField = true
+    }
+
+    if (hasContactField) {
+      payload = { contact: payloadContact }
     }
   }
 
