@@ -3,13 +3,10 @@ import { useEffect, useState } from 'react'
 import {
   Timestamp,
   collection,
-  doc,
-  getDoc,
   getDocs,
   query,
   where,
   type DocumentData,
-  type DocumentSnapshot,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
 import { db } from '../firebase'
@@ -33,19 +30,16 @@ function normalizeRole(role: unknown): Membership['role'] {
   return 'staff'
 }
 
-function mapMembershipData(
-  id: string,
-  rawData: DocumentData | undefined,
-): Membership {
-  const data = rawData ?? {}
+function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): Membership {
+  const data = snapshot.data()
 
   const createdAt = data.createdAt instanceof Timestamp ? data.createdAt : null
   const updatedAt = data.updatedAt instanceof Timestamp ? data.updatedAt : null
   const storeId = typeof data.storeId === 'string' && data.storeId.trim() !== '' ? data.storeId : null
 
   return {
-    id,
-    uid: typeof data.uid === 'string' && data.uid.trim() ? data.uid : id,
+    id: snapshot.id,
+    uid: typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id,
     role: normalizeRole(data.role),
     storeId,
     email: typeof data.email === 'string' ? data.email : null,
@@ -57,13 +51,7 @@ function mapMembershipData(
   }
 }
 
-function mapMembershipSnapshot(
-  snapshot: QueryDocumentSnapshot<DocumentData> | DocumentSnapshot<DocumentData>,
-): Membership {
-  return mapMembershipData(snapshot.id, snapshot.data())
-}
-
-export function useMemberships(activeStoreId?: string | null) {
+export function useMemberships() {
   const user = useAuthUser()
   const [loading, setLoading] = useState(true)
   const [memberships, setMemberships] = useState<Membership[]>([])
@@ -82,15 +70,6 @@ export function useMemberships(activeStoreId?: string | null) {
         return
       }
 
-      if (activeStoreId === undefined) {
-        if (!cancelled) {
-          setLoading(true)
-          setError(null)
-          setMemberships([])
-        }
-        return
-      }
-
       if (!cancelled) {
         setLoading(true)
         setError(null)
@@ -98,45 +77,13 @@ export function useMemberships(activeStoreId?: string | null) {
 
       try {
         const membersRef = collection(db, 'teamMembers')
-        const constraints = [where('uid', '==', user.id)]
-        const normalizedStoreId =
-          typeof activeStoreId === 'string' && activeStoreId.trim() !== ''
-            ? activeStoreId
-            : null
-
-        if (normalizedStoreId) {
-          constraints.push(where('storeId', '==', normalizedStoreId))
-        }
-
-        const membershipsQuery = query(membersRef, ...constraints)
+        const membershipsQuery = query(membersRef, where('uid', '==', user.uid))
         const snapshot = await getDocs(membershipsQuery)
 
         if (cancelled) return
 
-        const membershipsById = new Map<string, Membership>()
-        for (const docSnapshot of snapshot.docs) {
-          const membership = mapMembershipSnapshot(docSnapshot)
-          membershipsById.set(membership.id, membership)
-        }
-
-        const fallbackRefs = [doc(db, 'teamMembers', user.id)]
-
-        for (const ref of fallbackRefs) {
-          try {
-            const fallbackSnapshot = await getDoc(ref)
-            if (fallbackSnapshot.exists()) {
-              const membership = mapMembershipSnapshot(fallbackSnapshot)
-              if (membership.storeId) {
-                membershipsById.set(membership.id, membership)
-              }
-            }
-          } catch (fallbackError) {
-            // Ignore fallback errors to avoid masking the primary query results.
-            console.error(fallbackError)
-          }
-        }
-
-        setMemberships(Array.from(membershipsById.values()))
+        const rows = snapshot.docs.map(mapMembershipSnapshot)
+        setMemberships(rows)
         setError(null)
       } catch (e) {
         if (!cancelled) {
@@ -153,7 +100,7 @@ export function useMemberships(activeStoreId?: string | null) {
     return () => {
       cancelled = true
     }
-  }, [activeStoreId, user?.id])
+  }, [user?.uid])
 
   return { loading, memberships, error }
 }

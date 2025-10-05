@@ -1,155 +1,154 @@
-import { doc, getDoc } from 'firebase/firestore'
-
 // web/src/controllers/accessController.ts
-import { SUPABASE_FUNCTIONS, type SupabaseEndpointDefinition } from '@shared/firebaseCallables'
+import { FirebaseError } from 'firebase/app'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../firebase'
 
-import { auth, db } from '../firebase'
+type RawSeededDocument = {
+  id?: unknown
+  data?: unknown
+}
 
-import { supabase } from '../supabaseClient'
-import { invokeSupabaseFunction } from '../supabaseFunctionsClient'
+type RawResolveStoreAccessResponse = {
+  ok?: unknown
+  storeId?: unknown
+  role?: unknown
+  claims?: unknown
+  teamMember?: RawSeededDocument
+  store?: RawSeededDocument
+  products?: RawSeededDocument[] | unknown
+  customers?: RawSeededDocument[] | unknown
+}
 
-export type ResolveStoreAccessSuccess = {
-  ok: true
+export type SeededDocument = {
+  id: string
+  data: Record<string, unknown>
+}
+
+export type ResolveStoreAccessResult = {
+  ok: boolean
   storeId: string
   role: 'owner' | 'staff'
+  claims?: unknown
+  teamMember: SeededDocument | null
+  store: SeededDocument | null
+  products: SeededDocument[]
+  customers: SeededDocument[]
 }
 
-export type ResolveStoreAccessError = {
-  ok: false
-  error: 'NO_MEMBERSHIP'
+function normalizeRole(value: unknown): 'owner' | 'staff' {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'owner') return 'owner'
+  }
+  return 'staff'
 }
 
-export type ResolveStoreAccessResult =
-  | ResolveStoreAccessSuccess
-  | ResolveStoreAccessError
+function normalizeSeededDocument(input: RawSeededDocument | unknown): SeededDocument | null {
+  if (!input || typeof input !== 'object') {
+    return null
+  }
 
-type ContactPayload = {
-  phone?: string | null
-  phoneCountryCode?: string | null
-  phoneLocalNumber?: string | null
-  firstSignupEmail?: string | null
-  company?: string | null
-  ownerName?: string | null
-  country?: string | null
-  city?: string | null
+  const candidate = input as RawSeededDocument
+  const rawId = candidate.id
+  if (typeof rawId !== 'string') {
+    return null
+  }
+
+  const id = rawId.trim()
+  if (!id) {
+    return null
+  }
+
+  const rawData = candidate.data
+  if (!rawData || typeof rawData !== 'object') {
+    return { id, data: {} }
+  }
+
+  return { id, data: { ...(rawData as Record<string, unknown>) } }
 }
 
-type AfterSignupBootstrapPayload = {
+function normalizeSeededCollection(value: RawSeededDocument[] | unknown): SeededDocument[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value
+    .map(item => normalizeSeededDocument(item))
+    .filter((item): item is SeededDocument => item !== null)
+}
+
+type ResolveStoreAccessPayload = {
   storeId?: string
-  contact?: ContactPayload
 }
 
-async function invokeSupabaseEdgeFunction<Payload>(
-  definition: SupabaseEndpointDefinition,
-  payload: Payload | undefined,
-): Promise<void> {
-  const { data, error } = await invokeSupabaseFunction<Payload, unknown>(definition.name, {
-    payload,
-  })
+const resolveStoreAccessCallable = httpsCallable<
+  ResolveStoreAccessPayload,
+  RawResolveStoreAccessResponse
+>(
+  functions,
+  'resolveStoreAccess',
+)
 
-  if (error) {
+export const INACTIVE_WORKSPACE_MESSAGE =
+  'Your Sedifex workspace contract is not active. Reach out to your Sedifex administrator to restore access.'
+
+type FirebaseCallableError = FirebaseError & {
+  customData?: {
+    body?: {
+      error?: { message?: unknown }
+    }
+  }
+}
+
+export function extractCallableErrorMessage(error: FirebaseError): string | null {
+  const callableError = error as FirebaseCallableError
+  const bodyMessage = callableError.customData?.body?.error?.message
+  if (typeof bodyMessage === 'string') {
+    const trimmed = bodyMessage.trim()
+    if (trimmed) {
+      return trimmed
+    }
+  }
+
+  const raw = typeof error.message === 'string' ? error.message : ''
+  const withoutFirebasePrefix = raw.replace(/^Firebase:\s*/i, '')
+  const colonIndex = withoutFirebasePrefix.indexOf(':')
+  const normalized =
+    colonIndex >= 0
+      ? withoutFirebasePrefix.slice(colonIndex + 1).trim()
+      : withoutFirebasePrefix.trim()
+  return normalized || null
+}
+
+export async function resolveStoreAccess(storeId?: string): Promise<ResolveStoreAccessResult> {
+  let response
+  try {
+    const trimmedStoreId = typeof storeId === 'string' ? storeId.trim() : ''
+    const payload = trimmedStoreId ? { storeId: trimmedStoreId } : undefined
+    response = await resolveStoreAccessCallable(payload)
+  } catch (error) {
+    if (error instanceof FirebaseError && error.code === 'functions/permission-denied') {
+      const message = extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
+      throw new Error(message)
+    }
     throw error
   }
+  const payload = response.data ?? {}
 
-  if (data && typeof data === 'object' && 'error' in (data as Record<string, unknown>)) {
-    const details = (data as { error?: unknown }).error
-    const message =
-      typeof details === 'string'
-        ? details
-        : details && typeof details === 'object' && 'message' in (details as Record<string, unknown>)
-          ? String((details as Record<string, unknown>).message)
-          : 'Supabase function reported an error'
-    throw new Error(message)
-  }
-}
+  const ok = payload.ok === true
+  const resolvedStoreId = typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
 
-export async function resolveStoreAccess(): Promise<ResolveStoreAccessResult> {
-  const { data } = await supabase.auth.getSession()
-  const user = data.session?.user
-  if (!user?.id) {
-    return { ok: false, error: 'NO_MEMBERSHIP' }
+  if (!ok || !resolvedStoreId) {
+    throw new Error('Unable to resolve store access for this account.')
   }
 
-  try {
-    const memberSnapshot = await getDoc(doc(db, 'teamMembers', user.id))
-    if (!memberSnapshot.exists()) {
-      return { ok: false, error: 'NO_MEMBERSHIP' }
-    }
-
-    const data = memberSnapshot.data() ?? {}
-    const rawStoreId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
-    const rawRole = typeof data.role === 'string' ? data.role.trim().toLowerCase() : ''
-
-    if (!rawStoreId || (rawRole !== 'owner' && rawRole !== 'staff')) {
-      return { ok: false, error: 'NO_MEMBERSHIP' }
-    }
-
-    return {
-      ok: true,
-      storeId: rawStoreId,
-      role: rawRole,
-    }
-  } catch (error) {
-    console.warn('[access] Failed to resolve store access', error)
-    return { ok: false, error: 'NO_MEMBERSHIP' }
+  return {
+    ok,
+    storeId: resolvedStoreId,
+    role: normalizeRole(payload.role),
+    claims: payload.claims,
+    teamMember: normalizeSeededDocument(payload.teamMember ?? null),
+    store: normalizeSeededDocument(payload.store ?? null),
+    products: normalizeSeededCollection(payload.products),
+    customers: normalizeSeededCollection(payload.customers),
   }
-}
-
-export async function afterSignupBootstrap(payload?: AfterSignupBootstrapPayload): Promise<void> {
-  if (!payload) {
-    await invokeSupabaseEdgeFunction(SUPABASE_FUNCTIONS.AFTER_SIGNUP_BOOTSTRAP, undefined)
-    return
-  }
-
-  const normalized: AfterSignupBootstrapPayload = {}
-
-  if (typeof payload.storeId === 'string') {
-    const trimmed = payload.storeId.trim()
-    if (trimmed) {
-      normalized.storeId = trimmed
-    }
-  }
-
-  if (payload.contact && typeof payload.contact === 'object') {
-    const contact: NonNullable<AfterSignupBootstrapPayload['contact']> = {}
-
-    if (payload.contact.phone !== undefined) {
-      contact.phone = payload.contact.phone
-    }
-
-    if (payload.contact.phoneCountryCode !== undefined) {
-      contact.phoneCountryCode = payload.contact.phoneCountryCode
-    }
-
-    if (payload.contact.phoneLocalNumber !== undefined) {
-      contact.phoneLocalNumber = payload.contact.phoneLocalNumber
-    }
-
-    if (payload.contact.firstSignupEmail !== undefined) {
-      contact.firstSignupEmail = payload.contact.firstSignupEmail
-    }
-
-    if (payload.contact.company !== undefined) {
-      contact.company = payload.contact.company
-    }
-
-    if (payload.contact.ownerName !== undefined) {
-      contact.ownerName = payload.contact.ownerName
-    }
-
-    if (payload.contact.country !== undefined) {
-      contact.country = payload.contact.country
-    }
-
-    if (payload.contact.city !== undefined) {
-      contact.city = payload.contact.city
-    }
-
-    if (Object.keys(contact).length > 0) {
-      normalized.contact = contact
-    }
-  }
-
-  const callablePayload = Object.keys(normalized).length > 0 ? normalized : undefined
-  await invokeSupabaseEdgeFunction(SUPABASE_FUNCTIONS.AFTER_SIGNUP_BOOTSTRAP, callablePayload)
 }

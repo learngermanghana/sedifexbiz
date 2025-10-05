@@ -1,28 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  startAfter,
-  where,
-  type QueryDocumentSnapshot,
-  type Timestamp,
-} from 'firebase/firestore'
+import { useEffect, useMemo, useState } from 'react'
+import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, where, type Timestamp } from 'firebase/firestore'
 
-import { formatDailySummaryKey } from '../../../shared/dateKeys'
 import { db } from '../firebase'
-import { ensureCustomerLoyalty, type CustomerLoyalty } from '../utils/customerLoyalty'
 import { useAuthUser } from './useAuthUser'
-import { useActiveStoreContext } from '../context/ActiveStoreProvider'
+import { useActiveStore } from './useActiveStore'
 import { useToast } from '../components/ToastProvider'
-import { formatCurrency } from '@shared/currency'
 import {
   CUSTOMER_CACHE_LIMIT,
   PRODUCT_CACHE_LIMIT,
@@ -42,8 +24,11 @@ type SaleRecord = {
   total?: number
   createdAt?: Timestamp | Date | null
   items?: Array<{ productId: string; name?: string; price?: number; qty?: number }>
-  tenders?: Record<string, number> | null
-  changeDue?: number
+  payment?: {
+    method?: string
+    amountPaid?: number
+    changeDue?: number
+  }
   storeId?: string | null
 }
 
@@ -63,11 +48,8 @@ type CustomerRecord = {
   name: string
   displayName?: string
   createdAt?: Timestamp | Date | null
-  storeId: string
-  loyalty: CustomerLoyalty
+  storeId?: string | null
 }
-
-type FirestoreCustomerRecord = Omit<CustomerRecord, 'loyalty'> & { loyalty?: unknown }
 
 type GoalTargets = {
   revenueTarget: number
@@ -141,7 +123,7 @@ type UseStoreMetricsResult = {
   handleGoalMonthChange: (value: string) => void
   goalFormValues: GoalFormValues
   handleGoalInputChange: (field: keyof GoalFormValues, value: string) => void
-  handleGoalSubmit: (event: FormEvent) => Promise<void>
+  handleGoalSubmit: (event: React.FormEvent) => Promise<void>
   isSavingGoals: boolean
   inventoryAlerts: InventoryAlert[]
   teamCallouts: TeamCallout[]
@@ -211,7 +193,10 @@ function endOfMonth(date: Date) {
 }
 
 function formatAmount(value: number) {
-  return formatCurrency(value)
+  return `GHS ${value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
 }
 
 function formatHourRange(hour: number) {
@@ -240,17 +225,8 @@ function enumerateDaysBetween(start: Date, end: Date) {
   return days
 }
 
-function getSaleSortValue(sale: SaleRecord) {
-  return asDate(sale.createdAt)?.getTime() ?? 0
-}
-
-function normalizeSales(records: SaleRecord[]) {
-  const byId = new Map<string, SaleRecord>()
-  records.forEach(record => {
-    if (!record?.id) return
-    byId.set(record.id, record)
-  })
-  return Array.from(byId.values()).sort((a, b) => getSaleSortValue(b) - getSaleSortValue(a))
+function formatDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 function formatDateRange(start: Date, end: Date) {
@@ -296,7 +272,7 @@ function buildDailyMetricSeries(
   sales.forEach(sale => {
     const created = asDate(sale.createdAt)
     if (!created) return
-    const key = formatDailySummaryKey(created)
+    const key = formatDateKey(created)
     const bucket = buckets.get(key) ?? { revenue: 0, count: 0 }
     bucket.revenue += sale.total ?? 0
     bucket.count += 1
@@ -304,7 +280,7 @@ function buildDailyMetricSeries(
   })
 
   return enumerateDaysBetween(start, end).map(day => {
-    const bucket = buckets.get(formatDailySummaryKey(day))
+    const bucket = buckets.get(formatDateKey(day))
     if (!bucket) {
       return 0
     }
@@ -316,7 +292,7 @@ function buildDailyMetricSeries(
 
 export function useStoreMetrics(): UseStoreMetricsResult {
   const authUser = useAuthUser()
-  const { storeId: activeStoreId } = useActiveStoreContext()
+  const { storeId: activeStoreId } = useActiveStore()
   const { publish } = useToast()
 
   const [sales, setSales] = useState<SaleRecord[]>([])
@@ -332,83 +308,11 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   const [isSavingGoals, setIsSavingGoals] = useState(false)
   const [selectedRangeId, setSelectedRangeId] = useState<PresetRangeId>('today')
   const [customRange, setCustomRange] = useState<CustomRange>({ start: '', end: '' })
-  const latestSalesRequestRef = useRef<string>('')
 
   const goalDocumentId = useMemo(
-    () => activeStoreId ?? `user-${authUser?.id ?? 'default'}`,
-    [activeStoreId, authUser?.id],
+    () => activeStoreId ?? `user-${authUser?.uid ?? 'default'}`,
+    [activeStoreId, authUser?.uid],
   )
-
-  const today = useMemo(() => new Date(), [])
-  const defaultMonthKey = useMemo(() => formatMonthInput(today), [today])
-  const rangeInfo = useMemo(() => {
-    const fallbackPreset = RANGE_PRESETS.find(option => option.id === 'today')
-    const resolvedFallback = fallbackPreset?.getRange?.(today) ?? {
-      start: startOfDay(today),
-      end: endOfDay(today),
-    }
-
-    if (selectedRangeId === 'custom') {
-      const startDate = parseDateInput(customRange.start)
-      const endDate = parseDateInput(customRange.end)
-      if (startDate && endDate && startDate <= endDate) {
-        return {
-          rangeStart: startOfDay(startDate),
-          rangeEnd: endOfDay(endDate),
-          resolvedRangeId: 'custom' as PresetRangeId,
-        }
-      }
-      return {
-        rangeStart: resolvedFallback.start,
-        rangeEnd: resolvedFallback.end,
-        resolvedRangeId: 'today' as PresetRangeId,
-      }
-    }
-
-    const preset = RANGE_PRESETS.find(option => option.id === selectedRangeId)
-    if (preset?.getRange) {
-      const range = preset.getRange(today)
-      return {
-        rangeStart: range.start,
-        rangeEnd: range.end,
-        resolvedRangeId: preset.id,
-      }
-    }
-
-    return {
-      rangeStart: resolvedFallback.start,
-      rangeEnd: resolvedFallback.end,
-      resolvedRangeId: 'today' as PresetRangeId,
-    }
-  }, [today, selectedRangeId, customRange.start, customRange.end])
-
-  const { rangeStart, rangeEnd, resolvedRangeId } = rangeInfo
-  const rangeDays = differenceInCalendarDays(rangeStart, rangeEnd) + 1
-  const previousRangeStart = useMemo(() => addDays(rangeStart, -rangeDays), [rangeStart, rangeDays])
-  const previousRangeEnd = useMemo(() => addDays(rangeStart, -1), [rangeStart])
-
-  const goalMonthDate = useMemo(
-    () => parseMonthInput(selectedGoalMonth) ?? startOfMonth(today),
-    [selectedGoalMonth, today],
-  )
-  const goalMonthStart = useMemo(() => startOfMonth(goalMonthDate), [goalMonthDate])
-  const goalMonthEnd = useMemo(() => endOfMonth(goalMonthDate), [goalMonthDate])
-  const combinedRange = useMemo(() => {
-    const startCandidates = [rangeStart, previousRangeStart, goalMonthStart]
-    const endCandidates = [rangeEnd, previousRangeEnd, goalMonthEnd]
-    const earliest = startCandidates.reduce(
-      (current, candidate) => (candidate < current ? candidate : current),
-      startCandidates[0],
-    )
-    const latest = endCandidates.reduce(
-      (current, candidate) => (candidate > current ? candidate : current),
-      endCandidates[0],
-    )
-    return {
-      start: startOfDay(earliest),
-      end: endOfDay(latest),
-    }
-  }, [rangeStart, rangeEnd, previousRangeStart, previousRangeEnd, goalMonthStart, goalMonthEnd])
 
   useEffect(() => {
     let cancelled = false
@@ -420,96 +324,39 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       }
     }
 
-    const fetchStart = combinedRange.start
-    const fetchEnd = combinedRange.end
-    const cachePartition = `${fetchStart.getTime()}-${fetchEnd.getTime()}`
-    const requestKey = `${activeStoreId}:${cachePartition}`
-    latestSalesRequestRef.current = requestKey
-
-    loadCachedSales<SaleRecord>({
-      storeId: activeStoreId,
-      partition: cachePartition,
-      limit: Number.MAX_SAFE_INTEGER,
-    })
+    loadCachedSales<SaleRecord>({ storeId: activeStoreId })
       .then(cached => {
-        if (cancelled || latestSalesRequestRef.current !== requestKey) return
-        if (cached.length) {
-          setSales(normalizeSales(cached))
-        } else {
-          setSales([])
+        if (!cancelled && cached.length) {
+          setSales(cached)
         }
       })
       .catch(error => {
         console.warn('[metrics] Failed to load cached sales', error)
       })
 
-    async function fetchSalesForRange() {
-      const pageSize = Math.max(SALES_CACHE_LIMIT, 500)
-      const baseQuery = query(
-        collection(db, 'sales'),
-        where('storeId', '==', activeStoreId),
-        where('createdAt', '>=', fetchStart),
-        where('createdAt', '<=', fetchEnd),
-        orderBy('createdAt', 'asc'),
-      )
+    const q = query(
+      collection(db, 'sales'),
+      where('storeId', '==', activeStoreId),
+      orderBy('createdAt', 'desc'),
+      limit(SALES_CACHE_LIMIT),
+    )
 
-      const aggregated: SaleRecord[] = []
-      let cursor: QueryDocumentSnapshot | null = null
-      let hasMore = true
-
-      while (hasMore && !cancelled && latestSalesRequestRef.current === requestKey) {
-        const pageQuery = cursor
-          ? query(baseQuery, startAfter(cursor), limit(pageSize))
-          : query(baseQuery, limit(pageSize))
-
-        const snapshot = await getDocs(pageQuery)
-        if (cancelled || latestSalesRequestRef.current !== requestKey) {
-          return
-        }
-
-        if (snapshot.empty) {
-          hasMore = false
-          break
-        }
-
-        snapshot.docs.forEach(docSnap => {
-          aggregated.push({
-            id: docSnap.id,
-            ...(docSnap.data() as Omit<SaleRecord, 'id'>),
-          })
-        })
-
-        if (snapshot.size < pageSize) {
-          hasMore = false
-        } else {
-          cursor = snapshot.docs[snapshot.docs.length - 1]
-        }
-      }
-
-      if (cancelled || latestSalesRequestRef.current !== requestKey) return
-
-      const normalized = normalizeSales(aggregated)
-      setSales(normalized)
-      saveCachedSales(normalized, {
-        storeId: activeStoreId,
-        partition: cachePartition,
-        limit: normalized.length || SALES_CACHE_LIMIT,
-      }).catch(error => {
+    const unsubscribe = onSnapshot(q, snapshot => {
+      const rows: SaleRecord[] = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<SaleRecord, 'id'>),
+      }))
+      setSales(rows)
+      saveCachedSales(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[metrics] Failed to cache sales', error)
       })
-    }
-
-    fetchSalesForRange().catch(error => {
-      if (!cancelled) {
-        console.warn('[metrics] Failed to fetch sales for range', error)
-        publish({ tone: 'error', message: 'Failed to refresh sales metrics.' })
-      }
     })
 
     return () => {
       cancelled = true
+      unsubscribe()
     }
-  }, [activeStoreId, combinedRange.start, combinedRange.end, publish])
+  }, [activeStoreId])
 
   useEffect(() => {
     let cancelled = false
@@ -566,10 +413,10 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       }
     }
 
-    loadCachedCustomers<FirestoreCustomerRecord>({ storeId: activeStoreId })
+    loadCachedCustomers<CustomerRecord>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
-          setCustomers(cached.map(entry => ensureCustomerLoyalty(entry)))
+          setCustomers(cached)
         }
       })
       .catch(error => {
@@ -585,12 +432,10 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     )
 
     const unsubscribe = onSnapshot(q, snapshot => {
-      const rows: CustomerRecord[] = snapshot.docs.map(docSnap =>
-        ensureCustomerLoyalty({
-          id: docSnap.id,
-          ...(docSnap.data() as Omit<FirestoreCustomerRecord, 'id'>),
-        }),
-      )
+      const rows: CustomerRecord[] = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<CustomerRecord, 'id'>),
+      }))
       setCustomers(rows)
       saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[metrics] Failed to cache customers', error)
@@ -641,6 +486,54 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       customerTarget: String(active?.customerTarget ?? DEFAULT_CUSTOMER_TARGET),
     })
   }, [monthlyGoals, selectedGoalMonth, goalFormTouched])
+
+  const today = useMemo(() => new Date(), [sales])
+  const defaultMonthKey = useMemo(() => formatMonthInput(today), [today])
+  const rangeInfo = useMemo(() => {
+    const fallbackPreset = RANGE_PRESETS.find(option => option.id === 'today')
+    const resolvedFallback = fallbackPreset?.getRange?.(today) ?? {
+      start: startOfDay(today),
+      end: endOfDay(today),
+    }
+
+    if (selectedRangeId === 'custom') {
+      const startDate = parseDateInput(customRange.start)
+      const endDate = parseDateInput(customRange.end)
+      if (startDate && endDate && startDate <= endDate) {
+        return {
+          rangeStart: startOfDay(startDate),
+          rangeEnd: endOfDay(endDate),
+          resolvedRangeId: 'custom' as PresetRangeId,
+        }
+      }
+      return {
+        rangeStart: resolvedFallback.start,
+        rangeEnd: resolvedFallback.end,
+        resolvedRangeId: 'today' as PresetRangeId,
+      }
+    }
+
+    const preset = RANGE_PRESETS.find(option => option.id === selectedRangeId)
+    if (preset?.getRange) {
+      const range = preset.getRange(today)
+      return {
+        rangeStart: range.start,
+        rangeEnd: range.end,
+        resolvedRangeId: preset.id,
+      }
+    }
+
+    return {
+      rangeStart: resolvedFallback.start,
+      rangeEnd: resolvedFallback.end,
+      resolvedRangeId: 'today' as PresetRangeId,
+    }
+  }, [today, selectedRangeId, customRange.start, customRange.end])
+
+  const { rangeStart, rangeEnd, resolvedRangeId } = rangeInfo
+  const rangeDays = differenceInCalendarDays(rangeStart, rangeEnd) + 1
+  const previousRangeStart = addDays(rangeStart, -rangeDays)
+  const previousRangeEnd = addDays(rangeStart, -1)
 
   const currentSales = useMemo(
     () =>
@@ -821,6 +714,9 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     },
   ]
 
+  const goalMonthDate = useMemo(() => parseMonthInput(selectedGoalMonth) ?? startOfMonth(today), [selectedGoalMonth, today])
+  const goalMonthStart = useMemo(() => startOfMonth(goalMonthDate), [goalMonthDate])
+  const goalMonthEnd = useMemo(() => endOfMonth(goalMonthDate), [goalMonthDate])
   const goalMonthLabel = useMemo(
     () =>
       new Intl.DateTimeFormat(undefined, {
@@ -901,7 +797,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     setGoalFormValues(current => ({ ...current, [field]: value }))
   }
 
-  async function handleGoalSubmit(event: FormEvent) {
+  async function handleGoalSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (!activeStoreId) {
       publish({ tone: 'error', message: 'Select a store to save goals.' })
@@ -916,26 +812,18 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       const customerTarget = Number.isFinite(customerValue) ? Math.max(0, customerValue) : 0
       const monthKey = selectedGoalMonth || defaultMonthKey
 
-      const goalRef = doc(db, 'storeGoals', goalDocumentId)
-      const existingSnapshot = await getDoc(goalRef)
-      const shouldSetCreatedAt = !existingSnapshot.exists() || !existingSnapshot.data()?.createdAt
-
-      const basePayload = {
-        storeId: activeStoreId,
-        updatedAt: serverTimestamp(),
-        monthly: {
-          [monthKey]: {
-            revenueTarget,
-            customerTarget,
+      await setDoc(
+        doc(db, 'storeGoals', goalDocumentId),
+        {
+          monthly: {
+            [monthKey]: {
+              revenueTarget,
+              customerTarget,
+            },
           },
         },
-      }
-
-      const payload = shouldSetCreatedAt
-        ? { ...basePayload, createdAt: serverTimestamp() }
-        : basePayload
-
-      await setDoc(goalRef, payload, { merge: true })
+        { merge: true },
+      )
 
       setGoalFormTouched(false)
       setGoalFormValues({

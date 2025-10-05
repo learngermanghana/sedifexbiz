@@ -1,15 +1,24 @@
-import React, { useCallback, useId, useMemo } from 'react'
+import React, { useMemo } from 'react'
 import { NavLink } from 'react-router-dom'
+import { signOut } from 'firebase/auth'
+import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
-import { useActiveStoreContext } from '../context/ActiveStoreProvider'
 import './Shell.css'
 import './Workspace.css'
-import { supabase } from '../supabaseClient'
 
 type NavItem = { to: string; label: string; end?: boolean }
 
-const NAV_ITEMS: NavItem[] = [{ to: 'sell', label: 'Sell', end: true }]
+const NAV_ITEMS: NavItem[] = [
+  { to: '/', label: 'Dashboard', end: true },
+  { to: '/goals', label: 'Goals' },
+  { to: '/products', label: 'Products' },
+  { to: '/sell', label: 'Sell' },
+  { to: '/receive', label: 'Receive' },
+  { to: '/customers', label: 'Customers' },
+  { to: '/close-day', label: 'Close Day' },
+  { to: '/account', label: 'Account' },
+]
 
 function navLinkClass(isActive: boolean) {
   return `shell__nav-link${isActive ? ' is-active' : ''}`
@@ -63,13 +72,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const user = useAuthUser()
   const userEmail = user?.email ?? 'Account'
   const connectivity = useConnectivityStatus()
-  const {
-    storeId: activeStoreId,
-    memberships,
-    membershipsLoading,
-    setActiveStoreId,
-    isLoading: storeLoading,
-  } = useActiveStoreContext()
 
   const { isOnline, isReachable, queue } = connectivity
 
@@ -108,57 +110,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }, [isOnline, isReachable, queue.lastError, queue.pending, queue.status])
 
 
-  const storeSelectId = useId()
-
-  const storeOptions = useMemo(() => {
-    const seen = new Set<string>()
-    return memberships
-      .map(membership => membership.storeId)
-      .filter((storeId): storeId is string => typeof storeId === 'string' && storeId.trim().length > 0)
-      .filter(storeId => {
-        if (seen.has(storeId)) return false
-        seen.add(storeId)
-        return true
-      })
-      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-      .map(storeId => ({ id: storeId, label: storeId }))
-  }, [memberships])
-
-  const storeStatusLabel = useMemo(() => {
-    if (storeLoading || membershipsLoading) {
-      return 'Loading workspace access…'
-    }
-
-    if (!storeOptions.length) {
-      return 'No workspace available'
-    }
-
-    if (!activeStoreId) {
-      return 'Select a workspace'
-    }
-
-    return 'Workspace ready'
-  }, [activeStoreId, membershipsLoading, storeLoading, storeOptions.length])
-
-  const storeSelectValue = activeStoreId ?? ''
-
-  const [sellNavItem] = NAV_ITEMS
-
-  const handleStoreChange = useCallback(
-    (event: React.ChangeEvent<HTMLSelectElement>) => {
-      const value = event.target.value
-      if (!value) {
-        return
-      }
-
-      if (value === activeStoreId) {
-        return
-      }
-
-      setActiveStoreId(value)
-    },
-    [activeStoreId, setActiveStoreId],
-  )
+  const workspaceStatus = 'Workspace ready'
 
 
   return (
@@ -171,47 +123,23 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
 
           <nav className="shell__nav" aria-label="Primary">
-            <NavLink
-              to={sellNavItem.to}
-              end={sellNavItem.end}
-              className={({ isActive }) => navLinkClass(isActive)}
-            >
-              {sellNavItem.label}
-            </NavLink>
+            {NAV_ITEMS.map(item => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) => navLinkClass(isActive)}
+              >
+                {item.label}
+              </NavLink>
+            ))}
           </nav>
 
           <div className="shell__controls">
 
             <div className="shell__store-switcher" role="status" aria-live="polite">
-              <label className="shell__store-label" htmlFor={storeSelectId}>
-                Workspace
-              </label>
-              {storeOptions.length ? (
-                <select
-                  id={storeSelectId}
-                  className="shell__store-select"
-                  value={storeSelectValue}
-                  onChange={handleStoreChange}
-                  disabled={storeLoading || membershipsLoading}
-                >
-                  <option value="" disabled>
-                    Select a workspace…
-                  </option>
-                  {storeOptions.map(option => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span
-                  className="shell__store-empty"
-                  data-state={storeLoading || membershipsLoading ? 'loading' : 'empty'}
-                >
-                  {storeLoading || membershipsLoading ? 'Loading workspaces…' : 'No workspace assigned'}
-                </span>
-              )}
-              <span className="shell__store-status">{storeStatusLabel}</span>
+              <span className="shell__store-label">Workspace</span>
+              <span className="shell__store-select" data-readonly>{workspaceStatus}</span>
             </div>
 
 
@@ -237,9 +165,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 className="button button--primary button--small"
-                onClick={() => {
-                  void supabase.auth.signOut()
-                }}
+                onClick={() => signOut(auth)}
               >
                 Sign out
               </button>

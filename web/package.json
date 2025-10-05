@@ -8,12 +8,9 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings=0",
-    "test": "vitest run",
-    "test:rules": "firebase emulators:exec --config ../firebase.json --project sedifex-ac2b0 --only firestore,auth \"npm run test:rules:vitest\"",
-    "test:rules:vitest": "vitest run tests/firestore.rules.emulator.test.ts"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.0",
     "firebase": "^10.13.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

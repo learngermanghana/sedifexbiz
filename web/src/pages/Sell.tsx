@@ -1,22 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-  collection,
-  query,
-  orderBy,
-  limit,
-  onSnapshot,
-  doc,
-  where,
-  runTransaction,
-  serverTimestamp,
-  type DocumentData,
-} from 'firebase/firestore'
+import React, { useCallback, useEffect, useState } from 'react'
+import { collection, query, orderBy, limit, onSnapshot, doc, where } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
-import { db } from '../firebase'
+import { httpsCallable } from 'firebase/functions'
+import { db, functions as cloudFunctions } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
-import { useActiveStoreContext } from '../context/ActiveStoreProvider'
+import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'
 import { Link } from 'react-router-dom'
+import { queueCallableRequest } from '../utils/offlineQueue'
 import BarcodeScanner, { ScanResult } from '../components/BarcodeScanner'
 import {
   CUSTOMER_CACHE_LIMIT,
@@ -26,9 +17,7 @@ import {
   saveCachedCustomers,
   saveCachedProducts,
 } from '../utils/offlineCache'
-import { ensureCustomerLoyalty, normalizeCustomerLoyalty, type CustomerLoyalty } from '../utils/customerLoyalty'
 import { buildSimplePdf } from '../utils/pdf'
-import { formatCurrency } from '@shared/currency'
 
 type Product = {
   id: string
@@ -43,24 +32,23 @@ type CartLine = { productId: string; name: string; price: number; qty: number }
 type Customer = {
   id: string
   name: string
-  storeId: string
   displayName?: string
   phone?: string
   email?: string
   notes?: string
   createdAt?: unknown
   updatedAt?: unknown
-  loyalty: CustomerLoyalty
 }
-
-type FirestoreCustomer = Omit<Customer, 'loyalty'> & { loyalty?: unknown }
 type ReceiptData = {
   saleId: string
   createdAt: Date
   items: CartLine[]
   subtotal: number
-  tenders: Record<string, number>
-  changeDue: number
+  payment: {
+    method: string
+    amountPaid: number
+    changeDue: number
+  }
   customer?: {
     name: string
     phone?: string
@@ -76,6 +64,39 @@ type ReceiptSharePayload = {
   pdfBlob: Blob
   pdfUrl: string
   pdfFileName: string
+}
+
+type CommitSalePayload = {
+  branchId: string | null
+  saleId: string
+  cashierId: string
+  totals: {
+    total: number
+    taxTotal: number
+  }
+  payment: {
+    method: string
+    amountPaid: number
+    changeDue: number
+  }
+  customer?: {
+    id?: string
+    name: string
+    phone?: string
+    email?: string
+  }
+  items: Array<{
+    productId: string
+    name: string
+    price: number
+    qty: number
+    taxRate?: number
+  }>
+}
+
+type CommitSaleResponse = {
+  ok: boolean
+  saleId: string
 }
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
@@ -161,46 +182,9 @@ function sanitizePrice(value: unknown): number | null {
   return null
 }
 
-type TenderEntry = { method: string; amount: number }
-
-function normalizeTenderEntries(tenders: Record<string, number>): TenderEntry[] {
-  return Object.entries(tenders)
-    .map(([method, amount]) => ({ method, amount }))
-    .filter(entry => Number.isFinite(entry.amount) && entry.amount > 0)
-}
-
-function getTenderTotal(tenders: Record<string, number>): number {
-  return normalizeTenderEntries(tenders).reduce((sum, entry) => sum + entry.amount, 0)
-}
-
-function formatTenderMethod(method: string): string {
-  const normalized = method.trim().toLowerCase()
-  if (!normalized) return 'Unknown'
-  if (normalized === 'cash') return 'Cash'
-  if (normalized === 'card') return 'Card'
-  if (normalized === 'mobile') return 'Mobile'
-  return method
-}
-
-function formatTenderBreakdown(tenders: Record<string, number>): string {
-  const entries = normalizeTenderEntries(tenders)
-  if (!entries.length) return ''
-  return entries
-    .map(entry => `${formatTenderMethod(entry.method)} ${formatCurrency(entry.amount)}`)
-    .join(' • ')
-}
-
-function calculateEarnedLoyaltyPoints(total: number): number {
-  if (!Number.isFinite(total) || total <= 0) {
-    return 0
-  }
-  // Placeholder for future earning rules. Keep scaffolded structure consistent for now.
-  return 0
-}
-
 export default function Sell() {
   const user = useAuthUser()
-  const { storeId: activeStoreId, storeChangeToken, isLoading: storeLoading } = useActiveStoreContext()
+  const { storeId: activeStoreId } = useActiveStore()
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -229,20 +213,9 @@ export default function Sell() {
   const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : subtotal
   const changeDue = Math.max(0, amountPaid - subtotal)
   const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0
-  const tenders = useMemo(() => {
-    const entries: Record<string, number> = {}
-    if (paymentMethod === 'card') entries.card = subtotal
-    if (paymentMethod === 'mobile') entries.mobile = subtotal
-    if (paymentMethod === 'cash') entries.cash = amountPaid
-    return entries
-  }, [amountPaid, paymentMethod, subtotal])
-  const tenderTotal = useMemo(() => getTenderTotal(tenders), [tenders])
-  const tenderBreakdown = useMemo(() => formatTenderBreakdown(tenders), [tenders])
 
   useEffect(() => {
     let cancelled = false
-
-    setProducts([])
 
     if (!activeStoreId) {
       setProducts([])
@@ -297,12 +270,10 @@ export default function Sell() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId, storeChangeToken])
+  }, [activeStoreId])
 
   useEffect(() => {
     let cancelled = false
-
-    setCustomers([])
 
     if (!activeStoreId) {
       setCustomers([])
@@ -311,12 +282,11 @@ export default function Sell() {
       }
     }
 
-    loadCachedCustomers<FirestoreCustomer>({ storeId: activeStoreId })
+    loadCachedCustomers<Customer>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
-          const normalized = cached.map(entry => ensureCustomerLoyalty(entry))
           setCustomers(
-            [...normalized].sort((a, b) =>
+            [...cached].sort((a, b) =>
               getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
                 sensitivity: 'base',
               }),
@@ -337,9 +307,7 @@ export default function Sell() {
     )
 
     const unsubscribe = onSnapshot(q, snap => {
-      const rows = snap.docs.map(docSnap =>
-        ensureCustomerLoyalty({ id: docSnap.id, ...(docSnap.data() as FirestoreCustomer) }),
-      )
+      const rows = snap.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Customer) }))
       saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[sell] Failed to cache customers', error)
       })
@@ -355,7 +323,7 @@ export default function Sell() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId, storeChangeToken])
+  }, [activeStoreId])
 
   useEffect(() => {
     if (!receipt) return
@@ -398,17 +366,13 @@ export default function Sell() {
     lines.push('')
     lines.push('Items:')
     receipt.items.forEach(line => {
-      lines.push(`  • ${line.qty} × ${line.name} — ${formatCurrency(line.qty * line.price)}`)
+      lines.push(`  • ${line.qty} × ${line.name} — GHS ${(line.qty * line.price).toFixed(2)}`)
     })
 
     lines.push('')
-    lines.push(`Subtotal: ${formatCurrency(receipt.subtotal)}`)
-    const receiptTenderTotal = getTenderTotal(receipt.tenders)
-    lines.push(`Paid: ${formatCurrency(receiptTenderTotal)}`)
-    normalizeTenderEntries(receipt.tenders).forEach(entry => {
-      lines.push(`  ${formatTenderMethod(entry.method)} — ${formatCurrency(entry.amount)}`)
-    })
-    lines.push(`Change: ${formatCurrency(receipt.changeDue)}`)
+    lines.push(`Subtotal: GHS ${receipt.subtotal.toFixed(2)}`)
+    lines.push(`Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`)
+    lines.push(`Change: GHS ${receipt.payment.changeDue.toFixed(2)}`)
     lines.push('')
     lines.push(`Sale #${receipt.saleId}`)
     lines.push('Thank you for shopping with us!')
@@ -440,20 +404,6 @@ export default function Sell() {
       URL.revokeObjectURL(pdfUrl)
     }
   }, [receipt, user?.email])
-
-  useEffect(() => {
-    setQueryText('')
-    setCart([])
-    setSelectedCustomerId('')
-    setPaymentMethod('cash')
-    setAmountTendered('')
-    setSaleError(null)
-    setSaleSuccess(null)
-    setIsRecording(false)
-    setScannerStatus(null)
-    setReceipt(null)
-    setReceiptSharePayload(null)
-  }, [storeChangeToken])
 
   const handleDownloadPdf = useCallback(() => {
     setReceiptSharePayload(prev => {
@@ -567,223 +517,101 @@ export default function Sell() {
     setReceipt(null)
     setIsRecording(true)
     const saleId = doc(collection(db, 'sales')).id
-    const saleRef = doc(db, 'sales', saleId)
-    const saleItemsCollection = collection(db, 'saleItems')
-    const stockCollection = collection(db, 'stock')
-    const ledgerCollection = collection(db, 'ledger')
+    const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
+    const payload: CommitSalePayload = {
+      branchId: activeStoreId,
+      saleId,
+      cashierId: user.uid,
+      totals: {
+        total: subtotal,
+        taxTotal: 0,
+      },
+      payment: {
+        method: paymentMethod,
+        amountPaid,
+        changeDue,
+      },
+      items: cart.map(line => ({
+        productId: line.productId,
+        name: line.name,
+        price: line.price,
+        qty: line.qty,
+        taxRate: 0,
+      })),
+    }
+    if (selectedCustomer) {
+      payload.customer = {
+        id: selectedCustomer.id,
+        name: selectedCustomerDataName || selectedCustomer.id,
+        ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
+        ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
+      }
+    }
 
     const receiptItems = cart.map(line => ({ ...line }))
-    const saleCustomer = selectedCustomer
-      ? {
-          id: selectedCustomer.id,
-          name: selectedCustomerDataName || selectedCustomer.id,
-          ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
-          ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
-        }
-      : null
-
-    const loyaltyPointsEarned = calculateEarnedLoyaltyPoints(subtotal)
 
     try {
-      await runTransaction(db, async transaction => {
-        const existingSale = await transaction.get(saleRef)
-        if (typeof existingSale.exists === 'function' ? existingSale.exists() : existingSale.exists) {
-          throw new Error('This sale has already been recorded.')
-        }
-
-        const timestamp = serverTimestamp()
-        const normalizedItems = cart.map(line => {
-          const productId = typeof line.productId === 'string' ? line.productId.trim() : ''
-          if (!productId) {
-            throw new Error('Each cart line must reference a valid product before recording the sale.')
-          }
-
-          const qty = Number(line.qty)
-          if (!Number.isFinite(qty) || qty <= 0) {
-            throw new Error('Update item quantities before recording the sale.')
-          }
-
-          const price = Number(line.price)
-          if (!Number.isFinite(price) || price < 0) {
-            throw new Error('Each item needs a valid price before selling.')
-          }
-
-          return {
-            productId,
-            name: line.name,
-            price,
-            qty,
-            taxRate: 0,
-          }
-        })
-
-        const productEntries = await Promise.all(
-          normalizedItems.map(async item => {
-            const productRef = doc(db, 'products', item.productId)
-            const productSnapshot = await transaction.get(productRef)
-            return { item, productRef, productSnapshot }
-          }),
-        )
-
-        const saleData = {
-          branchId: activeStoreId,
-          storeId: activeStoreId,
-          cashierId: user.id,
-          total: subtotal,
-          taxTotal: 0,
-          tenders: { ...tenders },
-          changeDue,
-          customer: saleCustomer,
-          items: normalizedItems,
-          createdBy: user.id,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        }
-
-        const saleItemWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
-        const stockWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
-        const productUpdates: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
-        const ledgerWrites: { ref: ReturnType<typeof doc>; data: Record<string, unknown> }[] = []
-
-        for (const { item, productRef, productSnapshot } of productEntries) {
-          const productExists = productSnapshot && (typeof productSnapshot.exists === 'function'
-            ? productSnapshot.exists()
-            : productSnapshot.exists)
-          if (!productExists) {
-            throw new Error(`${item.name || 'Product'} is unavailable. Refresh your catalog and try again.`)
-          }
-
-          const productData: DocumentData | undefined =
-            typeof productSnapshot.data === 'function' ? productSnapshot.data() : undefined
-          const currentStockRaw = productData?.stockCount
-          const currentStock = Number(currentStockRaw ?? 0) || 0
-          const qtyChange = Math.abs(item.qty)
-          const nextStock = currentStock - qtyChange
-
-          const saleItemRef = doc(saleItemsCollection)
-          saleItemWrites.push({
-            ref: saleItemRef,
-            data: {
-              saleId,
-              productId: item.productId,
-              qty: item.qty,
-              price: item.price,
-              taxRate: item.taxRate,
-              storeId: activeStoreId,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            },
-          })
-
-          const stockRef = doc(stockCollection)
-          stockWrites.push({
-            ref: stockRef,
-            data: {
-              productId: item.productId,
-              qtyChange: -qtyChange,
-              reason: 'sale',
-              refId: saleId,
-              storeId: activeStoreId,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            },
-          })
-
-          productUpdates.push({
-            ref: productRef,
-            data: {
-              stockCount: nextStock,
-              updatedAt: timestamp,
-              storeId: activeStoreId,
-            },
-          })
-
-          const ledgerRef = doc(ledgerCollection)
-          ledgerWrites.push({
-            ref: ledgerRef,
-            data: {
-              productId: item.productId,
-              qtyChange: -qtyChange,
-              type: 'sale',
-              refId: saleId,
-              storeId: activeStoreId,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            },
-          })
-        }
-
-        transaction.set(saleRef, saleData)
-        for (const { ref, data } of saleItemWrites) {
-          transaction.set(ref, data)
-        }
-        for (const { ref, data } of stockWrites) {
-          transaction.set(ref, data)
-        }
-        for (const { ref, data } of ledgerWrites) {
-          transaction.set(ref, data)
-        }
-        for (const { ref, data } of productUpdates) {
-          transaction.update(ref, data)
-        }
-
-        if (selectedCustomer) {
-          const customerRef = doc(db, 'customers', selectedCustomer.id)
-          const customerSnapshot = await transaction.get(customerRef)
-          const customerExists =
-            customerSnapshot &&
-            (typeof customerSnapshot.exists === 'function'
-              ? customerSnapshot.exists()
-              : customerSnapshot.exists)
-
-          const existingData: DocumentData | undefined =
-            typeof customerSnapshot?.data === 'function' ? customerSnapshot.data() : undefined
-
-          const loyaltySource = existingData?.loyalty
-
-          const normalizedLoyalty = normalizeCustomerLoyalty(loyaltySource)
-          const nextPoints = Math.max(0, normalizedLoyalty.points + loyaltyPointsEarned)
-
-          if (customerExists) {
-            transaction.update(customerRef, {
-              storeId: activeStoreId,
-              'loyalty.lastVisitAt': timestamp,
-              'loyalty.points': nextPoints,
-              updatedAt: timestamp,
-            })
-          } else {
-            transaction.set(customerRef, {
-              storeId: activeStoreId,
-              loyalty: {
-                points: nextPoints,
-                lastVisitAt: timestamp,
-              },
-              updatedAt: timestamp,
-            })
-          }
-        }
-      })
+      const { data } = await commitSale(payload)
+      if (!data?.ok) {
+        throw new Error('Sale was not recorded')
+      }
 
       setReceipt({
-        saleId,
+        saleId: data.saleId,
         createdAt: new Date(),
         items: receiptItems,
         subtotal,
-        tenders: { ...tenders },
-        changeDue,
-        customer: saleCustomer || undefined,
+        payment: {
+          method: paymentMethod,
+          amountPaid,
+          changeDue,
+        },
+        customer: selectedCustomer
+          ? {
+              name: selectedCustomerDataName || selectedCustomer.id,
+              phone: selectedCustomer.phone,
+              email: selectedCustomer.email,
+            }
+          : undefined,
       })
       setCart([])
       setSelectedCustomerId('')
       setAmountTendered('')
-      setSaleSuccess(`Sale recorded #${saleId}. Receipt sent to printer.`)
+      setSaleSuccess(`Sale recorded #${data.saleId}. Receipt sent to printer.`)
     } catch (err) {
       console.error('[sell] Unable to record sale', err)
+      if (isOfflineError(err)) {
+        const queued = await queueCallableRequest('commitSale', payload, 'sale')
+        if (queued) {
+          setReceipt({
+            saleId,
+            createdAt: new Date(),
+            items: receiptItems,
+            subtotal,
+            payment: {
+              method: paymentMethod,
+              amountPaid,
+              changeDue,
+            },
+            customer: selectedCustomer
+              ? {
+                  name: selectedCustomerDataName || selectedCustomer.id,
+                  phone: selectedCustomer.phone,
+                  email: selectedCustomer.email,
+                }
+              : undefined,
+          })
+          setCart([])
+          setSelectedCustomerId('')
+          setAmountTendered('')
+          setSaleSuccess(`Sale queued offline #${saleId}. We'll sync it once you're back online.`)
+          return
+        }
+      }
       const message = err instanceof Error ? err.message : null
-      const fallback = isOfflineError(err)
-        ? 'We were unable to record this sale while offline. Please try again once you have a connection.'
-        : 'We were unable to record this sale. Please try again.'
-      setSaleError(message && message.trim().length > 0 ? message : fallback)
+      setSaleError(message && message !== 'Sale was not recorded'
+        ? message
+        : 'We were unable to record this sale. Please try again.')
     } finally {
       setIsRecording(false)
     }
@@ -793,36 +621,18 @@ export default function Sell() {
 
   const filtered = products.filter(p => p.name.toLowerCase().includes(queryText.toLowerCase()))
 
-  const pageHeader = (
-    <header className="page__header">
-      <div>
-        <h2 className="page__title">Sell</h2>
-        <p className="page__subtitle">Build a cart from your product list and record the sale in seconds.</p>
-      </div>
-      <div className="sell-page__total" aria-live="polite">
-        <span className="sell-page__total-label">Subtotal</span>
-        <span className="sell-page__total-value">{formatCurrency(subtotal)}</span>
-      </div>
-    </header>
-  )
-
-  if (storeLoading) {
-    return (
-      <div className="page sell-page">
-        {pageHeader}
-        <section className="card">
-          <div className="empty-state">
-            <h3 className="empty-state__title">Loading workspace…</h3>
-            <p>Please wait while we get things ready.</p>
-          </div>
-        </section>
-      </div>
-    )
-  }
-
   return (
     <div className="page sell-page">
-      {pageHeader}
+      <header className="page__header">
+        <div>
+          <h2 className="page__title">Sell</h2>
+          <p className="page__subtitle">Build a cart from your product list and record the sale in seconds.</p>
+        </div>
+        <div className="sell-page__total" aria-live="polite">
+          <span className="sell-page__total-label">Subtotal</span>
+          <span className="sell-page__total-value">GHS {subtotal.toFixed(2)}</span>
+        </div>
+      </header>
 
       <section className="card">
         <div className="field">
@@ -865,7 +675,9 @@ export default function Sell() {
             {filtered.length ? (
               filtered.map(p => {
                 const hasPrice = typeof p.price === 'number' && Number.isFinite(p.price)
-                const priceText = hasPrice ? formatCurrency(p.price ?? 0) : 'Price unavailable'
+                const priceText = hasPrice
+                  ? `GHS ${p.price.toFixed(2)}`
+                  : 'Price unavailable'
                 const actionLabel = hasPrice ? 'Add' : 'Set price to sell'
                 return (
                   <button
@@ -923,7 +735,7 @@ export default function Sell() {
                             onChange={e => setQty(line.productId, Number(e.target.value))}
                           />
                         </td>
-                        <td className="sell-page__numeric">{formatCurrency(line.price * line.qty)}</td>
+                        <td className="sell-page__numeric">GHS {(line.price * line.qty).toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -932,7 +744,7 @@ export default function Sell() {
 
               <div className="sell-page__summary">
                 <span>Total</span>
-                <strong>{formatCurrency(subtotal)}</strong>
+                <strong>GHS {subtotal.toFixed(2)}</strong>
               </div>
 
               <div className="sell-page__form-grid">
@@ -1006,18 +818,15 @@ export default function Sell() {
               <div className="sell-page__payment-summary" aria-live="polite">
                 <div>
                   <span className="sell-page__summary-label">Amount due</span>
-                  <strong>{formatCurrency(subtotal)}</strong>
+                  <strong>GHS {subtotal.toFixed(2)}</strong>
                 </div>
                 <div>
                   <span className="sell-page__summary-label">Paid</span>
-                  <strong>{formatCurrency(tenderTotal)}</strong>
-                  {tenderBreakdown && (
-                    <span className="sell-page__payment-breakdown">{tenderBreakdown}</span>
-                  )}
+                  <strong>GHS {amountPaid.toFixed(2)}</strong>
                 </div>
                 <div className={`sell-page__change${isCashShort ? ' is-short' : ''}`}>
                   <span className="sell-page__summary-label">{isCashShort ? 'Short' : 'Change due'}</span>
-                  <strong>{formatCurrency(changeDue)}</strong>
+                  <strong>GHS {changeDue.toFixed(2)}</strong>
                 </div>
               </div>
 
@@ -1125,7 +934,7 @@ export default function Sell() {
                   <tr key={line.productId}>
                     <td>{line.name}</td>
                     <td>{line.qty}</td>
-                    <td>{formatCurrency(line.qty * line.price)}</td>
+                    <td>GHS {(line.qty * line.price).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1134,18 +943,15 @@ export default function Sell() {
             <div className="receipt-print__summary">
               <div>
                 <span>Subtotal</span>
-                <strong>{formatCurrency(receipt.subtotal)}</strong>
+                <strong>GHS {receipt.subtotal.toFixed(2)}</strong>
               </div>
               <div>
-                <span>Paid</span>
-                <strong>{formatCurrency(getTenderTotal(receipt.tenders))}</strong>
-                {formatTenderBreakdown(receipt.tenders) && (
-                  <span className="receipt-print__tenders">{formatTenderBreakdown(receipt.tenders)}</span>
-                )}
+                <span>Paid ({receipt.payment.method})</span>
+                <strong>GHS {receipt.payment.amountPaid.toFixed(2)}</strong>
               </div>
               <div>
                 <span>Change</span>
-                <strong>{formatCurrency(receipt.changeDue)}</strong>
+                <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
               </div>
             </div>
 

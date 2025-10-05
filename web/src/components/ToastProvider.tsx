@@ -1,132 +1,113 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from 'react'
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react'
 
-type ToastTone = 'success' | 'error' | 'info'
+type ToastTone = 'info' | 'success' | 'error'
 
-type ToastOptions = {
+interface ToastOptions {
   message: string
   tone?: ToastTone
   duration?: number
 }
 
-type ToastRecord = Required<ToastOptions> & { id: number }
+interface ToastEntry {
+  id: number
+  message: string
+  tone: ToastTone
+  duration: number
+}
 
-type ToastContextValue = {
-  publish: (options: ToastOptions) => void
-  dismiss: (id: number) => void
+interface ToastContextValue {
+  publish: (options: ToastOptions) => number
+  dismiss: (id?: number) => void
 }
 
 const DEFAULT_DURATION = 5000
 
-const ToastContext = createContext<ToastContextValue | null>(null)
+const ToastContext = createContext<ToastContextValue | undefined>(undefined)
 
-export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<ToastRecord[]>([])
-  const timersRef = useRef(new Map<number, number>())
-  const idRef = useRef(0)
+export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = useState<ToastEntry[]>([])
 
-  useEffect(() => {
-    return () => {
-      timersRef.current.forEach(timeoutId => {
-        window.clearTimeout(timeoutId)
-      })
-      timersRef.current.clear()
-    }
-  }, [])
-
-  const dismiss = useCallback((id: number) => {
-    setToasts(current => current.filter(toast => toast.id !== id))
-    const timeoutId = timersRef.current.get(id)
-    if (timeoutId) {
-      window.clearTimeout(timeoutId)
-      timersRef.current.delete(id)
-    }
-  }, [])
-
-  const publish = useCallback(
-    ({ message, tone = 'info', duration = DEFAULT_DURATION }: ToastOptions) => {
-      const trimmed = message.trim()
-      if (!trimmed) return
-
-      const id = ++idRef.current
-      const record: ToastRecord = { id, message: trimmed, tone, duration }
-      setToasts(current => [...current, record])
-
-      if (duration > 0) {
-        const timeoutId = window.setTimeout(() => {
-          dismiss(id)
-        }, duration)
-        timersRef.current.set(id, timeoutId)
+  const dismiss = useCallback((id?: number) => {
+    setToasts(current => {
+      if (typeof id === 'number') {
+        return current.filter(toast => toast.id !== id)
       }
-    },
-    [dismiss],
-  )
 
-  const value = useMemo<ToastContextValue>(() => ({ publish, dismiss }), [publish, dismiss])
+      return []
+    })
+  }, [])
+
+  const publish = useCallback((options: ToastOptions) => {
+    const message = options.message.trim()
+    if (!message) {
+      return -1
+    }
+
+    const toast: ToastEntry = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      message,
+      tone: options.tone ?? 'info',
+      duration: options.duration ?? DEFAULT_DURATION
+    }
+
+    setToasts(current => [...current, toast])
+
+    if (toast.duration > 0 && typeof window !== 'undefined') {
+      window.setTimeout(() => dismiss(toast.id), toast.duration)
+    }
+
+    return toast.id
+  }, [dismiss])
+
+  const value = useMemo(() => ({ publish, dismiss }), [publish, dismiss])
 
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div style={containerStyle} aria-live="polite" aria-atomic="false">
+      <div className="toast-region" role="region" aria-live="polite" aria-label="Notifications">
         {toasts.map(toast => (
-          <button
-            key={toast.id}
-            type="button"
-            onClick={() => dismiss(toast.id)}
-            style={{ ...toastStyle, ...toneStyles[toast.tone] }}
-          >
-            {toast.message}
-          </button>
+          <Toast key={toast.id} toast={toast} onDismiss={dismiss} />
         ))}
       </div>
     </ToastContext.Provider>
   )
 }
 
-export function useToast(): ToastContextValue {
+export function useToast() {
   const context = useContext(ToastContext)
   if (!context) {
     throw new Error('useToast must be used within a ToastProvider')
   }
+
   return context
 }
 
-const containerStyle: CSSProperties = {
-  position: 'fixed',
-  top: '1rem',
-  right: '1rem',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.5rem',
-  zIndex: 1100,
-  pointerEvents: 'none',
+interface ToastProps {
+  toast: ToastEntry
+  onDismiss: (id: number) => void
 }
 
-const toastStyle: CSSProperties = {
-  pointerEvents: 'auto',
-  border: 'none',
-  borderRadius: '0.5rem',
-  padding: '0.75rem 1rem',
-  fontSize: '0.875rem',
-  fontWeight: 500,
-  color: '#fff',
-  backgroundColor: '#333',
-  boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
-  cursor: 'pointer',
-  textAlign: 'left',
-}
+function Toast({ toast, onDismiss }: ToastProps) {
+  const role = toast.tone === 'error' ? 'alert' : 'status'
+  const ariaLive = toast.tone === 'error' ? 'assertive' : 'polite'
 
-const toneStyles: Record<ToastTone, CSSProperties> = {
-  success: { backgroundColor: '#1b873f' },
-  error: { backgroundColor: '#c53030' },
-  info: { backgroundColor: '#2b6cb0' },
+  return (
+    <div
+      className={`toast toast--${toast.tone}`}
+      role={role}
+      aria-live={ariaLive}
+      aria-atomic="true"
+    >
+      <span className="toast__indicator" aria-hidden="true" />
+      <span className="toast__message">{toast.message}</span>
+      <button
+        type="button"
+        className="toast__dismiss"
+        onClick={() => onDismiss(toast.id)}
+        aria-label="Dismiss notification"
+      >
+        ×
+      </button>
+    </div>
+  )
 }

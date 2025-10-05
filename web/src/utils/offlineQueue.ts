@@ -1,10 +1,11 @@
+import { auth } from '../firebase'
 
-import { supabase } from '../supabaseClient'
-import { getSupabaseFunctionUrl } from '../supabaseFunctionsClient'
+const FUNCTIONS_REGION = import.meta.env.VITE_FB_FUNCTIONS_REGION ?? 'us-central1'
+const PROJECT_ID = import.meta.env.VITE_FB_PROJECT_ID
 
 const SYNC_TAG = 'sync-pending-requests'
 
-export type QueueRequestType = 'sale' | 'receipt'
+type QueueRequestType = 'sale' | 'receipt'
 
 type QueueMessage = {
   type: 'QUEUE_BACKGROUND_REQUEST'
@@ -24,7 +25,10 @@ function getController(registration: ServiceWorkerRegistration) {
 }
 
 export function getCallableEndpoint(functionName: string) {
-  return getSupabaseFunctionUrl(functionName)
+  if (!PROJECT_ID) {
+    throw new Error('Missing Firebase project configuration')
+  }
+  return `https://${FUNCTIONS_REGION}-${PROJECT_ID}.cloudfunctions.net/${functionName}`
 }
 
 export async function queueCallableRequest(
@@ -45,13 +49,7 @@ export async function queueCallableRequest(
 
     let authToken: string | null = null
     try {
-
-      const { data, error } = await supabase.auth.getSession()
-      if (error) {
-        throw error
-      }
-      authToken = data?.session?.access_token ?? null
-
+      authToken = await auth.currentUser?.getIdToken() ?? null
     } catch (error) {
       console.warn('[offline-queue] Unable to read auth token for queued request', error)
     }
