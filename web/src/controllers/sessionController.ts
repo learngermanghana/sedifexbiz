@@ -21,7 +21,12 @@ export async function configureAuthPersistence(auth: Auth) {
   }
 }
 
-export async function persistSession(user: User) {
+type WorkspaceMetadata = {
+  storeId?: string
+  role?: 'owner' | 'staff'
+}
+
+export async function persistSession(user: User, workspace?: WorkspaceMetadata) {
   const sessionId = ensureSessionId()
   try {
     await setDoc(
@@ -32,7 +37,9 @@ export async function persistSession(user: User) {
         displayName: user.displayName ?? null,
         lastLoginAt: serverTimestamp(),
         lastActiveAt: serverTimestamp(),
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+        storeId: workspace?.storeId ?? null,
+        role: workspace?.role ?? null
       },
       { merge: true }
     )
