@@ -10,7 +10,6 @@ import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
 import Onboarding from './pages/Onboarding'
-import GoalPlannerPage from './pages/KpiMetrics'
 import AccountOverview from './pages/AccountOverview'
 import { ToastProvider } from './components/ToastProvider'
 
@@ -20,7 +19,6 @@ const router = createHashRouter([
     element: <App />,
     children: [
       { index: true, element: <Shell><Dashboard /></Shell> },
-      { path: 'goals',     element: <Shell><GoalPlannerPage /></Shell> },
       { path: 'products',  element: <Shell><Products /></Shell> },
       { path: 'sell',      element: <Shell><Sell /></Shell> },
       { path: 'receive',   element: <Shell><Receive /></Shell> },

@@ -25,7 +25,7 @@ function useGoalFormState(initial: FormState = { title: '', notes: '' }) {
   return { formState, updateField, reset }
 }
 
-export default function GoalPlannerPage() {
+export default function GoalPlanner() {
   const {
     plan,
     isLoading,

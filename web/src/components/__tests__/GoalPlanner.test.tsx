@@ -1,9 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter } from 'react-router-dom'
 import { vi } from 'vitest'
 
-import GoalPlannerPage from '../KpiMetrics'
+import GoalPlanner from '../GoalPlanner'
 import Shell from '../../layout/Shell'
 
 const mockUseAuthUser = vi.fn(() => ({ uid: 'user-1', email: 'manager@example.com' }))
@@ -64,10 +64,10 @@ vi.mock('firebase/firestore', () => ({
 
 const renderPlanner = () => {
   render(
-    <MemoryRouter initialEntries={['/goals']}>
-      <Routes>
-        <Route path="/goals" element={<Shell><GoalPlannerPage /></Shell>} />
-      </Routes>
+    <MemoryRouter initialEntries={['/']}>
+      <Shell>
+        <GoalPlanner />
+      </Shell>
     </MemoryRouter>,
   )
 }
@@ -91,7 +91,7 @@ function formatIsoWeek(date: Date) {
   return `${utcDate.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
 }
 
-describe('Goal planner page', () => {
+describe('Goal planner component', () => {
   const uuidSpy = vi.spyOn(globalThis.crypto, 'randomUUID')
   let dayKey = ''
   let weekKey = ''
