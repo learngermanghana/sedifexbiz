@@ -2,6 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 
 import Sparkline from '../components/Sparkline'
+import GoalPlanner from '../components/GoalPlanner'
 import { useStoreMetrics } from '../hooks/useStoreMetrics'
 
 const QUICK_LINKS: Array<{
@@ -583,6 +584,10 @@ export default function Dashboard() {
           </dl>
         </article>
       </section>
+
+      <div style={{ marginBottom: 32 }}>
+        <GoalPlanner />
+      </div>
     </div>
   )
 }
