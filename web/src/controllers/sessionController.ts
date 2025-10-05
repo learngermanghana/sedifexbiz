@@ -48,6 +48,36 @@ export async function persistSession(user: User, workspace?: WorkspaceMetadata) 
   }
 }
 
+type StoreInventorySummary = {
+  trackedSkus: number
+  lowStockSkus: number
+  incomingShipments: number
+}
+
+const DEFAULT_INVENTORY_SUMMARY: StoreInventorySummary = {
+  trackedSkus: 0,
+  lowStockSkus: 0,
+  incomingShipments: 0,
+}
+
+export async function ensureStoreDocument(user: User) {
+  try {
+    await setDoc(
+      doc(db, 'stores', user.uid),
+      {
+        ownerId: user.uid,
+        status: 'active',
+        inventorySummary: { ...DEFAULT_INVENTORY_SUMMARY },
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    )
+  } catch (error) {
+    console.warn('[store] Failed to ensure store metadata for user', user.uid, error)
+  }
+}
+
 export async function refreshSessionHeartbeat(user: User) {
   const sessionId = getSessionId()
   if (!sessionId) {

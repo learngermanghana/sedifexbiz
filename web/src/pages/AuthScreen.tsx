@@ -10,7 +10,7 @@ import {
 } from '../components/auth/AuthForm'
 import { useToast } from '../components/ToastProvider'
 import { afterSignupBootstrap } from '../controllers/accessController'
-import { persistSession } from '../controllers/sessionController'
+import { ensureStoreDocument, persistSession } from '../controllers/sessionController'
 import { auth } from '../firebase'
 import { setOnboardingStatus } from '../utils/onboarding'
 import './AuthScreen.css'
@@ -109,6 +109,7 @@ export default function AuthScreen() {
       try {
         if (mode === 'sign-in') {
           const { user } = await signInWithEmailAndPassword(auth, trimmedEmail, password)
+          await ensureStoreDocument(user)
           await persistSession(user)
 
           publish({ message: 'Welcome back!', tone: 'success' })
@@ -117,6 +118,7 @@ export default function AuthScreen() {
         }
 
         const { user } = await createUserWithEmailAndPassword(auth, trimmedEmail, password)
+        await ensureStoreDocument(user)
         await persistSession(user)
         setOnboardingStatus(user.uid, 'pending')
 

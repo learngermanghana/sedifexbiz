@@ -15,6 +15,7 @@ import './pwa'
 import { useToast } from './components/ToastProvider'
 import {
   configureAuthPersistence,
+  ensureStoreDocument,
   persistSession,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
@@ -447,6 +448,7 @@ export default function App() {
           sanitizedEmail,
           sanitizedPassword,
         )
+        await ensureStoreDocument(nextUser)
         await persistSession(nextUser)
         try {
           const resolution = await resolveStoreAccess()
@@ -478,6 +480,7 @@ export default function App() {
           return
         }
 
+        await ensureStoreDocument(nextUser)
         await persistSession(nextUser, {
           storeId: resolution.storeId,
           role: resolution.role,

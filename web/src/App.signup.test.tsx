@@ -255,6 +255,7 @@ describe('App signup cleanup', () => {
     )
 
     const ownerDocKey = `teamMembers/${createdUser.uid}`
+    const ownerStoreDocKey = `stores/${createdUser.uid}`
     const customerDocKey = `customers/${createdUser.uid}`
     const seededTeamMemberDocKey = 'teamMembers/seed-team-member'
     const seededStoreDocKey = 'stores/workspace-store-id'
@@ -262,6 +263,7 @@ describe('App signup cleanup', () => {
     const seededCustomerDocKey = 'customers/seeded-customer'
 
     const ownerDocRef = firestore.docRefByPath.get(ownerDocKey)
+    const ownerStoreDocRef = firestore.docRefByPath.get(ownerStoreDocKey)
     const customerDocRef = firestore.docRefByPath.get(customerDocKey)
     const seededTeamMemberDocRef = firestore.docRefByPath.get(seededTeamMemberDocKey)
     const seededStoreDocRef = firestore.docRefByPath.get(seededStoreDocKey)
@@ -269,6 +271,7 @@ describe('App signup cleanup', () => {
     const seededCustomerDocRef = firestore.docRefByPath.get(seededCustomerDocKey)
 
     expect(ownerDocRef).toBeDefined()
+    expect(ownerStoreDocRef).toBeDefined()
     expect(customerDocRef).toBeDefined()
     expect(seededTeamMemberDocRef).toBeDefined()
     expect(seededStoreDocRef).toBeDefined()
@@ -292,6 +295,24 @@ describe('App signup cleanup', () => {
       }),
     )
     expect(ownerOptions).toEqual({ merge: true })
+
+    const ownerStoreCall = setDocCalls.find(([ref]) => ref === ownerStoreDocRef)
+    expect(ownerStoreCall).toBeDefined()
+    const [, ownerStorePayload, ownerStoreOptions] = ownerStoreCall!
+    expect(ownerStorePayload).toEqual(
+      expect.objectContaining({
+        ownerId: createdUser.uid,
+        status: 'active',
+        inventorySummary: expect.objectContaining({
+          trackedSkus: 0,
+          lowStockSkus: 0,
+          incomingShipments: 0,
+        }),
+        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+      }),
+    )
+    expect(ownerStoreOptions).toEqual({ merge: true })
 
     const customerCall = setDocCalls.find(([ref]) => ref === customerDocRef)
     expect(customerCall).toBeDefined()
@@ -401,5 +422,83 @@ describe('App signup cleanup', () => {
         }),
       ),
     )
+  })
+})
+
+describe('App login store metadata', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.auth.currentUser = null
+    mocks.listeners.splice(0, mocks.listeners.length)
+    firestore.reset()
+    mocks.resolveStoreAccess.mockReset()
+  })
+
+  it('ensures the signed-in user has a store document keyed by their UID', async () => {
+    const user = userEvent.setup()
+    const { user: existingUser } = createTestUser()
+
+    mocks.signInWithEmailAndPassword.mockImplementation(async () => {
+      mocks.auth.currentUser = existingUser
+      mocks.listeners.forEach(listener => listener(existingUser))
+      return { user: existingUser }
+    })
+
+    mocks.resolveStoreAccess.mockResolvedValueOnce({
+      ok: true,
+      storeId: 'workspace-store-id',
+      role: 'staff',
+      claims: {},
+      teamMember: null,
+      store: null,
+      products: [],
+      customers: [],
+    })
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument(),
+    )
+
+    await act(async () => {
+      await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
+      await user.click(screen.getByRole('button', { name: /Log in/i }))
+    })
+
+    await waitFor(() => expect(mocks.signInWithEmailAndPassword).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalled())
+
+    await waitFor(() => {
+      expect(firestore.docRefByPath.has(`stores/${existingUser.uid}`)).toBe(true)
+    })
+
+    const ownerStoreDocRef = firestore.docRefByPath.get(`stores/${existingUser.uid}`)
+    expect(ownerStoreDocRef).toBeDefined()
+
+    const storeCall = firestore.setDocMock.mock.calls.find(([ref]) => ref === ownerStoreDocRef)
+    expect(storeCall).toBeDefined()
+
+    const [, storePayload, storeOptions] = storeCall!
+    expect(storePayload).toEqual(
+      expect.objectContaining({
+        ownerId: existingUser.uid,
+        status: 'active',
+        inventorySummary: expect.objectContaining({
+          trackedSkus: 0,
+          lowStockSkus: 0,
+          incomingShipments: 0,
+        }),
+        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+      }),
+    )
+    expect(storeOptions).toEqual({ merge: true })
   })
 })
