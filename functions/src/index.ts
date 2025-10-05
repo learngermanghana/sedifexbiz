@@ -433,6 +433,22 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
     }
     await emailRef.set(emailData, { merge: true })
   }
+
+  const storeRef = defaultDb.collection('stores').doc(storeId)
+  const storeSnap = await storeRef.get()
+  const storeData: admin.firestore.DocumentData = {
+    ownerId: uid,
+    updatedAt: timestamp,
+    status: 'Active',
+    contractStatus: 'Active',
+  }
+  if (email) {
+    storeData.ownerEmail = email
+  }
+  if (!storeSnap.exists) {
+    storeData.createdAt = timestamp
+  }
+  await storeRef.set(storeData, { merge: true })
   const claims = await updateUserClaims(uid, 'owner')
 
   return { ok: true, claims, storeId }
