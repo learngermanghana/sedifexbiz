@@ -41,9 +41,13 @@ type StoreProfile = {
 
 type RosterMember = {
   id: string
+  uid: string
+  storeId: string | null
   email: string | null
   role: Membership['role']
   invitedBy: string | null
+  phone: string | null
+  firstSignupEmail: string | null
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
 }
@@ -84,12 +88,18 @@ function mapStoreSnapshot(snapshot: DocumentSnapshot<DocumentData> | null): Stor
 function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): RosterMember {
   const data = snapshot.data()
   const role = data.role === 'owner' ? 'owner' : 'staff'
+  const uid = typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id
+  const storeId = typeof data.storeId === 'string' && data.storeId.trim() ? data.storeId : null
 
   return {
     id: snapshot.id,
+    uid,
+    storeId,
     email: toNullableString(data.email),
     role,
     invitedBy: toNullableString(data.invitedBy),
+    phone: toNullableString(data.phone),
+    firstSignupEmail: toNullableString(data.firstSignupEmail),
     createdAt: isTimestamp(data.createdAt) ? data.createdAt : null,
     updatedAt: isTimestamp(data.updatedAt) ? data.updatedAt : null,
   }
@@ -439,7 +449,15 @@ export default function AccountOverview() {
             </div>
           ) : (
             roster.map(member => (
-              <div role="row" key={member.id} data-testid={`account-roster-${member.id}`}>
+              <div
+                role="row"
+                key={member.id}
+                data-testid={`account-roster-${member.id}`}
+                data-uid={member.uid}
+                data-store-id={member.storeId ?? undefined}
+                data-phone={member.phone ?? undefined}
+                data-first-signup-email={member.firstSignupEmail ?? undefined}
+              >
                 <span role="cell">{formatValue(member.email)}</span>
                 <span role="cell">{member.role === 'owner' ? 'Owner' : 'Staff'}</span>
                 <span role="cell">{formatValue(member.invitedBy)}</span>

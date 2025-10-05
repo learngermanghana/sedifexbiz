@@ -98,9 +98,13 @@ describe('AccountOverview', () => {
         {
           id: 'member-1',
           data: () => ({
+            uid: 'uid-member-1',
+            storeId: 'store-123',
             email: 'owner@example.com',
             role: 'owner',
             invitedBy: 'admin@example.com',
+            phone: '+233201234567',
+            firstSignupEmail: 'owner-invite@example.com',
             updatedAt: { toDate: () => new Date('2023-02-01T00:00:00Z') },
           }),
         },
@@ -135,6 +139,12 @@ describe('AccountOverview', () => {
 
     await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(1))
+
+    const rosterRow = await screen.findByTestId('account-roster-member-1')
+    expect(rosterRow).toHaveAttribute('data-uid', 'uid-member-1')
+    expect(rosterRow).toHaveAttribute('data-store-id', 'store-123')
+    expect(rosterRow).toHaveAttribute('data-phone', '+233201234567')
+    expect(rosterRow).toHaveAttribute('data-first-signup-email', 'owner-invite@example.com')
 
     const form = await screen.findByTestId('account-invite-form')
     expect(form).toBeInTheDocument()
@@ -188,5 +198,50 @@ describe('AccountOverview', () => {
 
     expect(screen.queryByTestId('account-invite-form')).not.toBeInTheDocument()
     expect(screen.getByText(/read-only access/i)).toBeInTheDocument()
+  })
+
+  it('falls back to the document ID when a team member is missing a uid', async () => {
+    getDocsMock.mockResolvedValueOnce({
+      docs: [
+        {
+          id: 'member-2',
+          data: () => ({
+            storeId: 'store-456',
+            email: 'staff2@example.com',
+            role: 'staff',
+            invitedBy: 'owner@example.com',
+          }),
+        },
+      ],
+    })
+
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-3',
+          uid: 'owner-1',
+          role: 'owner',
+          storeId: 'store-123',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+
+    render(<AccountOverview />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const rosterRow = await screen.findByTestId('account-roster-member-2')
+    expect(rosterRow).toHaveAttribute('data-uid', 'member-2')
+    expect(rosterRow).toHaveAttribute('data-store-id', 'store-456')
+    expect(rosterRow).not.toHaveAttribute('data-first-signup-email')
   })
 })
