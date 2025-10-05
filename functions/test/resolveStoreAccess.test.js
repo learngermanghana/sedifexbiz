@@ -338,6 +338,41 @@ async function runManagedStaffAccessTest() {
   assert.strictEqual(restoredEmailDoc.uid, 'new-user')
 }
 
+async function runMissingEmailTokenTest() {
+  currentDefaultDb = new MockFirestore({
+    'stores/store-010': { status: 'Active' },
+  })
+  currentRosterDb = new MockFirestore({
+    'teamMembers/user-10': {
+      storeId: 'store-010',
+      role: 'staff',
+      email: 'staffless@example.com',
+      invitedBy: 'owner-9',
+    },
+  })
+
+  const { resolveStoreAccess } = loadFunctionsModule()
+  const context = {
+    auth: {
+      uid: 'user-10',
+      token: {},
+    },
+  }
+
+  const result = await resolveStoreAccess.run({}, context)
+
+  assert.strictEqual(result.ok, true)
+  assert.strictEqual(result.storeId, 'store-010')
+  assert.strictEqual(result.role, 'staff')
+
+  const rosterDoc = currentRosterDb.getDoc('teamMembers/user-10')
+  assert.ok(rosterDoc)
+  assert.strictEqual(rosterDoc.storeId, 'store-010')
+  assert.strictEqual(rosterDoc.role, 'staff')
+  assert.strictEqual(rosterDoc.invitedBy, 'owner-9')
+  assert.strictEqual(rosterDoc.email, 'staffless@example.com')
+}
+
 async function run() {
   await runActiveStatusTest()
   await runInactiveStatusTest()
@@ -345,6 +380,7 @@ async function run() {
   await runStoreIdMismatchTest()
   await runMissingStoreIdTest()
   await runManagedStaffAccessTest()
+  await runMissingEmailTokenTest()
   console.log('resolveStoreAccess tests passed')
 }
 
