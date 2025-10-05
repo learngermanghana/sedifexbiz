@@ -40,12 +40,6 @@ Module._load = function patchedLoad(request, parent, isMain) {
       getFirestore: () => currentDb,
     }
   }
-  if (request === './googleSheets' || request.endsWith('/googleSheets')) {
-    return {
-      fetchClientRowByEmail: async () => null,
-      getDefaultSpreadsheetId: () => 'test-sheet',
-    }
-  }
   return originalLoad(request, parent, isMain)
 }
 
