@@ -195,11 +195,11 @@ describe('App signup cleanup', () => {
 
     mocks.resolveStoreAccess.mockResolvedValueOnce({
       ok: true,
-      storeId: 'sheet-store-id',
+      storeId: 'workspace-store-id',
       role: 'staff',
       claims: {},
       teamMember: { id: 'seed-team-member', data: { name: 'Seeded Member' } },
-      store: { id: 'sheet-store-id', data: { name: 'Seeded Store' } },
+      store: { id: 'workspace-store-id', data: { name: 'Seeded Store' } },
       products: [
         {
           id: 'product-1',
@@ -231,7 +231,7 @@ describe('App signup cleanup', () => {
     await act(async () => {
       await user.click(screen.getByRole('tab', { name: /Sign up/i }))
       await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.type(screen.getByLabelText(/Store ID/i), '  sheet-store-id  ')
+      await user.type(screen.getByLabelText(/Store ID/i), '  workspace-store-id  ')
       await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
@@ -241,13 +241,13 @@ describe('App signup cleanup', () => {
 
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
     await waitFor(() =>
-      expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('sheet-store-id'),
+      expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('workspace-store-id'),
     )
 
     const ownerDocKey = `teamMembers/${createdUser.uid}`
     const customerDocKey = `customers/${createdUser.uid}`
     const seededTeamMemberDocKey = 'teamMembers/seed-team-member'
-    const seededStoreDocKey = 'stores/sheet-store-id'
+    const seededStoreDocKey = 'stores/workspace-store-id'
     const seededProductDocKey = 'products/product-1'
     const seededCustomerDocKey = 'customers/seeded-customer'
 
@@ -272,7 +272,7 @@ describe('App signup cleanup', () => {
     const [, ownerPayload, ownerOptions] = ownerCall!
     expect(ownerPayload).toEqual(
       expect.objectContaining({
-        storeId: 'sheet-store-id',
+        storeId: 'workspace-store-id',
         name: 'Owner account',
         phone: '5551234567',
         email: 'owner@example.com',
@@ -288,7 +288,7 @@ describe('App signup cleanup', () => {
     const [, customerPayload, customerOptions] = customerCall!
     expect(customerPayload).toEqual(
       expect.objectContaining({
-        storeId: 'sheet-store-id',
+        storeId: 'workspace-store-id',
         name: 'owner@example.com',
         displayName: 'owner@example.com',
         email: 'owner@example.com',
