@@ -20,6 +20,7 @@ import {
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
 import {
+  initializeStore,
   resolveStoreAccess,
   type ResolveStoreAccessResult,
   type SeededDocument,
@@ -198,7 +199,6 @@ function getSignupValidationError(
   email: string,
   password: string,
   confirmPassword: string,
-  storeId: string,
   phone: string,
 ): string | null {
   if (!email) {
@@ -209,9 +209,6 @@ function getSignupValidationError(
   }
   if (!password) {
     return 'Create a password to continue.'
-  }
-  if (!storeId) {
-    return 'Enter your store ID.'
   }
   if (!phone) {
     return 'Enter your phone number.'
@@ -292,7 +289,6 @@ export default function App() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [storeId, setStoreId] = useState('')
   const [phone, setPhone] = useState('')
   const [normalizedPhone, setNormalizedPhone] = useState('')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
@@ -304,8 +300,6 @@ export default function App() {
   const normalizedEmail = email.trim()
   const normalizedPassword = password.trim()
   const normalizedConfirmPassword = confirmPassword.trim()
-  const normalizedStoreId = storeId.trim()
-  const hasStoreId = normalizedStoreId.length > 0
   const hasPhone = normalizedPhone.length > 0
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
   const passwordChecklist = [
@@ -322,7 +316,6 @@ export default function App() {
     normalizedPassword.length > 0 &&
     doesPasswordMeetAllChecks &&
     hasConfirmedPassword &&
-    hasStoreId &&
     hasPhone &&
     normalizedPassword === normalizedConfirmPassword
   const isLoginFormValid =
@@ -397,8 +390,6 @@ export default function App() {
     const sanitizedEmail = email.trim()
     const sanitizedPassword = password.trim()
     const sanitizedConfirmPassword = confirmPassword.trim()
-    const sanitizedStoreId = storeId.trim()
-
     setEmail(sanitizedEmail)
     setPassword(sanitizedPassword)
     if (mode === 'signup') setConfirmPassword(sanitizedConfirmPassword)
@@ -412,19 +403,13 @@ export default function App() {
             sanitizedEmail,
             sanitizedPassword,
             sanitizedConfirmPassword,
-            sanitizedStoreId,
             sanitizedPhone,
           )
 
     if (mode === 'signup') {
-      setStoreId(sanitizedStoreId)
       setPhone(sanitizedPhone)
       setNormalizedPhone(sanitizedPhone)
 
-      if (!sanitizedStoreId) {
-        setStatus({ tone: 'error', message: 'Enter your store ID.' })
-        return
-      }
       if (!sanitizedPhone) {
         setStatus({ tone: 'error', message: 'Enter your phone number.' })
         return
@@ -470,9 +455,23 @@ export default function App() {
         )
         await persistSession(nextUser)
 
+        let initializedStoreId: string | undefined
+        try {
+          const initialization = await initializeStore({
+            phone: sanitizedPhone || null,
+            firstSignupEmail: sanitizedEmail ? sanitizedEmail.toLowerCase() : null,
+          })
+          initializedStoreId = initialization.storeId
+        } catch (error) {
+          console.warn('[signup] Failed to initialize workspace', error)
+          setStatus({ tone: 'error', message: getErrorMessage(error) })
+          await cleanupFailedSignup(nextUser)
+          return
+        }
+
         let resolution: ResolveStoreAccessResult
         try {
-          resolution = await resolveStoreAccess(sanitizedStoreId)
+          resolution = await resolveStoreAccess(initializedStoreId)
         } catch (error) {
           console.warn('[signup] Failed to resolve workspace access', error)
           setStatus({ tone: 'error', message: getErrorMessage(error) })
@@ -530,7 +529,6 @@ export default function App() {
       })
       setPassword('')
       setConfirmPassword('')
-      setStoreId('')
       setPhone('')
       setNormalizedPhone('')
     } catch (err: unknown) {
@@ -549,7 +547,6 @@ export default function App() {
     setMode(nextMode)
     setStatus({ tone: 'idle', message: '' })
     setConfirmPassword('')
-    setStoreId('')
     setPhone('')
     setNormalizedPhone('')
   }
@@ -662,23 +659,6 @@ export default function App() {
                   aria-invalid={email.length > 0 && !EMAIL_PATTERN.test(normalizedEmail)}
                 />
               </div>
-              {mode === 'signup' && (
-                <div className="form__field">
-                  <label htmlFor="store-id">Store ID</label>
-                  <input
-                    id="store-id"
-                    value={storeId}
-                    onChange={event => setStoreId(event.target.value)}
-                    onBlur={() => setStoreId(current => current.trim())}
-                    type="text"
-                    autoComplete="off"
-                    placeholder="store-001"
-                    required
-                    disabled={isLoading}
-                    aria-invalid={storeId.length > 0 && !hasStoreId}
-                  />
-                </div>
-              )}
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="phone">Phone</label>
