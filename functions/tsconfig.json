@@ -12,9 +12,6 @@
   },
   "compileOnSave": true,
   "include": [
-    "src",
-
-    "../shared"
-
+    "src"
   ]
 }
