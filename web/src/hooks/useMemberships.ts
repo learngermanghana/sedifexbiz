@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react'
 import {
   Timestamp,
   collection,
+  doc,
+  getDoc,
   getDocs,
   query,
   where,
   type DocumentData,
-  type QueryDocumentSnapshot,
+  type DocumentSnapshot,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
@@ -30,8 +32,8 @@ function normalizeRole(role: unknown): Membership['role'] {
   return 'staff'
 }
 
-function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): Membership {
-  const data = snapshot.data()
+function mapMembershipSnapshot(snapshot: DocumentSnapshot<DocumentData>): Membership {
+  const data = snapshot.data() ?? {}
 
   const createdAt = data.createdAt instanceof Timestamp ? data.createdAt : null
   const updatedAt = data.updatedAt instanceof Timestamp ? data.updatedAt : null
@@ -77,12 +79,39 @@ export function useMemberships() {
 
       try {
         const membersRef = collection(db, 'teamMembers')
+        const results = new Map<string, Membership>()
+        let hasStoreId = false
+
+        const addMembership = (snapshot: DocumentSnapshot<DocumentData>) => {
+          if (!snapshot.exists()) return
+
+          const membership = mapMembershipSnapshot(snapshot)
+          if (membership.storeId) {
+            hasStoreId = true
+          }
+          results.set(membership.id, membership)
+        }
+
+        const uidDocRef = doc(db, 'teamMembers', user.uid)
+        const uidDocSnapshot = await getDoc(uidDocRef)
+        addMembership(uidDocSnapshot)
+
         const membershipsQuery = query(membersRef, where('uid', '==', user.uid))
-        const snapshot = await getDocs(membershipsQuery)
+        const uidMatches = await getDocs(membershipsQuery)
+        uidMatches.docs.forEach(addMembership)
+
+        if (!hasStoreId) {
+          const email = typeof user.email === 'string' ? user.email.trim() : ''
+          if (email) {
+            const emailQuery = query(membersRef, where('email', '==', email))
+            const emailMatches = await getDocs(emailQuery)
+            emailMatches.docs.forEach(addMembership)
+          }
+        }
 
         if (cancelled) return
 
-        const rows = snapshot.docs.map(mapMembershipSnapshot)
+        const rows = Array.from(results.values())
         setMemberships(rows)
         setError(null)
       } catch (e) {
@@ -100,7 +129,7 @@ export function useMemberships() {
     return () => {
       cancelled = true
     }
-  }, [user?.uid])
+  }, [user?.uid, user?.email])
 
   return { loading, memberships, error }
 }
