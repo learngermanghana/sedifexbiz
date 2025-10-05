@@ -47,7 +47,7 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 - Create a second project for production later (e.g., `sedifex-prod`).
 
 ### Workspace access records (Firestore)
-- Store workspace metadata in the `workspaces` collection inside Firestore. Each document ID should match the workspace slug used by the app.
+- Store workspace metadata in the `workspaces` collection inside your **primary** Firestore database. Each document ID should match the workspace slug used by the app.
 - Include fields such as `company`, `contractStart`, `contractEnd`, `paymentStatus`, and `amountPaid` to control access and billing state.
 - Dates should be saved as Firestore `Timestamp` values (or ISO-8601 strings if writing via scripts), and currency values should be saved as numbers representing the smallest currency unit (e.g., cents).
 
@@ -56,6 +56,20 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 2. Create a JSON seed file with workspace documents (see [`seed/workspaces.seed.json`](seed/workspaces.seed.json) for a ready-to-use example you can tweak per environment).
 3. Import the seed data into Firestore: `npx firebase firestore:delete workspaces --project <project-id> --force && npx firebase firestore:import seed/workspaces.seed.json --project <project-id>`.
 4. For ongoing updates, edit the documents directly in the Firebase console or via your preferred admin tooling.
+
+### Roster database (`teamMembers` collection)
+- Sedifex Functions look up login eligibility in a **secondary** Firestore database named `roster`. The `teamMembers` collection inside that database must contain at least one document matching the user who is attempting to sign in.
+- Each roster document should include the member's `uid`, the verified `email`, and the assigned `storeId`. Additional helpful fields include `role`, `name`, `phone`, and any admin-only `notes`.
+- Use the Firebase console (Database → `+ Add database` → choose `roster`) or the Admin SDK to create the secondary database before importing data.
+
+**Quick seed for local/testing environments**
+1. Update [`seed/team-members.seed.json`](seed/team-members.seed.json) with the UID, email, and store ID that you want to allow through login.
+2. Import the roster seed into the `roster` database:
+   ```bash
+   npx firebase firestore:delete teamMembers --project <project-id> --force --database=roster
+   npx firebase firestore:import seed/team-members.seed.json --project <project-id> --database=roster
+   ```
+3. If you prefer to seed manually, create a document at `teamMembers/<uid>` (and optionally `teamMembers/<email>`) in the `roster` database containing the same fields as the JSON example. The login callable will reject accounts that lack both documents or that do not specify a `storeId`.
 
 ## Branding
 - Name: **Sedifex**
