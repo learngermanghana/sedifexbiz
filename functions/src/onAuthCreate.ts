@@ -25,7 +25,8 @@ export const onAuthCreate = functions.auth.user().onCreate(async user => {
     .set(
       {
         ownerId: uid,
-        status: 'active',
+        status: 'Active',
+        contractStatus: 'Active',
         inventorySummary: {
           trackedSkus: 0,
           lowStockSkus: 0,
