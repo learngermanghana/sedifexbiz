@@ -1,6 +1,35 @@
 import * as functions from 'firebase-functions'
 import { admin, defaultDb, rosterDb } from './firestore'
 
+function serializeError(error: unknown) {
+  if (error instanceof functions.https.HttpsError) {
+    return {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      stack: error.stack,
+    }
+  }
+  if (error instanceof Error) {
+    return { message: error.message, name: error.name, stack: error.stack }
+  }
+  return error
+}
+
+function logCallableError(
+  functionName: string,
+  error: unknown,
+  context: functions.https.CallableContext,
+  data: unknown,
+) {
+  functions.logger.error(`${functionName} callable failed`, {
+    error: serializeError(error),
+    uid: context.auth?.uid ?? null,
+    hasAuth: Boolean(context.auth),
+    data,
+  })
+}
+
 const db = defaultDb
 
 type ContactPayload = {
@@ -413,7 +442,10 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
   }
 })
 
-export const initializeStore = functions.https.onCall(async (data, context) => {
+async function initializeStoreImpl(
+  data: unknown,
+  context: functions.https.CallableContext,
+) {
   assertAuthenticated(context)
 
   const uid = context.auth!.uid
@@ -518,6 +550,15 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   const claims = await updateUserClaims(uid, 'owner')
 
   return { ok: true, claims, storeId }
+}
+
+export const initializeStore = functions.https.onCall(async (data, context) => {
+  try {
+    return await initializeStoreImpl(data, context)
+  } catch (error) {
+    logCallableError('initializeStore', error, context, data)
+    throw error
+  }
 })
 
 export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
