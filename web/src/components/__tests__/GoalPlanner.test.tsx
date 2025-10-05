@@ -11,7 +11,30 @@ vi.mock('../../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
+function createActiveStoreState() {
+  return {
+    storeId: 'store-1',
+    isLoading: false,
+    error: null,
+    memberships: [
+      {
+        id: 'membership-1',
+        uid: 'user-1',
+        role: 'owner' as const,
+        storeId: 'store-1',
+        email: null,
+        phone: null,
+        invitedBy: null,
+        firstSignupEmail: null,
+        createdAt: null,
+        updatedAt: null,
+      },
+    ],
+    setActiveStoreId: vi.fn(),
+  }
+}
+
+const mockUseActiveStore = vi.fn(() => createActiveStoreState())
 vi.mock('../../hooks/useActiveStore', () => ({
   useActiveStore: () => mockUseActiveStore(),
 }))
@@ -102,7 +125,7 @@ describe('Goal planner component', () => {
     uuidSpy.mockReturnValue('goal-new-id')
 
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'manager@example.com' })
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockUseActiveStore.mockReturnValue(createActiveStoreState())
     mockPublish.mockReset()
 
     docMock.mockClear()

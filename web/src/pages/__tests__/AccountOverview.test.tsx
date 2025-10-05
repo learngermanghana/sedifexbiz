@@ -80,7 +80,26 @@ describe('AccountOverview', () => {
     queryMock.mockClear()
     whereMock.mockClear()
 
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
+    mockUseActiveStore.mockReturnValue({
+      storeId: 'store-123',
+      isLoading: false,
+      error: null,
+      memberships: [
+        {
+          id: 'membership-1',
+          uid: 'owner-1',
+          role: 'owner' as const,
+          storeId: 'store-123',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      setActiveStoreId: vi.fn(),
+    })
     getDocMock.mockResolvedValue({
       exists: () => true,
       data: () => ({
