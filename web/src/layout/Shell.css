@@ -111,7 +111,7 @@
   padding: 32px clamp(20px, 4vw, 64px) 48px;
 }
 
-.shell a {
+.shell :where(a:not([class])) {
   color: inherit;
 }
 
