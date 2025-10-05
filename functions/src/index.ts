@@ -399,45 +399,102 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
   const uid = user.uid
   const email = typeof user.email === 'string' ? user.email.toLowerCase() : null
   const memberRef = rosterDb.collection('teamMembers').doc(uid)
-  const memberSnap = await memberRef.get()
+  const emailRef = email ? rosterDb.collection('teamMembers').doc(email) : null
+  const [memberSnap, emailSnap] = await Promise.all([
+    memberRef.get(),
+    emailRef ? emailRef.get() : Promise.resolve(null),
+  ])
   const existingData = (memberSnap.data() ?? {}) as admin.firestore.DocumentData
+  const existingEmailData = (emailSnap?.data() ?? {}) as admin.firestore.DocumentData
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
+  const resolvedEmail = user.email ?? existingData.email ?? existingEmailData.email ?? null
+  const resolvedPhone = user.phoneNumber ?? existingData.phone ?? existingEmailData.phone ?? null
+  const resolvedStoreId =
+    getOptionalString(
+      existingData.storeId ?? existingData.storeID ?? existingData.store_id ?? undefined,
+    ) ??
+    getOptionalString(
+      existingEmailData.storeId ?? existingEmailData.storeID ?? existingEmailData.store_id ?? undefined,
+    ) ??
+    null
+  const resolvedRoleRaw =
+    getOptionalString(existingData.role ?? existingEmailData.role ?? existingEmailData.memberRole ?? undefined) ??
+    null
+  const resolvedRole = resolvedRoleRaw
+    ? VALID_ROLES.has(resolvedRoleRaw.toLowerCase())
+      ? resolvedRoleRaw.toLowerCase()
+      : resolvedRoleRaw
+    : null
+  const resolvedFirstSignupEmail =
+    typeof existingData.firstSignupEmail === 'string'
+      ? existingData.firstSignupEmail
+      : typeof existingEmailData.firstSignupEmail === 'string'
+      ? existingEmailData.firstSignupEmail
+      : null
+  const resolvedInvitedBy =
+    getOptionalString(existingData.invitedBy ?? existingEmailData.invitedBy ?? undefined) ?? null
+  const resolvedName =
+    getOptionalString(existingData.name ?? existingEmailData.name ?? existingEmailData.displayName ?? undefined) ??
+    null
+  const resolvedCompanyName =
+    getOptionalString(
+      existingData.companyName ??
+        existingEmailData.companyName ??
+        existingEmailData.businessName ??
+        existingEmailData.workspaceName ??
+        undefined,
+    ) ?? null
+  const resolvedStatus =
+    getOptionalString(existingData.status ?? existingEmailData.status ?? undefined) ?? null
+  const resolvedContractStatus =
+    getOptionalString(
+      existingData.contractStatus ?? existingEmailData.contractStatus ?? existingEmailData.contract_status ?? undefined,
+    ) ?? null
+
   const memberData: admin.firestore.DocumentData = {
+    ...existingEmailData,
+    ...existingData,
     uid,
-    email: user.email ?? existingData.email ?? null,
-    phone: user.phoneNumber ?? existingData.phone ?? null,
+    email: resolvedEmail,
+    phone: resolvedPhone,
     updatedAt: timestamp,
   }
 
+  if (resolvedStoreId) memberData.storeId = resolvedStoreId
+  if (resolvedRole) memberData.role = resolvedRole
+  if (resolvedFirstSignupEmail !== null) memberData.firstSignupEmail = resolvedFirstSignupEmail
+  if (resolvedInvitedBy) memberData.invitedBy = resolvedInvitedBy
+  if (resolvedName) memberData.name = resolvedName
+  if (resolvedCompanyName) memberData.companyName = resolvedCompanyName
+  if (resolvedStatus) memberData.status = resolvedStatus
+  if (resolvedContractStatus) memberData.contractStatus = resolvedContractStatus
+
   if (!memberSnap.exists) {
-    memberData.createdAt = timestamp
+    if (memberData.createdAt === undefined) {
+      memberData.createdAt = timestamp
+    }
   }
 
   await memberRef.set(memberData, { merge: true })
 
-  if (email) {
-    const emailRef = rosterDb.collection('teamMembers').doc(email)
-    const emailSnap = await emailRef.get()
+  if (email && emailRef) {
     const emailData: admin.firestore.DocumentData = {
+      ...existingEmailData,
+      ...memberData,
       uid,
-      email: user.email ?? existingData.email ?? null,
-      phone: memberData.phone ?? null,
+      email: resolvedEmail,
       updatedAt: timestamp,
     }
-    const storeId = getOptionalString(existingData.storeId ?? undefined)
-    if (storeId) emailData.storeId = storeId
-    const role = getOptionalString(existingData.role ?? undefined)
-    if (role) emailData.role = role
-    if (typeof existingData.firstSignupEmail === 'string') {
-      emailData.firstSignupEmail = existingData.firstSignupEmail
+
+    if (!emailSnap?.exists) {
+      if (emailData.createdAt === undefined) {
+        emailData.createdAt = timestamp
+      }
+    } else {
+      delete emailData.createdAt
     }
-    if (typeof existingData.invitedBy === 'string') {
-      emailData.invitedBy = existingData.invitedBy
-    }
-    if (!emailSnap.exists) {
-      emailData.createdAt = timestamp
-    }
+
     await emailRef.set(emailData, { merge: true })
   }
 })
@@ -588,21 +645,17 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     requestedStoreId = trimmed
   }
 
-  if (!emailFromToken) {
-    throw new functions.https.HttpsError(
-      'failed-precondition',
-      'A verified email is required to resolve store access for this account.',
-    )
-  }
-
   const teamMembersCollection = rosterDb.collection('teamMembers')
   const memberRef = teamMembersCollection.doc(uid)
-  const rosterEmailRef = teamMembersCollection.doc(emailFromToken)
-  const [memberSnap, rosterEmailSnap] = await Promise.all([memberRef.get(), rosterEmailRef.get()])
+  const rosterEmailRef = emailFromToken ? teamMembersCollection.doc(emailFromToken) : null
+  const [memberSnap, rosterEmailSnap] = await Promise.all([
+    memberRef.get(),
+    rosterEmailRef ? rosterEmailRef.get() : Promise.resolve(null),
+  ])
   const existingMember = (memberSnap.data() ?? {}) as admin.firestore.DocumentData
-  const emailMember = (rosterEmailSnap.data() ?? {}) as admin.firestore.DocumentData
+  const emailMember = (rosterEmailSnap?.data() ?? {}) as admin.firestore.DocumentData
 
-  if (!memberSnap.exists && !rosterEmailSnap.exists) {
+  if (!memberSnap.exists && (!rosterEmailSnap || !rosterEmailSnap.exists)) {
     throw new functions.https.HttpsError(
       'permission-denied',
       'We could not find a workspace assignment for this account. Reach out to your Sedifex administrator.',
@@ -705,6 +758,16 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   const rosterName =
     getOptionalString(rosterEntry.name ?? rosterEntry.displayName ?? rosterEntry.memberName ?? undefined) ??
     (typeof existingMember.name === 'string' ? existingMember.name : null)
+  const rosterEmailAddress =
+    getOptionalEmail(
+      rosterEntry.email ??
+        rosterEntry.memberEmail ??
+        rosterEntry.primaryEmail ??
+        rosterEntry.signupEmail ??
+        existingMember.email ??
+        emailFromToken ??
+        undefined,
+    ) ?? null
   const rosterFirstSignupEmail =
     getOptionalEmail(
       rosterEntry.firstSignupEmail ??
@@ -715,7 +778,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     ) ??
     (typeof existingMember.firstSignupEmail === 'string'
       ? existingMember.firstSignupEmail
-      : emailFromToken)
+      : rosterEmailAddress)
   const rosterInvitedBy =
     getOptionalString(rosterEntry.invitedBy ?? rosterEntry.inviterUid ?? rosterEntry.invited_by ?? undefined) ??
     (typeof existingMember.invitedBy === 'string' ? existingMember.invitedBy : null)
@@ -724,7 +787,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     uid,
     storeId,
     role: resolvedRole,
-    email: emailFromToken,
+    email: rosterEmailAddress,
     updatedAt: now,
     createdAt: memberCreatedAt,
   }
@@ -734,7 +797,9 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   if (rosterInvitedBy) memberData.invitedBy = rosterInvitedBy
 
   await memberRef.set(memberData, { merge: true })
-  await rosterEmailRef.set({ uid, lastResolvedAt: now }, { merge: true })
+  if (rosterEmailRef) {
+    await rosterEmailRef.set({ uid, lastResolvedAt: now }, { merge: true })
+  }
 
   const productSeedRecords = toSeedRecords(storeData.seedProducts ?? rosterEntry.seedProducts ?? null)
   const customerSeedRecords = toSeedRecords(storeData.seedCustomers ?? rosterEntry.seedCustomers ?? null)
