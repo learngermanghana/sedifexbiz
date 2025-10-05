@@ -6,10 +6,10 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
 } from 'firebase/auth'
-import { doc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
+import { doc, serverTimestamp, setDoc, Timestamp, type Firestore } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { auth, db } from './firebase'
+import { auth, db, rosterDb } from './firebase'
 import './App.css'
 import './pwa'
 import { useToast } from './components/ToastProvider'
@@ -83,7 +83,7 @@ async function persistTeamMemberMetadata(
     const ownerName = resolveOwnerName(user, metadata?.ownerName ?? null)
     const businessName = metadata?.businessName?.trim()
     await setDoc(
-      doc(db, 'teamMembers', user.uid),
+      doc(rosterDb, 'teamMembers', user.uid),
       {
         uid: user.uid,
         role: resolution.role,
@@ -162,16 +162,20 @@ function normalizeSeededDocumentData(data: Record<string, unknown>): Record<stri
 async function persistStoreSeedData(resolution: ResolveStoreAccessResult) {
   const writes: Promise<unknown>[] = []
 
-  const enqueue = (collectionName: string, document: SeededDocument | null) => {
+  const enqueue = (
+    targetDb: Firestore,
+    collectionName: string,
+    document: SeededDocument | null,
+  ) => {
     if (!document) return
     const normalized = normalizeSeededDocumentData(document.data)
-    writes.push(setDoc(doc(db, collectionName, document.id), normalized, { merge: true }))
+    writes.push(setDoc(doc(targetDb, collectionName, document.id), normalized, { merge: true }))
   }
 
-  enqueue('teamMembers', resolution.teamMember)
-  enqueue('stores', resolution.store)
-  resolution.products.forEach(product => enqueue('products', product))
-  resolution.customers.forEach(customer => enqueue('customers', customer))
+  enqueue(rosterDb, 'teamMembers', resolution.teamMember)
+  enqueue(db, 'stores', resolution.store)
+  resolution.products.forEach(product => enqueue(db, 'products', product))
+  resolution.customers.forEach(customer => enqueue(db, 'customers', customer))
 
   if (writes.length) {
     await Promise.all(writes)

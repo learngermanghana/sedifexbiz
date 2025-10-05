@@ -11,7 +11,7 @@ import {
   type DocumentSnapshot,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { db, rosterDb } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
 import { manageStaffAccount } from '../controllers/storeController'
@@ -200,7 +200,7 @@ export default function AccountOverview() {
     setRosterLoading(true)
     setRosterError(null)
 
-    const membersRef = collection(db, 'teamMembers')
+    const membersRef = collection(rosterDb, 'teamMembers')
     const rosterQuery = query(membersRef, where('storeId', '==', storeId))
     getDocs(rosterQuery)
       .then(snapshot => {

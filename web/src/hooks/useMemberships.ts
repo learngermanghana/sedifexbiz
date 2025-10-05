@@ -9,7 +9,7 @@ import {
   type DocumentData,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { rosterDb } from '../firebase'
 import { useAuthUser } from './useAuthUser'
 
 export type Membership = {
@@ -76,7 +76,7 @@ export function useMemberships() {
       }
 
       try {
-        const membersRef = collection(db, 'teamMembers')
+        const membersRef = collection(rosterDb, 'teamMembers')
         const membershipsQuery = query(membersRef, where('uid', '==', user.uid))
         const snapshot = await getDocs(membershipsQuery)
 
