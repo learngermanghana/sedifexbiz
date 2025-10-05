@@ -209,61 +209,6 @@ function getLoginValidationError(email: string, password: string): string | null
   return null
 }
 
-function getSignupValidationError(
-  email: string,
-  password: string,
-  confirmPassword: string,
-  phone: string,
-  ownerName: string,
-  businessName: string,
-): string | null {
-  if (!email) {
-    return 'Enter your email.'
-  }
-  if (!EMAIL_PATTERN.test(email)) {
-    return 'Enter a valid email address.'
-  }
-  if (!password) {
-    return 'Create a password to continue.'
-  }
-  if (!ownerName) {
-    return 'Enter your full name.'
-  }
-  if (!businessName) {
-    return 'Enter your business name.'
-  }
-  if (!phone) {
-    return 'Enter your phone number.'
-  }
-
-  const { isLongEnough, hasUppercase, hasLowercase, hasNumber, hasSymbol } =
-    evaluatePasswordStrength(password)
-
-  if (!isLongEnough) {
-    return `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`
-  }
-  if (!hasUppercase) {
-    return 'Password must include an uppercase letter.'
-  }
-  if (!hasLowercase) {
-    return 'Password must include a lowercase letter.'
-  }
-  if (!hasNumber) {
-    return 'Password must include a number.'
-  }
-  if (!hasSymbol) {
-    return 'Password must include a symbol.'
-  }
-  if (!confirmPassword) {
-    return 'Confirm your password.'
-  }
-  if (password !== confirmPassword) {
-    return 'Passwords do not match.'
-  }
-
-  return null
-}
-
 type QueueCompletedMessage = {
   type: 'QUEUE_REQUEST_COMPLETED'
   requestType?: unknown
@@ -326,7 +271,6 @@ export default function App() {
   const normalizedConfirmPassword = confirmPassword.trim()
   const normalizedFullName = fullName.trim()
   const normalizedBusinessName = businessName.trim()
-  const hasPhone = normalizedPhone.length > 0
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
   const passwordChecklist = [
     { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: passwordStrength.isLongEnough },
@@ -336,16 +280,7 @@ export default function App() {
     { id: 'symbol', label: 'Includes a symbol', passed: passwordStrength.hasSymbol },
   ] as const
   const doesPasswordMeetAllChecks = passwordChecklist.every(item => item.passed)
-  const hasConfirmedPassword = normalizedConfirmPassword.length > 0
-  const isSignupFormValid =
-    EMAIL_PATTERN.test(normalizedEmail) &&
-    normalizedPassword.length > 0 &&
-    doesPasswordMeetAllChecks &&
-    hasConfirmedPassword &&
-    normalizedFullName.length > 0 &&
-    normalizedBusinessName.length > 0 &&
-    hasPhone &&
-    normalizedPassword === normalizedConfirmPassword
+  const isSignupFormValid = normalizedEmail.length > 0 && normalizedPassword.length > 0
   const isLoginFormValid =
     EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
@@ -427,27 +362,13 @@ export default function App() {
     const sanitizedBusinessName = businessName.trim()
 
     const validationError =
-      mode === 'login'
-        ? getLoginValidationError(sanitizedEmail, sanitizedPassword)
-        : getSignupValidationError(
-            sanitizedEmail,
-            sanitizedPassword,
-            sanitizedConfirmPassword,
-            sanitizedPhone,
-            sanitizedFullName,
-            sanitizedBusinessName,
-          )
+      mode === 'login' ? getLoginValidationError(sanitizedEmail, sanitizedPassword) : null
 
     if (mode === 'signup') {
       setPhone(sanitizedPhone)
       setNormalizedPhone(sanitizedPhone)
       setFullName(sanitizedFullName)
       setBusinessName(sanitizedBusinessName)
-
-      if (!sanitizedPhone) {
-        setStatus({ tone: 'error', message: 'Enter your phone number.' })
-        return
-      }
     }
 
     if (validationError) {
@@ -485,8 +406,8 @@ export default function App() {
         const { user: nextUser } = await createUserWithEmailAndPassword(
           auth,
           sanitizedEmail,
-            sanitizedPassword,
-          )
+          sanitizedPassword,
+        )
         await persistSession(nextUser)
 
         let initializedStoreId: string | undefined
