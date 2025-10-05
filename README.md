@@ -53,21 +53,8 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 
 **Seeding / maintenance steps**
 1. Ensure you have the Firebase CLI installed and are logged in: `npx firebase login`.
-2. Create a JSON seed file with workspace documents, for example:
-   ```json
-   {
-     "workspaces": {
-       "demo-store": {
-         "company": "Demo Store",
-         "contractStart": { ".sv": "timestamp" },
-         "contractEnd": "2024-12-31",
-         "paymentStatus": "paid",
-         "amountPaid": 129900
-       }
-     }
-   }
-   ```
-3. Import the seed data into Firestore: `npx firebase firestore:delete workspaces --project <project-id> --force && npx firebase firestore:import seed.json --project <project-id>`.
+2. Create a JSON seed file with workspace documents (see [`seed/workspaces.seed.json`](seed/workspaces.seed.json) for a ready-to-use example you can tweak per environment).
+3. Import the seed data into Firestore: `npx firebase firestore:delete workspaces --project <project-id> --force && npx firebase firestore:import seed/workspaces.seed.json --project <project-id>`.
 4. For ongoing updates, edit the documents directly in the Firebase console or via your preferred admin tooling.
 
 ## Branding
