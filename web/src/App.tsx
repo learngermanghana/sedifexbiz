@@ -537,7 +537,12 @@ export default function App() {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
         setOnboardingStatus(nextUser.uid, 'pending')
-
+        try {
+          await auth.signOut()
+        } catch (error) {
+          console.warn('[signup] Unable to sign out after successful signup', error)
+        }
+        setMode('login')
       }
 
       setStatus({
@@ -545,7 +550,7 @@ export default function App() {
         message:
           mode === 'login'
             ? 'Welcome back! Redirecting…'
-            : 'All set! Redirecting you to your workspace…',
+            : 'Account created! You can now sign in.',
       })
       setPassword('')
       setConfirmPassword('')
