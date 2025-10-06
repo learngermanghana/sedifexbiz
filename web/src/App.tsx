@@ -110,10 +110,19 @@ async function persistTeamMemberMetadata(
       updatedAt: serverTimestamp(),
     }
 
-    await Promise.all([
+    const writes: Array<Promise<unknown>> = [
       setDoc(doc(rosterDb, 'teamMembers', user.uid), basePayload, { merge: true }),
       setDoc(doc(db, 'teamMembers', user.uid), basePayload, { merge: true }),
-    ])
+    ]
+
+    const normalizedEmail = email.trim().toLowerCase()
+    if (normalizedEmail) {
+      writes.push(
+        setDoc(doc(rosterDb, 'teamMembers', normalizedEmail), basePayload, { merge: true }),
+      )
+    }
+
+    await Promise.all(writes)
   } catch (error) {
     console.warn('[signup] Failed to persist team member metadata', error)
   }
