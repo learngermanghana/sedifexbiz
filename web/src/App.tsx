@@ -24,6 +24,7 @@ import {
   resolveStoreAccess,
   type ResolveStoreAccessResult,
   type SeededDocument,
+  type SignupRoleOption,
   extractCallableErrorMessage,
   INACTIVE_WORKSPACE_MESSAGE,
 } from './controllers/accessController'
@@ -54,6 +55,10 @@ function sanitizePhone(value: string): string {
 
 const OWNER_NAME_FALLBACK = 'Owner account'
 
+function normalizeSignupRole(value: string | SignupRoleOption): SignupRoleOption {
+  return value === 'team-member' ? 'team-member' : 'owner'
+}
+
 function resolveOwnerName(user: User, explicitName?: string | null): string {
   const trimmedExplicitName = explicitName?.trim()
   if (trimmedExplicitName) {
@@ -70,6 +75,9 @@ function resolveOwnerName(user: User, explicitName?: string | null): string {
 type OwnerProfileMetadata = {
   ownerName?: string | null
   businessName?: string | null
+  country?: string | null
+  town?: string | null
+  signupRole?: SignupRoleOption | null
 }
 
 async function persistTeamMemberMetadata(
@@ -82,6 +90,9 @@ async function persistTeamMemberMetadata(
   try {
     const ownerName = resolveOwnerName(user, metadata?.ownerName ?? null)
     const businessName = metadata?.businessName?.trim()
+    const country = metadata?.country?.trim() ?? null
+    const town = metadata?.town?.trim() ?? null
+    const signupRole = metadata?.signupRole ? normalizeSignupRole(metadata.signupRole) : null
     const basePayload = {
       uid: user.uid,
       role: resolution.role,
@@ -92,6 +103,9 @@ async function persistTeamMemberMetadata(
       firstSignupEmail: email,
       invitedBy: user.uid,
       companyName: businessName ?? null,
+      country,
+      town,
+      signupRole,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     }
@@ -260,6 +274,9 @@ export default function App() {
   const [businessName, setBusinessName] = useState('')
   const [phone, setPhone] = useState('')
   const [normalizedPhone, setNormalizedPhone] = useState('')
+  const [country, setCountry] = useState('')
+  const [town, setTown] = useState('')
+  const [signupRole, setSignupRole] = useState<SignupRoleOption>('owner')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
   const isLoading = status.tone === 'loading'
   const { publish } = useToast()
@@ -271,6 +288,8 @@ export default function App() {
   const normalizedConfirmPassword = confirmPassword.trim()
   const normalizedFullName = fullName.trim()
   const normalizedBusinessName = businessName.trim()
+  const normalizedCountry = country.trim()
+  const normalizedTown = town.trim()
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
   const passwordChecklist = [
     { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: passwordStrength.isLongEnough },
@@ -280,7 +299,14 @@ export default function App() {
     { id: 'symbol', label: 'Includes a symbol', passed: passwordStrength.hasSymbol },
   ] as const
   const doesPasswordMeetAllChecks = passwordChecklist.every(item => item.passed)
-  const isSignupFormValid = normalizedEmail.length > 0 && normalizedPassword.length > 0
+  const isSignupFormValid =
+    normalizedEmail.length > 0 &&
+    normalizedPassword.length > 0 &&
+    normalizedFullName.length > 0 &&
+    normalizedBusinessName.length > 0 &&
+    normalizedPhone.length > 0 &&
+    normalizedCountry.length > 0 &&
+    normalizedTown.length > 0
   const isLoginFormValid =
     EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
@@ -360,6 +386,9 @@ export default function App() {
     const sanitizedPhone = sanitizePhone(phone)
     const sanitizedFullName = fullName.trim()
     const sanitizedBusinessName = businessName.trim()
+    const sanitizedCountry = country.trim()
+    const sanitizedTown = town.trim()
+    const sanitizedSignupRole = normalizeSignupRole(signupRole)
 
     const validationError =
       mode === 'login' ? getLoginValidationError(sanitizedEmail, sanitizedPassword) : null
@@ -369,6 +398,9 @@ export default function App() {
       setNormalizedPhone(sanitizedPhone)
       setFullName(sanitizedFullName)
       setBusinessName(sanitizedBusinessName)
+      setCountry(sanitizedCountry)
+      setTown(sanitizedTown)
+      setSignupRole(sanitizedSignupRole)
     }
 
     if (validationError) {
@@ -417,6 +449,9 @@ export default function App() {
             firstSignupEmail: sanitizedEmail ? sanitizedEmail.toLowerCase() : null,
             ownerName: sanitizedFullName || null,
             businessName: sanitizedBusinessName || null,
+            country: sanitizedCountry || null,
+            town: sanitizedTown || null,
+            signupRole: sanitizedSignupRole,
           })
           initializedStoreId = initialization.storeId
         } catch (error) {
@@ -445,6 +480,9 @@ export default function App() {
         await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution, {
           ownerName: sanitizedFullName,
           businessName: sanitizedBusinessName,
+          country: sanitizedCountry,
+          town: sanitizedTown,
+          signupRole: sanitizedSignupRole,
         })
 
         try {
@@ -471,6 +509,8 @@ export default function App() {
               phone: sanitizedPhone,
               businessName: resolvedBusinessName,
               ownerName: resolvedOwnerName,
+              country: sanitizedCountry || null,
+              town: sanitizedTown || null,
               status: 'active',
               role: 'client',
               createdAt: serverTimestamp(),
@@ -499,6 +539,9 @@ export default function App() {
       setBusinessName('')
       setPhone('')
       setNormalizedPhone('')
+      setCountry('')
+      setTown('')
+      setSignupRole('owner')
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
     }
@@ -519,6 +562,9 @@ export default function App() {
     setBusinessName('')
     setPhone('')
     setNormalizedPhone('')
+    setCountry('')
+    setTown('')
+    setSignupRole('owner')
   }
 
   // Inline minHeight is just a safety net; CSS already uses dvh/svh.
@@ -703,6 +749,78 @@ export default function App() {
                     We’ll use this to tailor your onboarding.
                   </p>
                 </div>
+              )}
+              {mode === 'signup' && (
+                <div className="form__field">
+                  <label htmlFor="country">Country</label>
+                  <input
+                    id="country"
+                    value={country}
+                    onChange={event => setCountry(event.target.value)}
+                    onBlur={() => setCountry(current => current.trim())}
+                    type="text"
+                    autoComplete="country-name"
+                    placeholder="United States"
+                    required
+                    disabled={isLoading}
+                    aria-invalid={country.length > 0 && normalizedCountry.length === 0}
+                    aria-describedby="country-hint"
+                  />
+                  <p className="form__hint" id="country-hint">
+                    Let us know where your business operates.
+                  </p>
+                </div>
+              )}
+              {mode === 'signup' && (
+                <div className="form__field">
+                  <label htmlFor="town">Town or city</label>
+                  <input
+                    id="town"
+                    value={town}
+                    onChange={event => setTown(event.target.value)}
+                    onBlur={() => setTown(current => current.trim())}
+                    type="text"
+                    autoComplete="address-level2"
+                    placeholder="Seattle"
+                    required
+                    disabled={isLoading}
+                    aria-invalid={town.length > 0 && normalizedTown.length === 0}
+                    aria-describedby="town-hint"
+                  />
+                  <p className="form__hint" id="town-hint">
+                    We’ll adapt recommendations for your local market.
+                  </p>
+                </div>
+              )}
+              {mode === 'signup' && (
+                <fieldset className="form__field form__field--choices">
+                  <legend>Are you the owner or joining a team?</legend>
+                  <div className="form__choice-group" role="radiogroup" aria-label="Signup role">
+                    <label className="form__choice" data-selected={signupRole === 'owner'}>
+                      <input
+                        type="radio"
+                        name="signup-role"
+                        value="owner"
+                        checked={signupRole === 'owner'}
+                        onChange={() => setSignupRole('owner')}
+                        disabled={isLoading}
+                      />
+                      <span>I’m the business owner</span>
+                    </label>
+                    <label className="form__choice" data-selected={signupRole === 'team-member'}>
+                      <input
+                        type="radio"
+                        name="signup-role"
+                        value="team-member"
+                        checked={signupRole === 'team-member'}
+                        onChange={() => setSignupRole('team-member')}
+                        disabled={isLoading}
+                      />
+                      <span>I’m joining as a team member</span>
+                    </label>
+                  </div>
+                  <p className="form__hint">We’ll customize onboarding tips based on your role.</p>
+                </fieldset>
               )}
               <div className="form__field">
                 <label htmlFor="password">Password</label>

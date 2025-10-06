@@ -172,6 +172,8 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/Full name/i), 'Morgan Owner')
       await user.type(screen.getByLabelText(/Business name/i), 'Morgan Retail Co')
       await user.type(screen.getByLabelText(/Phone/i), '5551234567')
+      await user.type(screen.getByLabelText(/Country/i), 'Canada')
+      await user.type(screen.getByLabelText(/Town or city/i), 'Toronto')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
 
@@ -240,6 +242,9 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/Full name/i), 'Morgan Owner')
       await user.type(screen.getByLabelText(/Business name/i), 'Morgan Retail Co')
       await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
+      await user.type(screen.getByLabelText(/Country/i), 'United States')
+      await user.type(screen.getByLabelText(/Town or city/i), 'Seattle')
+      await user.click(screen.getByLabelText(/team member/i))
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
 
@@ -263,6 +268,9 @@ describe('App signup cleanup', () => {
         firstSignupEmail: 'owner@example.com',
         ownerName: 'Morgan Owner',
         businessName: 'Morgan Retail Co',
+        country: 'United States',
+        town: 'Seattle',
+        signupRole: 'team-member',
       }),
     )
     await waitFor(() =>
@@ -306,6 +314,9 @@ describe('App signup cleanup', () => {
           phone: '5551234567',
           email: 'owner@example.com',
           role: 'staff',
+          country: 'United States',
+          town: 'Seattle',
+          signupRole: 'team-member',
           createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
           updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
         }),
@@ -343,6 +354,8 @@ describe('App signup cleanup', () => {
         phone: '5551234567',
         businessName: 'Morgan Retail Co',
         ownerName: 'Morgan Owner',
+        country: 'United States',
+        town: 'Seattle',
         status: 'active',
         role: 'client',
         createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
@@ -409,6 +422,8 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/Full name/i), 'Morgan Owner')
       await user.type(screen.getByLabelText(/Business name/i), 'Morgan Retail Co')
       await user.type(screen.getByLabelText(/Phone/i), '5551234567')
+      await user.type(screen.getByLabelText(/Country/i), 'Kenya')
+      await user.type(screen.getByLabelText(/Town or city/i), 'Nairobi')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
 
@@ -421,6 +436,9 @@ describe('App signup cleanup', () => {
         firstSignupEmail: 'owner@example.com',
         ownerName: 'Morgan Owner',
         businessName: 'Morgan Retail Co',
+        country: 'Kenya',
+        town: 'Nairobi',
+        signupRole: 'owner',
       }),
     )
     await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('store-001'))
