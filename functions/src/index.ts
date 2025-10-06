@@ -584,7 +584,11 @@ async function initializeStoreImpl(
   const resolvedSignupRole = contact.hasSignupRole ? contact.signupRole ?? null : null
 
   const memberRef = rosterDb.collection('teamMembers').doc(uid)
-  const memberSnap = await memberRef.get()
+  const defaultMemberRef = defaultDb.collection('teamMembers').doc(uid)
+  const [memberSnap, defaultMemberSnap] = await Promise.all([
+    memberRef.get(),
+    defaultMemberRef.get(),
+  ])
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
   const existingData = memberSnap.data() ?? {}
   const existingStoreId =
@@ -628,7 +632,47 @@ async function initializeStoreImpl(
     memberData.createdAt = timestamp
   }
 
-  await memberRef.set(memberData, { merge: true })
+  await Promise.all([
+    memberRef.set(memberData, { merge: true }),
+    (async () => {
+      const defaultMemberData: admin.firestore.DocumentData = {
+        uid,
+        email,
+        role: 'owner',
+        storeId,
+        phone: resolvedPhone,
+        firstSignupEmail: resolvedFirstSignupEmail,
+        invitedBy: uid,
+        updatedAt: timestamp,
+      }
+
+      if (resolvedOwnerName !== null) {
+        defaultMemberData.name = resolvedOwnerName
+      }
+
+      if (resolvedBusinessName !== null) {
+        defaultMemberData.companyName = resolvedBusinessName
+      }
+
+      if (resolvedCountry !== null) {
+        defaultMemberData.country = resolvedCountry
+      }
+
+      if (resolvedTown !== null) {
+        defaultMemberData.town = resolvedTown
+      }
+
+      if (resolvedSignupRole !== null) {
+        defaultMemberData.signupRole = resolvedSignupRole
+      }
+
+      if (!defaultMemberSnap.exists) {
+        defaultMemberData.createdAt = timestamp
+      }
+
+      await defaultMemberRef.set(defaultMemberData, { merge: true })
+    })(),
+  ])
 
   if (normalizedEmail) {
     const emailRef = rosterDb.collection('teamMembers').doc(normalizedEmail)

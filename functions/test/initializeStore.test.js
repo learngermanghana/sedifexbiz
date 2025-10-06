@@ -107,6 +107,16 @@ async function runInitializeStoreCreatesWorkspaceTest() {
   assert.strictEqual(rosterMemberDoc.town, 'Portland')
   assert.strictEqual(rosterMemberDoc.signupRole, 'team-member')
 
+  const defaultMemberDoc = currentDefaultDb.getDoc('teamMembers/new-owner-uid')
+  assert.ok(defaultMemberDoc, 'Expected default database team member document to be created')
+  assert.strictEqual(defaultMemberDoc.name, 'Fresh Owner')
+  assert.strictEqual(defaultMemberDoc.companyName, 'Fresh Retail')
+  assert.strictEqual(defaultMemberDoc.phone, '+1 (555) 000-0000')
+  assert.strictEqual(defaultMemberDoc.firstSignupEmail, 'fresh.owner@example.com')
+  assert.strictEqual(defaultMemberDoc.country, 'United States')
+  assert.strictEqual(defaultMemberDoc.town, 'Portland')
+  assert.strictEqual(defaultMemberDoc.signupRole, 'team-member')
+
   const resolveResult = await resolveStoreAccess.run({}, context)
   assert.strictEqual(resolveResult.ok, true, 'Expected resolveStoreAccess to succeed')
   assert.strictEqual(resolveResult.storeId, initResult.storeId)
