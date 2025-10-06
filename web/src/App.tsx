@@ -325,6 +325,16 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!isAuthReady || user) {
+      return
+    }
+
+    if (status.tone === 'loading') {
+      setStatus({ tone: 'idle', message: '' })
+    }
+  }, [isAuthReady, status.tone, user])
+
+  useEffect(() => {
     if (!user) return
     refreshSessionHeartbeat(user).catch(error => {
       console.warn('[session] Unable to refresh session', error)
@@ -527,11 +537,15 @@ export default function App() {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
         setOnboardingStatus(nextUser.uid, 'pending')
+
       }
 
       setStatus({
         tone: 'success',
-        message: mode === 'login' ? 'Welcome back! Redirecting…' : 'All set! Your account is ready.',
+        message:
+          mode === 'login'
+            ? 'Welcome back! Redirecting…'
+            : 'All set! Redirecting you to your workspace…',
       })
       setPassword('')
       setConfirmPassword('')
