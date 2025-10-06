@@ -51,7 +51,7 @@ function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): M
   }
 }
 
-export function useMemberships() {
+export function useMemberships(_activeStoreId?: string | null) {
   const user = useAuthUser()
   const [loading, setLoading] = useState(true)
   const [memberships, setMemberships] = useState<Membership[]>([])

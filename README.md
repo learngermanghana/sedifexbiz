@@ -53,9 +53,19 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 
 **Seeding / maintenance steps**
 1. Ensure you have the Firebase CLI installed and are logged in: `npx firebase login`.
-2. Create a JSON seed file with workspace documents (see [`seed/workspaces.seed.json`](seed/workspaces.seed.json) for a ready-to-use example you can tweak per environment).
-3. Import the seed data into Firestore: `npx firebase firestore:delete workspaces --project <project-id> --force && npx firebase firestore:import seed/workspaces.seed.json --project <project-id>`.
-4. For ongoing updates, edit the documents directly in the Firebase console or via your preferred admin tooling.
+
+2. Seed Firestore using [`seed/workspaces.seed.json`](seed/workspaces.seed.json), which now provisions the `workspaces`, `stores`, and `teamMembers` collections used across the UI:
+   ```bash
+   npx firebase firestore:delete workspaces stores teamMembers --project <project-id> --force
+   npx firebase firestore:import seed/workspaces.seed.json --project <project-id>
+   ```
+3. For ongoing updates, edit the documents directly in the Firebase console or via your preferred admin tooling.
+
+1. Update `web/.env.local` with the Firebase config for the project you seeded (the same values you use in hosting/CI environments).
+2. In the Firebase console, create authentication users whose `uid` values match the `teamMembers` you seeded (for example, a user with `uid` of `demo-owner` and email `owner@demo-store.test`). Assign a password so you can sign in locally.
+3. Start the PWA locally with `npm run dev` inside `web/` and sign in with the seeded account.
+4. Use the workspace selector in the header to switch between any memberships tied to that user. The Account page will load the matching `stores/<storeId>` profile and roster data once a workspace is selected.
+
 
 ### Roster database (`teamMembers` collection)
 - Sedifex Functions look up login eligibility in a **secondary** Firestore database named `roster`. The `teamMembers` collection inside that database must contain at least one document matching the user who is attempting to sign in.

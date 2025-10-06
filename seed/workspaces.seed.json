@@ -1,43 +1,143 @@
 {
-  "workspaces": {
-    "demo-store": {
-      "company": "Demo Store",
-      "storeId": "store-demo",
-      "status": "active",
-      "contractStart": "2024-01-01T00:00:00.000Z",
-      "contractEnd": "2025-12-31T23:59:59.000Z",
-      "paymentStatus": "paid",
-      "amountPaid": 129900,
-      "billingCycle": "annual",
-      "plan": "Growth",
-      "contactEmail": "owner@demo-store.test",
-      "notes": "Default workspace used for staging and QA reviewers."
+
+  "collections": {
+    "workspaces": {
+      "demo-store": {
+        "company": "Demo Store",
+        "storeId": "store-demo",
+        "status": "active",
+        "contractStart": { "__datatype__": "timestamp", "value": "2024-01-01T00:00:00.000Z" },
+        "contractEnd": { "__datatype__": "timestamp", "value": "2025-12-31T23:59:59.000Z" },
+        "paymentStatus": "paid",
+        "amountPaid": 129900,
+        "billingCycle": "annual",
+        "plan": "Growth",
+        "contactEmail": "owner@demo-store.test",
+        "notes": "Default workspace used for staging and QA reviewers."
+      },
+      "sedifex-labs": {
+        "company": "Sedifex Labs",
+        "storeId": "store-labs",
+        "status": "active",
+        "contractStart": { "__datatype__": "timestamp", "value": "2024-03-15T00:00:00.000Z" },
+        "contractEnd": { "__datatype__": "timestamp", "value": "2026-03-14T23:59:59.000Z" },
+        "paymentStatus": "trial",
+        "amountPaid": 0,
+        "billingCycle": "monthly",
+        "plan": "Starter",
+        "contactEmail": "ops@sedifex.com",
+        "notes": "Internal workspace for product experimentation and demos."
+      },
+      "nairobi-collective": {
+        "company": "Nairobi Collective",
+        "storeId": "store-nairobi",
+        "status": "active",
+        "contractStart": { "__datatype__": "timestamp", "value": "2024-06-01T00:00:00.000Z" },
+        "contractEnd": { "__datatype__": "timestamp", "value": "2025-05-31T23:59:59.000Z" },
+        "paymentStatus": "past-due",
+        "amountPaid": 59900,
+        "billingCycle": "monthly",
+        "plan": "Standard",
+        "contactEmail": "finance@nairobi-collective.com",
+        "notes": "Flagged for follow-up by customer success due to outstanding balance."
+      }
     },
-    "sedifex-labs": {
-      "company": "Sedifex Labs",
-      "storeId": "store-labs",
-      "status": "active",
-      "contractStart": "2024-03-15T00:00:00.000Z",
-      "contractEnd": "2026-03-14T23:59:59.000Z",
-      "paymentStatus": "trial",
-      "amountPaid": 0,
-      "billingCycle": "monthly",
-      "plan": "Starter",
-      "contactEmail": "ops@sedifex.com",
-      "notes": "Internal workspace for product experimentation and demos."
+    "stores": {
+      "store-demo": {
+        "name": "Demo Store",
+        "displayName": "Demo Storefront",
+        "email": "hello@demo-store.test",
+        "phone": "+1-555-0100",
+        "status": "active",
+        "timezone": "America/New_York",
+        "currency": "USD",
+        "billingPlan": "Growth",
+        "paymentProvider": "stripe",
+        "addressLine1": "123 Market Street",
+        "addressLine2": "Suite 500",
+        "city": "New York",
+        "region": "NY",
+        "postalCode": "10001",
+        "country": "US",
+        "createdAt": { "__datatype__": "timestamp", "value": "2023-11-18T15:00:00.000Z" },
+        "updatedAt": { "__datatype__": "timestamp", "value": "2024-07-04T12:30:00.000Z" }
+      },
+      "store-labs": {
+        "name": "Sedifex Labs",
+        "displayName": "Sedifex Labs",
+        "email": "labs@sedifex.com",
+        "phone": "+1-555-0125",
+        "status": "active",
+        "timezone": "America/Chicago",
+        "currency": "USD",
+        "billingPlan": "Starter",
+        "paymentProvider": "stripe",
+        "addressLine1": "88 Innovation Way",
+        "addressLine2": "",
+        "city": "Austin",
+        "region": "TX",
+        "postalCode": "73301",
+        "country": "US",
+        "createdAt": { "__datatype__": "timestamp", "value": "2024-03-15T10:00:00.000Z" },
+        "updatedAt": { "__datatype__": "timestamp", "value": "2024-06-12T18:45:00.000Z" }
+      },
+      "store-nairobi": {
+        "name": "Nairobi Collective",
+        "displayName": "Nairobi Collective",
+        "email": "support@nairobi-collective.com",
+        "phone": "+254-20-555-0100",
+        "status": "delinquent",
+        "timezone": "Africa/Nairobi",
+        "currency": "KES",
+        "billingPlan": "Standard",
+        "paymentProvider": "flutterwave",
+        "addressLine1": "45 Kijiji Lane",
+        "addressLine2": "",
+        "city": "Nairobi",
+        "region": "Nairobi",
+        "postalCode": "00100",
+        "country": "KE",
+        "createdAt": { "__datatype__": "timestamp", "value": "2024-05-01T08:00:00.000Z" },
+        "updatedAt": { "__datatype__": "timestamp", "value": "2024-06-28T09:15:00.000Z" }
+      }
     },
-    "nairobi-collective": {
-      "company": "Nairobi Collective",
-      "storeId": "store-nairobi",
-      "status": "active",
-      "contractStart": "2024-06-01T00:00:00.000Z",
-      "contractEnd": "2025-05-31T23:59:59.000Z",
-      "paymentStatus": "past-due",
-      "amountPaid": 59900,
-      "billingCycle": "monthly",
-      "plan": "Standard",
-      "contactEmail": "finance@nairobi-collective.com",
-      "notes": "Flagged for follow-up by customer success due to outstanding balance."
-    }
+    "teamMembers": {
+      "demo-owner": {
+        "uid": "demo-owner",
+        "storeId": "store-demo",
+        "role": "owner",
+        "email": "owner@demo-store.test",
+        "phone": "+1-555-0100",
+        "status": "active",
+        "contractStatus": "active",
+        "firstSignupEmail": "owner@demo-store.test",
+        "createdAt": { "__datatype__": "timestamp", "value": "2023-11-18T15:30:00.000Z" },
+        "updatedAt": { "__datatype__": "timestamp", "value": "2024-07-04T12:30:00.000Z" }
+      },
+      "demo-ops": {
+        "uid": "demo-owner",
+        "storeId": "store-labs",
+        "role": "staff",
+        "email": "ops@sedifex.com",
+        "phone": "+1-555-0126",
+        "status": "active",
+        "contractStatus": "active",
+        "invitedBy": "demo-owner",
+        "createdAt": { "__datatype__": "timestamp", "value": "2024-03-16T14:00:00.000Z" },
+        "updatedAt": { "__datatype__": "timestamp", "value": "2024-06-12T18:45:00.000Z" }
+      },
+      "nairobi-cashier": {
+        "uid": "nairobi-cashier",
+        "storeId": "store-nairobi",
+        "role": "staff",
+        "email": "cashier@nairobi-collective.com",
+        "phone": "+254-20-555-0110",
+        "status": "active",
+        "contractStatus": "past-due",
+        "invitedBy": "demo-owner",
+        "createdAt": { "__datatype__": "timestamp", "value": "2024-05-01T08:30:00.000Z" },
+        "updatedAt": { "__datatype__": "timestamp", "value": "2024-06-28T09:15:00.000Z" }
+      }
+
   }
 }

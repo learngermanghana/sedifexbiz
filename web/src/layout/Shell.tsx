@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react'
+import React, { ChangeEvent, useMemo } from 'react'
 import { NavLink } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
+import { useActiveStore } from '../hooks/useActiveStore'
 import './Shell.css'
 import './Workspace.css'
 
@@ -71,6 +72,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const user = useAuthUser()
   const userEmail = user?.email ?? 'Account'
   const connectivity = useConnectivityStatus()
+  const {
+    storeId: activeStoreId,
+    isLoading: storeLoading,
+    error: storeError,
+    memberships,
+    setActiveStoreId,
+  } = useActiveStore()
 
   const { isOnline, isReachable, queue } = connectivity
 
@@ -109,7 +117,28 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }, [isOnline, isReachable, queue.lastError, queue.pending, queue.status])
 
 
-  const workspaceStatus = 'Workspace ready'
+  const workspaceOptions = useMemo(() => {
+    const seen = new Set<string>()
+
+    return memberships.reduce<{ value: string; label: string }[]>((options, membership) => {
+      const { storeId, role } = membership
+      if (!storeId || seen.has(storeId)) {
+        return options
+      }
+
+      seen.add(storeId)
+      const label = role === 'owner' ? `${storeId} • Owner` : storeId
+      options.push({ value: storeId, label })
+      return options
+    }, [])
+  }, [memberships])
+
+  const workspaceSelectId = 'shell-workspace-select'
+
+  const handleWorkspaceChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const value = event.target.value.trim()
+    setActiveStoreId(value ? value : null)
+  }
 
 
   return (
@@ -136,9 +165,39 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
           <div className="shell__controls">
 
-            <div className="shell__store-switcher" role="status" aria-live="polite">
-              <span className="shell__store-label">Workspace</span>
-              <span className="shell__store-select" data-readonly>{workspaceStatus}</span>
+            <div className="shell__store-switcher">
+              <label className="shell__store-label" htmlFor={workspaceSelectId}>
+                Workspace
+              </label>
+
+              {storeLoading ? (
+                <span className="shell__store-status" role="status">
+                  Loading…
+                </span>
+              ) : workspaceOptions.length > 0 ? (
+                <select
+                  id={workspaceSelectId}
+                  className="shell__store-select"
+                  value={activeStoreId ?? workspaceOptions[0]?.value ?? ''}
+                  onChange={handleWorkspaceChange}
+                >
+                  {workspaceOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="shell__store-status" role="status">
+                  No workspace assigned
+                </span>
+              )}
+
+              {storeError ? (
+                <span className="shell__store-hint" role="alert">
+                  {storeError}
+                </span>
+              ) : null}
             </div>
 
 

@@ -12,7 +12,30 @@ vi.mock('../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
+function createActiveStoreState() {
+  return {
+    storeId: 'store-1',
+    isLoading: false,
+    error: null,
+    memberships: [
+      {
+        id: 'membership-1',
+        uid: 'cashier-123',
+        role: 'owner' as const,
+        storeId: 'store-1',
+        email: 'cashier@example.com',
+        phone: null,
+        invitedBy: null,
+        firstSignupEmail: null,
+        createdAt: null,
+        updatedAt: null,
+      },
+    ],
+    setActiveStoreId: vi.fn(),
+  }
+}
+
+const mockUseActiveStore = vi.fn(() => createActiveStoreState())
 vi.mock('../hooks/useActiveStore', () => ({
   useActiveStore: () => mockUseActiveStore(),
 }))
@@ -152,7 +175,7 @@ describe('Sell page', () => {
       uid: 'cashier-123',
       email: 'cashier@example.com',
     })
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockUseActiveStore.mockReturnValue(createActiveStoreState())
 
 
     mockCommitSale.mockResolvedValue({
