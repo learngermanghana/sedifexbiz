@@ -71,6 +71,21 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
    ```
 3. If you prefer to seed manually, create a document at `teamMembers/<uid>` (and optionally `teamMembers/<email>`) in the `roster` database containing the same fields as the JSON example. The login callable will reject accounts that lack both documents or that do not specify a `storeId`.
 
+### Troubleshooting: new signups do not create roster/store records
+If you create a Firebase Auth user and do **not** see corresponding documents in Firestore, walk through the checklist below:
+
+1. **Confirm the Cloud Function is deployed.** In the Firebase console open *Functions* and ensure `onAuthCreate` appears with a green check. If it is missing, redeploy from the repo root:
+   ```bash
+   cd functions
+   npm install
+   npm run deploy
+   ```
+2. **Verify the roster database ID.** The function writes roster entries with `getFirestore(admin.app(), 'roster')`. Double-check that your secondary database is named exactly `roster` (all lowercase). Rename or recreate it if necessary.
+3. **Inspect execution logs.** In the Firebase console → *Functions* → `onAuthCreate` → *Logs*, look for errors such as permission issues (`PERMISSION_DENIED`) or missing indices. Fix any issues surfaced there; for example, update IAM so the default service account can write to the secondary database.
+4. **Retry with a fresh user.** After resolving any deployment or permission issues, create a brand-new Auth user. The function only runs the first time the user is created, so deleting and re-creating the user ensures the trigger fires again.
+
+Following these steps should result in new documents at `roster/teamMembers/<uid>` and `default/stores/<uid>` immediately after signup.
+
 ## Branding
 - Name: **Sedifex**
 - Tagline: *Sell faster. Count smarter.*
