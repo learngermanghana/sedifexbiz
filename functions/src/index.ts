@@ -512,6 +512,9 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
       existingData.contractStatus ?? existingEmailData.contractStatus ?? existingEmailData.contract_status ?? undefined,
     ) ?? null
 
+  const storeId = resolvedStoreId ?? uid
+  const shouldSeedDefaultStore = !resolvedStoreId
+
   const memberData: admin.firestore.DocumentData = {
     ...existingEmailData,
     ...existingData,
@@ -521,8 +524,23 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
     updatedAt: timestamp,
   }
 
-  if (resolvedStoreId) memberData.storeId = resolvedStoreId
-  if (resolvedRole) memberData.role = resolvedRole
+  if (resolvedStoreId) {
+    memberData.storeId = resolvedStoreId
+  } else {
+    const currentStoreId = getOptionalString(memberData.storeId ?? undefined)
+    if (!currentStoreId) {
+      memberData.storeId = storeId
+    }
+  }
+
+  if (resolvedRole) {
+    memberData.role = resolvedRole
+  } else if (shouldSeedDefaultStore) {
+    const currentRole = getOptionalString(memberData.role ?? undefined)
+    if (!currentRole) {
+      memberData.role = 'owner'
+    }
+  }
   if (resolvedFirstSignupEmail !== null) memberData.firstSignupEmail = resolvedFirstSignupEmail
   if (resolvedInvitedBy) memberData.invitedBy = resolvedInvitedBy
   if (resolvedName) memberData.name = resolvedName
@@ -556,6 +574,43 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
     }
 
     await emailRef.set(emailData, { merge: true })
+  }
+
+  if (shouldSeedDefaultStore) {
+    const storeRef = defaultDb.collection('stores').doc(storeId)
+    const storeSnap = await storeRef.get()
+    const storeData: admin.firestore.DocumentData = {
+      ownerId: uid,
+      status: 'Active',
+      contractStatus: 'Active',
+      inventorySummary: {
+        trackedSkus: 0,
+        lowStockSkus: 0,
+        incomingShipments: 0,
+      },
+      updatedAt: timestamp,
+    }
+
+    if (resolvedEmail) {
+      storeData.ownerEmail = resolvedEmail
+    }
+
+    const ownerName = getOptionalString(memberData.name ?? undefined)
+    if (ownerName) {
+      storeData.ownerName = ownerName
+    }
+
+    const companyName = getOptionalString(memberData.companyName ?? undefined)
+    if (companyName) {
+      storeData.displayName = companyName
+      storeData.businessName = companyName
+    }
+
+    if (!storeSnap.exists) {
+      storeData.createdAt = timestamp
+    }
+
+    await storeRef.set(storeData, { merge: true })
   }
 })
 

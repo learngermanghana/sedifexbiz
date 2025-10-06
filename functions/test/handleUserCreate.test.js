@@ -105,8 +105,43 @@ async function runHandleUserCreateMergesRosterDataTest() {
   assert.strictEqual(rosterEmailDoc.createdAt._millis, existingCreatedAt._millis)
 }
 
+async function runHandleUserCreateSeedsDefaultStoreTest() {
+  currentDefaultDb = new MockFirestore()
+  currentRosterDb = new MockFirestore()
+
+  const { handleUserCreate } = loadFunctionsModule()
+
+  await handleUserCreate.run({
+    uid: 'new-owner',
+    email: 'Owner@example.com',
+    phoneNumber: '+15555550111',
+  })
+
+  const rosterDoc = currentRosterDb.getDoc('teamMembers/new-owner')
+  assert.ok(rosterDoc, 'Expected roster member document to be created')
+  assert.strictEqual(rosterDoc.storeId, 'new-owner')
+  assert.strictEqual(rosterDoc.role, 'owner')
+  assert.strictEqual(rosterDoc.email, 'Owner@example.com')
+  assert.strictEqual(rosterDoc.phone, '+15555550111')
+
+  const storeDoc = currentDefaultDb.getDoc('stores/new-owner')
+  assert.ok(storeDoc, 'Expected default store to be created')
+  assert.strictEqual(storeDoc.ownerId, 'new-owner')
+  assert.strictEqual(storeDoc.ownerEmail, 'Owner@example.com')
+  assert.strictEqual(storeDoc.status, 'Active')
+  assert.strictEqual(storeDoc.contractStatus, 'Active')
+  assert.deepStrictEqual(storeDoc.inventorySummary, {
+    trackedSkus: 0,
+    lowStockSkus: 0,
+    incomingShipments: 0,
+  })
+  assert.ok(storeDoc.createdAt, 'Expected createdAt to be set')
+  assert.ok(storeDoc.updatedAt, 'Expected updatedAt to be set')
+}
+
 async function run() {
   await runHandleUserCreateMergesRosterDataTest()
+  await runHandleUserCreateSeedsDefaultStoreTest()
   console.log('handleUserCreate tests passed')
 }
 
