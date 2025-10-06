@@ -82,35 +82,31 @@ async function persistTeamMemberMetadata(
   try {
     const ownerName = resolveOwnerName(user, metadata?.ownerName ?? null)
     const businessName = metadata?.businessName?.trim()
-    await setDoc(
-      doc(rosterDb, 'teamMembers', user.uid),
-      {
-        uid: user.uid,
-        role: resolution.role,
-        storeId: resolution.storeId,
-        name: ownerName,
-        phone,
-        email,
-        firstSignupEmail: email,
-        invitedBy: user.uid,
-        companyName: businessName ?? null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    )
+    const basePayload = {
+      uid: user.uid,
+      role: resolution.role,
+      storeId: resolution.storeId,
+      name: ownerName,
+      phone,
+      email,
+      firstSignupEmail: email,
+      invitedBy: user.uid,
+      companyName: businessName ?? null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }
+
+    await Promise.all([
+      setDoc(doc(rosterDb, 'teamMembers', user.uid), basePayload, { merge: true }),
+      setDoc(doc(db, 'teamMembers', user.uid), basePayload, { merge: true }),
+    ])
   } catch (error) {
     console.warn('[signup] Failed to persist team member metadata', error)
   }
 }
 
-async function cleanupFailedSignup(user: User) {
-  try {
-    await user.delete()
-  } catch (error) {
-    console.warn('[signup] Unable to delete rejected signup account', error)
-  }
-
+// We intentionally keep the auth account so administrators can investigate the failure later.
+async function cleanupFailedSignup(_user: User) {
   try {
     await auth.signOut()
   } catch (error) {

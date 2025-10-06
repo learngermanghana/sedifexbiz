@@ -295,22 +295,23 @@ describe('App signup cleanup', () => {
 
     const setDocCalls = firestore.setDocMock.mock.calls
 
-    const ownerCall = setDocCalls.find(([ref]) => ref === ownerDocRef)
-    expect(ownerCall).toBeDefined()
-    const [, ownerPayload, ownerOptions] = ownerCall!
-    expect(ownerPayload).toEqual(
-      expect.objectContaining({
-        storeId: 'workspace-store-id',
-        name: 'Morgan Owner',
-        companyName: 'Morgan Retail Co',
-        phone: '5551234567',
-        email: 'owner@example.com',
-        role: 'staff',
-        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
-    )
-    expect(ownerOptions).toEqual({ merge: true })
+    const ownerCalls = setDocCalls.filter(([ref]) => ref === ownerDocRef)
+    expect(ownerCalls).toHaveLength(2)
+    ownerCalls.forEach(([, ownerPayload, ownerOptions]) => {
+      expect(ownerPayload).toEqual(
+        expect.objectContaining({
+          storeId: 'workspace-store-id',
+          name: 'Morgan Owner',
+          companyName: 'Morgan Retail Co',
+          phone: '5551234567',
+          email: 'owner@example.com',
+          role: 'staff',
+          createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+          updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        }),
+      )
+      expect(ownerOptions).toEqual({ merge: true })
+    })
 
     const ownerStoreCall = setDocCalls.find(([ref]) => ref === ownerStoreDocRef)
     expect(ownerStoreCall).toBeDefined()
@@ -374,7 +375,7 @@ describe('App signup cleanup', () => {
     )
   })
 
-  it('cleans up the account when store access resolution fails', async () => {
+  it('signs the user out without deleting the account when store access resolution fails', async () => {
     const user = userEvent.setup()
     const { user: createdUser, deleteFn } = createTestUser()
 
@@ -424,8 +425,8 @@ describe('App signup cleanup', () => {
     )
     await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('store-001'))
 
-    await waitFor(() => expect(deleteFn).toHaveBeenCalled())
-    expect(mocks.auth.signOut).toHaveBeenCalled()
+    await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
+    expect(deleteFn).not.toHaveBeenCalled()
     expect(mocks.auth.currentUser).toBeNull()
 
     const seededWrites = firestore.setDocMock.mock.calls.filter(([ref]) => {
