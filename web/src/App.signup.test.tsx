@@ -383,8 +383,14 @@ describe('App signup cleanup', () => {
     const seededCustomerCall = setDocCalls.find(([ref]) => ref === seededCustomerDocRef)
     expect(seededCustomerCall?.[1]).toEqual(expect.objectContaining({ name: 'Seeded Customer' }))
 
+    await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
+    expect(mocks.auth.currentUser).toBeNull()
+
     expect(mocks.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ tone: 'success', message: expect.stringMatching(/All set/i) }),
+      expect.objectContaining({
+        tone: 'success',
+        message: 'Account created! You can now sign in.',
+      }),
     )
   })
 
