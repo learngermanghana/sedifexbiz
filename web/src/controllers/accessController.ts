@@ -8,11 +8,26 @@ type RawSeededDocument = {
   data?: unknown
 }
 
+export type SignupRoleOption = 'owner' | 'team-member'
+
 export type InitializeStoreContactPayload = {
   phone?: string | null
   firstSignupEmail?: string | null
   ownerName?: string | null
   businessName?: string | null
+  country?: string | null
+  town?: string | null
+  signupRole?: SignupRoleOption | null
+}
+
+function normalizeSignupRoleInput(value: SignupRoleOption | null | undefined): SignupRoleOption | null {
+  if (value === 'team-member') {
+    return 'team-member'
+  }
+  if (value === 'owner') {
+    return 'owner'
+  }
+  return null
 }
 
 type InitializeStorePayload = {
@@ -162,6 +177,18 @@ export async function initializeStore(contact?: InitializeStoreContactPayload) {
     }
     if (contact.businessName !== undefined) {
       payloadContact.businessName = contact.businessName ?? null
+      hasContactField = true
+    }
+    if (contact.country !== undefined) {
+      payloadContact.country = contact.country ?? null
+      hasContactField = true
+    }
+    if (contact.town !== undefined) {
+      payloadContact.town = contact.town ?? null
+      hasContactField = true
+    }
+    if (contact.signupRole !== undefined) {
+      payloadContact.signupRole = normalizeSignupRoleInput(contact.signupRole)
       hasContactField = true
     }
 

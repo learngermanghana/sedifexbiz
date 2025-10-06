@@ -37,6 +37,9 @@ type ContactPayload = {
   firstSignupEmail?: unknown
   ownerName?: unknown
   businessName?: unknown
+  country?: unknown
+  town?: unknown
+  signupRole?: unknown
 }
 
 type InitializeStorePayload = {
@@ -59,10 +62,16 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
   let hasFirstSignupEmail = false
   let hasOwnerName = false
   let hasBusinessName = false
+  let hasCountry = false
+  let hasTown = false
+  let hasSignupRole = false
   let phone: string | null | undefined
   let firstSignupEmail: string | null | undefined
   let ownerName: string | null | undefined
   let businessName: string | null | undefined
+  let country: string | null | undefined
+  let town: string | null | undefined
+  let signupRole: 'owner' | 'team-member' | null | undefined
 
   if (contact && typeof contact === 'object') {
     if ('phone' in contact) {
@@ -119,6 +128,51 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
         throw new functions.https.HttpsError('invalid-argument', 'Business name must be a string when provided')
       }
     }
+
+    if ('country' in contact) {
+      hasCountry = true
+      const raw = contact.country
+      if (raw === null || raw === undefined || raw === '') {
+        country = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        country = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError('invalid-argument', 'Country must be a string when provided')
+      }
+    }
+
+    if ('town' in contact) {
+      hasTown = true
+      const raw = contact.town
+      if (raw === null || raw === undefined || raw === '') {
+        town = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        town = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError('invalid-argument', 'Town must be a string when provided')
+      }
+    }
+
+    if ('signupRole' in contact) {
+      hasSignupRole = true
+      const raw = contact.signupRole
+      if (raw === null || raw === undefined || raw === '') {
+        signupRole = null
+      } else if (typeof raw === 'string') {
+        const normalized = raw.trim().toLowerCase().replace(/[_\s]+/g, '-')
+        if (normalized === 'owner') {
+          signupRole = 'owner'
+        } else if (normalized === 'team-member' || normalized === 'team') {
+          signupRole = 'team-member'
+        } else {
+          signupRole = null
+        }
+      } else {
+        throw new functions.https.HttpsError('invalid-argument', 'Signup role must be a string when provided')
+      }
+    }
   }
 
   return {
@@ -130,6 +184,12 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
     hasOwnerName,
     businessName,
     hasBusinessName,
+    country,
+    hasCountry,
+    town,
+    hasTown,
+    signupRole,
+    hasSignupRole,
   }
 }
 
@@ -519,6 +579,9 @@ async function initializeStoreImpl(
     : email?.toLowerCase() ?? null
   const resolvedOwnerName = contact.hasOwnerName ? contact.ownerName ?? null : null
   const resolvedBusinessName = contact.hasBusinessName ? contact.businessName ?? null : null
+  const resolvedCountry = contact.hasCountry ? contact.country ?? null : null
+  const resolvedTown = contact.hasTown ? contact.town ?? null : null
+  const resolvedSignupRole = contact.hasSignupRole ? contact.signupRole ?? null : null
 
   const memberRef = rosterDb.collection('teamMembers').doc(uid)
   const memberSnap = await memberRef.get()
@@ -549,6 +612,18 @@ async function initializeStoreImpl(
     memberData.companyName = resolvedBusinessName
   }
 
+  if (resolvedCountry !== null) {
+    memberData.country = resolvedCountry
+  }
+
+  if (resolvedTown !== null) {
+    memberData.town = resolvedTown
+  }
+
+  if (resolvedSignupRole !== null) {
+    memberData.signupRole = resolvedSignupRole
+  }
+
   if (!memberSnap.exists) {
     memberData.createdAt = timestamp
   }
@@ -576,6 +651,18 @@ async function initializeStoreImpl(
     if (resolvedBusinessName !== null) {
       emailData.companyName = resolvedBusinessName
     }
+
+    if (resolvedCountry !== null) {
+      emailData.country = resolvedCountry
+    }
+
+    if (resolvedTown !== null) {
+      emailData.town = resolvedTown
+    }
+
+    if (resolvedSignupRole !== null) {
+      emailData.signupRole = resolvedSignupRole
+    }
     if (!emailSnap.exists) {
       emailData.createdAt = timestamp
     }
@@ -599,6 +686,12 @@ async function initializeStoreImpl(
   if (resolvedBusinessName) {
     storeData.displayName = resolvedBusinessName
     storeData.businessName = resolvedBusinessName
+  }
+  if (resolvedCountry) {
+    storeData.country = resolvedCountry
+  }
+  if (resolvedTown) {
+    storeData.town = resolvedTown
   }
   if (!storeSnap.exists) {
     storeData.createdAt = timestamp

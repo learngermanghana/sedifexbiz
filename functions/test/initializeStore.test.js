@@ -73,6 +73,9 @@ async function runInitializeStoreCreatesWorkspaceTest() {
         firstSignupEmail: 'Fresh.Owner@Example.com',
         ownerName: ' Fresh Owner ',
         businessName: ' Fresh Retail ',
+        country: '  United States ',
+        town: '  Portland ',
+        signupRole: 'team-member',
       },
     },
     context,
@@ -89,6 +92,8 @@ async function runInitializeStoreCreatesWorkspaceTest() {
   assert.strictEqual(storeDoc.ownerName, 'Fresh Owner')
   assert.strictEqual(storeDoc.displayName, 'Fresh Retail')
   assert.strictEqual(storeDoc.businessName, 'Fresh Retail')
+  assert.strictEqual(storeDoc.country, 'United States')
+  assert.strictEqual(storeDoc.town, 'Portland')
   assert.ok(storeDoc.updatedAt, 'Expected updatedAt to be set')
   assert.ok(storeDoc.createdAt, 'Expected createdAt to be set on new store')
 
@@ -98,6 +103,9 @@ async function runInitializeStoreCreatesWorkspaceTest() {
   assert.strictEqual(rosterMemberDoc.companyName, 'Fresh Retail')
   assert.strictEqual(rosterMemberDoc.phone, '+1 (555) 000-0000')
   assert.strictEqual(rosterMemberDoc.firstSignupEmail, 'fresh.owner@example.com')
+  assert.strictEqual(rosterMemberDoc.country, 'United States')
+  assert.strictEqual(rosterMemberDoc.town, 'Portland')
+  assert.strictEqual(rosterMemberDoc.signupRole, 'team-member')
 
   const resolveResult = await resolveStoreAccess.run({}, context)
   assert.strictEqual(resolveResult.ok, true, 'Expected resolveStoreAccess to succeed')
