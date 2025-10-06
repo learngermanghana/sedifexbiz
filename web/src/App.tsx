@@ -105,13 +105,8 @@ async function persistTeamMemberMetadata(
   }
 }
 
-async function cleanupFailedSignup(user: User) {
-  try {
-    await user.delete()
-  } catch (error) {
-    console.warn('[signup] Unable to delete rejected signup account', error)
-  }
-
+// We intentionally keep the auth account so administrators can investigate the failure later.
+async function cleanupFailedSignup(_user: User) {
   try {
     await auth.signOut()
   } catch (error) {

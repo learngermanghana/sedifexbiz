@@ -375,7 +375,7 @@ describe('App signup cleanup', () => {
     )
   })
 
-  it('cleans up the account when store access resolution fails', async () => {
+  it('signs the user out without deleting the account when store access resolution fails', async () => {
     const user = userEvent.setup()
     const { user: createdUser, deleteFn } = createTestUser()
 
@@ -425,8 +425,8 @@ describe('App signup cleanup', () => {
     )
     await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('store-001'))
 
-    await waitFor(() => expect(deleteFn).toHaveBeenCalled())
-    expect(mocks.auth.signOut).toHaveBeenCalled()
+    await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
+    expect(deleteFn).not.toHaveBeenCalled()
     expect(mocks.auth.currentUser).toBeNull()
 
     const seededWrites = firestore.setDocMock.mock.calls.filter(([ref]) => {
