@@ -1,3 +1,4 @@
+// web/src/firebase.ts
 import { initializeApp } from 'firebase/app'
 import { getAuth, RecaptchaVerifier } from 'firebase/auth'
 import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore'
@@ -13,10 +14,7 @@ type FirebaseEnvKey =
 
 function requireFirebaseEnv(key: FirebaseEnvKey): string {
   const value = import.meta.env[key]
-  if (typeof value === 'string' && value.trim() !== '') {
-    return value
-  }
-
+  if (typeof value === 'string' && value.trim() !== '') return value
   throw new Error(
     `[firebase] Missing required environment variable "${key}". ` +
       'Ensure the value is defined in your deployment configuration.'
@@ -36,15 +34,19 @@ export const auth = getAuth(app)
 
 const firestoreSettings = { ignoreUndefinedProperties: true }
 
-export const db = initializeFirestore(app, firestoreSettings)
+// ---- Key change: use the named database "roster" as the primary app DB ----
 export const rosterDb = initializeFirestore(app, firestoreSettings, 'roster')
+export const db = rosterDb
+// ---------------------------------------------------------------------------
 
 enableIndexedDbPersistence(db).catch(() => {
   /* multi-tab fallback handled */
 })
 
 export const storage = getStorage(app)
-export const functions = getFunctions(app)
+
+// If you have a region env, you can pass it; otherwise default project region is used.
+export const functions = getFunctions(app /*, import.meta.env.VITE_FB_FUNCTIONS_REGION */)
 
 export function setupRecaptcha(containerId = 'recaptcha-container') {
   return new RecaptchaVerifier(auth, containerId, { size: 'invisible' })
