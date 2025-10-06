@@ -295,22 +295,23 @@ describe('App signup cleanup', () => {
 
     const setDocCalls = firestore.setDocMock.mock.calls
 
-    const ownerCall = setDocCalls.find(([ref]) => ref === ownerDocRef)
-    expect(ownerCall).toBeDefined()
-    const [, ownerPayload, ownerOptions] = ownerCall!
-    expect(ownerPayload).toEqual(
-      expect.objectContaining({
-        storeId: 'workspace-store-id',
-        name: 'Morgan Owner',
-        companyName: 'Morgan Retail Co',
-        phone: '5551234567',
-        email: 'owner@example.com',
-        role: 'staff',
-        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
-    )
-    expect(ownerOptions).toEqual({ merge: true })
+    const ownerCalls = setDocCalls.filter(([ref]) => ref === ownerDocRef)
+    expect(ownerCalls).toHaveLength(2)
+    ownerCalls.forEach(([, ownerPayload, ownerOptions]) => {
+      expect(ownerPayload).toEqual(
+        expect.objectContaining({
+          storeId: 'workspace-store-id',
+          name: 'Morgan Owner',
+          companyName: 'Morgan Retail Co',
+          phone: '5551234567',
+          email: 'owner@example.com',
+          role: 'staff',
+          createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+          updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        }),
+      )
+      expect(ownerOptions).toEqual({ merge: true })
+    })
 
     const ownerStoreCall = setDocCalls.find(([ref]) => ref === ownerStoreDocRef)
     expect(ownerStoreCall).toBeDefined()

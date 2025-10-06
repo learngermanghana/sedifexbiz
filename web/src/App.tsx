@@ -82,23 +82,24 @@ async function persistTeamMemberMetadata(
   try {
     const ownerName = resolveOwnerName(user, metadata?.ownerName ?? null)
     const businessName = metadata?.businessName?.trim()
-    await setDoc(
-      doc(rosterDb, 'teamMembers', user.uid),
-      {
-        uid: user.uid,
-        role: resolution.role,
-        storeId: resolution.storeId,
-        name: ownerName,
-        phone,
-        email,
-        firstSignupEmail: email,
-        invitedBy: user.uid,
-        companyName: businessName ?? null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    )
+    const basePayload = {
+      uid: user.uid,
+      role: resolution.role,
+      storeId: resolution.storeId,
+      name: ownerName,
+      phone,
+      email,
+      firstSignupEmail: email,
+      invitedBy: user.uid,
+      companyName: businessName ?? null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }
+
+    await Promise.all([
+      setDoc(doc(rosterDb, 'teamMembers', user.uid), basePayload, { merge: true }),
+      setDoc(doc(db, 'teamMembers', user.uid), basePayload, { merge: true }),
+    ])
   } catch (error) {
     console.warn('[signup] Failed to persist team member metadata', error)
   }
