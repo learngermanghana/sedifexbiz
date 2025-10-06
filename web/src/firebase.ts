@@ -34,10 +34,11 @@ export const auth = getAuth(app)
 
 const firestoreSettings = { ignoreUndefinedProperties: true }
 
-// ---- Key change: use the named database "roster" as the primary app DB ----
+// Primary app data lives in the default Firestore database.
+export const db = initializeFirestore(app, firestoreSettings)
+
+// The roster database stores team-member metadata used by access checks.
 export const rosterDb = initializeFirestore(app, firestoreSettings, 'roster')
-export const db = rosterDb
-// ---------------------------------------------------------------------------
 
 enableIndexedDbPersistence(db).catch(() => {
   /* multi-tab fallback handled */
