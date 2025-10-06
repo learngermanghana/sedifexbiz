@@ -43,6 +43,7 @@ export const auth = getAuth(app)
 
 const firestoreSettings = { ignoreUndefinedProperties: true }
 
+
 const primaryDatabaseId = getOptionalFirebaseEnv('VITE_FB_DATABASE_ID')
 const rosterDatabaseId =
   getOptionalFirebaseEnv('VITE_FB_ROSTER_DATABASE_ID') ?? 'roster'
@@ -63,6 +64,7 @@ const rosterInstanceMatchesPrimary = (() => {
 export const rosterDb = rosterInstanceMatchesPrimary
   ? db
   : initializeFirestore(app, firestoreSettings, rosterDatabaseId)
+
 
 enableIndexedDbPersistence(db).catch(() => {
   /* multi-tab fallback handled */
