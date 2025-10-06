@@ -286,6 +286,7 @@ describe('App signup cleanup', () => {
     const seededCustomerDocKey = 'customers/seeded-customer'
 
     const ownerDocRef = firestore.docRefByPath.get(ownerDocKey)
+    const ownerEmailDocKey = `teamMembers/${createdUser.email!.toLowerCase()}`
     const ownerStoreDocRef = firestore.docRefByPath.get(ownerStoreDocKey)
     const customerDocRef = firestore.docRefByPath.get(customerDocKey)
     const seededTeamMemberDocRef = firestore.docRefByPath.get(seededTeamMemberDocKey)
@@ -293,7 +294,10 @@ describe('App signup cleanup', () => {
     const seededProductDocRef = firestore.docRefByPath.get(seededProductDocKey)
     const seededCustomerDocRef = firestore.docRefByPath.get(seededCustomerDocKey)
 
+    const ownerEmailDocRef = firestore.docRefByPath.get(ownerEmailDocKey)
+
     expect(ownerDocRef).toBeDefined()
+    expect(ownerEmailDocRef).toBeDefined()
     expect(ownerStoreDocRef).toBeDefined()
     expect(customerDocRef).toBeDefined()
     expect(seededTeamMemberDocRef).toBeDefined()
@@ -322,6 +326,27 @@ describe('App signup cleanup', () => {
         }),
       )
       expect(ownerOptions).toEqual({ merge: true })
+    })
+
+    const ownerEmailCalls = setDocCalls.filter(([ref]) => ref === ownerEmailDocRef)
+    expect(ownerEmailCalls).toHaveLength(1)
+    ownerEmailCalls.forEach(([, ownerEmailPayload, ownerEmailOptions]) => {
+      expect(ownerEmailPayload).toEqual(
+        expect.objectContaining({
+          storeId: 'workspace-store-id',
+          name: 'Morgan Owner',
+          companyName: 'Morgan Retail Co',
+          phone: '5551234567',
+          email: 'owner@example.com',
+          role: 'staff',
+          country: 'United States',
+          town: 'Seattle',
+          signupRole: 'team-member',
+          createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+          updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
+        }),
+      )
+      expect(ownerEmailOptions).toEqual({ merge: true })
     })
 
     const ownerStoreCall = setDocCalls.find(([ref]) => ref === ownerStoreDocRef)
