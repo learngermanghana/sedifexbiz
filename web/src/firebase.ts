@@ -11,6 +11,8 @@ type FirebaseEnvKey =
   | 'VITE_FB_PROJECT_ID'
   | 'VITE_FB_STORAGE_BUCKET'
   | 'VITE_FB_APP_ID'
+  | 'VITE_FB_DATABASE_ID'
+  | 'VITE_FB_ROSTER_DATABASE_ID'
 
 function requireFirebaseEnv(key: FirebaseEnvKey): string {
   const value = import.meta.env[key]
@@ -19,6 +21,13 @@ function requireFirebaseEnv(key: FirebaseEnvKey): string {
     `[firebase] Missing required environment variable "${key}". ` +
       'Ensure the value is defined in your deployment configuration.'
   )
+}
+
+function getOptionalFirebaseEnv(key: FirebaseEnvKey): string | undefined {
+  const value = import.meta.env[key]
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed === '' ? undefined : trimmed
 }
 
 const firebaseConfig = {
@@ -34,10 +43,26 @@ export const auth = getAuth(app)
 
 const firestoreSettings = { ignoreUndefinedProperties: true }
 
-// ---- Key change: use the named database "roster" as the primary app DB ----
-export const rosterDb = initializeFirestore(app, firestoreSettings, 'roster')
-export const db = rosterDb
-// ---------------------------------------------------------------------------
+const primaryDatabaseId = getOptionalFirebaseEnv('VITE_FB_DATABASE_ID')
+const rosterDatabaseId =
+  getOptionalFirebaseEnv('VITE_FB_ROSTER_DATABASE_ID') ?? 'roster'
+
+// Primary app data lives in the configured (or default) Firestore database.
+export const db = primaryDatabaseId
+  ? initializeFirestore(app, firestoreSettings, primaryDatabaseId)
+  : initializeFirestore(app, firestoreSettings)
+
+// The roster database stores team-member metadata used by access checks.
+const rosterInstanceMatchesPrimary = (() => {
+  if (!primaryDatabaseId) {
+    return rosterDatabaseId === '(default)'
+  }
+  return rosterDatabaseId === primaryDatabaseId
+})()
+
+export const rosterDb = rosterInstanceMatchesPrimary
+  ? db
+  : initializeFirestore(app, firestoreSettings, rosterDatabaseId)
 
 enableIndexedDbPersistence(db).catch(() => {
   /* multi-tab fallback handled */
