@@ -31,8 +31,54 @@ import {
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 
-type AuthMode = 'login' | 'signup'
+/* -------------------------------------------------------------------------- */
+/*                              Paystack helpers                              */
+/* -------------------------------------------------------------------------- */
 
+const PAYSTACK_PK = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string
+
+declare global {
+  interface Window {
+    PaystackPop: any
+  }
+}
+
+function toMinor(ghs: number) {
+  // Paystack expects amounts in minor units (pesewas for GHS)
+  return Math.round(ghs * 100)
+}
+
+async function payWithPaystack(
+  amountGhs: number,
+  buyer?: { email?: string; phone?: string; name?: string },
+) {
+  return new Promise<{ ok: boolean; reference: string }>((resolve) => {
+    if (!window.PaystackPop) {
+      console.warn(
+        "Paystack script not loaded. Ensure <script src='https://js.paystack.co/v1/inline.js'></script> is in index.html",
+      )
+      resolve({ ok: false, reference: '' })
+      return
+    }
+
+    const handler = window.PaystackPop.setup({
+      key: PAYSTACK_PK,
+      email: buyer?.email || 'testbuyer@example.com',
+      amount: toMinor(amountGhs),
+      currency: 'GHS',
+      ref: `SFX_${Date.now()}`,
+      metadata: { phone: buyer?.phone, name: buyer?.name },
+      callback: (resp: any) => resolve({ ok: true, reference: resp.reference }),
+      onClose: () => resolve({ ok: false, reference: '' }),
+    })
+
+    handler.openIframe()
+  })
+}
+
+/* -------------------------------------------------------------------------- */
+
+type AuthMode = 'login' | 'signup'
 type StatusTone = 'idle' | 'loading' | 'success' | 'error'
 
 interface StatusState {
@@ -49,6 +95,7 @@ function isQueueRequestType(value: unknown): value is QueueRequestType {
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
+
 function sanitizePhone(value: string): string {
   return value.replace(/\D+/g, '')
 }
@@ -61,14 +108,11 @@ function normalizeSignupRole(value: string | SignupRoleOption): SignupRoleOption
 
 function resolveOwnerName(user: User, explicitName?: string | null): string {
   const trimmedExplicitName = explicitName?.trim()
-  if (trimmedExplicitName) {
-    return trimmedExplicitName
-  }
+  if (trimmedExplicitName) return trimmedExplicitName
 
   const displayName = user.displayName?.trim()
-  if (displayName && displayName.length > 0) {
-    return displayName
-  }
+  if (displayName && displayName.length > 0) return displayName
+
   return OWNER_NAME_FALLBACK
 }
 
@@ -93,6 +137,7 @@ async function persistTeamMemberMetadata(
     const country = metadata?.country?.trim() ?? null
     const town = metadata?.town?.trim() ?? null
     const signupRole = metadata?.signupRole ? normalizeSignupRole(metadata.signupRole) : null
+
     const basePayload = {
       uid: user.uid,
       role: resolution.role,
@@ -143,9 +188,7 @@ function normalizeSeededDocumentData(data: Record<string, unknown>): Record<stri
   const result: Record<string, unknown> = {}
 
   Object.entries(data).forEach(([key, value]) => {
-    if (value === undefined) {
-      return
-    }
+    if (value === undefined) return
 
     if (value === null) {
       result[key] = null
@@ -220,15 +263,9 @@ function evaluatePasswordStrength(password: string): PasswordStrength {
 }
 
 function getLoginValidationError(email: string, password: string): string | null {
-  if (!email) {
-    return 'Enter your email.'
-  }
-  if (!EMAIL_PATTERN.test(email)) {
-    return 'Enter a valid email address.'
-  }
-  if (!password) {
-    return 'Enter your password.'
-  }
+  if (!email) return 'Enter your email.'
+  if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
+  if (!password) return 'Enter your password.'
   return null
 }
 
@@ -256,18 +293,14 @@ function isQueueFailedMessage(value: unknown): value is QueueFailedMessage {
 }
 
 function getQueueRequestLabel(requestType: unknown): string {
-  if (!isQueueRequestType(requestType)) {
-    return 'request'
-  }
+  if (!isQueueRequestType(requestType)) return 'request'
   return requestType === 'receipt' ? 'stock receipt' : 'sale'
 }
 
 function normalizeQueueError(value: unknown): string | null {
   if (typeof value === 'string') {
     const trimmed = value.trim()
-    if (trimmed.length > 0) {
-      return trimmed
-    }
+    if (trimmed.length > 0) return trimmed
   }
   return null
 }
@@ -299,6 +332,7 @@ export default function App() {
   const normalizedBusinessName = businessName.trim()
   const normalizedCountry = country.trim()
   const normalizedTown = town.trim()
+
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
   const passwordChecklist = [
     { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: passwordStrength.isLongEnough },
@@ -307,6 +341,7 @@ export default function App() {
     { id: 'number', label: 'Includes a number', passed: passwordStrength.hasNumber },
     { id: 'symbol', label: 'Includes a symbol', passed: passwordStrength.hasSymbol },
   ] as const
+
   const doesPasswordMeetAllChecks = passwordChecklist.every(item => item.passed)
   const isSignupFormValid =
     normalizedEmail.length > 0 &&
@@ -316,8 +351,8 @@ export default function App() {
     normalizedPhone.length > 0 &&
     normalizedCountry.length > 0 &&
     normalizedTown.length > 0
-  const isLoginFormValid =
-    EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
+
+  const isLoginFormValid = EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
 
   useEffect(() => {
@@ -334,13 +369,8 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!isAuthReady || user) {
-      return
-    }
-
-    if (status.tone === 'loading') {
-      setStatus({ tone: 'idle', message: '' })
-    }
+    if (!isAuthReady || user) return
+    if (status.tone === 'loading') setStatus({ tone: 'idle', message: '' })
   }, [isAuthReady, status.tone, user])
 
   useEffect(() => {
@@ -556,10 +586,9 @@ export default function App() {
 
       setStatus({
         tone: 'success',
-        message:
-          mode === 'login'
-            ? 'Welcome back! Redirecting…'
-            : 'Account created! You can now sign in.',
+        message: mode === 'login'
+          ? 'Welcome back! Redirecting…'
+          : 'Account created! You can now sign in.',
       })
       setPassword('')
       setConfirmPassword('')
@@ -613,27 +642,32 @@ export default function App() {
       {
         path: '/products',
         name: 'Products',
-        description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.',
+        description:
+          'Spot low inventory, sync counts, and keep every SKU accurate across locations.',
       },
       {
         path: '/sell',
         name: 'Sell',
-        description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.',
+        description:
+          'Ring up sales with guided workflows that keep the floor moving and customers happy.',
       },
       {
         path: '/receive',
         name: 'Receive',
-        description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.',
+        description:
+          'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.',
       },
       {
         path: '/customers',
         name: 'Customers',
-        description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.',
+        description:
+          'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.',
       },
       {
         path: '/close-day',
         name: 'Close Day',
-        description: 'Tie out cash, settle registers, and share end-of-day reports with finance in one view.',
+        description:
+          'Tie out cash, settle registers, and share end-of-day reports with finance in one view.',
       },
     ] as const
 
@@ -651,10 +685,45 @@ export default function App() {
               </div>
             </div>
 
+            {/* --- TEMP: Test Paystack flow (remove later) --- */}
+            <div style={{ marginTop: 16 }}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={async () => {
+                  const r = await payWithPaystack(12.5, {
+                    email: normalizedEmail || 'testbuyer@example.com',
+                    phone: normalizedPhone,
+                    name: normalizedFullName || 'Test Buyer',
+                  })
+                  if (r.ok) {
+                    publish({
+                      tone: 'success',
+                      message: `Paystack test payment complete. Ref: ${r.reference}`,
+                    })
+                    // Later: call commitSale(...) with
+                    // { provider: 'paystack', method: 'card', providerRef: r.reference, status: 'pending' }
+                  } else {
+                    publish({ tone: 'error', message: 'Payment cancelled or failed' })
+                  }
+                }}
+              >
+                Test Paystack (GHS 12.50)
+              </button>
+              <p className="form__hint">Uses Paystack Test Mode. No real charge.</p>
+            </div>
+            {/* --- /TEMP --- */}
+
             <div className="app__pill-group" role="list">
-              <span className="app__pill" role="listitem">Realtime visibility</span>
-              <span className="app__pill" role="listitem">Multi-location ready</span>
-              <span className="app__pill" role="listitem">Floor-friendly UI</span>
+              <span className="app__pill" role="listitem">
+                Realtime visibility
+              </span>
+              <span className="app__pill" role="listitem">
+                Multi-location ready
+              </span>
+              <span className="app__pill" role="listitem">
+                Floor-friendly UI
+              </span>
             </div>
 
             <p className="form__hint">
@@ -703,6 +772,7 @@ export default function App() {
                   aria-invalid={email.length > 0 && !EMAIL_PATTERN.test(normalizedEmail)}
                 />
               </div>
+
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="full-name">Full name</label>
@@ -724,6 +794,7 @@ export default function App() {
                   </p>
                 </div>
               )}
+
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="business-name">Business name</label>
@@ -745,6 +816,7 @@ export default function App() {
                   </p>
                 </div>
               )}
+
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="phone">Phone</label>
@@ -778,6 +850,7 @@ export default function App() {
                   </p>
                 </div>
               )}
+
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="country">Country</label>
@@ -788,7 +861,7 @@ export default function App() {
                     onBlur={() => setCountry(current => current.trim())}
                     type="text"
                     autoComplete="country-name"
-                    placeholder="United States"
+                    placeholder="Ghana"
                     required
                     disabled={isLoading}
                     aria-invalid={country.length > 0 && normalizedCountry.length === 0}
@@ -799,6 +872,7 @@ export default function App() {
                   </p>
                 </div>
               )}
+
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="town">Town or city</label>
@@ -809,7 +883,7 @@ export default function App() {
                     onBlur={() => setTown(current => current.trim())}
                     type="text"
                     autoComplete="address-level2"
-                    placeholder="Seattle"
+                    placeholder="Accra"
                     required
                     disabled={isLoading}
                     aria-invalid={town.length > 0 && normalizedTown.length === 0}
@@ -820,6 +894,7 @@ export default function App() {
                   </p>
                 </div>
               )}
+
               {mode === 'signup' && (
                 <fieldset className="form__field form__field--choices">
                   <legend>Are you the owner or joining a team?</legend>
@@ -850,6 +925,7 @@ export default function App() {
                   <p className="form__hint">We’ll customize onboarding tips based on your role.</p>
                 </fieldset>
               )}
+
               <div className="form__field">
                 <label htmlFor="password">Password</label>
                 <input
@@ -862,11 +938,7 @@ export default function App() {
                   placeholder="Use a strong password"
                   required
                   disabled={isLoading}
-                  aria-invalid={
-                    mode === 'signup' &&
-                    normalizedPassword.length > 0 &&
-                    !doesPasswordMeetAllChecks
-                  }
+                  aria-invalid={mode === 'signup' && normalizedPassword.length > 0 && !doesPasswordMeetAllChecks}
                   aria-describedby={mode === 'signup' ? 'password-guidelines' : undefined}
                 />
                 {mode === 'signup' && (
@@ -882,6 +954,7 @@ export default function App() {
                   </ul>
                 )}
               </div>
+
               {mode === 'signup' && (
                 <div className="form__field">
                   <label htmlFor="confirm-password">Confirm password</label>
@@ -895,10 +968,7 @@ export default function App() {
                     placeholder="Re-enter your password"
                     required
                     disabled={isLoading}
-                    aria-invalid={
-                      normalizedConfirmPassword.length > 0 &&
-                      normalizedPassword !== normalizedConfirmPassword
-                    }
+                    aria-invalid={normalizedConfirmPassword.length > 0 && normalizedPassword !== normalizedConfirmPassword}
                     aria-describedby="confirm-password-hint"
                   />
                   <p className="form__hint" id="confirm-password-hint">
@@ -906,6 +976,7 @@ export default function App() {
                   </p>
                 </div>
               )}
+
               <button className="primary-button" type="submit" disabled={isSubmitDisabled}>
                 {isLoading
                   ? mode === 'login'
@@ -1069,8 +1140,7 @@ function getErrorMessage(error: unknown): string {
       case 'auth/weak-password':
         return 'Please choose a stronger password. It must be at least 8 characters and include uppercase, lowercase, number, and symbol.'
       case 'functions/permission-denied': {
-        const callableMessage =
-          extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
+        const callableMessage = extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
         return callableMessage
       }
       default:
