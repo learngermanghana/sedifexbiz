@@ -1,17 +1,20 @@
 {
   "compilerOptions": {
-    "lib": [
-      "es2020"
-    ],
-    "module": "commonjs",
-    "noImplicitReturns": true,
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Node",
+    "lib": ["ES2022"],
+    "rootDir": "src",
     "outDir": "lib",
-    "sourceMap": true,
+
     "strict": true,
-    "target": "es2020"
+    "noImplicitReturns": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+
+    "sourceMap": false
   },
   "compileOnSave": true,
-  "include": [
-    "src"
-  ]
+  "include": ["src"]
 }
