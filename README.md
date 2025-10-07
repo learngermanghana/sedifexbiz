@@ -94,3 +94,39 @@ Following these steps should result in new documents at `roster/teamMembers/<uid
 ---
 
 Happy shipping! — 2025-09-23
+
+## Integrating Paystack payments
+
+Follow the flow below to connect Paystack as the card/mobile processor for Sedifex. The checklist assumes you already followed the Firebase setup steps above and that your stores are created by the `onAuthCreate` trigger.
+
+1. **Create Paystack credentials**
+   - Sign in to your Paystack dashboard and create a **Live** and **Test** secret key pair.
+   - Store the keys in your deployment environment (e.g., Vercel, Firebase Functions config) rather than hard-coding them in the repo. The frontend only needs the public key; keep the secret key scoped to Cloud Functions.
+
+2. **Publish provider metadata to Firestore**
+   - Open the `stores/<storeId>` document (or update your seeding script) and set `paymentProvider` to `paystack`.
+   - Keep billing status fields (`paymentStatus`, `amountPaid`, contract dates) up to date so the `resolveStoreAccess` callable can block suspended workspaces while still returning provider info for paid or trial accounts.
+
+3. **Expose the Paystack public key to the PWA**
+   - Add `VITE_PAYSTACK_PUBLIC_KEY=<pk_test_or_live_value>` to `web/.env.local` for local development and to your hosting provider for production.
+   - Update any environment loader (for example `web/src/config/env.ts`) to read the new variable and export it alongside the Firebase config.
+
+4. **Invoke Paystack during checkout**
+   - Inside the Sell screen, intercept non-cash tenders before calling `commitSale`. Load Paystack’s inline widget or SDK with the amount, customer email/phone, and receive the transaction reference.
+   - On success, enrich the existing `payment` payload with the Paystack response: e.g. `{ method: 'card', amountPaid, changeDue, provider: 'paystack', providerRef: response.reference, status: response.status }`.
+   - Persist the payload as-is—`commitSale` already stores the `payment` object verbatim, so downstream reporting can access the Paystack reference without schema changes.
+
+5. **Handle offline and retries**
+   - Reuse the existing offline queue: if a sale is queued because the network is down, add the Paystack reference and mark the local payment status so the cashier can reconcile it when connectivity returns.
+   - Create a reconciliation job (CLI script or scheduled Cloud Function) that pulls unsettled Paystack transactions and compares them to Firestore `sales` records, updating statuses or flagging discrepancies for review.
+
+6. **Secure credentials and webhooks**
+   - Store the Paystack secret key via `firebase functions:config:set paystack.secret="sk_live_..."` (or your preferred secret manager) and read it in the Cloud Function that confirms transactions.
+   - If you enable Paystack webhooks, deploy a HTTPS Cloud Function that validates the signature with the secret key and updates the matching `sales/<id>` document.
+   - Update `firestore.rules` and callable permissions so only privileged roles can change payment-related fields.
+
+7. **Test the full flow**
+   - Run end-to-end tests against Paystack’s **Test** mode to validate successful, declined, and timed-out transactions.
+   - Confirm that `resolveStoreAccess` still returns billing metadata for new signups and that the UI gracefully handles both paid and trial workspaces with Paystack enabled.
+
+Documenting these steps keeps the integration consistent across environments and makes it easy to onboard additional stores with Paystack support.
