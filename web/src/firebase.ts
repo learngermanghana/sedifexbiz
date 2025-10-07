@@ -1,7 +1,11 @@
 // web/src/firebase.ts
 import { initializeApp } from 'firebase/app'
 import { getAuth, RecaptchaVerifier } from 'firebase/auth'
-import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore'
+import {
+  getFirestore,
+  enableIndexedDbPersistence,
+  initializeFirestore,
+} from 'firebase/firestore'
 import { getFunctions } from 'firebase/functions'
 import { getStorage } from 'firebase/storage'
 
@@ -12,43 +16,44 @@ type FirebaseEnvKey =
   | 'VITE_FB_STORAGE_BUCKET'
   | 'VITE_FB_APP_ID'
 
-function requireFirebaseEnv(key: FirebaseEnvKey): string {
-  const value = import.meta.env[key]
-  if (typeof value === 'string' && value.trim() !== '') return value
+function requireEnv(key: FirebaseEnvKey): string {
+  const v = import.meta.env[key]
+  if (typeof v === 'string' && v.trim()) return v
   throw new Error(
-    `[firebase] Missing required environment variable "${key}". ` +
-      'Ensure the value is defined in your deployment configuration.'
+    `[firebase] Missing ${key}. Add it to your env (local and Vercel).`
   )
 }
 
 const firebaseConfig = {
-  apiKey: requireFirebaseEnv('VITE_FB_API_KEY'),
-  authDomain: requireFirebaseEnv('VITE_FB_AUTH_DOMAIN'),
-  projectId: requireFirebaseEnv('VITE_FB_PROJECT_ID'),
-  storageBucket: requireFirebaseEnv('VITE_FB_STORAGE_BUCKET'),
-  appId: requireFirebaseEnv('VITE_FB_APP_ID'),
+  apiKey: requireEnv('VITE_FB_API_KEY'),
+  authDomain: requireEnv('VITE_FB_AUTH_DOMAIN'),
+  projectId: requireEnv('VITE_FB_PROJECT_ID'),
+  storageBucket: requireEnv('VITE_FB_STORAGE_BUCKET'),
+  appId: requireEnv('VITE_FB_APP_ID'),
 }
 
+// --- Core app instances ---
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-
-const firestoreSettings = { ignoreUndefinedProperties: true }
-
-// Primary app data lives in the default Firestore database.
-export const db = initializeFirestore(app, firestoreSettings)
-
-// The roster database stores team-member metadata used by access checks.
-export const rosterDb = initializeFirestore(app, firestoreSettings, 'roster')
-
-enableIndexedDbPersistence(db).catch(() => {
-  /* multi-tab fallback handled */
-})
-
 export const storage = getStorage(app)
-
-// If you have a region env, you can pass it; otherwise default project region is used.
 export const functions = getFunctions(app /*, import.meta.env.VITE_FB_FUNCTIONS_REGION */)
 
+// --- Firestore (default + secondary "roster") ---
+// If you want ignoreUndefinedProperties, set it once with initializeFirestore
+initializeFirestore(app, { ignoreUndefinedProperties: true })
+
+// Default database (primary data)
+export const db = getFirestore(app)
+
+// Secondary database named exactly "roster"
+export const rosterDb = getFirestore(app, 'roster')
+
+// Optional: enable offline persistence (safe to ignore errors on multi-tab)
+enableIndexedDbPersistence(db).catch(() => {})
+// You can also enable for roster if desired:
+enableIndexedDbPersistence(rosterDb).catch(() => {})
+
+// --- Helpers ---
 export function setupRecaptcha(containerId = 'recaptcha-container') {
   return new RecaptchaVerifier(auth, containerId, { size: 'invisible' })
 }
