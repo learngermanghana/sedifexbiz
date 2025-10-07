@@ -130,18 +130,14 @@ async function persistTeamMemberMetadata(
   phone: string,
   resolution: ResolveStoreAccessResult,
   metadata?: OwnerProfileMetadata,
-  onError?: (msg: string) => void,   // ⬅️ add this
+  onError?: (msg: string) => void,
 ) {
   try {
-    // ... existing write logic ...
-    await Promise.all(writes)
-  } catch (error) {
-    const msg = String((error as any)?.message || error)
-    console.warn('[signup] Failed to persist team member metadata', error)
-    onError?.(msg)   // ⬅️ bubble up to UI
-  }
-}
-
+    const ownerName = resolveOwnerName(user, metadata?.ownerName)
+    const businessName = metadata?.businessName?.trim() || null
+    const country = metadata?.country?.trim() || null
+    const town = metadata?.town?.trim() || null
+    const signupRole = metadata?.signupRole ?? null
 
     const basePayload = {
       uid: user.uid,
@@ -152,7 +148,7 @@ async function persistTeamMemberMetadata(
       email,
       firstSignupEmail: email,
       invitedBy: user.uid,
-      companyName: businessName ?? null,
+      companyName: businessName,
       country,
       town,
       signupRole,
@@ -175,6 +171,8 @@ async function persistTeamMemberMetadata(
     await Promise.all(writes)
   } catch (error) {
     console.warn('[signup] Failed to persist team member metadata', error)
+    onError?.(getErrorMessage(error))
+    throw error
   }
 }
 
@@ -531,19 +529,19 @@ export default function App() {
           role: resolution.role,
         })
 
-        await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution, {
-         nextUser,
-         sanitizedEmail,
-         sanitizedPhone,
-         resolution,
-         {
-          ownerName: sanitizedFullName,
-          businessName: sanitizedBusinessName,
-          country: sanitizedCountry,
-          town: sanitizedTown,
-          signupRole: sanitizedSignupRole,
-         },
-         (msg) => publish({ tone: 'error', message: msg })
+        await persistTeamMemberMetadata(
+          nextUser,
+          sanitizedEmail,
+          sanitizedPhone,
+          resolution,
+          {
+            ownerName: sanitizedFullName || null,
+            businessName: sanitizedBusinessName || null,
+            country: sanitizedCountry || null,
+            town: sanitizedTown || null,
+            signupRole: sanitizedSignupRole,
+          },
+          msg => publish({ tone: 'error', message: msg }),
         )
 
         try {
