@@ -1,6 +1,6 @@
 import { Auth, User, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence, setPersistence } from 'firebase/auth'
 import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
-import { db } from '../firebase'
+import { db, rosterDb } from '../firebase'
 
 const SESSION_COOKIE = 'sedifex_session'
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 90 // 90 days
@@ -60,6 +60,11 @@ const DEFAULT_INVENTORY_SUMMARY: StoreInventorySummary = {
   incomingShipments: 0,
 }
 
+type TeamMemberMetadata = {
+  storeId?: string
+  role?: 'owner' | 'staff'
+}
+
 export async function ensureStoreDocument(user: User) {
   try {
     await setDoc(
@@ -75,6 +80,29 @@ export async function ensureStoreDocument(user: User) {
     )
   } catch (error) {
     console.warn('[store] Failed to ensure store metadata for user', user.uid, error)
+  }
+}
+
+export async function ensureTeamMemberDocument(user: User, metadata?: TeamMemberMetadata) {
+  const storeId = metadata?.storeId ?? user.uid
+  const role = metadata?.role ?? 'owner'
+
+  try {
+    await setDoc(
+      doc(rosterDb, 'teamMembers', user.uid),
+      {
+        uid: user.uid,
+        storeId,
+        role,
+        email: user.email ?? null,
+        phone: user.phoneNumber ?? null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    )
+  } catch (error) {
+    console.warn('[team] Failed to ensure team member metadata for user', user.uid, error)
   }
 }
 

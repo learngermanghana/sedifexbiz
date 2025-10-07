@@ -11,6 +11,8 @@ const mockAuth = vi.hoisted(() => ({} as unknown as Record<string, unknown>))
 const mockCreateUserWithEmailAndPassword = vi.fn()
 const mockSignInWithEmailAndPassword = vi.fn()
 const mockPersistSession = vi.fn(async (..._args: unknown[]) => {})
+const mockEnsureStoreDocument = vi.fn(async (..._args: unknown[]) => {})
+const mockEnsureTeamMemberDocument = vi.fn(async (..._args: unknown[]) => {})
 const mockSetOnboardingStatus = vi.fn()
 const mockPublish = vi.fn<(options: MockToastOptions) => void>()
 const mockNavigate = vi.fn()
@@ -29,6 +31,8 @@ vi.mock('../firebase', () => ({
 
 vi.mock('../controllers/sessionController', () => ({
   persistSession: (...args: unknown[]) => mockPersistSession(...args),
+  ensureStoreDocument: (...args: unknown[]) => mockEnsureStoreDocument(...args),
+  ensureTeamMemberDocument: (...args: unknown[]) => mockEnsureTeamMemberDocument(...args),
 }))
 
 vi.mock('../utils/onboarding', () => ({
@@ -57,6 +61,8 @@ describe('AuthScreen', () => {
     mockCreateUserWithEmailAndPassword.mockReset()
     mockSignInWithEmailAndPassword.mockReset()
     mockPersistSession.mockClear()
+    mockEnsureStoreDocument.mockClear()
+    mockEnsureTeamMemberDocument.mockClear()
     mockSetOnboardingStatus.mockReset()
     mockPublish.mockReset()
     mockNavigate.mockReset()
@@ -91,9 +97,11 @@ describe('AuthScreen', () => {
       )
     })
 
+    expect(mockEnsureStoreDocument).toHaveBeenCalledWith(mockUser)
     expect(mockPersistSession).toHaveBeenCalledWith(mockUser)
     expect(mockPublish).toHaveBeenCalledWith({ message: 'Welcome back!', tone: 'success' })
     expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true })
+    expect(mockEnsureTeamMemberDocument).not.toHaveBeenCalled()
   })
 
   it('creates an account and triggers onboarding helpers', async () => {
@@ -125,7 +133,15 @@ describe('AuthScreen', () => {
       )
     })
 
-    expect(mockPersistSession).toHaveBeenCalledWith(mockUser)
+    expect(mockEnsureStoreDocument).toHaveBeenCalledWith(mockUser)
+    expect(mockEnsureTeamMemberDocument).toHaveBeenCalledWith(mockUser, {
+      storeId: 'new-user',
+      role: 'owner',
+    })
+    expect(mockPersistSession).toHaveBeenCalledWith(mockUser, {
+      storeId: 'new-user',
+      role: 'owner',
+    })
     expect(mockSetOnboardingStatus).toHaveBeenCalledWith('new-user', 'pending')
     expect(mockAfterSignupBootstrap).toHaveBeenCalled()
 

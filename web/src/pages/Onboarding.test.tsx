@@ -18,11 +18,31 @@ vi.mock('../utils/onboarding', () => ({
     mockSetOnboardingStatus(...args),
 }))
 
+const mockDoc = vi.fn()
+const mockGetDoc = vi.fn()
+
+vi.mock('../firebase', () => ({
+  db: { __name: 'defaultDb' },
+  rosterDb: { __name: 'rosterDb' },
+}))
+
+vi.mock('firebase/firestore', () => ({
+  doc: (...args: Parameters<typeof mockDoc>) => mockDoc(...args),
+  getDoc: (...args: Parameters<typeof mockGetDoc>) => mockGetDoc(...args),
+  Timestamp: class {
+    toDate() {
+      return new Date('2024-01-01T00:00:00.000Z')
+    }
+  },
+}))
+
 describe('Onboarding page', () => {
   beforeEach(() => {
     mockUseAuthUser.mockReset()
     mockGetOnboardingStatus.mockReset()
     mockSetOnboardingStatus.mockReset()
+    mockDoc.mockReset()
+    mockGetDoc.mockReset()
 
     mockUseAuthUser.mockReturnValue({
       uid: 'user-123',
@@ -30,6 +50,17 @@ describe('Onboarding page', () => {
     })
 
     mockGetOnboardingStatus.mockReturnValue('pending')
+    mockDoc.mockImplementation((_db, collection, id) => ({ collection, id }))
+    mockGetDoc.mockResolvedValue({
+      exists: () => true,
+      id: 'user-123',
+      data: () => ({
+        uid: 'user-123',
+        email: 'owner@example.com',
+        storeId: 'store-123',
+        role: 'owner',
+      }),
+    })
   })
 
   it('renders onboarding content when workspace access is ready', () => {
@@ -43,5 +74,6 @@ describe('Onboarding page', () => {
     expect(screen.getByRole('heading', { name: /confirm your owner account/i })).toBeInTheDocument()
     expect(screen.getByText(/need to update access later/i)).toBeInTheDocument()
     expect(screen.getByText(/let's get your workspace ready/i)).toBeInTheDocument()
+    expect(screen.getByText(/review your workspace details/i)).toBeInTheDocument()
   })
 })
