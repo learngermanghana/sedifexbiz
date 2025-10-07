@@ -7,10 +7,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#4338CA" />
     <title>Sedifex — Inventory & POS</title>
+
+    <!-- Paystack Inline (needed for card/mobile checkout) -->
+    <script src="https://js.paystack.co/v1/inline.js"></script>
   </head>
   <body>
     <div id="root"></div>
     <div id="recaptcha-container"></div>
+
+    <!-- Your app entry -->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
