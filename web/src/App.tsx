@@ -130,13 +130,18 @@ async function persistTeamMemberMetadata(
   phone: string,
   resolution: ResolveStoreAccessResult,
   metadata?: OwnerProfileMetadata,
+  onError?: (msg: string) => void,   // ⬅️ add this
 ) {
   try {
-    const ownerName = resolveOwnerName(user, metadata?.ownerName ?? null)
-    const businessName = metadata?.businessName?.trim()
-    const country = metadata?.country?.trim() ?? null
-    const town = metadata?.town?.trim() ?? null
-    const signupRole = metadata?.signupRole ? normalizeSignupRole(metadata.signupRole) : null
+    // ... existing write logic ...
+    await Promise.all(writes)
+  } catch (error) {
+    const msg = String((error as any)?.message || error)
+    console.warn('[signup] Failed to persist team member metadata', error)
+    onError?.(msg)   // ⬅️ bubble up to UI
+  }
+}
+
 
     const basePayload = {
       uid: user.uid,
@@ -527,12 +532,19 @@ export default function App() {
         })
 
         await persistTeamMemberMetadata(nextUser, sanitizedEmail, sanitizedPhone, resolution, {
+         nextUser,
+         sanitizedEmail,
+         sanitizedPhone,
+         resolution,
+         {
           ownerName: sanitizedFullName,
           businessName: sanitizedBusinessName,
           country: sanitizedCountry,
           town: sanitizedTown,
           signupRole: sanitizedSignupRole,
-        })
+         },
+         (msg) => publish({ tone: 'error', message: msg })
+        )
 
         try {
           await persistStoreSeedData(resolution)
