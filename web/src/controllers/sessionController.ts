@@ -1,10 +1,21 @@
-import { Auth, User, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence, setPersistence } from 'firebase/auth'
+// web/src/controllers/sessionController.ts
+import {
+  Auth,
+  User,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  inMemoryPersistence,
+  setPersistence,
+} from 'firebase/auth'
 import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { db, rosterDb } from '../firebase'
 
 const SESSION_COOKIE = 'sedifex_session'
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 90 // 90 days
 
+/**
+ * Prefer durable auth; gracefully degrade if the browser disallows it.
+ */
 export async function configureAuthPersistence(auth: Auth) {
   try {
     await setPersistence(auth, browserLocalPersistence)
@@ -26,6 +37,9 @@ type WorkspaceMetadata = {
   role?: 'owner' | 'staff'
 }
 
+/**
+ * Records/updates a lightweight session document for analytics & support.
+ */
 export async function persistSession(user: User, workspace?: WorkspaceMetadata) {
   const sessionId = ensureSessionId()
   try {
@@ -39,9 +53,9 @@ export async function persistSession(user: User, workspace?: WorkspaceMetadata) 
         lastActiveAt: serverTimestamp(),
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
         storeId: workspace?.storeId ?? null,
-        role: workspace?.role ?? null
+        role: workspace?.role ?? null,
       },
-      { merge: true }
+      { merge: true },
     )
   } catch (error) {
     console.warn('[session] Failed to persist session metadata', error)
@@ -60,19 +74,29 @@ const DEFAULT_INVENTORY_SUMMARY: StoreInventorySummary = {
   incomingShipments: 0,
 }
 
-type TeamMemberMetadata = {
-  storeId?: string
-  role?: 'owner' | 'staff'
-}
-
+/**
+ * Ensures a store doc exists and matches the schema that access checks expect.
+ * This is a safety net if the auth trigger hasn't run yet.
+ */
 export async function ensureStoreDocument(user: User) {
   try {
     await setDoc(
       doc(db, 'stores', user.uid),
       {
+        // Access-related fields
+        storeId: user.uid,                // stable ID used by access resolution
+        ownerUid: user.uid,               // link back to the creator/owner
+        paymentStatus: 'trial',           // 'trial' | 'active' | 'suspended'
+        contractStart: serverTimestamp(), // good default
+        contractEnd: null,                // set later if you time-box trials
+
+        // Inventory snapshot
+        inventorySummary: { ...DEFAULT_INVENTORY_SUMMARY },
+
+        // Back-compat (optional): keep legacy aliases if older code references them
         ownerId: user.uid,
         status: 'active',
-        inventorySummary: { ...DEFAULT_INVENTORY_SUMMARY },
+
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       },
@@ -83,39 +107,54 @@ export async function ensureStoreDocument(user: User) {
   }
 }
 
+type TeamMemberMetadata = {
+  storeId?: string
+  role?: 'owner' | 'staff'
+}
+
+/**
+ * Seeds/repairs the roster entry in the secondary "roster" DB.
+ * Also creates an email-key alias doc when available for flexible lookups.
+ */
 export async function ensureTeamMemberDocument(user: User, metadata?: TeamMemberMetadata) {
   const storeId = metadata?.storeId ?? user.uid
   const role = metadata?.role ?? 'owner'
+  const email = user.email ? user.email.toLowerCase() : null
+
+  const payload = {
+    uid: user.uid,
+    storeId,
+    role,
+    email,
+    phone: user.phoneNumber ?? null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }
 
   try {
-    await setDoc(
-      doc(rosterDb, 'teamMembers', user.uid),
-      {
-        uid: user.uid,
-        storeId,
-        role,
-        email: user.email ?? null,
-        phone: user.phoneNumber ?? null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    )
+    // uid-keyed doc
+    await setDoc(doc(rosterDb, 'teamMembers', user.uid), payload, { merge: true })
+
+    // email-keyed alias (optional but useful)
+    if (email) {
+      await setDoc(doc(rosterDb, 'teamMembers', email), payload, { merge: true })
+    }
   } catch (error) {
     console.warn('[team] Failed to ensure team member metadata for user', user.uid, error)
   }
 }
 
+/**
+ * Heartbeat updater; if a session doc is missing, re-create it.
+ */
 export async function refreshSessionHeartbeat(user: User) {
   const sessionId = getSessionId()
-  if (!sessionId) {
-    return
-  }
+  if (!sessionId) return
 
   try {
     await updateDoc(doc(db, 'sessions', sessionId), {
       uid: user.uid,
-      lastActiveAt: serverTimestamp()
+      lastActiveAt: serverTimestamp(),
     })
   } catch (error) {
     console.warn('[session] Failed to refresh session metadata', error)
@@ -123,32 +162,32 @@ export async function refreshSessionHeartbeat(user: User) {
   }
 }
 
+// ----------------- cookie helpers -----------------
+
 function ensureSessionId() {
   const existing = getSessionId()
-  if (existing) {
-    return existing
-  }
+  if (existing) return existing
   const generated = generateSessionId()
   setSessionCookie(generated)
   return generated
 }
 
 function getSessionId() {
-  if (typeof document === 'undefined') {
-    return null
-  }
+  if (typeof document === 'undefined') return null
   const match = document.cookie.match(new RegExp(`(?:^|; )${SESSION_COOKIE}=([^;]*)`))
   return match ? decodeURIComponent(match[1]) : null
 }
 
 function setSessionCookie(value: string) {
-  if (typeof document === 'undefined') {
-    return
-  }
+  if (typeof document === 'undefined') return
   const isSecureContext =
-    typeof window !== 'undefined' && window.location?.protocol === 'https:'
+    typeof window !== 'undefined' &&
+    typeof window.location !== 'undefined' &&
+    window.location.protocol === 'https:'
   const secureAttribute = isSecureContext ? '; Secure' : ''
-  document.cookie = `${SESSION_COOKIE}=${encodeURIComponent(value)}; Max-Age=${SESSION_MAX_AGE_SECONDS}; Path=/; SameSite=Lax${secureAttribute}`
+  document.cookie = `${SESSION_COOKIE}=${encodeURIComponent(
+    value,
+  )}; Max-Age=${SESSION_MAX_AGE_SECONDS}; Path=/; SameSite=Lax${secureAttribute}`
 }
 
 function generateSessionId() {
