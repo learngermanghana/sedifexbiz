@@ -2,6 +2,8 @@
   "name": "sedifex-functions",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
   "engines": {
     "node": "20"
   },
