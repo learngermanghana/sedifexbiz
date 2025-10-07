@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { db } from "./_firebase-admin";
-import crypto from "crypto";
+// ⬇️ add ".js" in the local import
+import { db } from "./_firebase-admin.js";
+import { createHmac } from "node:crypto";
+
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
