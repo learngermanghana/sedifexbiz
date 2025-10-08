@@ -12,6 +12,8 @@ import {
 } from 'firebase/firestore'
 import { db, rosterDb } from '../firebase'
 import { useAuthUser } from './useAuthUser'
+import { getAuth } from 'firebase/auth'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 
 export type Membership = {
   id: string
@@ -27,8 +29,7 @@ export type Membership = {
 }
 
 function normalizeRole(role: unknown): Membership['role'] {
-  if (role === 'owner') return 'owner'
-  return 'staff'
+  return role === 'owner' ? 'owner' : 'staff'
 }
 
 function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): Membership {
@@ -52,42 +53,67 @@ function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): M
   }
 }
 
-async function loadMembershipsFromDb(
-  firestore: Firestore,
-  uid: string,
-): Promise<Membership[]> {
+async function loadMembershipsFromDb(firestore: Firestore, uid: string): Promise<Membership[]> {
   const membersRef = collection(firestore, 'teamMembers')
   const membershipsQuery = query(membersRef, where('uid', '==', uid))
   const snapshot = await getDocs(membershipsQuery)
   return snapshot.docs.map(mapMembershipSnapshot)
 }
 
+/**
+ * Prefer roster DB (source of truth for team + roles), then fall back to default DB.
+ */
 async function loadMembershipsForUser(uid: string): Promise<Membership[]> {
-  let primaryRows: Membership[] | null = null
-  let primaryError: unknown = null
+  let rosterRows: Membership[] | null = null
+  let rosterErr: unknown = null
 
   try {
-    primaryRows = await loadMembershipsFromDb(db, uid)
-    if (primaryRows.length > 0) {
-      return primaryRows
-    }
-  } catch (error) {
-    primaryError = error
+    rosterRows = await loadMembershipsFromDb(rosterDb, uid)
+    if (rosterRows.length > 0) return rosterRows
+  } catch (e) {
+    rosterErr = e
   }
 
   try {
-    const rosterRows = await loadMembershipsFromDb(rosterDb, uid)
-    if (rosterRows.length > 0) {
-      return rosterRows
-    }
-
-    return primaryRows ?? rosterRows
-  } catch (error) {
-    if (primaryRows) {
-      return primaryRows
-    }
-    throw primaryError ?? error
+    const primaryRows = await loadMembershipsFromDb(db, uid)
+    if (primaryRows.length > 0) return primaryRows
+    return rosterRows ?? primaryRows
+  } catch (e) {
+    if (rosterRows) return rosterRows
+    throw rosterErr ?? e
   }
+}
+
+/**
+ * Call once after sign-in to ensure the backend sets role/storeId into custom claims,
+ * then force-refresh the ID token so callable functions see the correct role.
+ */
+export async function refreshMembershipClaims() {
+  const auth = getAuth()
+  const user = auth.currentUser
+  if (!user) return
+
+  const region = import.meta.env.VITE_FB_FUNCTIONS_REGION || 'us-central1'
+  const functions = getFunctions(undefined, region)
+
+  await httpsCallable(functions, 'resolveStoreAccess')()
+  await user.getIdToken(true)
+}
+
+/**
+ * Optional helper while debugging.
+ */
+export async function debugClaims() {
+  const auth = getAuth()
+  const user = auth.currentUser
+  if (!user) {
+    // eslint-disable-next-line no-console
+    console.log('No user signed in.')
+    return
+  }
+  const token = await user.getIdTokenResult()
+  // eslint-disable-next-line no-console
+  console.log('claims:', token.claims, 'uid:', user.uid)
 }
 
 export function useMemberships() {
@@ -99,7 +125,7 @@ export function useMemberships() {
   useEffect(() => {
     let cancelled = false
 
-    async function loadMemberships() {
+    async function run() {
       if (!user) {
         if (!cancelled) {
           setMemberships([])
@@ -116,9 +142,7 @@ export function useMemberships() {
 
       try {
         const rows = await loadMembershipsForUser(user.uid)
-
         if (cancelled) return
-
         setMemberships(rows)
         setError(null)
       } catch (e) {
@@ -131,8 +155,7 @@ export function useMemberships() {
       }
     }
 
-    loadMemberships()
-
+    run()
     return () => {
       cancelled = true
     }
