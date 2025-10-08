@@ -1,24 +1,34 @@
-import React from "react";
-const PAYSTACK_PK = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY!;
-
-function toKobo(ghs: number) { return Math.round(ghs * 100); }
+import React, { useState } from "react";
+import { startCheckout } from "../lib/billing";
 
 export default function TestPay() {
-  const pay = () => {
-    // @ts-ignore
-    const handler = window.PaystackPop.setup({
-      key: PAYSTACK_PK,
-      email: "testbuyer@example.com",
-      amount: toKobo(12.5), // GHS 12.50 (Paystack expects minor units)
-      currency: "GHS",
-      ref: `SFX_${Date.now()}`,
-      callback: (resp: any) => {
-        alert("Reference: " + resp.reference);
-        // normally you'd call commitSale(sale, { providerRef: resp.reference, ... })
-      },
-      onClose: () => alert("Checkout closed"),
-    });
-    handler.openIframe();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleCheckout = async () => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      await startCheckout("starter-monthly");
+      // We expect startCheckout to redirect the browser on success, so no further action.
+    } catch (err) {
+      console.error(err);
+      const message = err instanceof Error ? err.message : "Unable to start checkout";
+      setError(message);
+      setIsLoading(false);
+    }
   };
-  return <button onClick={pay}>Pay GHS 12.50 (Test)</button>;
+
+  return (
+    <div>
+      <button onClick={handleCheckout} disabled={isLoading}>
+        {isLoading ? "Redirecting…" : "Subscribe to Starter (Monthly)"}
+      </button>
+      {error && (
+        <p role="alert" style={{ color: "var(--color-error, #c00)", marginTop: "0.5rem" }}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
 }
