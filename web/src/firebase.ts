@@ -74,7 +74,10 @@ export const storage = getStorage(app)
 export const functions = getFunctions(app)
 
 // --- Firestore (default + secondary "roster") ---
-const FIRESTORE_SETTINGS = { ignoreUndefinedProperties: true }
+const FIRESTORE_SETTINGS = {
+  ignoreUndefinedProperties: true,
+  experimentalAutoDetectLongPolling: true,
+}
 
 export const rosterApp = initializeApp(rosterFirebaseConfig, 'roster')
 
