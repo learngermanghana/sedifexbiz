@@ -7,9 +7,10 @@ import {
   query,
   where,
   type DocumentData,
+  type Firestore,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { rosterDb } from '../firebase'
+import { db, rosterDb } from '../firebase'
 import { useAuthUser } from './useAuthUser'
 
 export type Membership = {
@@ -51,6 +52,44 @@ function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): M
   }
 }
 
+async function loadMembershipsFromDb(
+  firestore: Firestore,
+  uid: string,
+): Promise<Membership[]> {
+  const membersRef = collection(firestore, 'teamMembers')
+  const membershipsQuery = query(membersRef, where('uid', '==', uid))
+  const snapshot = await getDocs(membershipsQuery)
+  return snapshot.docs.map(mapMembershipSnapshot)
+}
+
+async function loadMembershipsForUser(uid: string): Promise<Membership[]> {
+  let primaryRows: Membership[] | null = null
+  let primaryError: unknown = null
+
+  try {
+    primaryRows = await loadMembershipsFromDb(db, uid)
+    if (primaryRows.length > 0) {
+      return primaryRows
+    }
+  } catch (error) {
+    primaryError = error
+  }
+
+  try {
+    const rosterRows = await loadMembershipsFromDb(rosterDb, uid)
+    if (rosterRows.length > 0) {
+      return rosterRows
+    }
+
+    return primaryRows ?? rosterRows
+  } catch (error) {
+    if (primaryRows) {
+      return primaryRows
+    }
+    throw primaryError ?? error
+  }
+}
+
 export function useMemberships() {
   const user = useAuthUser()
   const [loading, setLoading] = useState(true)
@@ -76,13 +115,10 @@ export function useMemberships() {
       }
 
       try {
-        const membersRef = collection(rosterDb, 'teamMembers')
-        const membershipsQuery = query(membersRef, where('uid', '==', user.uid))
-        const snapshot = await getDocs(membershipsQuery)
+        const rows = await loadMembershipsForUser(user.uid)
 
         if (cancelled) return
 
-        const rows = snapshot.docs.map(mapMembershipSnapshot)
         setMemberships(rows)
         setError(null)
       } catch (e) {
