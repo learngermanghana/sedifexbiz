@@ -68,6 +68,10 @@ afterAll(() => {
 })
 
 describe('AccountOverview', () => {
+  const clipboardMock = {
+    writeText: vi.fn<[], Promise<void>>().mockResolvedValue(),
+  }
+
   beforeEach(() => {
     mockPublish.mockReset()
     mockUseActiveStore.mockReset()
@@ -81,6 +85,8 @@ describe('AccountOverview', () => {
     whereMock.mockClear()
 
     mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
+    Object.assign(navigator as Navigator & { clipboard: typeof clipboardMock }, { clipboard: clipboardMock })
+    clipboardMock.writeText.mockClear()
     getDocMock.mockResolvedValue({
       exists: () => true,
       data: () => ({
@@ -110,6 +116,10 @@ describe('AccountOverview', () => {
         },
       ],
     })
+  })
+
+  afterAll(() => {
+    delete (navigator as Record<string, unknown>).clipboard
   })
 
   it('allows owners to manage team invitations', async () => {
@@ -149,7 +159,17 @@ describe('AccountOverview', () => {
     const form = await screen.findByTestId('account-invite-form')
     expect(form).toBeInTheDocument()
 
+    const inviteLinkField = screen.getByTestId('account-invite-link') as HTMLInputElement
+    expect(inviteLinkField.value).toBe('http://localhost/#/')
+    expect(screen.getByTestId('account-copy-invite-link')).toBeInTheDocument()
+    const shareEmailLink = screen.getByTestId('account-share-invite-email')
+    expect(shareEmailLink).toHaveAttribute('href')
+    expect(shareEmailLink.getAttribute('href')).toContain('mailto:')
+
     const user = userEvent.setup()
+    await user.click(screen.getByTestId('account-copy-invite-link'))
+    await waitFor(() => expect(clipboardMock.writeText).toHaveBeenCalledWith('http://localhost/#/'))
+
     await user.type(screen.getByLabelText(/email/i), 'new-user@example.com')
     await user.selectOptions(screen.getByLabelText(/role/i), 'staff')
     await user.type(screen.getByLabelText(/password/i), 'Secret123!')
@@ -198,6 +218,7 @@ describe('AccountOverview', () => {
 
     expect(screen.queryByTestId('account-invite-form')).not.toBeInTheDocument()
     expect(screen.getByText(/read-only access/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('account-invite-link')).not.toBeInTheDocument()
   })
 
   it('falls back to ownerId lookup when the store document id differs from the storeId', async () => {
