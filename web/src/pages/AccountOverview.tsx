@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Timestamp,
   collection,
@@ -16,6 +16,7 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
 import { manageStaffAccount } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
+import './AccountOverview.css'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -121,6 +122,26 @@ function formatTimestamp(timestamp: Timestamp | null) {
   }
 }
 
+async function copyToClipboard(text: string) {
+  if (!text) return
+
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.setAttribute('readonly', '')
+  textArea.style.position = 'fixed'
+  textArea.style.top = '-9999px'
+  textArea.style.left = '-9999px'
+  document.body.appendChild(textArea)
+  textArea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textArea)
+}
+
 export default function AccountOverview() {
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
   const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships()
@@ -140,6 +161,7 @@ export default function AccountOverview() {
   const [password, setPassword] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle')
 
   const activeMembership = useMemo(() => {
     if (!storeId) return null
@@ -147,6 +169,40 @@ export default function AccountOverview() {
   }, [memberships, storeId])
 
   const isOwner = activeMembership?.role === 'owner'
+
+  const inviteLink = useMemo(() => {
+    if (!storeId) return ''
+    if (typeof window === 'undefined') return ''
+
+    const { origin, pathname } = window.location
+    const base = `${origin}${pathname}`
+    const normalizedBase = base.endsWith('/') ? base : `${base}/`
+    return `${normalizedBase}#/`
+  }, [storeId])
+
+  const inviteMailtoHref = useMemo(() => {
+    if (!inviteLink) return ''
+
+    const workspaceName = profile?.displayName ?? profile?.name ?? 'our Sedifex workspace'
+    const subject = encodeURIComponent(`Join ${workspaceName} on Sedifex`)
+    const bodyLines = [
+      'Hi there,',
+      '',
+      `You have been invited to join ${workspaceName} on Sedifex.`,
+      `Sign in here: ${inviteLink}`,
+      storeId ? `Workspace ID: ${storeId}` : null,
+      '',
+      'Use the email address we invited and the password provided by your workspace admin.',
+    ].filter((line): line is string => Boolean(line && line.trim()))
+
+    return `mailto:?subject=${subject}&body=${encodeURIComponent(bodyLines.join('\n'))}`
+  }, [inviteLink, profile?.displayName, profile?.name, storeId])
+
+  useEffect(() => {
+    if (copyStatus === 'idle') return
+    const timeout = setTimeout(() => setCopyStatus('idle'), 4000)
+    return () => clearTimeout(timeout)
+  }, [copyStatus])
 
   useEffect(() => {
     if (!storeId) {
@@ -307,6 +363,19 @@ export default function AccountOverview() {
     }
   }
 
+  const handleCopyInviteLink = useCallback(async () => {
+    if (!inviteLink) return
+
+    try {
+      await copyToClipboard(inviteLink)
+      setCopyStatus('copied')
+    } catch (error) {
+      console.error('Failed to copy invite link', error)
+      setCopyStatus('error')
+      publish({ message: 'We could not copy the invite link.', tone: 'error' })
+    }
+  }, [inviteLink, publish])
+
   if (storeError) {
     return <div role="alert">{storeError}</div>
   }
@@ -410,12 +479,60 @@ export default function AccountOverview() {
         <h2 id="account-overview-roster">Team roster</h2>
 
         {isOwner ? (
-          <form onSubmit={handleSubmit} data-testid="account-invite-form" className="account-overview__form">
-            <fieldset disabled={submitting}>
-              <legend className="sr-only">Invite or update a teammate</legend>
-              <div className="account-overview__form-grid">
-                <label>
-                  <span>Email</span>
+          <>
+            {inviteLink && (
+              <section className="account-overview__invite" aria-labelledby="account-overview-invite-heading">
+                <h3 id="account-overview-invite-heading">Share an invite link</h3>
+                <p className="account-overview__invite-description">
+                  Copy this link or share it via email so teammates can sign in to your Sedifex workspace.
+                </p>
+                <div className="account-overview__invite-link">
+                  <input
+                    type="url"
+                    value={inviteLink}
+                    readOnly
+                    onFocus={event => event.target.select()}
+                    className="account-overview__invite-input"
+                    aria-label="Invite link"
+                    data-testid="account-invite-link"
+                  />
+                  <button
+                    type="button"
+                    className="button button--outline"
+                    onClick={handleCopyInviteLink}
+                    data-testid="account-copy-invite-link"
+                  >
+                    {copyStatus === 'copied' ? 'Link copied' : 'Copy invite link'}
+                  </button>
+                  {inviteMailtoHref && (
+                    <a
+                      className="button button--ghost"
+                      href={inviteMailtoHref}
+                      data-testid="account-share-invite-email"
+                    >
+                      Share via email
+                    </a>
+                  )}
+                </div>
+                {copyStatus === 'copied' && (
+                  <p className="account-overview__invite-feedback" role="status">
+                    Invite link copied to clipboard.
+                  </p>
+                )}
+                {copyStatus === 'error' && (
+                  <p className="account-overview__invite-feedback account-overview__invite-feedback--error" role="alert">
+                    We couldn't copy the invite link. You can still select the link above or share it via email.
+                  </p>
+                )}
+              </section>
+            )}
+
+            <form onSubmit={handleSubmit} data-testid="account-invite-form" className="account-overview__form">
+              <fieldset disabled={submitting}>
+                <legend className="sr-only">Invite or update a teammate</legend>
+                <div className="account-overview__form-grid">
+                  <label>
+                    <span>Email</span>
                   <input
                     type="email"
                     value={email}
@@ -444,9 +561,10 @@ export default function AccountOverview() {
                   {submitting ? 'Sending…' : 'Send invite'}
                 </button>
               </div>
-              {formError && <p className="account-overview__form-error">{formError}</p>}
-            </fieldset>
-          </form>
+                {formError && <p className="account-overview__form-error">{formError}</p>}
+              </fieldset>
+            </form>
+          </>
         ) : (
           <p role="note">You have read-only access to the team roster.</p>
         )}
