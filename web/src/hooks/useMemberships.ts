@@ -81,9 +81,9 @@ async function loadMembershipsForUser(uid: string): Promise<Membership[]> {
       return rosterRows
     }
 
-    return primaryRows ?? rosterRows
+    return primaryRows && primaryRows.length > 0 ? primaryRows : rosterRows
   } catch (error) {
-    if (primaryRows) {
+    if (primaryRows && primaryRows.length > 0) {
       return primaryRows
     }
     throw primaryError ?? error
