@@ -8,7 +8,7 @@ import {
   setPersistence,
 } from 'firebase/auth'
 import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
-import { db, rosterDb } from '../firebase'
+import { auth, db, rosterDb } from '../firebase'
 
 const SESSION_COOKIE = 'sedifex_session'
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 90 // 90 days
@@ -29,6 +29,18 @@ export async function configureAuthPersistence(auth: Auth) {
   } catch (error) {
     console.warn('[auth] Falling back to in-memory persistence', error)
     await setPersistence(auth, inMemoryPersistence)
+  }
+}
+
+export async function refreshMembershipClaims() {
+  const currentUser = auth.currentUser
+  if (!currentUser) return
+
+  try {
+    await currentUser.getIdToken(true)
+    await currentUser.reload()
+  } catch (error) {
+    console.warn('[auth] Failed to refresh membership claims', error)
   }
 }
 
