@@ -17,6 +17,7 @@ import {
   configureAuthPersistence,
   ensureStoreDocument,
   persistSession,
+  refreshMembershipClaims,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
 import {
@@ -474,6 +475,7 @@ export default function App() {
         )
         await ensureStoreDocument(nextUser)
         await persistSession(nextUser)
+        await refreshMembershipClaims()
         try {
           const resolution = await resolveStoreAccess()
           await persistSession(nextUser, {
@@ -493,6 +495,7 @@ export default function App() {
           sanitizedPassword,
         )
         await persistSession(nextUser)
+        await refreshMembershipClaims()
 
         let initializedStoreId: string | undefined
         try {
