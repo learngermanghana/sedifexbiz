@@ -8,19 +8,17 @@ type MockToastOptions = { message: string; tone?: 'success' | 'error' | 'info'; 
 
 const mockAuth = vi.hoisted(() => ({} as unknown as Record<string, unknown>))
 
-const mockCreateUserWithEmailAndPassword = vi.fn()
 const mockSignInWithEmailAndPassword = vi.fn()
 const mockPersistSession = vi.fn(async (..._args: unknown[]) => {})
 const mockEnsureStoreDocument = vi.fn(async (..._args: unknown[]) => {})
-const mockEnsureTeamMemberDocument = vi.fn(async (..._args: unknown[]) => {})
-const mockSetOnboardingStatus = vi.fn()
 const mockPublish = vi.fn<(options: MockToastOptions) => void>()
 const mockNavigate = vi.fn()
-const mockAfterSignupBootstrap = vi.fn()
+const signupConfigMock = vi.hoisted(() => ({
+  paymentUrl: 'https://billing.example.com/checkout',
+  salesEmail: 'billing@example.com',
+}))
 
 vi.mock('firebase/auth', () => ({
-  createUserWithEmailAndPassword: (...args: unknown[]) =>
-    mockCreateUserWithEmailAndPassword(...args),
   signInWithEmailAndPassword: (...args: unknown[]) =>
     mockSignInWithEmailAndPassword(...args),
 }))
@@ -32,19 +30,12 @@ vi.mock('../firebase', () => ({
 vi.mock('../controllers/sessionController', () => ({
   persistSession: (...args: unknown[]) => mockPersistSession(...args),
   ensureStoreDocument: (...args: unknown[]) => mockEnsureStoreDocument(...args),
-  ensureTeamMemberDocument: (...args: unknown[]) => mockEnsureTeamMemberDocument(...args),
 }))
 
-vi.mock('../utils/onboarding', () => ({
-  setOnboardingStatus: (...args: unknown[]) => mockSetOnboardingStatus(...args),
-}))
+vi.mock('../config/signup', () => ({ signupConfig: signupConfigMock }))
 
 vi.mock('../components/ToastProvider', () => ({
   useToast: () => ({ publish: mockPublish }),
-}))
-
-vi.mock('../controllers/accessController', () => ({
-  afterSignupBootstrap: (...args: unknown[]) => mockAfterSignupBootstrap(...args),
 }))
 
 vi.mock('react-router-dom', async importOriginal => {
@@ -58,15 +49,13 @@ vi.mock('react-router-dom', async importOriginal => {
 
 describe('AuthScreen', () => {
   beforeEach(() => {
-    mockCreateUserWithEmailAndPassword.mockReset()
     mockSignInWithEmailAndPassword.mockReset()
     mockPersistSession.mockClear()
     mockEnsureStoreDocument.mockClear()
-    mockEnsureTeamMemberDocument.mockClear()
-    mockSetOnboardingStatus.mockReset()
     mockPublish.mockReset()
     mockNavigate.mockReset()
-    mockAfterSignupBootstrap.mockReset()
+    signupConfigMock.paymentUrl = 'https://billing.example.com/checkout'
+    signupConfigMock.salesEmail = 'billing@example.com'
   })
 
   it('signs in with Firebase auth and persists the session', async () => {
@@ -101,83 +90,55 @@ describe('AuthScreen', () => {
     expect(mockPersistSession).toHaveBeenCalledWith(mockUser)
     expect(mockPublish).toHaveBeenCalledWith({ message: 'Welcome back!', tone: 'success' })
     expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true })
-    expect(mockEnsureTeamMemberDocument).not.toHaveBeenCalled()
   })
 
-  it('creates an account and triggers onboarding helpers', async () => {
-    const mockUser = { uid: 'new-user' }
-    mockCreateUserWithEmailAndPassword.mockResolvedValue({ user: mockUser })
+  it('directs users to payment before allowing signup', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<AuthScreen />)
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('button', { name: /create one/i }))
-    await user.type(screen.getByLabelText(/email/i), 'new.user@example.com')
-    await user.type(screen.getByLabelText(/password/i), 'password123')
 
-    const submitButton = screen
-      .getAllByRole('button', { name: /create account/i })
-      .find(button => button.getAttribute('type') === 'submit')
+    expect(
+      screen.getByRole('heading', { name: /complete payment to create your sedifex workspace/i }),
+    ).toBeInTheDocument()
 
-    if (!submitButton) {
-      throw new Error('Could not find submit button')
-    }
+    const paymentButton = screen.getByRole('button', { name: /continue to payment/i })
+    await user.click(paymentButton)
 
-    await user.click(submitButton)
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://billing.example.com/checkout',
+      '_blank',
+      'noopener,noreferrer',
+    )
+    const infoToastCall = mockPublish.mock.calls.find(([options]) => options.tone === 'info')
+    expect(infoToastCall?.[0].message).toContain('Sedifex requires an active subscription')
+    expect(mockSignInWithEmailAndPassword).not.toHaveBeenCalled()
+    expect(mockEnsureStoreDocument).not.toHaveBeenCalled()
 
-    await waitFor(() => {
-      expect(mockCreateUserWithEmailAndPassword).toHaveBeenCalledWith(
-        mockAuth,
-        'new.user@example.com',
-        'password123',
-      )
-    })
-
-    expect(mockEnsureStoreDocument).toHaveBeenCalledWith(mockUser)
-    expect(mockEnsureTeamMemberDocument).toHaveBeenCalledWith(mockUser, {
-      storeId: 'new-user',
-      role: 'owner',
-    })
-    expect(mockPersistSession).toHaveBeenCalledWith(mockUser, {
-      storeId: 'new-user',
-      role: 'owner',
-    })
-    expect(mockSetOnboardingStatus).toHaveBeenCalledWith('new-user', 'pending')
-    expect(mockAfterSignupBootstrap).toHaveBeenCalled()
-
-    const successToastCall = mockPublish.mock.calls.find(([options]) => options.tone === 'success')
-    expect(successToastCall?.[0].message).toBe('Account created! Setting things up now…')
-    expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true })
+    openSpy.mockRestore()
   })
 
-  it('surfaces bootstrap errors after signup', async () => {
-    const mockUser = { uid: 'new-user' }
-    mockCreateUserWithEmailAndPassword.mockResolvedValue({ user: mockUser })
-    mockAfterSignupBootstrap.mockRejectedValueOnce(new Error('sync failed'))
+  it('falls back to emailing sales when no payment URL is configured', async () => {
+    signupConfigMock.paymentUrl = null
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<AuthScreen />)
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('button', { name: /create one/i }))
-    await user.type(screen.getByLabelText(/email/i), 'new.user@example.com')
-    await user.type(screen.getByLabelText(/password/i), 'password123')
 
-    const submitButton = screen
-      .getAllByRole('button', { name: /create account/i })
-      .find(button => button.getAttribute('type') === 'submit')
+    const contactButton = screen.getByRole('button', { name: /contact sales/i })
+    await user.click(contactButton)
 
-    if (!submitButton) {
-      throw new Error('Could not find submit button')
-    }
+    expect(openSpy).toHaveBeenCalledWith(
+      `mailto:${signupConfigMock.salesEmail}`,
+      '_blank',
+      'noopener,noreferrer',
+    )
 
-    await user.click(submitButton)
-
-    await waitFor(() => {
-      expect(mockAfterSignupBootstrap).toHaveBeenCalled()
-    })
-
-    const errorToastCall = mockPublish.mock.calls.find(([options]) => options.tone === 'error')
-    expect(errorToastCall?.[0].message).toContain('We created your account but hit a snag syncing workspace data')
+    openSpy.mockRestore()
   })
 })
 
