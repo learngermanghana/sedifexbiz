@@ -1,10 +1,10 @@
-// at the top of functions/src/index.ts
+// functions/src/index.ts
+// ─────────────────────────────────────────────────────────────────────────────
+// Billing config (plans & trial)
 import { getBillingConfig, type PlanId } from './plans'
 
-
-// re-export triggers defined in other files so they are included in the build
-export { onAuthCreate } from './onAuthCreate';
-
+// Re-export any other triggers so they’re included in the build
+export { onAuthCreate } from './onAuthCreate'
 
 import * as functions from 'firebase-functions'
 import { admin, defaultDb, rosterDb } from './firestore'
@@ -364,12 +364,12 @@ function mapProductSeeds(records: Record<string, unknown>[], storeId: string): S
     .map((product, index) => {
       const name =
         getOptionalString(
-          product.name ?? product.productName ?? product.displayName ?? product.title ?? undefined,
+          (product as any).name ?? (product as any).productName ?? (product as any).displayName ?? (product as any).title ?? undefined,
         ) ?? null
-      const sku = getOptionalString(product.sku ?? product.code ?? product.productSku ?? undefined)
+      const sku = getOptionalString((product as any).sku ?? (product as any).code ?? (product as any).productSku ?? undefined)
       const idCandidate =
         getOptionalString(
-          product.id ?? product.productId ?? product.identifier ?? product.externalId ?? sku ?? name ?? undefined,
+          (product as any).id ?? (product as any).productId ?? (product as any).identifier ?? (product as any).externalId ?? sku ?? name ?? undefined,
         ) ?? null
 
       const data: admin.firestore.DocumentData = { storeId }
@@ -393,19 +393,19 @@ function mapCustomerSeeds(records: Record<string, unknown>[], storeId: string): 
     .map((customer, index) => {
       const primaryName =
         getOptionalString(
-          customer.displayName ??
-            customer.display_name ??
-            customer.primaryName ??
-            customer.primary_name ??
+          (customer as any).displayName ??
+            (customer as any).display_name ??
+            (customer as any).primaryName ??
+            (customer as any).primary_name ??
             undefined,
         ) ?? null
       const fallbackName =
         getOptionalString(
-          customer.name ?? customer.customerName ?? customer.customer_name ?? customer.displayName ?? undefined,
+          (customer as any).name ?? (customer as any).customerName ?? (customer as any).customer_name ?? (customer as any).displayName ?? undefined,
         ) ?? primaryName
-      const email = getOptionalEmail(customer.email ?? customer.contactEmail ?? customer.contact_email ?? undefined)
+      const email = getOptionalEmail((customer as any).email ?? (customer as any).contactEmail ?? (customer as any).contact_email ?? undefined)
       const phone = getOptionalString(
-        customer.phone ?? customer.phoneNumber ?? customer.phone_number ?? customer.contactPhone ?? undefined,
+        (customer as any).phone ?? (customer as any).phoneNumber ?? (customer as any).phone_number ?? (customer as any).contactPhone ?? undefined,
       )
 
       if (!primaryName && !fallbackName && !email && !phone) {
@@ -414,12 +414,12 @@ function mapCustomerSeeds(records: Record<string, unknown>[], storeId: string): 
 
       const identifierCandidate =
         getOptionalString(
-          customer.id ??
-            customer.customerId ??
-            customer.customer_id ??
-            customer.identifier ??
-            customer.externalId ??
-            customer.external_id ??
+          (customer as any).id ??
+            (customer as any).customerId ??
+            (customer as any).customer_id ??
+            (customer as any).identifier ??
+            (customer as any).externalId ??
+            (customer as any).external_id ??
             email ??
             phone ??
             primaryName ??
@@ -480,14 +480,14 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
   const resolvedPhone = user.phoneNumber ?? existingData.phone ?? existingEmailData.phone ?? null
   const resolvedStoreId =
     getOptionalString(
-      existingData.storeId ?? existingData.storeID ?? existingData.store_id ?? undefined,
+      (existingData as any).storeId ?? (existingData as any).storeID ?? (existingData as any).store_id ?? undefined,
     ) ??
     getOptionalString(
-      existingEmailData.storeId ?? existingEmailData.storeID ?? existingEmailData.store_id ?? undefined,
+      (existingEmailData as any).storeId ?? (existingEmailData as any).storeID ?? (existingEmailData as any).store_id ?? undefined,
     ) ??
     null
   const resolvedRoleRaw =
-    getOptionalString(existingData.role ?? existingEmailData.role ?? existingEmailData.memberRole ?? undefined) ??
+    getOptionalString((existingData as any).role ?? (existingEmailData as any).role ?? (existingEmailData as any).memberRole ?? undefined) ??
     null
   const resolvedRole = resolvedRoleRaw
     ? VALID_ROLES.has(resolvedRoleRaw.toLowerCase())
@@ -495,29 +495,29 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
       : resolvedRoleRaw
     : null
   const resolvedFirstSignupEmail =
-    typeof existingData.firstSignupEmail === 'string'
-      ? existingData.firstSignupEmail
-      : typeof existingEmailData.firstSignupEmail === 'string'
-      ? existingEmailData.firstSignupEmail
+    typeof (existingData as any).firstSignupEmail === 'string'
+      ? (existingData as any).firstSignupEmail
+      : typeof (existingEmailData as any).firstSignupEmail === 'string'
+      ? (existingEmailData as any).firstSignupEmail
       : null
   const resolvedInvitedBy =
-    getOptionalString(existingData.invitedBy ?? existingEmailData.invitedBy ?? undefined) ?? null
+    getOptionalString((existingData as any).invitedBy ?? (existingEmailData as any).invitedBy ?? undefined) ?? null
   const resolvedName =
-    getOptionalString(existingData.name ?? existingEmailData.name ?? existingEmailData.displayName ?? undefined) ??
+    getOptionalString((existingData as any).name ?? (existingEmailData as any).name ?? (existingEmailData as any).displayName ?? undefined) ??
     null
   const resolvedCompanyName =
     getOptionalString(
-      existingData.companyName ??
-        existingEmailData.companyName ??
-        existingEmailData.businessName ??
-        existingEmailData.workspaceName ??
+      (existingData as any).companyName ??
+        (existingEmailData as any).companyName ??
+        (existingEmailData as any).businessName ??
+        (existingEmailData as any).workspaceName ??
         undefined,
     ) ?? null
   const resolvedStatus =
-    getOptionalString(existingData.status ?? existingEmailData.status ?? undefined) ?? null
+    getOptionalString((existingData as any).status ?? (existingEmailData as any).status ?? undefined) ?? null
   const resolvedContractStatus =
     getOptionalString(
-      existingData.contractStatus ?? existingEmailData.contractStatus ?? existingEmailData.contract_status ?? undefined,
+      (existingData as any).contractStatus ?? (existingEmailData as any).contractStatus ?? (existingEmailData as any).contract_status ?? undefined,
     ) ?? null
 
   const storeId = resolvedStoreId ?? uid
@@ -533,32 +533,32 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
   }
 
   if (resolvedStoreId) {
-    memberData.storeId = resolvedStoreId
+    (memberData as any).storeId = resolvedStoreId
   } else {
-    const currentStoreId = getOptionalString(memberData.storeId ?? undefined)
+    const currentStoreId = getOptionalString((memberData as any).storeId ?? undefined)
     if (!currentStoreId) {
-      memberData.storeId = storeId
+      (memberData as any).storeId = storeId
     }
   }
 
   if (resolvedRole) {
-    memberData.role = resolvedRole
+    (memberData as any).role = resolvedRole
   } else if (shouldSeedDefaultStore) {
-    const currentRole = getOptionalString(memberData.role ?? undefined)
+    const currentRole = getOptionalString((memberData as any).role ?? undefined)
     if (!currentRole) {
-      memberData.role = 'owner'
+      (memberData as any).role = 'owner'
     }
   }
-  if (resolvedFirstSignupEmail !== null) memberData.firstSignupEmail = resolvedFirstSignupEmail
-  if (resolvedInvitedBy) memberData.invitedBy = resolvedInvitedBy
-  if (resolvedName) memberData.name = resolvedName
-  if (resolvedCompanyName) memberData.companyName = resolvedCompanyName
-  if (resolvedStatus) memberData.status = resolvedStatus
-  if (resolvedContractStatus) memberData.contractStatus = resolvedContractStatus
+  if (resolvedFirstSignupEmail !== null) (memberData as any).firstSignupEmail = resolvedFirstSignupEmail
+  if (resolvedInvitedBy) (memberData as any).invitedBy = resolvedInvitedBy
+  if (resolvedName) (memberData as any).name = resolvedName
+  if (resolvedCompanyName) (memberData as any).companyName = resolvedCompanyName
+  if (resolvedStatus) (memberData as any).status = resolvedStatus
+  if (resolvedContractStatus) (memberData as any).contractStatus = resolvedContractStatus
 
   if (!memberSnap.exists) {
-    if (memberData.createdAt === undefined) {
-      memberData.createdAt = timestamp
+    if ((memberData as any).createdAt === undefined) {
+      ;(memberData as any).createdAt = timestamp
     }
   }
 
@@ -574,11 +574,11 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
     }
 
     if (!emailSnap?.exists) {
-      if (emailData.createdAt === undefined) {
-        emailData.createdAt = timestamp
+      if ((emailData as any).createdAt === undefined) {
+        ;(emailData as any).createdAt = timestamp
       }
     } else {
-      delete emailData.createdAt
+      delete (emailData as any).createdAt
     }
 
     await emailRef.set(emailData, { merge: true })
@@ -587,10 +587,21 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
   if (shouldSeedDefaultStore) {
     const storeRef = defaultDb.collection('stores').doc(storeId)
     const storeSnap = await storeRef.get()
+
+    // Add default billing on first seed too (parity with initializeStore)
+    const { trialDays } = getBillingConfig()
+    const trialEndsAt = admin.firestore.Timestamp.fromMillis(Date.now() + trialDays * 24 * 60 * 60 * 1000)
+
     const storeData: admin.firestore.DocumentData = {
       ownerId: uid,
       status: 'Active',
       contractStatus: 'Active',
+      billing: {
+        planId: ('starter' as PlanId),
+        status: 'trial',
+        trialEndsAt,
+        provider: 'paystack',
+      },
       inventorySummary: {
         trackedSkus: 0,
         lowStockSkus: 0,
@@ -600,22 +611,22 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
     }
 
     if (resolvedEmail) {
-      storeData.ownerEmail = resolvedEmail
+      ;(storeData as any).ownerEmail = resolvedEmail
     }
 
-    const ownerName = getOptionalString(memberData.name ?? undefined)
+    const ownerName = getOptionalString((memberData as any).name ?? undefined)
     if (ownerName) {
-      storeData.ownerName = ownerName
+      ;(storeData as any).ownerName = ownerName
     }
 
-    const companyName = getOptionalString(memberData.companyName ?? undefined)
+    const companyName = getOptionalString((memberData as any).companyName ?? undefined)
     if (companyName) {
-      storeData.displayName = companyName
-      storeData.businessName = companyName
+      ;(storeData as any).displayName = companyName
+      ;(storeData as any).businessName = companyName
     }
 
     if (!storeSnap.exists) {
-      storeData.createdAt = timestamp
+      ;(storeData as any).createdAt = timestamp
     }
 
     await storeRef.set(storeData, { merge: true })
@@ -653,10 +664,17 @@ async function initializeStoreImpl(
     defaultMemberRef.get(),
   ])
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
+
+  // NEW: compute the trial end once per new workspace
+  const { trialDays } = getBillingConfig()
+  const trialEndsAt = admin.firestore.Timestamp.fromMillis(
+    Date.now() + trialDays * 24 * 60 * 60 * 1000,
+  )
+
   const existingData = memberSnap.data() ?? {}
   const existingStoreId =
-    typeof existingData.storeId === 'string' && existingData.storeId.trim() !== ''
-      ? (existingData.storeId as string)
+    typeof (existingData as any).storeId === 'string' && (existingData as any).storeId.trim() !== ''
+      ? ((existingData as any).storeId as string)
       : null
   const storeId = existingStoreId ?? uid
 
@@ -672,27 +690,27 @@ async function initializeStoreImpl(
   }
 
   if (resolvedOwnerName !== null) {
-    memberData.name = resolvedOwnerName
+    ;(memberData as any).name = resolvedOwnerName
   }
 
   if (resolvedBusinessName !== null) {
-    memberData.companyName = resolvedBusinessName
+    ;(memberData as any).companyName = resolvedBusinessName
   }
 
   if (resolvedCountry !== null) {
-    memberData.country = resolvedCountry
+    ;(memberData as any).country = resolvedCountry
   }
 
   if (resolvedTown !== null) {
-    memberData.town = resolvedTown
+    ;(memberData as any).town = resolvedTown
   }
 
   if (resolvedSignupRole !== null) {
-    memberData.signupRole = resolvedSignupRole
+    ;(memberData as any).signupRole = resolvedSignupRole
   }
 
   if (!memberSnap.exists) {
-    memberData.createdAt = timestamp
+    ;(memberData as any).createdAt = timestamp
   }
 
   await Promise.all([
@@ -710,27 +728,27 @@ async function initializeStoreImpl(
       }
 
       if (resolvedOwnerName !== null) {
-        defaultMemberData.name = resolvedOwnerName
+        ;(defaultMemberData as any).name = resolvedOwnerName
       }
 
       if (resolvedBusinessName !== null) {
-        defaultMemberData.companyName = resolvedBusinessName
+        ;(defaultMemberData as any).companyName = resolvedBusinessName
       }
 
       if (resolvedCountry !== null) {
-        defaultMemberData.country = resolvedCountry
+        ;(defaultMemberData as any).country = resolvedCountry
       }
 
       if (resolvedTown !== null) {
-        defaultMemberData.town = resolvedTown
+        ;(defaultMemberData as any).town = resolvedTown
       }
 
       if (resolvedSignupRole !== null) {
-        defaultMemberData.signupRole = resolvedSignupRole
+        ;(defaultMemberData as any).signupRole = resolvedSignupRole
       }
 
       if (!defaultMemberSnap.exists) {
-        defaultMemberData.createdAt = timestamp
+        ;(defaultMemberData as any).createdAt = timestamp
       }
 
       await defaultMemberRef.set(defaultMemberData, { merge: true })
@@ -752,26 +770,26 @@ async function initializeStoreImpl(
     }
 
     if (resolvedOwnerName !== null) {
-      emailData.name = resolvedOwnerName
+      ;(emailData as any).name = resolvedOwnerName
     }
 
     if (resolvedBusinessName !== null) {
-      emailData.companyName = resolvedBusinessName
+      ;(emailData as any).companyName = resolvedBusinessName
     }
 
     if (resolvedCountry !== null) {
-      emailData.country = resolvedCountry
+      ;(emailData as any).country = resolvedCountry
     }
 
     if (resolvedTown !== null) {
-      emailData.town = resolvedTown
+      ;(emailData as any).town = resolvedTown
     }
 
     if (resolvedSignupRole !== null) {
-      emailData.signupRole = resolvedSignupRole
+      ;(emailData as any).signupRole = resolvedSignupRole
     }
     if (!emailSnap.exists) {
-      emailData.createdAt = timestamp
+      ;(emailData as any).createdAt = timestamp
     }
     await emailRef.set(emailData, { merge: true })
   }
@@ -783,25 +801,32 @@ async function initializeStoreImpl(
     updatedAt: timestamp,
     status: 'Active',
     contractStatus: 'Active',
+    // NEW: billing defaults for new workspace
+    billing: {
+      planId: ('starter' as PlanId),  // label only; Paystack plan code is stored in config/env
+      status: 'trial',                // 'trial' | 'active' | 'past_due' | 'canceled'
+      trialEndsAt,                    // Firestore Timestamp
+      provider: 'paystack',
+    },
   }
   if (email) {
-    storeData.ownerEmail = email
+    ;(storeData as any).ownerEmail = email
   }
   if (resolvedOwnerName) {
-    storeData.ownerName = resolvedOwnerName
+    ;(storeData as any).ownerName = resolvedOwnerName
   }
   if (resolvedBusinessName) {
-    storeData.displayName = resolvedBusinessName
-    storeData.businessName = resolvedBusinessName
+    ;(storeData as any).displayName = resolvedBusinessName
+    ;(storeData as any).businessName = resolvedBusinessName
   }
   if (resolvedCountry) {
-    storeData.country = resolvedCountry
+    ;(storeData as any).country = resolvedCountry
   }
   if (resolvedTown) {
-    storeData.town = resolvedTown
+    ;(storeData as any).town = resolvedTown
   }
   if (!storeSnap.exists) {
-    storeData.createdAt = timestamp
+    ;(storeData as any).createdAt = timestamp
   }
   await storeRef.set(storeData, { merge: true })
   const claims = await updateUserClaims(uid, 'owner')
@@ -863,20 +888,20 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   }
 
   const rosterStoreIdFromMember =
-    getOptionalString(existingMember.storeId ?? existingMember.storeID ?? existingMember.store_id ?? undefined) ?? null
+    getOptionalString((existingMember as any).storeId ?? (existingMember as any).storeID ?? (existingMember as any).store_id ?? undefined) ?? null
   const rosterStoreIdFromEmail =
-    getOptionalString(emailMember.storeId ?? emailMember.storeID ?? emailMember.store_id ?? undefined) ?? null
+    getOptionalString((emailMember as any).storeId ?? (emailMember as any).storeID ?? (emailMember as any).store_id ?? undefined) ?? null
 
   let rosterStoreId = rosterStoreIdFromMember ?? rosterStoreIdFromEmail ?? null
 
   const rosterEntry: admin.firestore.DocumentData = { ...emailMember }
   for (const [key, value] of Object.entries(existingMember)) {
     if (value !== undefined) {
-      rosterEntry[key] = value
+      ;(rosterEntry as any)[key] = value
     }
   }
   if (rosterStoreId) {
-    rosterEntry.storeId = rosterStoreId
+    ;(rosterEntry as any).storeId = rosterStoreId
   }
 
   const missingStoreIdMessage =
@@ -927,7 +952,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   }
 
   const storeData = (storeSnap.data() ?? {}) as admin.firestore.DocumentData
-  const storeStatus = getOptionalString(storeData.status ?? storeData.contractStatus ?? undefined)
+  const storeStatus = getOptionalString((storeData as any).status ?? (storeData as any).contractStatus ?? undefined)
   if (isInactiveContractStatus(storeStatus)) {
     throw new functions.https.HttpsError('permission-denied', INACTIVE_WORKSPACE_MESSAGE)
   }
@@ -935,11 +960,11 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   const now = admin.firestore.Timestamp.now()
 
   const memberCreatedAt =
-    memberSnap.exists && existingMember.createdAt instanceof admin.firestore.Timestamp
-      ? (existingMember.createdAt as admin.firestore.Timestamp)
+    memberSnap.exists && (existingMember as any).createdAt instanceof admin.firestore.Timestamp
+      ? ((existingMember as any).createdAt as admin.firestore.Timestamp)
       : now
 
-  const rosterRoleRaw = getOptionalString(rosterEntry.role ?? rosterEntry.memberRole ?? undefined)
+  const rosterRoleRaw = getOptionalString((rosterEntry as any).role ?? (rosterEntry as any).memberRole ?? undefined)
   let resolvedRole = 'staff'
   if (rosterRoleRaw) {
     const normalizedRole = rosterRoleRaw.toLowerCase()
@@ -948,40 +973,40 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     } else if (normalizedRole.includes('owner')) {
       resolvedRole = 'owner'
     }
-  } else if (typeof existingMember.role === 'string' && VALID_ROLES.has(existingMember.role)) {
-    resolvedRole = existingMember.role
+  } else if (typeof (existingMember as any).role === 'string' && VALID_ROLES.has((existingMember as any).role)) {
+    resolvedRole = (existingMember as any).role
   }
 
   const rosterPhone =
-    getOptionalString(rosterEntry.phone ?? rosterEntry.contactPhone ?? rosterEntry.phoneNumber ?? undefined) ??
-    (typeof existingMember.phone === 'string' ? existingMember.phone : null)
+    getOptionalString((rosterEntry as any).phone ?? (rosterEntry as any).contactPhone ?? (rosterEntry as any).phoneNumber ?? undefined) ??
+    (typeof (existingMember as any).phone === 'string' ? (existingMember as any).phone : null)
   const rosterName =
-    getOptionalString(rosterEntry.name ?? rosterEntry.displayName ?? rosterEntry.memberName ?? undefined) ??
-    (typeof existingMember.name === 'string' ? existingMember.name : null)
+    getOptionalString((rosterEntry as any).name ?? (rosterEntry as any).displayName ?? (rosterEntry as any).memberName ?? undefined) ??
+    (typeof (existingMember as any).name === 'string' ? (existingMember as any).name : null)
   const rosterEmailAddress =
     getOptionalEmail(
-      rosterEntry.email ??
-        rosterEntry.memberEmail ??
-        rosterEntry.primaryEmail ??
-        rosterEntry.signupEmail ??
-        existingMember.email ??
+      (rosterEntry as any).email ??
+        (rosterEntry as any).memberEmail ??
+        (rosterEntry as any).primaryEmail ??
+        (rosterEntry as any).signupEmail ??
+        (existingMember as any).email ??
         emailFromToken ??
         undefined,
     ) ?? null
   const rosterFirstSignupEmail =
     getOptionalEmail(
-      rosterEntry.firstSignupEmail ??
-        rosterEntry.signupEmail ??
-        rosterEntry.primaryEmail ??
-        rosterEntry.memberEmail ??
+      (rosterEntry as any).firstSignupEmail ??
+        (rosterEntry as any).signupEmail ??
+        (rosterEntry as any).primaryEmail ??
+        (rosterEntry as any).memberEmail ??
         undefined,
     ) ??
-    (typeof existingMember.firstSignupEmail === 'string'
-      ? existingMember.firstSignupEmail
+    (typeof (existingMember as any).firstSignupEmail === 'string'
+      ? (existingMember as any).firstSignupEmail
       : rosterEmailAddress)
   const rosterInvitedBy =
-    getOptionalString(rosterEntry.invitedBy ?? rosterEntry.inviterUid ?? rosterEntry.invited_by ?? undefined) ??
-    (typeof existingMember.invitedBy === 'string' ? existingMember.invitedBy : null)
+    getOptionalString((rosterEntry as any).invitedBy ?? (rosterEntry as any).inviterUid ?? (rosterEntry as any).invited_by ?? undefined) ??
+    (typeof (existingMember as any).invitedBy === 'string' ? (existingMember as any).invitedBy : null)
 
   const memberData: admin.firestore.DocumentData = {
     uid,
@@ -991,18 +1016,18 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     updatedAt: now,
     createdAt: memberCreatedAt,
   }
-  if (rosterPhone) memberData.phone = rosterPhone
-  if (rosterName) memberData.name = rosterName
-  if (rosterFirstSignupEmail) memberData.firstSignupEmail = rosterFirstSignupEmail
-  if (rosterInvitedBy) memberData.invitedBy = rosterInvitedBy
+  if (rosterPhone) (memberData as any).phone = rosterPhone
+  if (rosterName) (memberData as any).name = rosterName
+  if (rosterFirstSignupEmail) (memberData as any).firstSignupEmail = rosterFirstSignupEmail
+  if (rosterInvitedBy) (memberData as any).invitedBy = rosterInvitedBy
 
   await memberRef.set(memberData, { merge: true })
   if (rosterEmailRef) {
     await rosterEmailRef.set({ uid, lastResolvedAt: now }, { merge: true })
   }
 
-  const productSeedRecords = toSeedRecords(storeData.seedProducts ?? rosterEntry.seedProducts ?? null)
-  const customerSeedRecords = toSeedRecords(storeData.seedCustomers ?? rosterEntry.seedCustomers ?? null)
+  const productSeedRecords = toSeedRecords((storeData as any).seedProducts ?? (rosterEntry as any).seedProducts ?? null)
+  const customerSeedRecords = toSeedRecords((storeData as any).seedCustomers ?? (rosterEntry as any).seedCustomers ?? null)
 
   const productSeeds = mapProductSeeds(productSeedRecords, storeId)
   const customerSeeds = mapCustomerSeeds(customerSeedRecords, storeId)
@@ -1013,8 +1038,8 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
       const snapshot = await ref.get()
       const existingProduct = (snapshot.data() ?? {}) as admin.firestore.DocumentData
       const productCreatedAt =
-        snapshot.exists && existingProduct.createdAt instanceof admin.firestore.Timestamp
-          ? (existingProduct.createdAt as admin.firestore.Timestamp)
+        snapshot.exists && (existingProduct as any).createdAt instanceof admin.firestore.Timestamp
+          ? ((existingProduct as any).createdAt as admin.firestore.Timestamp)
           : now
       const productData: admin.firestore.DocumentData = {
         ...seed.data,
@@ -1032,8 +1057,8 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
       const snapshot = await ref.get()
       const existingCustomer = (snapshot.data() ?? {}) as admin.firestore.DocumentData
       const customerCreatedAt =
-        snapshot.exists && existingCustomer.createdAt instanceof admin.firestore.Timestamp
-          ? (existingCustomer.createdAt as admin.firestore.Timestamp)
+        snapshot.exists && (existingCustomer as any).createdAt instanceof admin.firestore.Timestamp
+          ? ((existingCustomer as any).createdAt as admin.firestore.Timestamp)
           : now
       const customerData: admin.firestore.DocumentData = {
         ...seed.data,
@@ -1082,7 +1107,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   }
 
   if (!memberSnap.exists) {
-    memberData.createdAt = timestamp
+    ;(memberData as any).createdAt = timestamp
   }
 
   await memberRef.set(memberData, { merge: true })
@@ -1097,7 +1122,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
     updatedAt: timestamp,
   }
   if (!emailSnap.exists) {
-    emailData.createdAt = timestamp
+    ;(emailData as any).createdAt = timestamp
   }
   await emailRef.set(emailData, { merge: true })
   const claims = await updateUserClaims(record.uid, role)
