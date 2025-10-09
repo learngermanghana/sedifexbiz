@@ -1,7 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { createHashRouter, RouterProvider } from 'react-router-dom'
-
+import { createHashRouter, RouterProvider, redirect } from 'react-router-dom'
 import App from './App'
 import Shell from './layout/Shell'
 import Dashboard from './pages/Dashboard'
@@ -12,14 +11,16 @@ import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
 import Onboarding from './pages/Onboarding'
 import AccountOverview from './pages/AccountOverview'
+import AuthScreen from './pages/AuthScreen'
 import BillingThanks from './pages/BillingThanks'
 import { ToastProvider } from './components/ToastProvider'
 
-// IMPORTANT: Make /billing/thanks a TOP-LEVEL route so it can render
-// even when the user is not authenticated yet.
 const router = createHashRouter([
+  // Standalone routes (render while signed-out too)
+  { path: '/auth', element: <AuthScreen /> },
   { path: '/billing/thanks', element: <BillingThanks /> },
 
+  // App shell with authenticated pages as children
   {
     path: '/',
     element: <App />,
@@ -34,6 +35,9 @@ const router = createHashRouter([
       { path: 'account',   element: <Shell><AccountOverview /></Shell> },
     ],
   },
+
+  // Optional: catch-all -> home
+  { path: '*', loader: () => redirect('/') },
 ])
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
