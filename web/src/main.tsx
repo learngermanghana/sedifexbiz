@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { createHashRouter, RouterProvider } from 'react-router-dom'
+
 import App from './App'
 import Shell from './layout/Shell'
 import Dashboard from './pages/Dashboard'
@@ -11,9 +12,14 @@ import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
 import Onboarding from './pages/Onboarding'
 import AccountOverview from './pages/AccountOverview'
+import BillingThanks from './pages/BillingThanks'
 import { ToastProvider } from './components/ToastProvider'
 
+// IMPORTANT: Make /billing/thanks a TOP-LEVEL route so it can render
+// even when the user is not authenticated yet.
 const router = createHashRouter([
+  { path: '/billing/thanks', element: <BillingThanks /> },
+
   {
     path: '/',
     element: <App />,
