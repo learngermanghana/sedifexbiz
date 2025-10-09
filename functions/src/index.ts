@@ -1,3 +1,7 @@
+// at the top of functions/src/index.ts
+import { getBillingConfig, type PlanId } from './plans'
+
+
 // re-export triggers defined in other files so they are included in the build
 export { onAuthCreate } from './onAuthCreate';
 
