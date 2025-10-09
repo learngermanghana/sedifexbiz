@@ -12,6 +12,7 @@ import { useToast } from '../components/ToastProvider'
 import { ensureStoreDocument, persistSession } from '../controllers/sessionController'
 import { signupConfig } from '../config/signup'
 import { auth } from '../firebase'
+import { startCheckout } from '../lib/billing'   // ← NEW
 import './AuthScreen.css'
 
 type AuthMode = 'sign-in' | 'sign-up'
@@ -19,27 +20,13 @@ type AuthMode = 'sign-in' | 'sign-up'
 const MIN_PASSWORD_LENGTH = 8
 
 function normalizeError(error: unknown): string {
-  if (!error) {
-    return 'Something went wrong. Please try again.'
-  }
-
-  if (typeof error === 'string') {
-    const trimmed = error.trim()
-    return trimmed || 'Something went wrong. Please try again.'
-  }
-
-  if (error instanceof Error) {
-    const trimmed = error.message.trim()
-    return trimmed || 'Something went wrong. Please try again.'
-  }
-
+  if (!error) return 'Something went wrong. Please try again.'
+  if (typeof error === 'string') return error.trim() || 'Something went wrong. Please try again.'
+  if (error instanceof Error) return error.message.trim() || 'Something went wrong. Please try again.'
   if (typeof error === 'object' && 'message' in (error as Record<string, unknown>)) {
     const value = (error as { message?: unknown }).message
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim()
-    }
+    if (typeof value === 'string' && value.trim()) return value.trim()
   }
-
   return 'Something went wrong. Please try again.'
 }
 
@@ -48,11 +35,9 @@ function validateCredentials(email: string, password: string): string | null {
   if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
     return 'Enter a valid email address to continue.'
   }
-
   if (password.length < MIN_PASSWORD_LENGTH) {
     return `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`
   }
-
   return null
 }
 
@@ -65,29 +50,37 @@ export default function AuthScreen() {
   const { publish } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
-  const { paymentUrl, salesEmail } = signupConfig
+  const { salesEmail } = signupConfig   // we still show a help link; payment URL no longer used
 
   const redirectTo = useMemo(() => {
     const state = location.state as { from?: string } | null
-    if (state?.from && typeof state.from === 'string') {
-      return state.from
-    }
-    if (location.pathname && location.pathname !== '/') {
-      return location.pathname
-    }
+    if (state?.from && typeof state.from === 'string') return state.from
+    if (location.pathname && location.pathname !== '/') return location.pathname
     return '/'
   }, [location.pathname, location.state])
 
+  const triggerCheckout = useCallback(async () => {
+    publish({ message: 'Redirecting to checkout…', tone: 'info' })
+    // This calls your Cloud Function and redirects the browser to Paystack
+    await startCheckout('starter')
+  }, [publish])
+
   const toggleMode = useCallback((nextMode: AuthMode) => {
     setMode(current => {
-      if (current === nextMode) {
-        return current
-      }
+      if (current === nextMode) return current
       setError(null)
       setPassword('')
       return nextMode
     })
-  }, [])
+
+    // If user switches into Sign up, immediately start checkout
+    if (nextMode === 'sign-up') {
+      // fire-and-forget; redirect will happen
+      triggerCheckout().catch(err =>
+        publish({ message: normalizeError(err), tone: 'error' }),
+      )
+    }
+  }, [publish, triggerCheckout])
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -95,11 +88,7 @@ export default function AuthScreen() {
       if (loading) return
 
       if (mode === 'sign-up') {
-        const message =
-          'Sedifex requires an active subscription before we can create your workspace.'
-        publish({ message, tone: 'info', duration: 8000 })
-        const target = paymentUrl ?? `mailto:${salesEmail}`
-        window.open(target, '_blank', 'noopener,noreferrer')
+        await triggerCheckout()
         return
       }
 
@@ -130,19 +119,15 @@ export default function AuthScreen() {
         setLoading(false)
       }
     },
-    [email, loading, mode, navigate, password, paymentUrl, publish, redirectTo, salesEmail],
+    [email, loading, mode, navigate, password, publish, redirectTo, triggerCheckout],
   )
 
   const handleSignupRedirect = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
+    async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
-      const message =
-        'Sedifex requires an active subscription before we can create your workspace.'
-      publish({ message, tone: 'info', duration: 8000 })
-      const target = paymentUrl ?? `mailto:${salesEmail}`
-      window.open(target, '_blank', 'noopener,noreferrer')
+      await triggerCheckout()
     },
-    [paymentUrl, publish, salesEmail],
+    [triggerCheckout],
   )
 
   const signInFormTitle = 'Welcome back'
@@ -229,7 +214,9 @@ export default function AuthScreen() {
                 disabled={loading}
                 required
               />
-              <p className={authFormNoteClass}>Use at least {MIN_PASSWORD_LENGTH} characters for a strong password.</p>
+              <p className={authFormNoteClass}>
+                Use at least {MIN_PASSWORD_LENGTH} characters for a strong password.
+              </p>
             </label>
           </AuthForm>
         ) : (
@@ -237,7 +224,7 @@ export default function AuthScreen() {
             title="Complete payment to create your Sedifex workspace"
             description="Sedifex requires an active subscription before we can issue new logins."
             onSubmit={handleSignupRedirect}
-            submitLabel={paymentUrl ? 'Continue to payment' : 'Contact sales'}
+            submitLabel="Continue to payment"
             loading={false}
             footer={
               <div>
