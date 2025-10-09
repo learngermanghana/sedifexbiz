@@ -30,6 +30,7 @@ import {
 } from './controllers/accessController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
+import { signupConfig } from './config/signup'
 
 /* -------------------------------------------------------------------------- */
 /*                              Paystack helpers                              */
@@ -622,7 +623,6 @@ export default function App() {
   }, [publish, status.message, status.tone])
 
   function handleModeChange(nextMode: AuthMode) {
-    setMode(nextMode)
     setStatus({ tone: 'idle', message: '' })
     setConfirmPassword('')
     setFullName('')
@@ -632,6 +632,17 @@ export default function App() {
     setCountry('')
     setTown('')
     setSignupRole('owner')
+
+    if (nextMode === 'signup') {
+      const message =
+        'Sedifex requires an active subscription before we can create your workspace.'
+      publish({ tone: 'info', message, duration: 8000 })
+      const target = signupConfig.paymentUrl ?? `mailto:${signupConfig.salesEmail}`
+      window.open(target, '_blank', 'noopener,noreferrer')
+      return
+    }
+
+    setMode(nextMode)
   }
 
   // Inline minHeight is just a safety net; CSS already uses dvh/svh.

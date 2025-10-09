@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
+import { signInWithEmailAndPassword } from 'firebase/auth'
 import {
   AuthForm,
   authFormInputClass,
@@ -9,10 +9,9 @@ import {
   authFormNoteClass,
 } from '../components/auth/AuthForm'
 import { useToast } from '../components/ToastProvider'
-import { afterSignupBootstrap } from '../controllers/accessController'
-import { ensureStoreDocument, ensureTeamMemberDocument, persistSession } from '../controllers/sessionController'
+import { ensureStoreDocument, persistSession } from '../controllers/sessionController'
+import { signupConfig } from '../config/signup'
 import { auth } from '../firebase'
-import { setOnboardingStatus } from '../utils/onboarding'
 import './AuthScreen.css'
 
 type AuthMode = 'sign-in' | 'sign-up'
@@ -66,6 +65,7 @@ export default function AuthScreen() {
   const { publish } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
+  const { paymentUrl, salesEmail } = signupConfig
 
   const redirectTo = useMemo(() => {
     const state = location.state as { from?: string } | null
@@ -94,6 +94,15 @@ export default function AuthScreen() {
       event.preventDefault()
       if (loading) return
 
+      if (mode === 'sign-up') {
+        const message =
+          'Sedifex requires an active subscription before we can create your workspace.'
+        publish({ message, tone: 'info', duration: 8000 })
+        const target = paymentUrl ?? `mailto:${salesEmail}`
+        window.open(target, '_blank', 'noopener,noreferrer')
+        return
+      }
+
       const validationError = validateCredentials(email, password)
       if (validationError) {
         setError(validationError)
@@ -107,35 +116,11 @@ export default function AuthScreen() {
       const trimmedEmail = email.trim()
 
       try {
-        if (mode === 'sign-in') {
-          const { user } = await signInWithEmailAndPassword(auth, trimmedEmail, password)
-          await ensureStoreDocument(user)
-          await persistSession(user)
-
-          publish({ message: 'Welcome back!', tone: 'success' })
-          navigate(redirectTo, { replace: true })
-          return
-        }
-
-        const { user } = await createUserWithEmailAndPassword(auth, trimmedEmail, password)
+        const { user } = await signInWithEmailAndPassword(auth, trimmedEmail, password)
         await ensureStoreDocument(user)
-        await ensureTeamMemberDocument(user, { storeId: user.uid, role: 'owner' })
-        await persistSession(user, { storeId: user.uid, role: 'owner' })
-        setOnboardingStatus(user.uid, 'pending')
+        await persistSession(user)
 
-        try {
-          await afterSignupBootstrap()
-        } catch (bootstrapError) {
-          const message = normalizeError(bootstrapError)
-          publish({
-            message: `We created your account but hit a snag syncing workspace data. ${message}`,
-            tone: 'error',
-            duration: 8000,
-          })
-        }
-
-        publish({ message: 'Account created! Setting things up now…', tone: 'success' })
-
+        publish({ message: 'Welcome back!', tone: 'success' })
         navigate(redirectTo, { replace: true })
       } catch (unknownError) {
         const message = normalizeError(unknownError)
@@ -145,14 +130,24 @@ export default function AuthScreen() {
         setLoading(false)
       }
     },
-    [email, loading, mode, navigate, password, publish, redirectTo],
+    [email, loading, mode, navigate, password, paymentUrl, publish, redirectTo, salesEmail],
   )
 
-  const formTitle = mode === 'sign-in' ? 'Welcome back' : 'Create your Sedifex account'
-  const formDescription =
-    mode === 'sign-in'
-      ? 'Sign in to manage your stores, track inventory, and keep sales in sync.'
-      : 'Start your free Sedifex workspace so your team can sell faster and count smarter.'
+  const handleSignupRedirect = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      const message =
+        'Sedifex requires an active subscription before we can create your workspace.'
+      publish({ message, tone: 'info', duration: 8000 })
+      const target = paymentUrl ?? `mailto:${salesEmail}`
+      window.open(target, '_blank', 'noopener,noreferrer')
+    },
+    [paymentUrl, publish, salesEmail],
+  )
+
+  const signInFormTitle = 'Welcome back'
+  const signInFormDescription =
+    'Sign in to manage your stores, track inventory, and keep sales in sync.'
 
   const footerActionLabel =
     mode === 'sign-in' ? "Don't have an account?" : 'Already have an account?'
@@ -184,58 +179,86 @@ export default function AuthScreen() {
           </button>
         </div>
 
-        <AuthForm
-          title={formTitle}
-          description={formDescription}
-          onSubmit={handleSubmit}
-          submitLabel={mode === 'sign-in' ? 'Sign in' : 'Create account'}
-          loading={loading}
-          error={error}
-          footer={
-            <div>
-              {footerActionLabel}{' '}
-              <button
-                type="button"
-                onClick={() => toggleMode(footerActionMode)}
-                className="auth-screen__footer-button"
+        {mode === 'sign-in' ? (
+          <AuthForm
+            title={signInFormTitle}
+            description={signInFormDescription}
+            onSubmit={handleSubmit}
+            submitLabel="Sign in"
+            loading={loading}
+            error={error}
+            footer={
+              <div>
+                {footerActionLabel}{' '}
+                <button
+                  type="button"
+                  onClick={() => toggleMode(footerActionMode)}
+                  className="auth-screen__footer-button"
+                  disabled={loading}
+                >
+                  {footerActionButtonLabel}
+                </button>
+              </div>
+            }
+          >
+            <label className={authFormInputGroupClass}>
+              <span className={authFormLabelClass}>Email</span>
+              <input
+                className={authFormInputClass}
+                type="email"
+                name="email"
+                autoComplete="email"
+                placeholder="you@company.com"
+                value={email}
+                onChange={event => setEmail(event.target.value)}
                 disabled={loading}
-              >
-                {footerActionButtonLabel}
-              </button>
-            </div>
-          }
-        >
-          <label className={authFormInputGroupClass}>
-            <span className={authFormLabelClass}>Email</span>
-            <input
-              className={authFormInputClass}
-              type="email"
-              name="email"
-              autoComplete="email"
-              placeholder="you@company.com"
-              value={email}
-              onChange={event => setEmail(event.target.value)}
-              disabled={loading}
-              required
-            />
-          </label>
+                required
+              />
+            </label>
 
-          <label className={authFormInputGroupClass}>
-            <span className={authFormLabelClass}>Password</span>
-            <input
-              className={authFormInputClass}
-              type="password"
-              name="password"
-              autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
-              placeholder="Enter at least 8 characters"
-              value={password}
-              onChange={event => setPassword(event.target.value)}
-              disabled={loading}
-              required
-            />
-            <p className={authFormNoteClass}>Use at least {MIN_PASSWORD_LENGTH} characters for a strong password.</p>
-          </label>
-        </AuthForm>
+            <label className={authFormInputGroupClass}>
+              <span className={authFormLabelClass}>Password</span>
+              <input
+                className={authFormInputClass}
+                type="password"
+                name="password"
+                autoComplete="current-password"
+                placeholder="Enter at least 8 characters"
+                value={password}
+                onChange={event => setPassword(event.target.value)}
+                disabled={loading}
+                required
+              />
+              <p className={authFormNoteClass}>Use at least {MIN_PASSWORD_LENGTH} characters for a strong password.</p>
+            </label>
+          </AuthForm>
+        ) : (
+          <AuthForm
+            title="Complete payment to create your Sedifex workspace"
+            description="Sedifex requires an active subscription before we can issue new logins."
+            onSubmit={handleSignupRedirect}
+            submitLabel={paymentUrl ? 'Continue to payment' : 'Contact sales'}
+            loading={false}
+            footer={
+              <div>
+                {footerActionLabel}{' '}
+                <button
+                  type="button"
+                  onClick={() => toggleMode(footerActionMode)}
+                  className="auth-screen__footer-button"
+                  disabled={loading}
+                >
+                  {footerActionButtonLabel}
+                </button>
+              </div>
+            }
+          >
+            <p className={authFormNoteClass}>
+              We&apos;ll send activation details as soon as payment is confirmed. Need help?{' '}
+              <a href={`mailto:${salesEmail}`}>Email our team</a>.
+            </p>
+          </AuthForm>
+        )}
       </div>
     </main>
   )
