@@ -4,39 +4,21 @@ import { getAuth, RecaptchaVerifier } from 'firebase/auth'
 import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore'
 import { getFunctions } from 'firebase/functions'
 import { getStorage } from 'firebase/storage'
-
-type FirebaseEnvKey =
-  | 'VITE_FB_API_KEY'
-  | 'VITE_FB_AUTH_DOMAIN'
-  | 'VITE_FB_PROJECT_ID'
-  | 'VITE_FB_STORAGE_BUCKET'
-  | 'VITE_FB_APP_ID'
-
-const env = import.meta.env as Record<string, string | undefined>
-
-function requireEnv(key: FirebaseEnvKey): string {
-  const v = env[key]
-  if (typeof v === 'string') {
-    const trimmed = v.trim()
-    if (trimmed) return trimmed
-  }
-  throw new Error(`[firebase] Missing ${key}. Add it to your env (local and Vercel).`)
-}
+import { firebaseEnv } from './config/firebaseEnv'
 
 const firebaseConfig = {
-  apiKey: requireEnv('VITE_FB_API_KEY'),
-  authDomain: requireEnv('VITE_FB_AUTH_DOMAIN'),
-  projectId: requireEnv('VITE_FB_PROJECT_ID'),
-  storageBucket: requireEnv('VITE_FB_STORAGE_BUCKET'),
-  appId: requireEnv('VITE_FB_APP_ID'),
+  apiKey: firebaseEnv.apiKey,
+  authDomain: firebaseEnv.authDomain,
+  projectId: firebaseEnv.projectId,
+  storageBucket: firebaseEnv.storageBucket,
+  appId: firebaseEnv.appId,
 }
 
 // --- Core app instances ---
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const storage = getStorage(app)
-// If you later add a region: getFunctions(app, import.meta.env.VITE_FB_FUNCTIONS_REGION)
-export const functions = getFunctions(app)
+export const functions = getFunctions(app, firebaseEnv.functionsRegion)
 
 // --- Firestore ---
 const FIRESTORE_SETTINGS = {

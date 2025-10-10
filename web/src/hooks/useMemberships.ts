@@ -14,6 +14,7 @@ import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
 import { getAuth } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
+import { firebaseEnv } from '../config/firebaseEnv'
 
 export type Membership = {
   id: string
@@ -73,8 +74,7 @@ export async function refreshMembershipClaims() {
   const user = auth.currentUser
   if (!user) return
 
-  const region = import.meta.env.VITE_FB_FUNCTIONS_REGION || 'us-central1'
-  const functions = getFunctions(undefined, region)
+  const functions = getFunctions(undefined, firebaseEnv.functionsRegion)
 
   await httpsCallable(functions, 'resolveStoreAccess')()
   await user.getIdToken(true)
