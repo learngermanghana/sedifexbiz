@@ -12,7 +12,7 @@ import { useToast } from '../components/ToastProvider'
 import { ensureStoreDocument, persistSession } from '../controllers/sessionController'
 import { signupConfig } from '../config/signup'
 import { auth } from '../firebase'
-import { startCheckout } from '../lib/billing'   // ← NEW
+import { startCheckout } from '../../lib/billing'   // ← FIXED PATH
 import './AuthScreen.css'
 
 type AuthMode = 'sign-in' | 'sign-up'
@@ -50,7 +50,7 @@ export default function AuthScreen() {
   const { publish } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
-  const { salesEmail } = signupConfig   // we still show a help link; payment URL no longer used
+  const { salesEmail } = signupConfig
 
   const redirectTo = useMemo(() => {
     const state = location.state as { from?: string } | null
@@ -61,7 +61,6 @@ export default function AuthScreen() {
 
   const triggerCheckout = useCallback(async () => {
     publish({ message: 'Redirecting to checkout…', tone: 'info' })
-    // This calls your Cloud Function and redirects the browser to Paystack
     await startCheckout('starter')
   }, [publish])
 
@@ -73,9 +72,7 @@ export default function AuthScreen() {
       return nextMode
     })
 
-    // If user switches into Sign up, immediately start checkout
     if (nextMode === 'sign-up') {
-      // fire-and-forget; redirect will happen
       triggerCheckout().catch(err =>
         publish({ message: normalizeError(err), tone: 'error' }),
       )
