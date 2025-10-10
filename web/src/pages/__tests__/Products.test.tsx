@@ -18,7 +18,6 @@ vi.mock('../../utils/offlineCache', () => ({
 
 vi.mock('../../firebase', () => ({
   db: {},
-  rosterDb: {},
 }))
 
 const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))

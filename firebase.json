@@ -10,18 +10,10 @@
       "**/node_modules/**"
     ]
   },
-  "firestore": [
-    {
-      "database": "(default)",
-      "rules": "firestore.rules",
-      "indexes": "firestore.indexes.json"
-    },
-    {
-      "database": "roster",
-      "rules": "firestore.roster.rules",
-      "indexes": "firestore.roster.indexes.json"
-    }
-  ],
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
   "emulators": {
     "functions": {
       "port": 5001

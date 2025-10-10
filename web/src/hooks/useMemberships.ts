@@ -10,7 +10,7 @@ import {
   type Firestore,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { db, rosterDb } from '../firebase'
+import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
 import { getAuth } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
@@ -60,28 +60,8 @@ async function loadMembershipsFromDb(firestore: Firestore, uid: string): Promise
   return snapshot.docs.map(mapMembershipSnapshot)
 }
 
-/**
- * Prefer roster DB (source of truth for team + roles), then fall back to default DB.
- */
 async function loadMembershipsForUser(uid: string): Promise<Membership[]> {
-  let rosterRows: Membership[] | null = null
-  let rosterErr: unknown = null
-
-  try {
-    rosterRows = await loadMembershipsFromDb(rosterDb, uid)
-    if (rosterRows.length > 0) return rosterRows
-  } catch (e) {
-    rosterErr = e
-  }
-
-  try {
-    const primaryRows = await loadMembershipsFromDb(db, uid)
-    if (primaryRows.length > 0) return primaryRows
-    return rosterRows ?? primaryRows
-  } catch (e) {
-    if (rosterRows) return rosterRows
-    throw rosterErr ?? e
-  }
+  return loadMembershipsFromDb(db, uid)
 }
 
 /**

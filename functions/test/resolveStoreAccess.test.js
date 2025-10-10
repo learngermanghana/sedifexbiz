@@ -3,7 +3,6 @@ const Module = require('module')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
 
 let currentDefaultDb
-let currentRosterDb
 const apps = []
 
 const originalLoad = Module._load
@@ -40,7 +39,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
   if (request === 'firebase-admin/firestore') {
     return {
-      getFirestore: (_app, name) => (name === 'roster' ? currentRosterDb : currentDefaultDb),
+      getFirestore: () => currentDefaultDb,
     }
   }
 
@@ -73,8 +72,6 @@ async function runActiveStatusTest() {
         { id: 'store-001-alice', name: 'Alice', email: 'alice@example.com' },
       ],
     },
-  })
-  currentRosterDb = new MockFirestore({
     'teamMembers/owner@example.com': {
       email: 'owner@example.com',
       storeId: 'store-001',
@@ -101,12 +98,12 @@ async function runActiveStatusTest() {
   assert.strictEqual(result.role, 'owner')
   assert.ok(!('spreadsheetId' in result))
 
-  const rosterDoc = currentRosterDb.getDoc('teamMembers/user-1')
+  const rosterDoc = currentDefaultDb.getDoc('teamMembers/user-1')
   assert.ok(rosterDoc)
   assert.strictEqual(rosterDoc.storeId, 'store-001')
   assert.strictEqual(rosterDoc.email, 'owner@example.com')
 
-  const rosterEmailDoc = currentRosterDb.getDoc('teamMembers/owner@example.com')
+  const rosterEmailDoc = currentDefaultDb.getDoc('teamMembers/owner@example.com')
   assert.ok(rosterEmailDoc)
   assert.strictEqual(rosterEmailDoc.uid, 'user-1')
 
@@ -145,8 +142,6 @@ async function runInactiveStatusTest() {
     'stores/store-002': {
       status: 'Contract Terminated',
     },
-  })
-  currentRosterDb = new MockFirestore({
     'teamMembers/owner@example.com': {
       email: 'owner@example.com',
       storeId: 'store-002',
@@ -181,8 +176,6 @@ async function runInactiveStatusTest() {
 async function runStoreOwnerFallbackTest() {
   currentDefaultDb = new MockFirestore({
     'stores/owner-123': { status: 'Active', ownerId: 'legacy-store' },
-  })
-  currentRosterDb = new MockFirestore({
     'teamMembers/owner@example.com': {
       email: 'owner@example.com',
       storeId: 'legacy-store',
@@ -205,7 +198,7 @@ async function runStoreOwnerFallbackTest() {
   assert.strictEqual(result.role, 'owner')
   assert.strictEqual(result.store.id, 'owner-123')
 
-  const rosterDoc = currentRosterDb.getDoc('teamMembers/user-5')
+  const rosterDoc = currentDefaultDb.getDoc('teamMembers/user-5')
   assert.ok(rosterDoc)
   assert.strictEqual(rosterDoc.storeId, 'legacy-store')
 
@@ -217,8 +210,6 @@ async function runStoreOwnerFallbackTest() {
 async function runStoreIdMismatchTest() {
   currentDefaultDb = new MockFirestore({
     'stores/store-777': { status: 'Active' },
-  })
-  currentRosterDb = new MockFirestore({
     'teamMembers/owner@example.com': {
       email: 'owner@example.com',
       storeId: 'store-777',
@@ -252,8 +243,6 @@ async function runStoreIdMismatchTest() {
 async function runMissingStoreIdTest() {
   currentDefaultDb = new MockFirestore({
     'stores/store-001': { status: 'Active' },
-  })
-  currentRosterDb = new MockFirestore({
     'teamMembers/owner@example.com': {
       email: 'owner@example.com',
       role: 'Owner',
@@ -287,7 +276,6 @@ async function runManagedStaffAccessTest() {
   currentDefaultDb = new MockFirestore({
     'stores/store-003': { status: 'Active' },
   })
-  currentRosterDb = new MockFirestore({})
 
   const { manageStaffAccount, resolveStoreAccess } = loadFunctionsModule()
 
@@ -306,19 +294,19 @@ async function runManagedStaffAccessTest() {
   assert.strictEqual(manageResult.ok, true)
   assert.strictEqual(manageResult.uid, 'new-user')
 
-  const rosterByUid = currentRosterDb.getDoc('teamMembers/new-user')
+  const rosterByUid = currentDefaultDb.getDoc('teamMembers/new-user')
   assert.ok(rosterByUid)
   assert.strictEqual(rosterByUid.storeId, 'store-003')
   assert.strictEqual(rosterByUid.role, 'staff')
   assert.strictEqual(rosterByUid.email, 'staff@example.com')
 
-  const rosterByEmail = currentRosterDb.getDoc('teamMembers/staff@example.com')
+  const rosterByEmail = currentDefaultDb.getDoc('teamMembers/staff@example.com')
   assert.ok(rosterByEmail)
   assert.strictEqual(rosterByEmail.storeId, 'store-003')
   assert.strictEqual(rosterByEmail.role, 'staff')
   assert.strictEqual(rosterByEmail.uid, 'new-user')
 
-  currentRosterDb.setRaw('teamMembers/staff@example.com', undefined)
+  currentDefaultDb.setRaw('teamMembers/staff@example.com', undefined)
 
   const context = {
     auth: {
@@ -333,7 +321,7 @@ async function runManagedStaffAccessTest() {
   assert.strictEqual(result.storeId, 'store-003')
   assert.strictEqual(result.role, 'staff')
 
-  const restoredEmailDoc = currentRosterDb.getDoc('teamMembers/staff@example.com')
+  const restoredEmailDoc = currentDefaultDb.getDoc('teamMembers/staff@example.com')
   assert.ok(restoredEmailDoc)
   assert.strictEqual(restoredEmailDoc.uid, 'new-user')
 }
@@ -341,8 +329,6 @@ async function runManagedStaffAccessTest() {
 async function runMissingEmailTokenTest() {
   currentDefaultDb = new MockFirestore({
     'stores/store-010': { status: 'Active' },
-  })
-  currentRosterDb = new MockFirestore({
     'teamMembers/user-10': {
       storeId: 'store-010',
       role: 'staff',
@@ -365,7 +351,7 @@ async function runMissingEmailTokenTest() {
   assert.strictEqual(result.storeId, 'store-010')
   assert.strictEqual(result.role, 'staff')
 
-  const rosterDoc = currentRosterDb.getDoc('teamMembers/user-10')
+  const rosterDoc = currentDefaultDb.getDoc('teamMembers/user-10')
   assert.ok(rosterDoc)
   assert.strictEqual(rosterDoc.storeId, 'store-010')
   assert.strictEqual(rosterDoc.role, 'staff')

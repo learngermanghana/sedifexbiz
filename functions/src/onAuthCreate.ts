@@ -1,12 +1,12 @@
 import * as functions from 'firebase-functions'
-import { admin, defaultDb, rosterDb } from './firestore'
+import { admin, defaultDb } from './firestore'
 
 export const onAuthCreate = functions.auth.user().onCreate(async (user) => {
   const uid = user.uid
   const now = admin.firestore.FieldValue.serverTimestamp()
 
-  // Roster DB: teamMembers/<uid>
-  await rosterDb
+  // Firestore: teamMembers/<uid>
+  await defaultDb
     .collection('teamMembers')
     .doc(uid)
     .set(
@@ -20,7 +20,7 @@ export const onAuthCreate = functions.auth.user().onCreate(async (user) => {
       { merge: true },
     )
 
-  // Default DB: stores/<uid>
+  // Firestore: stores/<uid>
   await defaultDb
     .collection('stores')
     .doc(uid)
