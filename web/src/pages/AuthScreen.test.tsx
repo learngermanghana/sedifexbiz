@@ -16,6 +16,7 @@ const mockNavigate = vi.fn()
 const signupConfigMock = vi.hoisted(() => ({
   paymentUrl: 'https://billing.example.com/checkout',
   salesEmail: 'billing@example.com',
+  salesBookingUrl: 'https://calendly.com/sedifex/demo',
 }))
 
 vi.mock('firebase/auth', () => ({
@@ -56,6 +57,7 @@ describe('AuthScreen', () => {
     mockNavigate.mockReset()
     signupConfigMock.paymentUrl = 'https://billing.example.com/checkout'
     signupConfigMock.salesEmail = 'billing@example.com'
+    signupConfigMock.salesBookingUrl = 'https://calendly.com/sedifex/demo'
   })
 
   it('signs in with Firebase auth and persists the session', async () => {

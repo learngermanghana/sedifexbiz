@@ -719,7 +719,17 @@ export default function App() {
       },
     ] as const
 
-    const SALES_URL = 'https://calendly.com/sedifex/demo'
+    const salesEmail = signupConfig.salesEmail
+    const salesEmailLink = `mailto:${salesEmail}`
+    const salesBookingUrl = (() => {
+      const raw = signupConfig.salesBookingUrl
+      if (typeof raw !== 'string') {
+        return salesEmailLink
+      }
+
+      const trimmed = raw.trim()
+      return trimmed || salesEmailLink
+    })()
 
     return (
       <main className="app" style={appStyle}>
@@ -1137,7 +1147,7 @@ export default function App() {
                 </ul>
                 <a
                   className="plan-card__cta"
-                  href={SALES_URL}
+                  href={salesBookingUrl}
                   target="_blank"
                   rel="noreferrer noopener"
                 >
@@ -1193,13 +1203,16 @@ export default function App() {
             </p>
             <a
               className="info-card__cta"
-              href="https://calendly.com/sedifex/demo"
+              href={salesBookingUrl}
               target="_blank"
               rel="noreferrer noopener"
             >
               Book a 30-minute consultation
             </a>
-            <p className="info-card__caption">Prefer email? Reach us at sales@sedifex.com.</p>
+            <p className="info-card__caption">
+              Prefer email? Reach us at{' '}
+              <a href={salesEmailLink}>{salesEmail}</a>.
+            </p>
           </article>
         </section>
       </main>
