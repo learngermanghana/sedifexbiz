@@ -13,15 +13,12 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "types": [
-      "vite/client",
-      "vitest",
-      "node"
-    ]
+    "jsx": "react-jsx"
   },
   "include": [
     "src",
-    "tests"
+    "tests",
+    "lib",
+    "api"
   ]
 }
