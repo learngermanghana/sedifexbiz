@@ -685,6 +685,42 @@ export default function App() {
       },
     ] as const
 
+    const PRICING_PLANS = [
+      {
+        name: 'Starter',
+        price: 99,
+        badge: 'Best for single stores',
+        description: 'Kick off with a lightweight workspace for owner-operators.',
+        features: [
+          '1 store',
+          'Up to 2 staff accounts',
+          '500 SKUs',
+          'Products, Sell, Receive, Customers',
+        ],
+      },
+      {
+        name: 'Pro',
+        price: 299,
+        badge: 'Most popular',
+        highlight: true,
+        description: 'Grow into multi-store ops with team workflows and support.',
+        features: [
+          'Up to 3 stores',
+          '10 staff accounts',
+          '10k SKUs',
+          'Close Day + priority email support',
+        ],
+      },
+      {
+        name: 'Enterprise',
+        price: 899,
+        description: 'Scale a nationwide fleet with advanced controls and limits.',
+        features: ['Unlimited stores & users', 'Advanced limits'],
+      },
+    ] as const
+
+    const SALES_URL = 'https://calendly.com/sedifex/demo'
+
     return (
       <main className="app" style={appStyle}>
         <div className="app__layout">
@@ -1067,6 +1103,47 @@ export default function App() {
                   Visit {feature.name}
                 </span>
               </Link>
+            ))}
+          </div>
+        </section>
+
+        <section className="app__pricing" aria-label="Sedifex pricing plans">
+          <header className="app__pricing-header">
+            <h2>Pricing</h2>
+            <p>Here’s a clean, simple pricing set you can ship now (GHS).</p>
+          </header>
+
+          <div className="app__pricing-grid" role="list">
+            {PRICING_PLANS.map(plan => (
+              <article
+                key={plan.name}
+                role="listitem"
+                className={`plan-card${plan.highlight ? ' is-highlighted' : ''}`}
+              >
+                {plan.badge && <span className="plan-card__badge">{plan.badge}</span>}
+                <div className="plan-card__heading">
+                  <h3>{plan.name}</h3>
+                  <p className="plan-card__price">
+                    <span className="plan-card__currency">GHS</span>
+                    <span className="plan-card__amount">{plan.price}</span>
+                    <span className="plan-card__interval">/month</span>
+                  </p>
+                </div>
+                <p className="plan-card__description">{plan.description}</p>
+                <ul className="plan-card__features">
+                  {plan.features.map(feature => (
+                    <li key={feature}>{feature}</li>
+                  ))}
+                </ul>
+                <a
+                  className="plan-card__cta"
+                  href={SALES_URL}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  Talk to sales
+                </a>
+              </article>
             ))}
           </div>
         </section>

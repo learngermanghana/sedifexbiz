@@ -109,6 +109,186 @@ body {
   z-index: 1;
 }
 
+.app__pricing {
+  width: min(1280px, 100%);
+  display: grid;
+  gap: clamp(24px, 5vw, 40px);
+  z-index: 1;
+}
+
+.app__pricing-header {
+  max-width: 720px;
+  display: grid;
+  gap: 12px;
+}
+
+.app__pricing-header h2 {
+  margin: 0;
+  font-size: clamp(22px, 4vw, 32px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.app__pricing-header p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.app__pricing-grid {
+  display: grid;
+  gap: clamp(18px, 4vw, 32px);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.plan-card {
+  position: relative;
+  display: grid;
+  gap: clamp(16px, 3vw, 28px);
+  padding: clamp(22px, 3.5vw, 32px);
+  border-radius: 28px;
+  background: linear-gradient(160deg, rgba(15, 23, 42, 0.95), rgba(17, 24, 39, 0.88));
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 26px 60px -36px rgba(15, 23, 42, 0.85);
+  overflow: hidden;
+}
+
+.plan-card::before {
+  content: '';
+  position: absolute;
+  inset: -40% -40% auto auto;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(99, 102, 241, 0.3), rgba(3, 7, 18, 0));
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.plan-card.is-highlighted::before {
+  opacity: 1;
+}
+
+.plan-card.is-highlighted {
+  border-color: rgba(99, 102, 241, 0.55);
+  box-shadow: 0 32px 80px -36px rgba(37, 99, 235, 0.65);
+}
+
+.plan-card__badge {
+  align-self: start;
+  justify-self: start;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(99, 102, 241, 0.18);
+  color: rgba(191, 219, 254, 0.9);
+}
+
+.plan-card__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plan-card__heading h3 {
+  margin: 0;
+  font-size: clamp(18px, 3.5vw, 24px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.plan-card__price {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: clamp(16px, 3vw, 20px);
+  font-weight: 600;
+}
+
+.plan-card__currency {
+  font-size: 0.8em;
+  color: rgba(191, 219, 254, 0.85);
+}
+
+.plan-card__amount {
+  font-size: clamp(24px, 4.5vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #f8fafc;
+}
+
+.plan-card__interval {
+  font-size: 0.8em;
+  color: var(--color-text-muted);
+}
+
+.plan-card__description {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.plan-card__features {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.plan-card__features li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plan-card__features li::before {
+  content: '✓';
+  color: var(--color-accent-start);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.plan-card__cta {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.65rem 1.25rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #0f172a;
+  background: linear-gradient(135deg, rgba(129, 140, 248, 0.95), rgba(56, 189, 248, 0.95));
+  text-decoration: none;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.plan-card__cta::after {
+  content: '→';
+  font-size: 1rem;
+}
+
+.plan-card__cta:hover,
+.plan-card__cta:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 40px -24px rgba(37, 99, 235, 0.65);
+}
+
+.plan-card__cta:focus-visible {
+  outline: 2px solid rgba(191, 219, 254, 0.85);
+  outline-offset: 3px;
+}
+
 .app__features-header {
   max-width: 720px;
   display: grid;
