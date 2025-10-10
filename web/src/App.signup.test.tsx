@@ -9,6 +9,7 @@ import App from './App'
 const signupConfigMock = vi.hoisted(() => ({
   paymentUrl: 'https://billing.example.com/checkout',
   salesEmail: 'billing@example.com',
+  salesBookingUrl: 'https://calendly.com/sedifex/demo',
 }))
 
 const mocks = vi.hoisted(() => {
@@ -102,6 +103,7 @@ describe('App signup access control', () => {
     mocks.listeners.splice(0, mocks.listeners.length)
     signupConfigMock.paymentUrl = 'https://billing.example.com/checkout'
     signupConfigMock.salesEmail = 'billing@example.com'
+    signupConfigMock.salesBookingUrl = 'https://calendly.com/sedifex/demo'
   })
 
   it('opens the payment link when the sign up tab is selected', async () => {

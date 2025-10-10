@@ -467,6 +467,14 @@ body {
   font-size: 12px;
 }
 
+.info-card__caption a {
+  color: rgba(191, 219, 254, 0.95);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
 @media (min-width: 960px) {
   .app__layout {
     grid-template-columns: minmax(0, 520px) minmax(0, 1fr);
