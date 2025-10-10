@@ -23,7 +23,6 @@ const mockGetDoc = vi.fn()
 
 vi.mock('../firebase', () => ({
   db: { __name: 'defaultDb' },
-  rosterDb: { __name: 'rosterDb' },
 }))
 
 vi.mock('firebase/firestore', () => ({

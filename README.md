@@ -57,19 +57,18 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 3. Import the seed data into Firestore: `npx firebase firestore:delete workspaces --project <project-id> --force && npx firebase firestore:import seed/workspaces.seed.json --project <project-id>`.
 4. For ongoing updates, edit the documents directly in the Firebase console or via your preferred admin tooling.
 
-### Roster database (`teamMembers` collection)
-- Sedifex Functions look up login eligibility in a **secondary** Firestore database named `roster`. The `teamMembers` collection inside that database must contain at least one document matching the user who is attempting to sign in.
-- Each roster document should include the member's `uid`, the verified `email`, and the assigned `storeId`. Additional helpful fields include `role`, `name`, `phone`, and any admin-only `notes`.
-- Use the Firebase console (Database → `+ Add database` → choose `roster`) or the Admin SDK to create the secondary database before importing data.
+### Team members (`teamMembers` collection)
+- Sedifex Functions look up login eligibility in the `teamMembers` collection of the default Firestore database. Ensure there is at least one document matching the user who is attempting to sign in.
+- Each team member document should include the member's `uid`, the verified `email`, and the assigned `storeId`. Additional helpful fields include `role`, `name`, `phone`, and any admin-only `notes`.
 
 **Quick seed for local/testing environments**
 1. Update [`seed/team-members.seed.json`](seed/team-members.seed.json) with the UID, email, and store ID that you want to allow through login.
-2. Import the roster seed into the `roster` database:
+2. Import the roster seed into the default database:
    ```bash
-   npx firebase firestore:delete teamMembers --project <project-id> --force --database=roster
-   npx firebase firestore:import seed/team-members.seed.json --project <project-id> --database=roster
+   npx firebase firestore:delete teamMembers --project <project-id> --force
+   npx firebase firestore:import seed/team-members.seed.json --project <project-id>
    ```
-3. If you prefer to seed manually, create a document at `teamMembers/<uid>` (and optionally `teamMembers/<email>`) in the `roster` database containing the same fields as the JSON example. The login callable will reject accounts that lack both documents or that do not specify a `storeId`.
+3. If you prefer to seed manually, create a document at `teamMembers/<uid>` (and optionally `teamMembers/<email>`) containing the same fields as the JSON example. The login callable will reject accounts that lack both documents or that do not specify a `storeId`.
 
 ### Troubleshooting: new signups do not create roster/store records
 If you create a Firebase Auth user and do **not** see corresponding documents in Firestore, walk through the checklist below:
@@ -80,11 +79,11 @@ If you create a Firebase Auth user and do **not** see corresponding documents in
    npm install
    npm run deploy
    ```
-2. **Verify the roster database ID.** The function writes roster entries with `getFirestore(admin.app(), 'roster')`. Double-check that your secondary database is named exactly `roster` (all lowercase). Rename or recreate it if necessary.
-3. **Inspect execution logs.** In the Firebase console → *Functions* → `onAuthCreate` → *Logs*, look for errors such as permission issues (`PERMISSION_DENIED`) or missing indices. Fix any issues surfaced there; for example, update IAM so the default service account can write to the secondary database.
+2. **Verify the `teamMembers` collection exists.** The function writes roster entries to `teamMembers` in the default database. Confirm the collection exists and that security rules allow writes from the Functions service account.
+3. **Inspect execution logs.** In the Firebase console → *Functions* → `onAuthCreate` → *Logs*, look for errors such as permission issues (`PERMISSION_DENIED`) or missing indices. Fix any issues surfaced there; for example, update IAM so the default service account can write to the collection.
 4. **Retry with a fresh user.** After resolving any deployment or permission issues, create a brand-new Auth user. The function only runs the first time the user is created, so deleting and re-creating the user ensures the trigger fires again.
 
-Following these steps should result in new documents at `roster/teamMembers/<uid>` and `default/stores/<uid>` immediately after signup.
+Following these steps should result in new documents at `teamMembers/<uid>` and `stores/<uid>` immediately after signup.
 
 ## Branding
 - Name: **Sedifex**

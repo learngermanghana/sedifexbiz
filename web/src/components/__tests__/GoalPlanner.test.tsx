@@ -23,7 +23,6 @@ vi.mock('../../components/ToastProvider', () => ({
 
 vi.mock('../../firebase', () => ({
   db: {},
-  rosterDb: {},
   auth: {},
 }))
 

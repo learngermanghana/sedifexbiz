@@ -3,7 +3,6 @@ const Module = require('module')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
 
 let currentDefaultDb
-let currentRosterDb
 const apps = []
 
 const originalLoad = Module._load
@@ -40,7 +39,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
   if (request === 'firebase-admin/firestore') {
     return {
-      getFirestore: (_app, name) => (name === 'roster' ? currentRosterDb : currentDefaultDb),
+      getFirestore: () => currentDefaultDb,
     }
   }
 
@@ -56,7 +55,6 @@ function loadFunctionsModule() {
 
 async function runInitializeStoreCreatesWorkspaceTest() {
   currentDefaultDb = new MockFirestore()
-  currentRosterDb = new MockFirestore()
 
   const { initializeStore, resolveStoreAccess } = loadFunctionsModule()
   const context = {
@@ -96,16 +94,6 @@ async function runInitializeStoreCreatesWorkspaceTest() {
   assert.strictEqual(storeDoc.town, 'Portland')
   assert.ok(storeDoc.updatedAt, 'Expected updatedAt to be set')
   assert.ok(storeDoc.createdAt, 'Expected createdAt to be set on new store')
-
-  const rosterMemberDoc = currentRosterDb.getDoc('teamMembers/new-owner-uid')
-  assert.ok(rosterMemberDoc, 'Expected roster member document to be created')
-  assert.strictEqual(rosterMemberDoc.name, 'Fresh Owner')
-  assert.strictEqual(rosterMemberDoc.companyName, 'Fresh Retail')
-  assert.strictEqual(rosterMemberDoc.phone, '+1 (555) 000-0000')
-  assert.strictEqual(rosterMemberDoc.firstSignupEmail, 'fresh.owner@example.com')
-  assert.strictEqual(rosterMemberDoc.country, 'United States')
-  assert.strictEqual(rosterMemberDoc.town, 'Portland')
-  assert.strictEqual(rosterMemberDoc.signupRole, 'team-member')
 
   const defaultMemberDoc = currentDefaultDb.getDoc('teamMembers/new-owner-uid')
   assert.ok(defaultMemberDoc, 'Expected default database team member document to be created')

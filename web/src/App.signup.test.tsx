@@ -50,7 +50,6 @@ vi.mock('./config/signup', () => ({ signupConfig: signupConfigMock }))
 vi.mock('./firebase', () => ({
   auth: mocks.auth,
   db: {},
-  rosterDb: {},
 }))
 
 vi.mock('firebase/auth', () => ({

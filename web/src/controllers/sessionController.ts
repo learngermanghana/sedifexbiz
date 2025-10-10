@@ -8,7 +8,7 @@ import {
   setPersistence,
 } from 'firebase/auth'
 import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
-import { db, rosterDb } from '../firebase'
+import { db } from '../firebase'
 
 const SESSION_COOKIE = 'sedifex_session'
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 90 // 90 days
@@ -113,7 +113,7 @@ type TeamMemberMetadata = {
 }
 
 /**
- * Seeds/repairs the roster entry in the secondary "roster" DB.
+ * Seeds/repairs the team member entry using the shared Firestore database.
  * Also creates an email-key alias doc when available for flexible lookups.
  */
 export async function ensureTeamMemberDocument(user: User, metadata?: TeamMemberMetadata) {
@@ -133,11 +133,11 @@ export async function ensureTeamMemberDocument(user: User, metadata?: TeamMember
 
   try {
     // uid-keyed doc
-    await setDoc(doc(rosterDb, 'teamMembers', user.uid), payload, { merge: true })
+    await setDoc(doc(db, 'teamMembers', user.uid), payload, { merge: true })
 
     // email-keyed alias (optional but useful)
     if (email) {
-      await setDoc(doc(rosterDb, 'teamMembers', email), payload, { merge: true })
+      await setDoc(doc(db, 'teamMembers', email), payload, { merge: true })
     }
   } catch (error) {
     console.warn('[team] Failed to ensure team member metadata for user', user.uid, error)

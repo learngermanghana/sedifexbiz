@@ -10,7 +10,6 @@ vi.mock('./useAuthUser', () => ({
 
 vi.mock('../firebase', () => ({
   db: { name: 'primary-db' },
-  rosterDb: { name: 'roster-db' },
 }))
 
 const collectionMock = vi.fn(() => ({ type: 'collection' }))
@@ -131,49 +130,4 @@ describe('useMemberships', () => {
     ])
   })
 
-  it('falls back to the roster database when the primary store returns no rows', async () => {
-    mockUseAuthUser.mockReturnValue({ uid: 'user-789' })
-
-    const emptySnapshot = { docs: [] as Array<never> }
-    const rosterMembership = {
-      id: 'member-roster',
-      data: () => ({
-        uid: 'user-789',
-        role: 'owner',
-        storeId: 'store-roster',
-        email: 'owner@example.com',
-        phone: '+1112223333',
-        invitedBy: 'owner',
-        firstSignupEmail: 'owner@example.com',
-        createdAt: null,
-        updatedAt: null,
-      }),
-    }
-
-    getDocsMock
-      .mockResolvedValueOnce(emptySnapshot)
-      .mockResolvedValueOnce({ docs: [rosterMembership] })
-
-    const { result } = renderHook(() => useMemberships())
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false)
-    })
-
-    expect(getDocsMock).toHaveBeenCalledTimes(2)
-    expect(result.current.memberships).toEqual([
-      {
-        id: 'member-roster',
-        uid: 'user-789',
-        role: 'owner',
-        storeId: 'store-roster',
-        email: 'owner@example.com',
-        phone: '+1112223333',
-        invitedBy: 'owner',
-        firstSignupEmail: 'owner@example.com',
-        createdAt: null,
-        updatedAt: null,
-      },
-    ])
-  })
 })
