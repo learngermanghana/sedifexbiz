@@ -16,11 +16,11 @@ import BillingThanks from './pages/BillingThanks'
 import { ToastProvider } from './components/ToastProvider'
 
 const router = createBrowserRouter([
-  // Standalone routes (render while signed-out too)
+  // Public, standalone screens
   { path: '/auth', element: <AuthScreen /> },
   { path: '/billing/thanks', element: <BillingThanks /> },
 
-  // App shell with authenticated pages as children
+  // App shell with authenticated pages nested
   {
     path: '/',
     element: <App />,
@@ -36,7 +36,7 @@ const router = createBrowserRouter([
     ],
   },
 
-  // Optional: catch-all -> home
+  // Catch-all -> home
   { path: '*', loader: () => redirect('/') },
 ])
 
