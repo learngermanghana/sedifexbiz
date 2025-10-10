@@ -81,6 +81,8 @@ const FIRESTORE_SETTINGS = {
 
 export const rosterApp = initializeApp(rosterFirebaseConfig, 'roster')
 
+export const rosterApp = initializeApp(rosterFirebaseConfig, 'roster')
+
 // Create BOTH instances with settings so they’re consistent
 export const db = initializeFirestore(app, FIRESTORE_SETTINGS) // default DB
 export const rosterDb: Firestore = initializeFirestore(
