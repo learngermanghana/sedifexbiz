@@ -8,7 +8,7 @@ const requiredEnvKeys = [
 
 type RequiredFirebaseEnvKey = (typeof requiredEnvKeys)[number]
 
-type FirebaseEnvConfig = {
+export type FirebaseEnvConfig = {
   apiKey: string
   authDomain: string
   projectId: string
@@ -17,8 +17,10 @@ type FirebaseEnvConfig = {
   functionsRegion: string
 }
 
-function getRequiredEnv(key: RequiredFirebaseEnvKey): string {
-  const value = import.meta.env[key]
+type EnvSource = Record<string, string | undefined>
+
+function getRequiredEnv(env: EnvSource, key: RequiredFirebaseEnvKey): string {
+  const value = env[key]
   if (typeof value === 'string' && value.trim() !== '') {
     return value.trim()
   }
@@ -29,8 +31,8 @@ function getRequiredEnv(key: RequiredFirebaseEnvKey): string {
   )
 }
 
-function getOptionalEnv(key: string, fallback: string): string {
-  const value = import.meta.env[key]
+function getOptionalEnv(env: EnvSource, key: string, fallback: string): string {
+  const value = env[key]
   if (typeof value === 'string' && value.trim() !== '') {
     return value.trim()
   }
@@ -38,13 +40,15 @@ function getOptionalEnv(key: string, fallback: string): string {
   return fallback
 }
 
-export const firebaseEnv: FirebaseEnvConfig = {
-  apiKey: getRequiredEnv('VITE_FB_API_KEY'),
-  authDomain: getRequiredEnv('VITE_FB_AUTH_DOMAIN'),
-  projectId: getRequiredEnv('VITE_FB_PROJECT_ID'),
-  storageBucket: getRequiredEnv('VITE_FB_STORAGE_BUCKET'),
-  appId: getRequiredEnv('VITE_FB_APP_ID'),
-  functionsRegion: getOptionalEnv('VITE_FB_FUNCTIONS_REGION', 'us-central1'),
+export function createFirebaseEnv(env: EnvSource): FirebaseEnvConfig {
+  return {
+    apiKey: getRequiredEnv(env, 'VITE_FB_API_KEY'),
+    authDomain: getRequiredEnv(env, 'VITE_FB_AUTH_DOMAIN'),
+    projectId: getRequiredEnv(env, 'VITE_FB_PROJECT_ID'),
+    storageBucket: getRequiredEnv(env, 'VITE_FB_STORAGE_BUCKET'),
+    appId: getRequiredEnv(env, 'VITE_FB_APP_ID'),
+    functionsRegion: getOptionalEnv(env, 'VITE_FB_FUNCTIONS_REGION', 'us-central1'),
+  }
 }
 
-export type { FirebaseEnvConfig }
+export const firebaseEnv = createFirebaseEnv(import.meta.env)

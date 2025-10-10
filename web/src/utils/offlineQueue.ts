@@ -1,7 +1,8 @@
 import { auth } from '../firebase'
+import { firebaseEnv } from '../config/firebaseEnv'
 
-const FUNCTIONS_REGION = import.meta.env.VITE_FB_FUNCTIONS_REGION ?? 'us-central1'
-const PROJECT_ID = import.meta.env.VITE_FB_PROJECT_ID
+const FUNCTIONS_REGION = firebaseEnv.functionsRegion
+const PROJECT_ID = firebaseEnv.projectId
 
 const SYNC_TAG = 'sync-pending-requests'
 
