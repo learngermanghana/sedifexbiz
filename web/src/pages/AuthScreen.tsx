@@ -12,12 +12,20 @@ import { useToast } from '../components/ToastProvider'
 import { ensureStoreDocument, persistSession } from '../controllers/sessionController'
 import { signupConfig } from '../config/signup'
 import { auth } from '../firebase'
-import { startCheckout } from '../../lib/billing'   // ← FIXED PATH
+import { startCheckout } from '../lib/billing'   // ← already added
 import './AuthScreen.css'
 
 type AuthMode = 'sign-in' | 'sign-up'
 
 const MIN_PASSWORD_LENGTH = 8
+
+/** ─────────────────────────────────────────────────────────────
+ * NEW: detect “payment confirmed” flag set by /billing/thanks
+ * Key is written in BillingThanks after calling confirmPayment.
+ * ──────────────────────────────────────────────────────────── */
+function hasPaidFlag() {
+  return Boolean(localStorage.getItem('sfx.billing.paidRef'))
+}
 
 function normalizeError(error: unknown): string {
   if (!error) return 'Something went wrong. Please try again.'
@@ -50,7 +58,7 @@ export default function AuthScreen() {
   const { publish } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
-  const { salesEmail } = signupConfig
+  const { salesEmail } = signupConfig   // still used for the help link
 
   const redirectTo = useMemo(() => {
     const state = location.state as { from?: string } | null
@@ -61,7 +69,7 @@ export default function AuthScreen() {
 
   const triggerCheckout = useCallback(async () => {
     publish({ message: 'Redirecting to checkout…', tone: 'info' })
-    await startCheckout('starter')
+    await startCheckout('starter') // or 'pro' / 'enterprise' based on your UI choice
   }, [publish])
 
   const toggleMode = useCallback((nextMode: AuthMode) => {
@@ -72,7 +80,14 @@ export default function AuthScreen() {
       return nextMode
     })
 
+    // ── CHANGED: only send to Paystack if NOT paid.
     if (nextMode === 'sign-up') {
+      if (hasPaidFlag()) {
+        // user already paid → let them proceed without opening Paystack again
+        publish({ message: 'Payment confirmed. You can create your account now.', tone: 'success' })
+        return
+      }
+      // not paid → open checkout
       triggerCheckout().catch(err =>
         publish({ message: normalizeError(err), tone: 'error' }),
       )
@@ -85,7 +100,14 @@ export default function AuthScreen() {
       if (loading) return
 
       if (mode === 'sign-up') {
-        await triggerCheckout()
+        // ── CHANGED: if paid, proceed; if not, send to checkout.
+        if (!hasPaidFlag()) {
+          await triggerCheckout()
+          return
+        }
+        // If your signup form lives elsewhere, send them there to complete it.
+        // This keeps the surface small here.
+        navigate('/', { replace: true })
         return
       }
 
@@ -122,9 +144,15 @@ export default function AuthScreen() {
   const handleSignupRedirect = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
+      // ── CHANGED: same rule — if already paid, do NOT open checkout again.
+      if (hasPaidFlag()) {
+        publish({ message: 'Payment confirmed. You can create your account now.', tone: 'success' })
+        navigate('/', { replace: true })
+        return
+      }
       await triggerCheckout()
     },
-    [triggerCheckout],
+    [navigate, publish, triggerCheckout],
   )
 
   const signInFormTitle = 'Welcome back'
@@ -135,6 +163,8 @@ export default function AuthScreen() {
     mode === 'sign-in' ? "Don't have an account?" : 'Already have an account?'
   const footerActionButtonLabel = mode === 'sign-in' ? 'Create one' : 'Sign in'
   const footerActionMode: AuthMode = mode === 'sign-in' ? 'sign-up' : 'sign-in'
+
+  const paid = hasPaidFlag()
 
   return (
     <main className="auth-screen">
@@ -217,11 +247,16 @@ export default function AuthScreen() {
             </label>
           </AuthForm>
         ) : (
+          // Sign-up panel (payment-gated)
           <AuthForm
-            title="Complete payment to create your Sedifex workspace"
-            description="Sedifex requires an active subscription before we can issue new logins."
+            title={paid ? 'Payment confirmed — create your account' : 'Complete payment to create your workspace'}
+            description={
+              paid
+                ? 'You’re all set. Continue to create your Sedifex account.'
+                : 'Sedifex requires an active subscription before we can issue new logins.'
+            }
             onSubmit={handleSignupRedirect}
-            submitLabel="Continue to payment"
+            submitLabel={paid ? 'Continue' : 'Continue to payment'}
             loading={false}
             footer={
               <div>
@@ -237,10 +272,12 @@ export default function AuthScreen() {
               </div>
             }
           >
-            <p className={authFormNoteClass}>
-              We&apos;ll send activation details as soon as payment is confirmed. Need help?{' '}
-              <a href={`mailto:${salesEmail}`}>Email our team</a>.
-            </p>
+            {!paid && (
+              <p className={authFormNoteClass}>
+                We&apos;ll send activation details as soon as payment is confirmed. Need help?{' '}
+                <a href={`mailto:${salesEmail}`}>Email our team</a>.
+              </p>
+            )}
           </AuthForm>
         )}
       </div>
