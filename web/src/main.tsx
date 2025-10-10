@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { createHashRouter, RouterProvider, redirect } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, redirect } from 'react-router-dom'
 import App from './App'
 import Shell from './layout/Shell'
 import Dashboard from './pages/Dashboard'
@@ -15,7 +15,7 @@ import AuthScreen from './pages/AuthScreen'
 import BillingThanks from './pages/BillingThanks'
 import { ToastProvider } from './components/ToastProvider'
 
-const router = createHashRouter([
+const router = createBrowserRouter([
   // Standalone routes (render while signed-out too)
   { path: '/auth', element: <AuthScreen /> },
   { path: '/billing/thanks', element: <BillingThanks /> },
