@@ -40,6 +40,9 @@ function logCallableError(
 
 const db = defaultDb
 
+export { confirmPayment } from './confirmPayment'
+
+
 type ContactPayload = {
   phone?: unknown
   firstSignupEmail?: unknown
