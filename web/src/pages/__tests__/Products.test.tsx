@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
-import { render, screen, waitFor, act, within } from '@testing-library/react'
+import { render, screen, waitFor, act, within, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import Products from '../Products'
@@ -127,6 +127,21 @@ describe('Products page', () => {
     await waitFor(() => {
       expect(screen.getByText(/no products found/i)).toBeInTheDocument()
     })
+  })
+
+  it('focuses the search field when the user presses Ctrl+F', async () => {
+    render(
+      <MemoryRouter>
+        <Products />
+      </MemoryRouter>,
+    )
+
+    const searchInput = await screen.findByPlaceholderText(/search by product or sku/i)
+    expect(searchInput).not.toHaveFocus()
+
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
+
+    expect(searchInput).toHaveFocus()
   })
 
   it('renders inventory details from the subscription', async () => {

@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useState } from 'react'
+import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc,
   collection,
@@ -156,6 +156,7 @@ export default function Products() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [filterText, setFilterText] = useState('')
   const [showLowStockOnly, setShowLowStockOnly] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [createForm, setCreateForm] = useState(DEFAULT_CREATE_FORM)
   const [createStatus, setCreateStatus] = useState<StatusState | null>(null)
   const [isCreating, setIsCreating] = useState(false)
@@ -163,6 +164,31 @@ export default function Products() {
   const [editStatus, setEditStatus] = useState<StatusState | null>(null)
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
+      const isModifierPressed = event.ctrlKey || event.metaKey
+      if (!isModifierPressed || event.shiftKey || event.altKey) return
+      if (event.key.toLowerCase() !== 'f') return
+
+      const input = searchInputRef.current
+      if (!input) return
+
+      event.preventDefault()
+      input.focus()
+      input.select()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -549,6 +575,7 @@ export default function Products() {
               placeholder="Search by product or SKU"
               value={filterText}
               onChange={event => setFilterText(event.target.value)}
+              ref={searchInputRef}
             />
           </label>
           <label className="products-page__filter">
