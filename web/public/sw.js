@@ -95,6 +95,10 @@ self.addEventListener('message', event => {
   if (data.type === 'REQUEST_QUEUE_STATUS') {
     event.waitUntil(respondQueueStatus(event.source))
   }
+
+  if (data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
 })
 
 self.addEventListener('sync', event => {
