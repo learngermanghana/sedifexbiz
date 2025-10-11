@@ -210,12 +210,38 @@ export default function Customers() {
   const [searchTerm, setSearchTerm] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [quickFilter, setQuickFilter] = useState<'all' | 'recent' | 'noPurchases' | 'highValue' | 'untagged'>('all')
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   useEffect(() => {
     return () => {
       if (messageTimeoutRef.current) {
         window.clearTimeout(messageTimeoutRef.current)
         messageTimeoutRef.current = null
       }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
+      const isModifierPressed = event.ctrlKey || event.metaKey
+      if (!isModifierPressed || event.shiftKey || event.altKey) return
+      if (event.key.toLowerCase() !== 'f') return
+
+      const input = searchInputRef.current
+      if (!input) return
+
+      event.preventDefault()
+      input.focus()
+      input.select()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
     }
   }, [])
 
@@ -910,6 +936,7 @@ export default function Customers() {
                 placeholder="Search by name, phone, email, or notes"
                 value={searchTerm}
                 onChange={event => setSearchTerm(event.target.value)}
+                ref={searchInputRef}
               />
             </div>
             <div className="customers-page__tool-buttons">
