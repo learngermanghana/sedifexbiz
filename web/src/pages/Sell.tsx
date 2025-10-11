@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { collection, query, orderBy, limit, onSnapshot, doc, where } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
@@ -65,13 +65,50 @@ type ReceiptData = {
 }
 
 type ReceiptSharePayload = {
+  saleId: string
   message: string
   emailHref: string
   smsHref: string
   whatsappHref: string
-  pdfBlob: Blob
+  pdfFileName: string
+  pdfUrl: string | null
+  shareUrl: string | null
+  shareId: string | null
+  fallbackPdfUrl: string | null
+  fallbackPdfBlob: Blob | null
+}
+
+type PrepareReceiptShareRequest = {
+  saleId: string
+  storeId: string | null
+  lines: string[]
+  pdfFileName: string
+}
+
+type PrepareReceiptShareResponse = {
+  ok: boolean
+  saleId: string
   pdfUrl: string
   pdfFileName: string
+  shareUrl: string
+  shareId: string
+}
+
+type ShareMethod = 'web-share' | 'email' | 'sms' | 'whatsapp' | 'download'
+type ShareAttemptStatus = 'started' | 'success' | 'cancelled' | 'error'
+
+type LogReceiptShareAttemptRequest = {
+  saleId: string
+  storeId: string | null
+  shareId?: string | null
+  method: ShareMethod
+  status: ShareAttemptStatus
+  errorMessage?: string
+}
+
+type LogReceiptShareAttemptResponse = {
+  ok: boolean
+  attemptId: string
 }
 
 type CommitSalePayload = {
@@ -196,6 +233,22 @@ function sanitizePrice(value: unknown): number | null {
 export default function Sell() {
   const user = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
+  const prepareReceiptShareCallable = useMemo(
+    () =>
+      httpsCallable<PrepareReceiptShareRequest, PrepareReceiptShareResponse>(
+        cloudFunctions,
+        'prepareReceiptShare',
+      ),
+    [cloudFunctions],
+  )
+  const logReceiptShareAttemptCallable = useMemo(
+    () =>
+      httpsCallable<LogReceiptShareAttemptRequest, LogReceiptShareAttemptResponse>(
+        cloudFunctions,
+        'logReceiptShareAttempt',
+      ),
+    [cloudFunctions],
+  )
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -214,6 +267,48 @@ export default function Sell() {
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [paymentProviderMeta, setPaymentProviderMeta] = useState<PaymentProviderMetadata | null>(null)
   const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null)
+  const canUseWebShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
+
+  const logShareAttempt = useCallback(
+    async (
+      method: ShareMethod,
+      status: ShareAttemptStatus,
+      metadata?: { errorMessage?: string; saleId?: string; shareId?: string | null },
+    ) => {
+      const saleId = metadata?.saleId ?? receiptSharePayload?.saleId
+      if (!saleId) return
+
+      const payload: LogReceiptShareAttemptRequest = {
+        saleId,
+        storeId: activeStoreId ?? null,
+        shareId: metadata?.shareId ?? receiptSharePayload?.shareId ?? null,
+        method,
+        status,
+      }
+
+      if (metadata?.errorMessage) {
+        payload.errorMessage = metadata.errorMessage
+      }
+
+      try {
+        await logReceiptShareAttemptCallable(payload)
+      } catch (error) {
+        console.warn('[sell] Failed to log receipt share attempt', error)
+      }
+    },
+    [receiptSharePayload, activeStoreId, logReceiptShareAttemptCallable],
+  )
+
+  const handleShareLinkClick = useCallback(
+    (method: ShareMethod) => {
+      if (!receiptSharePayload) return
+      void logShareAttempt(method, 'started', {
+        saleId: receiptSharePayload.saleId,
+        shareId: receiptSharePayload.shareId,
+      })
+    },
+    [receiptSharePayload, logShareAttempt],
+  )
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
   const selectedCustomerDisplayName = selectedCustomer
@@ -348,14 +443,15 @@ export default function Sell() {
   useEffect(() => {
     if (!receipt) {
       setReceiptSharePayload(prev => {
-        if (prev?.pdfUrl) {
-          URL.revokeObjectURL(prev.pdfUrl)
+        if (prev?.fallbackPdfUrl) {
+          URL.revokeObjectURL(prev.fallbackPdfUrl)
         }
         return null
       })
       return
     }
 
+    let cancelled = false
     const contactLine = user?.email ?? 'sales@sedifex.app'
 
     const lines: string[] = []
@@ -389,60 +485,171 @@ export default function Sell() {
     lines.push(`Sale #${receipt.saleId}`)
     lines.push('Thank you for shopping with us!')
 
-    const message = lines.join('\n')
+    const baseMessage = lines.join('\n')
     const emailSubject = `Receipt for sale #${receipt.saleId}`
 
     const encodedSubject = encodeURIComponent(emailSubject)
-    const encodedBody = encodeURIComponent(message)
+    const encodedBody = encodeURIComponent(baseMessage)
     const emailHref = `mailto:${receipt.customer?.email ?? ''}?subject=${encodedSubject}&body=${encodedBody}`
     const smsHref = `sms:${receipt.customer?.phone ?? ''}?body=${encodedBody}`
     const whatsappHref = `https://wa.me/?text=${encodedBody}`
 
-    const pdfLines = lines.slice(1)
-    const pdfBytes = buildSimplePdf('Sedifex POS', pdfLines)
+    const pdfBytes = buildSimplePdf('Sedifex POS', lines.slice(1))
     const pdfBuffer = pdfBytes.slice().buffer
     const pdfBlob = new Blob([pdfBuffer], { type: 'application/pdf' })
-    const pdfUrl = URL.createObjectURL(pdfBlob)
+    const fallbackPdfUrl = URL.createObjectURL(pdfBlob)
     const pdfFileName = `receipt-${receipt.saleId}.pdf`
 
     setReceiptSharePayload(prev => {
-      if (prev?.pdfUrl) {
-        URL.revokeObjectURL(prev.pdfUrl)
+      if (prev?.fallbackPdfUrl) {
+        URL.revokeObjectURL(prev.fallbackPdfUrl)
       }
-      return { message, emailHref, smsHref, whatsappHref, pdfBlob, pdfUrl, pdfFileName }
+      return {
+        saleId: receipt.saleId,
+        message: baseMessage,
+        emailHref,
+        smsHref,
+        whatsappHref,
+        pdfFileName,
+        pdfUrl: null,
+        shareUrl: null,
+        shareId: null,
+        fallbackPdfUrl,
+        fallbackPdfBlob: pdfBlob,
+      }
     })
 
+    ;(async () => {
+      try {
+        const response = await prepareReceiptShareCallable({
+          saleId: receipt.saleId,
+          storeId: activeStoreId ?? null,
+          lines,
+          pdfFileName,
+        })
+        if (cancelled) return
+        const data = response.data
+        if (!data?.ok) return
+
+        const shareLink = data.shareUrl || data.pdfUrl
+        const messageWithLink = shareLink
+          ? [...lines, '', 'View the receipt online:', shareLink].join('\n')
+          : baseMessage
+        const encodedBodyWithLink = encodeURIComponent(messageWithLink)
+
+        setReceiptSharePayload(prev => {
+          if (!prev || prev.saleId !== receipt.saleId) {
+            return prev
+          }
+
+          return {
+            ...prev,
+            message: messageWithLink,
+            emailHref: `mailto:${receipt.customer?.email ?? ''}?subject=${encodedSubject}&body=${encodedBodyWithLink}`,
+            smsHref: `sms:${receipt.customer?.phone ?? ''}?body=${encodedBodyWithLink}`,
+            whatsappHref: `https://wa.me/?text=${encodedBodyWithLink}`,
+            pdfUrl: data.pdfUrl || prev.pdfUrl,
+            shareUrl: shareLink ?? prev.shareUrl,
+            shareId: data.shareId ?? prev.shareId,
+          }
+        })
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[sell] Failed to prepare receipt share payload', error)
+        }
+      }
+    })()
+
     return () => {
-      URL.revokeObjectURL(pdfUrl)
+      cancelled = true
     }
-  }, [receipt, user?.email])
+  }, [
+    receipt,
+    user?.email,
+    prepareReceiptShareCallable,
+    activeStoreId,
+  ])
+
+  const handleWebShare = useCallback(async () => {
+    if (!canUseWebShare || !receiptSharePayload) return
+
+    const shareUrl = receiptSharePayload.shareUrl ?? receiptSharePayload.pdfUrl ?? undefined
+    const shareData: ShareData = {
+      title: `Receipt for sale #${receiptSharePayload.saleId}`,
+      text: receiptSharePayload.message,
+    }
+    if (shareUrl) {
+      shareData.url = shareUrl
+    }
+
+    await logShareAttempt('web-share', 'started', {
+      saleId: receiptSharePayload.saleId,
+      shareId: receiptSharePayload.shareId,
+    })
+
+    try {
+      await navigator.share!(shareData)
+      await logShareAttempt('web-share', 'success', {
+        saleId: receiptSharePayload.saleId,
+        shareId: receiptSharePayload.shareId,
+      })
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        await logShareAttempt('web-share', 'cancelled', {
+          saleId: receiptSharePayload.saleId,
+          shareId: receiptSharePayload.shareId,
+        })
+        return
+      }
+      console.warn('[sell] Web Share failed', error)
+      await logShareAttempt('web-share', 'error', {
+        saleId: receiptSharePayload.saleId,
+        shareId: receiptSharePayload.shareId,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }, [canUseWebShare, receiptSharePayload, logShareAttempt])
 
   const handleDownloadPdf = useCallback(() => {
     setReceiptSharePayload(prev => {
       if (!prev) return prev
 
-      const url = prev.pdfUrl || URL.createObjectURL(prev.pdfBlob)
+      const downloadUrl = prev.pdfUrl ?? prev.fallbackPdfUrl
+      if (!downloadUrl) {
+        void logShareAttempt('download', 'error', {
+          saleId: prev.saleId,
+          shareId: prev.shareId,
+          errorMessage: 'missing-pdf-url',
+        })
+        return prev
+      }
+
+      void logShareAttempt('download', 'started', {
+        saleId: prev.saleId,
+        shareId: prev.shareId,
+      })
+
       const link = document.createElement('a')
-      link.href = url
+      link.href = downloadUrl
       link.download = prev.pdfFileName
+      link.rel = 'noopener'
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
 
-      URL.revokeObjectURL(url)
-      const refreshedUrl = URL.createObjectURL(prev.pdfBlob)
-      return { ...prev, pdfUrl: refreshedUrl }
-    })
-  }, [])
-
-  useEffect(() => {
-    const url = receiptSharePayload?.pdfUrl
-    return () => {
-      if (url) {
-        URL.revokeObjectURL(url)
+      if (downloadUrl === prev.fallbackPdfUrl && prev.fallbackPdfBlob) {
+        URL.revokeObjectURL(downloadUrl)
+        const refreshedUrl = URL.createObjectURL(prev.fallbackPdfBlob)
+        return {
+          ...prev,
+          fallbackPdfUrl: refreshedUrl,
+          pdfUrl: prev.pdfUrl ?? refreshedUrl,
+        }
       }
-    }
-  }, [receiptSharePayload?.pdfUrl])
+
+      return prev
+    })
+  }, [logShareAttempt])
 
   useEffect(() => {
     if (paymentMethod !== 'cash') {
@@ -872,9 +1079,18 @@ export default function Sell() {
                 <section className="sell-page__engagement" aria-live="polite">
                   <h4 className="sell-page__engagement-title">Share the receipt</h4>
                   <p className="sell-page__engagement-text">
-                    Email, text, or WhatsApp the receipt so your customer has a digital copy right away.
+                    Use your device share sheet, email, text, or WhatsApp so your customer has a digital copy right away.
                   </p>
                   <div className="sell-page__engagement-actions">
+                    {canUseWebShare && (
+                      <button
+                        type="button"
+                        className="button button--ghost button--small"
+                        onClick={handleWebShare}
+                      >
+                        Share receipt
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="button button--ghost button--small"
@@ -885,18 +1101,21 @@ export default function Sell() {
                     <a
                       className="button button--ghost button--small"
                       href={receiptSharePayload.whatsappHref}
+                      onClick={() => handleShareLinkClick('whatsapp')}
                     >
                       WhatsApp receipt
                     </a>
                     <a
                       className="button button--ghost button--small"
                       href={receiptSharePayload.emailHref}
+                      onClick={() => handleShareLinkClick('email')}
                     >
                       Email receipt
                     </a>
                     <a
                       className="button button--ghost button--small"
                       href={receiptSharePayload.smsHref}
+                      onClick={() => handleShareLinkClick('sms')}
                     >
                       Text receipt
                     </a>

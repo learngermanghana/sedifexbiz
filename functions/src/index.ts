@@ -8,6 +8,7 @@ export { onAuthCreate } from './onAuthCreate'
 
 import * as functions from 'firebase-functions'
 import { admin, defaultDb } from './firestore'
+import { buildSimplePdf } from './utils/pdf'
 
 function serializeError(error: unknown) {
   if (error instanceof functions.https.HttpsError) {
@@ -1299,3 +1300,177 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
 
   return { ok: true, receiptId: receiptRef.id }
 })
+
+const SHARE_METHODS = new Set(['web-share', 'email', 'sms', 'whatsapp', 'download'])
+const SHARE_STATUSES = new Set(['started', 'success', 'cancelled', 'error'])
+
+type PrepareReceiptSharePayload = {
+  saleId?: unknown
+  storeId?: unknown
+  lines?: unknown
+  pdfFileName?: unknown
+}
+
+type PrepareReceiptShareResponse = {
+  ok: true
+  saleId: string
+  pdfUrl: string
+  pdfFileName: string
+  shareUrl: string
+  shareId: string
+}
+
+export const prepareReceiptShare = functions.https.onCall(
+  async (rawData: PrepareReceiptSharePayload, context): Promise<PrepareReceiptShareResponse> => {
+    assertStaffAccess(context)
+
+    const saleIdRaw = rawData?.saleId
+    const saleId = typeof saleIdRaw === 'string' ? saleIdRaw.trim() : ''
+    if (!saleId) {
+      throw new functions.https.HttpsError('invalid-argument', 'A valid saleId is required')
+    }
+
+    const storeIdRaw = rawData?.storeId
+    const storeId = typeof storeIdRaw === 'string' && storeIdRaw.trim() ? storeIdRaw.trim() : null
+
+    const linesRaw = Array.isArray(rawData?.lines) ? rawData?.lines ?? [] : []
+    const lines = linesRaw
+      .map(line => (typeof line === 'string' ? line : ''))
+      .map(line => line.trimEnd())
+      .filter((line, index) => line.length > 0 || index === 0)
+    if (lines.length === 0) {
+      throw new functions.https.HttpsError('invalid-argument', 'Receipt lines are required')
+    }
+
+    const pdfFileNameRaw = rawData?.pdfFileName
+    const pdfFileName =
+      typeof pdfFileNameRaw === 'string' && pdfFileNameRaw.trim()
+        ? pdfFileNameRaw.trim()
+        : `receipt-${saleId}.pdf`
+
+    const bucket = admin.storage().bucket()
+    const safeStoreSegment = storeId ? storeId.replace(/[^A-Za-z0-9_-]/g, '_') : 'unassigned'
+    const pdfPath = `receipt-shares/${safeStoreSegment}/${saleId}.pdf`
+    const file = bucket.file(pdfPath)
+
+    const [exists] = await file.exists()
+    if (!exists) {
+      const pdfBody = buildSimplePdf('Sedifex POS', lines.slice(1))
+      await file.save(Buffer.from(pdfBody), {
+        resumable: false,
+        contentType: 'application/pdf',
+        metadata: {
+          cacheControl: 'public, max-age=31536000',
+          contentDisposition: `attachment; filename="${pdfFileName}"`,
+        },
+      })
+    }
+
+    const expiresAtMillis = Date.now() + 1000 * 60 * 60 * 24 * 30
+    const [signedUrl] = await file.getSignedUrl({
+      action: 'read',
+      expires: new Date(expiresAtMillis),
+    })
+
+    const shareId = db.collection('_').doc().id
+    await db.collection('receiptShareSessions').doc(shareId).set({
+      saleId,
+      storeId,
+      pdfPath,
+      pdfFileName,
+      preparedAt: admin.firestore.FieldValue.serverTimestamp(),
+      preparedBy: context.auth?.uid ?? null,
+      signedUrl,
+      expiresAt: admin.firestore.Timestamp.fromMillis(expiresAtMillis),
+    })
+
+    return {
+      ok: true,
+      saleId,
+      pdfUrl: signedUrl,
+      pdfFileName,
+      shareUrl: signedUrl,
+      shareId,
+    }
+  },
+)
+
+type LogReceiptShareAttemptPayload = {
+  saleId?: unknown
+  storeId?: unknown
+  shareId?: unknown
+  method?: unknown
+  status?: unknown
+  errorMessage?: unknown
+}
+
+type LogReceiptShareAttemptResponse = {
+  ok: true
+  attemptId: string
+}
+
+export const logReceiptShareAttempt = functions.https.onCall(
+  async (
+    rawData: LogReceiptShareAttemptPayload,
+    context,
+  ): Promise<LogReceiptShareAttemptResponse> => {
+    assertStaffAccess(context)
+
+    const saleIdRaw = rawData?.saleId
+    const saleId = typeof saleIdRaw === 'string' ? saleIdRaw.trim() : ''
+    if (!saleId) {
+      throw new functions.https.HttpsError('invalid-argument', 'A valid saleId is required')
+    }
+
+    const methodRaw = rawData?.method
+    const method = typeof methodRaw === 'string' ? methodRaw.trim() : ''
+    if (!SHARE_METHODS.has(method)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Unsupported share method')
+    }
+
+    const statusRaw = rawData?.status
+    const status = typeof statusRaw === 'string' ? statusRaw.trim() : ''
+    if (!SHARE_STATUSES.has(status)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Unsupported share status')
+    }
+
+    const storeIdRaw = rawData?.storeId
+    const storeId = typeof storeIdRaw === 'string' && storeIdRaw.trim() ? storeIdRaw.trim() : null
+
+    const shareIdRaw = rawData?.shareId
+    const shareId = typeof shareIdRaw === 'string' && shareIdRaw.trim() ? shareIdRaw.trim() : null
+
+    const errorMessageRaw = rawData?.errorMessage
+    const errorMessage =
+      typeof errorMessageRaw === 'string' && errorMessageRaw.trim()
+        ? errorMessageRaw.trim().slice(0, 500)
+        : null
+
+    const attemptId = db.collection('_').doc().id
+    await db.collection('receiptShareAttempts').doc(attemptId).set({
+      saleId,
+      storeId,
+      shareId,
+      method,
+      status,
+      errorMessage,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: context.auth?.uid ?? null,
+    })
+
+    if (shareId) {
+      await db
+        .collection('receiptShareSessions')
+        .doc(shareId)
+        .set(
+          {
+            lastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
+            lastAttemptStatus: status,
+          },
+          { merge: true },
+        )
+    }
+
+    return { ok: true, attemptId }
+  },
+)
