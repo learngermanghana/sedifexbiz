@@ -535,6 +535,10 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <span style={{ fontSize: 12, color: '#64748B' }}>SKU: {item.sku}</span>
+                  <span style={{ fontSize: 12, color: '#64748B' }}>
+                    Reorder threshold: {item.threshold}
+                    {item.usesDefaultThreshold ? ' (default)' : ''}
+                  </span>
                 </li>
               ))}
             </ul>
