@@ -17,6 +17,7 @@ import { useMemberships, type Membership } from '../hooks/useMemberships'
 import { manageStaffAccount } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
 import './AccountOverview.css'
+import { useAutoRerun } from '../hooks/useAutoRerun'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -146,6 +147,7 @@ export default function AccountOverview() {
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
   const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships()
   const { publish } = useToast()
+  const { token: autoRefreshToken, trigger: requestAutoRefresh } = useAutoRerun(Boolean(storeId))
 
   const [profile, setProfile] = useState<StoreProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
@@ -259,7 +261,7 @@ export default function AccountOverview() {
     return () => {
       cancelled = true
     }
-  }, [storeId, publish])
+  }, [autoRefreshToken, publish, storeId])
 
   useEffect(() => {
     if (!storeId) {
@@ -296,7 +298,7 @@ export default function AccountOverview() {
     return () => {
       cancelled = true
     }
-  }, [storeId, rosterVersion, publish])
+  }, [autoRefreshToken, publish, rosterVersion, storeId])
 
   function validateForm() {
     if (!storeId) {
@@ -353,6 +355,7 @@ export default function AccountOverview() {
       setRole('staff')
       setPassword('')
       setRosterVersion(version => version + 1)
+      requestAutoRefresh()
     } catch (error) {
       console.error('Failed to manage staff account', error)
       const message = error instanceof Error ? error.message : 'We could not submit the request.'
