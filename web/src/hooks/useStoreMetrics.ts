@@ -37,7 +37,12 @@ type ProductRecord = {
   name: string
   price?: number
   stockCount?: number
-  minStock?: number
+  reorderThreshold?: number | null
+  /**
+   * Legacy alias supported for older product documents.
+   * Prefer {@link reorderThreshold} going forward.
+   */
+  minStock?: number | null
   createdAt?: unknown
   updatedAt?: unknown
   storeId?: string | null
@@ -91,6 +96,8 @@ type InventoryAlert = {
   name: string
   status: string
   severity: InventorySeverity
+  threshold: number
+  usesDefaultThreshold: boolean
 }
 
 type TeamCallout = {
@@ -132,6 +139,7 @@ type UseStoreMetricsResult = {
 const MS_PER_DAY = 1000 * 60 * 60 * 24
 const DEFAULT_REVENUE_TARGET = 5000
 const DEFAULT_CUSTOMER_TARGET = 50
+const DEFAULT_REORDER_THRESHOLD = 5
 
 const RANGE_PRESETS: RangePreset[] = [
   {
@@ -223,6 +231,16 @@ function enumerateDaysBetween(start: Date, end: Date) {
     cursor = addDays(cursor, 1)
   }
   return days
+}
+
+function resolveReorderThreshold(product: ProductRecord) {
+  if (typeof product.reorderThreshold === 'number' && Number.isFinite(product.reorderThreshold)) {
+    return { threshold: Math.max(0, product.reorderThreshold), usesDefault: false }
+  }
+  if (typeof product.minStock === 'number' && Number.isFinite(product.minStock)) {
+    return { threshold: Math.max(0, product.minStock), usesDefault: false }
+  }
+  return { threshold: DEFAULT_REORDER_THRESHOLD, usesDefault: true }
 }
 
 function formatDateKey(date: Date) {
@@ -580,15 +598,17 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   const lowStock = products
     .map(product => {
       const stock = product.stockCount ?? 0
-      const minStock = product.minStock ?? 5
-      if (stock > minStock) return null
-      const severity: InventorySeverity = stock <= 0 ? 'critical' : stock <= minStock ? 'warning' : 'info'
+      const { threshold, usesDefault } = resolveReorderThreshold(product)
+      if (stock > threshold) return null
+      const severity: InventorySeverity = stock <= 0 ? 'critical' : stock <= threshold ? 'warning' : 'info'
       const status = stock <= 0 ? 'Out of stock' : `Low (${stock} remaining)`
       return {
         sku: product.id,
         name: product.name,
         status,
         severity,
+        threshold,
+        usesDefaultThreshold: usesDefault,
       }
     })
     .filter(Boolean) as InventoryAlert[]
@@ -861,7 +881,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       value: `${lowStock.length} low / ${outOfStockCount} out`,
       description: lowStock.length || outOfStockCount
         ? 'Review products that need restocking.'
-        : 'All products are above minimum stock.',
+        : 'All products are above reorder thresholds.',
     },
   ]
 
