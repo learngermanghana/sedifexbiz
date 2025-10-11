@@ -13,17 +13,13 @@ import { useToast } from '../components/ToastProvider'
 import { ensureStoreDocument, persistSession } from '../controllers/sessionController'
 import { signupConfig } from '../config/signup'
 import { auth } from '../firebase'
-import { startCheckout } from '../../lib/billing'   // <-- FIXED PATH (web/lib/billing)
+import { startCheckout } from '../lib/billing' // ← correct relative path from /src/pages
 import './AuthScreen.css'
 
 type AuthMode = 'sign-in' | 'sign-up'
-
 const MIN_PASSWORD_LENGTH = 8
 
-/** ─────────────────────────────────────────────────────────────
- * Detect “payment confirmed” flag set by /billing/thanks
- * Key is written in BillingThanks after calling confirmPayment.
- * ──────────────────────────────────────────────────────────── */
+/** Flag set by /billing/thanks after successful verify */
 function hasPaidFlag() {
   return Boolean(localStorage.getItem('sfx.billing.paidRef'))
 }
@@ -59,7 +55,7 @@ export default function AuthScreen() {
   const { publish } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
-  const { salesEmail } = signupConfig   // still used for the help link
+  const { salesEmail } = signupConfig
 
   const redirectTo = useMemo(() => {
     const state = location.state as { from?: string } | null
@@ -70,28 +66,34 @@ export default function AuthScreen() {
 
   const triggerCheckout = useCallback(async () => {
     publish({ message: 'Redirecting to checkout…', tone: 'info' })
-    await startCheckout('starter') // or 'pro' / 'enterprise'
+    await startCheckout('starter') // or 'pro' / 'enterprise' based on your UI
   }, [publish])
 
-  const toggleMode = useCallback((nextMode: AuthMode) => {
-    setMode(current => {
-      if (current === nextMode) return current
-      setError(null)
-      setPassword('')
-      return nextMode
-    })
+  const toggleMode = useCallback(
+    (nextMode: AuthMode) => {
+      setMode(current => {
+        if (current === nextMode) return current
+        setError(null)
+        setPassword('')
+        return nextMode
+      })
 
-    // Only send to Paystack if NOT paid.
-    if (nextMode === 'sign-up') {
-      if (hasPaidFlag()) {
-        publish({ message: 'Payment confirmed. You can create your account now.', tone: 'success' })
-        return
+      // Only open Paystack if user hasn't paid yet
+      if (nextMode === 'sign-up') {
+        if (hasPaidFlag()) {
+          publish({
+            message: 'Payment confirmed. You can create your account now.',
+            tone: 'success',
+          })
+          return
+        }
+        triggerCheckout().catch(err =>
+          publish({ message: normalizeError(err), tone: 'error' }),
+        )
       }
-      triggerCheckout().catch(err =>
-        publish({ message: normalizeError(err), tone: 'error' }),
-      )
-    }
-  }, [publish, triggerCheckout])
+    },
+    [publish, triggerCheckout],
+  )
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -103,7 +105,7 @@ export default function AuthScreen() {
           await triggerCheckout()
           return
         }
-        // Paid: continue into app to complete creation (or keep creation here if you prefer)
+        // Paid already → proceed to app or dedicated signup form
         publish({ message: 'Great — let’s create your account.', tone: 'success' })
         navigate('/', { replace: true })
         return
@@ -119,10 +121,8 @@ export default function AuthScreen() {
       setLoading(true)
       setError(null)
 
-      const trimmedEmail = email.trim()
-
       try {
-        const { user } = await signInWithEmailAndPassword(auth, trimmedEmail, password)
+        const { user } = await signInWithEmailAndPassword(auth, email.trim(), password)
         await ensureStoreDocument(user)
         await persistSession(user)
 
@@ -244,9 +244,12 @@ export default function AuthScreen() {
             </label>
           </AuthForm>
         ) : (
-          // Sign-up panel (payment-gated)
           <AuthForm
-            title={paid ? 'Payment confirmed — create your account' : 'Complete payment to create your workspace'}
+            title={
+              paid
+                ? 'Payment confirmed — create your account'
+                : 'Complete payment to create your workspace'
+            }
             description={
               paid
                 ? 'You’re all set. Continue to create your Sedifex account.'
@@ -271,8 +274,8 @@ export default function AuthScreen() {
           >
             {!paid && (
               <p className={authFormNoteClass}>
-                We&apos;ll send activation details as soon as payment is confirmed. Need help?{' '}
-                <a href={`mailto:${salesEmail}`}>Email our team</a>.
+                We&apos;ll send activation details as soon as payment is confirmed.
+                Need help? <a href={`mailto:${salesEmail}`}>Email our team</a>.
               </p>
             )}
           </AuthForm>
