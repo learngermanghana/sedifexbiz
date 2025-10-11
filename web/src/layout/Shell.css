@@ -91,6 +91,31 @@
   justify-content: flex-end;
 }
 
+.shell__store-switcher {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.shell__store-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.shell__store-select {
+  min-width: 180px;
+}
+
+.shell__store-error {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #b91c1c;
+}
+
 .shell__account {
   display: flex;
   align-items: center;

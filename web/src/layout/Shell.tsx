@@ -4,6 +4,8 @@ import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
+import { useActiveStore } from '../hooks/useActiveStore'
+import { useStoreDirectory } from '../hooks/useStoreDirectory'
 import './Shell.css'
 import './Workspace.css'
 
@@ -71,6 +73,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const user = useAuthUser()
   const userEmail = user?.email ?? 'Account'
   const connectivity = useConnectivityStatus()
+  const { storeId: activeStoreId, isLoading: storeLoading, error: storeError, memberships, setActiveStoreId } =
+    useActiveStore()
+
+  const storeIds = useMemo(
+    () =>
+      memberships
+        .map(membership => membership.storeId)
+        .filter((storeId): storeId is string => Boolean(storeId && storeId.trim())),
+    [memberships],
+  )
+
+  const { options: storeOptions, loading: storeDirectoryLoading, error: storeDirectoryError } = useStoreDirectory(storeIds)
 
   const { isOnline, isReachable, queue } = connectivity
 
@@ -109,9 +123,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }, [isOnline, isReachable, queue.lastError, queue.pending, queue.status])
 
 
-  const workspaceStatus = 'Workspace ready'
-
-
   return (
     <div className="shell">
       <header className="shell__header">
@@ -135,12 +146,36 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="shell__controls">
-
-            <div className="shell__store-switcher" role="status" aria-live="polite">
-              <span className="shell__store-label">Workspace</span>
-              <span className="shell__store-select" data-readonly>{workspaceStatus}</span>
+            <div className="shell__store-switcher">
+              <label className="shell__store-label" htmlFor="shell-store-switcher">
+                Workspace
+              </label>
+              <select
+                id="shell-store-switcher"
+                className="shell__store-select"
+                value={activeStoreId ?? ''}
+                onChange={event => setActiveStoreId(event.target.value || null)}
+                disabled={storeLoading || storeDirectoryLoading || storeOptions.length === 0}
+                aria-describedby={storeError || storeDirectoryError ? 'shell-store-status' : undefined}
+              >
+                {storeOptions.length > 0 ? (
+                  storeOptions.map(option => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">
+                    {storeLoading || storeDirectoryLoading ? 'Loading workspaces…' : 'No workspace available'}
+                  </option>
+                )}
+              </select>
+              {(storeError || storeDirectoryError) && (
+                <p id="shell-store-status" className="shell__store-error" role="status">
+                  {storeError ?? storeDirectoryError}
+                </p>
+              )}
             </div>
-
 
             {banner && (
               <div
