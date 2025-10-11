@@ -19,6 +19,11 @@ vi.mock('../../hooks/useMemberships', () => ({
   useMemberships: () => mockUseMemberships(),
 }))
 
+const mockUseAutoRerun = vi.fn()
+vi.mock('../../hooks/useAutoRerun', () => ({
+  useAutoRerun: (...args: Parameters<typeof mockUseAutoRerun>) => mockUseAutoRerun(...args),
+}))
+
 const mockManageStaffAccount = vi.fn()
 vi.mock('../../controllers/storeController', () => ({
   manageStaffAccount: (...args: Parameters<typeof mockManageStaffAccount>) =>
@@ -71,6 +76,7 @@ describe('AccountOverview', () => {
   const clipboardMock = {
     writeText: vi.fn<[], Promise<void>>().mockResolvedValue(),
   }
+  let autoRerunTrigger: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     mockPublish.mockReset()
@@ -83,6 +89,8 @@ describe('AccountOverview', () => {
     getDocsMock.mockReset()
     queryMock.mockClear()
     whereMock.mockClear()
+    autoRerunTrigger = vi.fn()
+    mockUseAutoRerun.mockReturnValue({ token: 0, trigger: autoRerunTrigger })
 
     mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
     Object.assign(navigator as Navigator & { clipboard: typeof clipboardMock }, { clipboard: clipboardMock })
@@ -186,6 +194,7 @@ describe('AccountOverview', () => {
 
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
     expect(mockPublish).toHaveBeenCalledWith({ message: 'Team member updated.', tone: 'success' })
+    expect(autoRerunTrigger).toHaveBeenCalled()
   })
 
   it('renders a read-only roster for staff members', async () => {

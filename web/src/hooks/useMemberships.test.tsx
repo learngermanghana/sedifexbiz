@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { renderHook, waitFor, act } from '@testing-library/react'
 
 import { useMemberships } from './useMemberships'
 
@@ -128,6 +128,62 @@ describe('useMemberships', () => {
         updatedAt: null,
       },
     ])
+  })
+
+  it('automatically retries when connectivity returns', async () => {
+    mockUseAuthUser.mockReturnValue({ uid: 'user-789' })
+
+    const membershipDoc = {
+      id: 'member-doc',
+      data: () => ({
+        uid: 'user-789',
+        role: 'owner',
+        storeId: 'store-xyz',
+        email: 'owner@example.com',
+        phone: '+233555000',
+        invitedBy: 'founder-1',
+        firstSignupEmail: 'owner@example.com',
+        createdAt: null,
+        updatedAt: null,
+      }),
+    }
+
+    getDocsMock
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockResolvedValueOnce({ docs: [membershipDoc] })
+
+    const { result } = renderHook(() => useMemberships())
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+      expect(result.current.memberships).toEqual([])
+      expect(result.current.error).toBeInstanceOf(Error)
+    })
+
+    act(() => {
+      window.dispatchEvent(new Event('online'))
+    })
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+      expect(result.current.error).toBeNull()
+      expect(result.current.memberships).toEqual([
+        {
+          id: 'member-doc',
+          uid: 'user-789',
+          role: 'owner',
+          storeId: 'store-xyz',
+          email: 'owner@example.com',
+          phone: '+233555000',
+          invitedBy: 'founder-1',
+          firstSignupEmail: 'owner@example.com',
+          createdAt: null,
+          updatedAt: null,
+        },
+      ])
+    })
+
+    expect(getDocsMock).toHaveBeenCalledTimes(2)
   })
 
 })

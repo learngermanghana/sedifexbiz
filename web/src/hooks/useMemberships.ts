@@ -15,6 +15,7 @@ import { useAuthUser } from './useAuthUser'
 import { getAuth } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { firebaseEnv } from '../config/firebaseEnv'
+import { useAutoRerun } from './useAutoRerun'
 
 export type Membership = {
   id: string
@@ -101,9 +102,11 @@ export function useMemberships() {
   const [loading, setLoading] = useState(true)
   const [memberships, setMemberships] = useState<Membership[]>([])
   const [error, setError] = useState<unknown>(null)
+  const { token: autoRerunToken, trigger: requestAutoRerun } = useAutoRerun(Boolean(user?.uid))
 
   useEffect(() => {
     let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
 
     async function run() {
       if (!user) {
@@ -126,20 +129,31 @@ export function useMemberships() {
         setMemberships(rows)
         setError(null)
       } catch (e) {
-        if (!cancelled) {
-          setError(e)
-          setMemberships([])
+        if (cancelled) return
+        setError(e)
+        setMemberships([])
+        if (typeof window !== 'undefined') {
+          if (retryTimer) {
+            window.clearTimeout(retryTimer)
+          }
+          retryTimer = window.setTimeout(() => {
+            requestAutoRerun()
+          }, 10_000)
         }
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
 
-    run()
+    void run()
+
     return () => {
       cancelled = true
+      if (retryTimer) {
+        clearTimeout(retryTimer)
+      }
     }
-  }, [user?.uid])
+  }, [autoRerunToken, requestAutoRerun, user?.uid])
 
   return { loading, memberships, error }
 }
