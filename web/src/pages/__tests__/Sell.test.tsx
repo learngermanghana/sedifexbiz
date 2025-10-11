@@ -8,6 +8,7 @@ const mockLoadCachedProducts = vi.fn(async () => [] as unknown[])
 const mockSaveCachedProducts = vi.fn(async () => {})
 const mockLoadCachedCustomers = vi.fn(async () => [] as unknown[])
 const mockSaveCachedCustomers = vi.fn(async () => {})
+const mockBuildSimplePdf = vi.fn(() => new Uint8Array([0, 1, 2, 3]))
 
 vi.mock('../../utils/offlineCache', () => ({
   PRODUCT_CACHE_LIMIT: 200,
@@ -27,7 +28,7 @@ vi.mock('../../utils/offlineQueue', () => ({
 }))
 
 vi.mock('../../utils/pdf', () => ({
-  buildSimplePdf: vi.fn(async () => ({ blob: new Blob(), url: 'blob:test' })),
+  buildSimplePdf: (...args: Parameters<typeof mockBuildSimplePdf>) => mockBuildSimplePdf(...args),
 }))
 
 vi.mock('../../firebase', () => ({
@@ -85,8 +86,30 @@ vi.mock('firebase/firestore', () => ({
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
 }))
 
+const httpsCallableMock = vi.fn((_functions: unknown, name: string) => {
+  if (name === 'commitSale') {
+    return vi.fn(async () => ({ data: { ok: true, saleId: 'sale-1' } }))
+  }
+  if (name === 'prepareReceiptShare') {
+    return vi.fn(async () => ({
+      data: {
+        ok: true,
+        saleId: 'sale-1',
+        pdfUrl: 'https://example.com/receipt.pdf',
+        pdfFileName: 'receipt-sale-1.pdf',
+        shareUrl: 'https://example.com/receipt.pdf',
+        shareId: 'share-1',
+      },
+    }))
+  }
+  if (name === 'logReceiptShareAttempt') {
+    return vi.fn(async () => ({ data: { ok: true, attemptId: 'attempt-1' } }))
+  }
+  return vi.fn(async () => ({ data: {} }))
+})
+
 vi.mock('firebase/functions', () => ({
-  httpsCallable: vi.fn(() => vi.fn(async () => ({ data: { ok: true, saleId: 'sale-1' } }))),
+  httpsCallable: (...args: Parameters<typeof httpsCallableMock>) => httpsCallableMock(...args),
 }))
 
 function createProductDoc(id: string, overrides: Record<string, unknown> = {}) {
@@ -108,6 +131,7 @@ describe('Sell page barcode scanner', () => {
     mockSaveCachedProducts.mockReset()
     mockLoadCachedCustomers.mockReset()
     mockSaveCachedCustomers.mockReset()
+    mockBuildSimplePdf.mockReset()
     collectionMock.mockClear()
     queryMock.mockClear()
     orderByMock.mockClear()
@@ -115,6 +139,7 @@ describe('Sell page barcode scanner', () => {
     onSnapshotMock.mockClear()
     whereMock.mockClear()
     docMock.mockClear()
+    httpsCallableMock.mockClear()
     mockUseAuthUser.mockReset()
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'cashier@example.com' })
     mockUseActiveStore.mockReset()
