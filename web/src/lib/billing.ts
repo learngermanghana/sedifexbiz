@@ -1,20 +1,30 @@
 // web/src/lib/billing.ts
-import { httpsCallable } from 'firebase/functions'
-import { functions } from '../firebase'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 
-// Keep these plan IDs in sync with functions/src/plans.ts
-export type PlanId = 'starter' | 'pro' | 'enterprise'
+// Region for your callable functions (change if needed)
+const REGION = import.meta.env.VITE_FUNCTIONS_REGION || 'us-central1'
 
-type CreateCheckoutResponse = {
-  checkoutUrl?: string
-  authorization_url?: string
-}
+type PlanId = 'starter' | 'pro' | 'enterprise'
 
-export async function startCheckout(planId: PlanId = 'starter') {
+/**
+ * Ask Firebase Callable Function `createCheckout` for a Paystack checkout URL,
+ * then redirect there. Falls back to your Paystack Shop link if the call fails.
+ */
+export async function startCheckout(planId: PlanId) {
+  const functions = getFunctions(undefined, REGION)
   const createCheckout = httpsCallable(functions, 'createCheckout')
-  const { data } = await createCheckout({ planId })
-  const payload = (data || {}) as CreateCheckoutResponse
-  const url = payload.checkoutUrl || payload.authorization_url
-  if (!url) throw new Error('Missing checkout URL from server')
-  window.location.href = url
+
+  try {
+    const res = await createCheckout({ planId })
+    const url = (res?.data as any)?.url as string | undefined
+    if (!url || !/^https?:\/\//i.test(url)) {
+      throw new Error('No checkout URL returned from createCheckout.')
+    }
+    window.location.assign(url)
+  } catch (err) {
+    // Fallback: static Paystack Shop link
+    const fallbackUrl = 'https://paystack.shop/pay/pgsf1kucjw'
+    window.open(fallbackUrl, '_blank', 'noopener,noreferrer')
+    throw err
+  }
 }
