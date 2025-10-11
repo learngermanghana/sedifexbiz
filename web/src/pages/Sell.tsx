@@ -39,6 +39,11 @@ type Customer = {
   createdAt?: unknown
   updatedAt?: unknown
 }
+type PaymentProviderMetadata = {
+  provider: string
+  providerRef: string
+  status: string
+}
 type ReceiptData = {
   saleId: string
   createdAt: Date
@@ -48,6 +53,9 @@ type ReceiptData = {
     method: string
     amountPaid: number
     changeDue: number
+    provider: string | null
+    providerRef: string | null
+    status: string | null
   }
   customer?: {
     name: string
@@ -78,6 +86,9 @@ type CommitSalePayload = {
     method: string
     amountPaid: number
     changeDue: number
+    provider: string | null
+    providerRef: string | null
+    status: string | null
   }
   customer?: {
     id?: string
@@ -201,6 +212,7 @@ export default function Sell() {
     message: string
   } | null>(null)
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
+  const [paymentProviderMeta, setPaymentProviderMeta] = useState<PaymentProviderMetadata | null>(null)
   const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
@@ -436,6 +448,7 @@ export default function Sell() {
     if (paymentMethod !== 'cash') {
       setAmountTendered('')
     }
+    setPaymentProviderMeta(null)
   }, [paymentMethod])
 
 
@@ -530,6 +543,9 @@ export default function Sell() {
         method: paymentMethod,
         amountPaid,
         changeDue,
+        provider: paymentProviderMeta?.provider ?? null,
+        providerRef: paymentProviderMeta?.providerRef ?? null,
+        status: paymentProviderMeta?.status ?? null,
       },
       items: cart.map(line => ({
         productId: line.productId,
@@ -565,6 +581,9 @@ export default function Sell() {
           method: paymentMethod,
           amountPaid,
           changeDue,
+          provider: paymentProviderMeta?.provider ?? null,
+          providerRef: paymentProviderMeta?.providerRef ?? null,
+          status: paymentProviderMeta?.status ?? null,
         },
         customer: selectedCustomer
           ? {
@@ -577,6 +596,7 @@ export default function Sell() {
       setCart([])
       setSelectedCustomerId('')
       setAmountTendered('')
+      setPaymentProviderMeta(null)
       setSaleSuccess(`Sale recorded #${data.saleId}. Receipt sent to printer.`)
     } catch (err) {
       console.error('[sell] Unable to record sale', err)
@@ -592,6 +612,9 @@ export default function Sell() {
               method: paymentMethod,
               amountPaid,
               changeDue,
+              provider: paymentProviderMeta?.provider ?? null,
+              providerRef: paymentProviderMeta?.providerRef ?? null,
+              status: paymentProviderMeta?.status ?? null,
             },
             customer: selectedCustomer
               ? {
@@ -604,6 +627,7 @@ export default function Sell() {
           setCart([])
           setSelectedCustomerId('')
           setAmountTendered('')
+          setPaymentProviderMeta(null)
           setSaleSuccess(`Sale queued offline #${saleId}. We'll sync it once you're back online.`)
           return
         }

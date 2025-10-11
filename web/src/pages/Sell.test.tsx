@@ -200,7 +200,14 @@ describe('Sell page', () => {
       expect.objectContaining({
         branchId: 'store-1',
         totals: expect.objectContaining({ total: 12 }),
-        payment: expect.objectContaining({ method: 'cash', amountPaid: 15, changeDue: 3 }),
+        payment: expect.objectContaining({
+          method: 'cash',
+          amountPaid: 15,
+          changeDue: 3,
+          provider: null,
+          providerRef: null,
+          status: null,
+        }),
         items: [
           expect.objectContaining({ productId: 'product-1', qty: 1, price: 12 }),
         ],
