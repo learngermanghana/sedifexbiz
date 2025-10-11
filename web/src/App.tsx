@@ -75,24 +75,51 @@ function ensurePaystackScript(): Promise<void> {
 
   if (!paystackLoader) {
     paystackLoader = new Promise((resolve, reject) => {
-      const existingScript = document.querySelector(`script[src="${PAYSTACK_SCRIPT_URL}"]`)
-      if (existingScript) {
-        existingScript.addEventListener('load', () => resolve(), { once: true })
-        existingScript.addEventListener(
-          'error',
-          () => reject(new Error('Paystack checkout could not be loaded. Check your connection and try again.')),
+      const error = new Error('Paystack checkout could not be loaded. Check your connection and try again.')
+      const hookIntoScript = (script: HTMLScriptElement) => {
+        script.addEventListener(
+          'load',
+          () => {
+            script.dataset.paystackState = 'loaded'
+            resolve()
+          },
           { once: true },
         )
-        return
+        script.addEventListener(
+          'error',
+          () => {
+            script.dataset.paystackState = 'failed'
+            script.remove()
+            reject(error)
+          },
+          { once: true },
+        )
       }
 
-      const script = document.createElement('script')
-      script.src = PAYSTACK_SCRIPT_URL
-      script.async = true
-      script.onload = () => resolve()
-      script.onerror = () =>
-        reject(new Error('Paystack checkout could not be loaded. Check your connection and try again.'))
-      document.head.appendChild(script)
+      let script = document.querySelector<HTMLScriptElement>(`script[src="${PAYSTACK_SCRIPT_URL}"]`)
+
+      if (script) {
+        const state = script.dataset.paystackState
+        if (!state || state === 'failed' || (state === 'loaded' && !window.PaystackPop)) {
+          script.remove()
+          script = null
+        }
+      }
+
+      if (!script) {
+        script = document.createElement('script')
+        script.src = PAYSTACK_SCRIPT_URL
+        script.async = true
+        script.dataset.paystackState = 'loading'
+        document.head.appendChild(script)
+      }
+
+      if (script) {
+        if (!script.dataset.paystackState) {
+          script.dataset.paystackState = 'loading'
+        }
+        hookIntoScript(script)
+      }
     }).catch(error => {
       paystackLoader = null
       throw error
