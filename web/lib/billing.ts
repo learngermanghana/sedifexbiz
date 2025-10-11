@@ -1,19 +1,24 @@
-// web/lib/billing.ts
-import { getFunctions, httpsCallable } from 'firebase/functions'
-// lib -> src is one level up
-import { app } from '../src/firebase'
+// web/src/lib/billing.ts
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../firebase'
 
-type Plan = 'starter-monthly' | 'starter-yearly'
+// Keep these plan IDs in sync with functions/src/plans.ts
+export type PlanId = 'starter' | 'pro' | 'enterprise'
 
-/**
- * Starts a Paystack checkout by calling the Cloud Function `createCheckout`.
- * On success, redirects the browser to Paystack's authorization URL.
- */
-export async function startCheckout(plan: Plan) {
-  const region = import.meta.env.VITE_FUNCTIONS_REGION || 'us-central1'
-  const fn = httpsCallable(getFunctions(app, region), 'createCheckout')
-  const res = await fn({ plan })
-  const { authorizationUrl } = (res.data as any) || {}
-  if (!authorizationUrl) throw new Error('No authorization URL returned from createCheckout')
-  window.location.href = authorizationUrl
+type CreateCheckoutResponse = {
+  checkoutUrl?: string
+  authorization_url?: string
+}
+
+export async function startCheckout(planId: PlanId = 'starter') {
+  const createCheckout = httpsCallable(functions, 'createCheckout')
+  const { data } = await createCheckout({ planId })
+  const payload = (data || {}) as CreateCheckoutResponse
+  const url = payload.checkoutUrl || payload.authorization_url
+
+  if (!url) {
+    throw new Error('Missing checkout URL from server')
+  }
+  // Redirect the browser to Paystack
+  window.location.href = url
 }
