@@ -37,6 +37,23 @@ import { signupConfig } from './config/signup'
 /* -------------------------------------------------------------------------- */
 
 const PAYSTACK_PK = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string
+const PAYSTACK_SCRIPT_URL = 'https://js.paystack.co/v1/inline.js'
+
+type PaystackPaymentSuccess = {
+  ok: true
+  provider: 'paystack'
+  reference: string
+  status: string
+}
+
+type PaystackPaymentFailure = {
+  ok: false
+  provider: 'paystack'
+  message: string
+  status?: string
+}
+
+type PaystackPaymentResult = PaystackPaymentSuccess | PaystackPaymentFailure
 
 declare global {
   interface Window {
@@ -49,32 +66,125 @@ function toMinor(ghs: number) {
   return Math.round(ghs * 100)
 }
 
+let paystackLoader: Promise<void> | null = null
+
+function ensurePaystackScript(): Promise<void> {
+  if (window.PaystackPop) {
+    return Promise.resolve()
+  }
+
+  if (!paystackLoader) {
+    paystackLoader = new Promise((resolve, reject) => {
+      const existingScript = document.querySelector(`script[src="${PAYSTACK_SCRIPT_URL}"]`)
+      if (existingScript) {
+        existingScript.addEventListener('load', () => resolve(), { once: true })
+        existingScript.addEventListener(
+          'error',
+          () => reject(new Error('Paystack checkout could not be loaded. Check your connection and try again.')),
+          { once: true },
+        )
+        return
+      }
+
+      const script = document.createElement('script')
+      script.src = PAYSTACK_SCRIPT_URL
+      script.async = true
+      script.onload = () => resolve()
+      script.onerror = () =>
+        reject(new Error('Paystack checkout could not be loaded. Check your connection and try again.'))
+      document.head.appendChild(script)
+    }).catch(error => {
+      paystackLoader = null
+      throw error
+    })
+  }
+
+  return paystackLoader
+}
+
+async function loadPaystackSdk() {
+  await ensurePaystackScript()
+  if (window.PaystackPop) {
+    return window.PaystackPop
+  }
+  throw new Error('Paystack SDK did not initialize correctly. Please refresh and try again.')
+}
+
 async function payWithPaystack(
   amountGhs: number,
   buyer?: { email?: string; phone?: string; name?: string },
 ) {
-  return new Promise<{ ok: boolean; reference: string }>((resolve) => {
-    if (!window.PaystackPop) {
-      console.warn(
-        "Paystack script not loaded. Ensure <script src='https://js.paystack.co/v1/inline.js'></script> is in index.html",
-      )
-      resolve({ ok: false, reference: '' })
-      return
+  if (!Number.isFinite(amountGhs) || amountGhs <= 0) {
+    return {
+      ok: false,
+      provider: 'paystack',
+      message: 'A valid amount is required before launching Paystack checkout.',
     }
+  }
 
-    const handler = window.PaystackPop.setup({
-      key: PAYSTACK_PK,
-      email: buyer?.email || 'testbuyer@example.com',
-      amount: toMinor(amountGhs),
-      currency: 'GHS',
-      ref: `SFX_${Date.now()}`,
-      metadata: { phone: buyer?.phone, name: buyer?.name },
-      callback: (resp: any) => resolve({ ok: true, reference: resp.reference }),
-      onClose: () => resolve({ ok: false, reference: '' }),
+  if (!PAYSTACK_PK) {
+    console.error('[paystack] Missing public key. Set VITE_PAYSTACK_PUBLIC_KEY in your environment.')
+    return {
+      ok: false,
+      provider: 'paystack',
+      message: 'Paystack is not configured for this workspace. Please contact an administrator.',
+    }
+  }
+
+  try {
+    const sdk = await loadPaystackSdk()
+    return await new Promise<PaystackPaymentResult>((resolve) => {
+      try {
+        const handler = sdk.setup({
+          key: PAYSTACK_PK,
+          email: buyer?.email || 'testbuyer@example.com',
+          amount: toMinor(amountGhs),
+          currency: 'GHS',
+          ref: `SFX_${Date.now()}`,
+          metadata: { phone: buyer?.phone, name: buyer?.name },
+          callback: (resp: any) => {
+            const reference = typeof resp?.reference === 'string' ? resp.reference : ''
+            const status = typeof resp?.status === 'string' ? resp.status : 'success'
+
+            if (!reference) {
+              resolve({
+                ok: false,
+                provider: 'paystack',
+                status,
+                message: 'Paystack did not return a transaction reference. Please try again.',
+              })
+              return
+            }
+
+            resolve({ ok: true, provider: 'paystack', reference, status })
+          },
+          onClose: () =>
+            resolve({
+              ok: false,
+              provider: 'paystack',
+              status: 'cancelled',
+              message: 'Paystack checkout was closed before the payment could be completed.',
+            }),
+        })
+
+        handler.openIframe()
+      } catch (error) {
+        console.error('[paystack] Failed to initialize checkout', error)
+        resolve({
+          ok: false,
+          provider: 'paystack',
+          message: 'We were unable to launch Paystack checkout. Please try again.',
+        })
+      }
     })
-
-    handler.openIframe()
-  })
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'We could not load Paystack checkout. Check your connection and try again.'
+    console.error('[paystack] Unable to load SDK', error)
+    return { ok: false, provider: 'paystack', message }
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -759,12 +869,12 @@ export default function App() {
                   if (r.ok) {
                     publish({
                       tone: 'success',
-                      message: `Paystack test payment complete. Ref: ${r.reference}`,
+                      message: `Paystack test payment ${r.status}. Ref: ${r.reference}`,
                     })
                     // Later: call commitSale(...) with
-                    // { provider: 'paystack', method: 'card', providerRef: r.reference, status: 'pending' }
+                    // { provider: 'paystack', method: 'card', providerRef: r.reference, status: r.status }
                   } else {
-                    publish({ tone: 'error', message: 'Payment cancelled or failed' })
+                    publish({ tone: 'error', message: r.message })
                   }
                 }}
               >
