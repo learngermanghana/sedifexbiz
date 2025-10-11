@@ -1,3 +1,4 @@
+// web/src/pages/AuthScreen.tsx
 import { useCallback, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { signInWithEmailAndPassword } from 'firebase/auth'
@@ -12,7 +13,7 @@ import { useToast } from '../components/ToastProvider'
 import { ensureStoreDocument, persistSession } from '../controllers/sessionController'
 import { signupConfig } from '../config/signup'
 import { auth } from '../firebase'
-import { startCheckout } from '../lib/billing'   // ← already added
+import { startCheckout } from '../../lib/billing'   // <-- FIXED PATH (web/lib/billing)
 import './AuthScreen.css'
 
 type AuthMode = 'sign-in' | 'sign-up'
@@ -20,7 +21,7 @@ type AuthMode = 'sign-in' | 'sign-up'
 const MIN_PASSWORD_LENGTH = 8
 
 /** ─────────────────────────────────────────────────────────────
- * NEW: detect “payment confirmed” flag set by /billing/thanks
+ * Detect “payment confirmed” flag set by /billing/thanks
  * Key is written in BillingThanks after calling confirmPayment.
  * ──────────────────────────────────────────────────────────── */
 function hasPaidFlag() {
@@ -69,7 +70,7 @@ export default function AuthScreen() {
 
   const triggerCheckout = useCallback(async () => {
     publish({ message: 'Redirecting to checkout…', tone: 'info' })
-    await startCheckout('starter') // or 'pro' / 'enterprise' based on your UI choice
+    await startCheckout('starter') // or 'pro' / 'enterprise'
   }, [publish])
 
   const toggleMode = useCallback((nextMode: AuthMode) => {
@@ -80,14 +81,12 @@ export default function AuthScreen() {
       return nextMode
     })
 
-    // ── CHANGED: only send to Paystack if NOT paid.
+    // Only send to Paystack if NOT paid.
     if (nextMode === 'sign-up') {
       if (hasPaidFlag()) {
-        // user already paid → let them proceed without opening Paystack again
         publish({ message: 'Payment confirmed. You can create your account now.', tone: 'success' })
         return
       }
-      // not paid → open checkout
       triggerCheckout().catch(err =>
         publish({ message: normalizeError(err), tone: 'error' }),
       )
@@ -100,13 +99,12 @@ export default function AuthScreen() {
       if (loading) return
 
       if (mode === 'sign-up') {
-        // ── CHANGED: if paid, proceed; if not, send to checkout.
         if (!hasPaidFlag()) {
           await triggerCheckout()
           return
         }
-        // If your signup form lives elsewhere, send them there to complete it.
-        // This keeps the surface small here.
+        // Paid: continue into app to complete creation (or keep creation here if you prefer)
+        publish({ message: 'Great — let’s create your account.', tone: 'success' })
         navigate('/', { replace: true })
         return
       }
@@ -144,7 +142,6 @@ export default function AuthScreen() {
   const handleSignupRedirect = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
-      // ── CHANGED: same rule — if already paid, do NOT open checkout again.
       if (hasPaidFlag()) {
         publish({ message: 'Payment confirmed. You can create your account now.', tone: 'success' })
         navigate('/', { replace: true })
