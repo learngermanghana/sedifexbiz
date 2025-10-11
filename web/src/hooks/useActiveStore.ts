@@ -52,7 +52,9 @@ export function useActiveStore(): ActiveStoreState {
     }
 
     if (membershipStoreIds.length === 0) {
-      setActiveStoreId(null)
+      if (!error) {
+        setActiveStoreId(null)
+      }
       return
     }
 
@@ -74,7 +76,7 @@ export function useActiveStore(): ActiveStoreState {
     }
 
     setActiveStoreId(nextStoreId)
-  }, [loading, membershipStoreIds, user?.uid])
+  }, [error, loading, membershipStoreIds, user?.uid])
 
   const selectActiveStoreId = useCallback(
     (storeId: string | null) => {
