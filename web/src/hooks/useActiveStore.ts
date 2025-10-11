@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useMemberships, type Membership } from './useMemberships'
 import { useAuthUser } from './useAuthUser'
 import { persistActiveStoreIdForUser, readActiveStoreId } from '../utils/activeStoreStorage'
@@ -16,7 +16,11 @@ const STORE_ERROR_MESSAGE = 'We could not load your workspace access. Some featu
 export function useActiveStore(): ActiveStoreState {
   const { memberships, loading, error } = useMemberships()
   const user = useAuthUser()
-  const [activeStoreId, setActiveStoreIdState] = useState<string | null>(null)
+  const activeStoreId = useSyncExternalStore(
+    subscribeToActiveStoreId,
+    getActiveStoreIdSnapshot,
+    getActiveStoreIdSnapshot,
+  )
 
   const membershipStoreIds = useMemo(() => {
     const seen = new Set<string>()
@@ -32,13 +36,13 @@ export function useActiveStore(): ActiveStoreState {
 
   useEffect(() => {
     if (!user?.uid) {
-      setActiveStoreIdState(null)
+      setActiveStoreId(null)
       return
     }
 
     const stored = readActiveStoreId(user.uid)
     if (stored) {
-      setActiveStoreIdState(stored)
+      setActiveStoreId(stored)
     }
   }, [user?.uid])
 
@@ -48,32 +52,31 @@ export function useActiveStore(): ActiveStoreState {
     }
 
     if (membershipStoreIds.length === 0) {
-      setActiveStoreIdState(null)
+      setActiveStoreId(null)
       return
     }
 
-    setActiveStoreIdState(previous => {
-      let nextStoreId = previous
+    const currentActiveStoreId = getActiveStoreIdSnapshot()
+    let nextStoreId = currentActiveStoreId
 
-      if (!previous || !membershipStoreIds.includes(previous)) {
-        const stored = user?.uid ? readActiveStoreId(user.uid) : null
+    if (!currentActiveStoreId || !membershipStoreIds.includes(currentActiveStoreId)) {
+      const stored = user?.uid ? readActiveStoreId(user.uid) : null
 
-        if (stored && membershipStoreIds.includes(stored)) {
-          nextStoreId = stored
-        } else {
-          nextStoreId = membershipStoreIds[0]
-        }
+      if (stored && membershipStoreIds.includes(stored)) {
+        nextStoreId = stored
+      } else {
+        nextStoreId = membershipStoreIds[0]
       }
+    }
 
-      if (nextStoreId && nextStoreId !== previous && user?.uid) {
-        persistActiveStoreIdForUser(user.uid, nextStoreId)
-      }
+    if (nextStoreId && nextStoreId !== currentActiveStoreId && user?.uid) {
+      persistActiveStoreIdForUser(user.uid, nextStoreId)
+    }
 
-      return nextStoreId
-    })
+    setActiveStoreId(nextStoreId)
   }, [loading, membershipStoreIds, user?.uid])
 
-  const setActiveStoreId = useCallback(
+  const selectActiveStoreId = useCallback(
     (storeId: string | null) => {
       if (!storeId) {
         return
@@ -83,17 +86,16 @@ export function useActiveStore(): ActiveStoreState {
         return
       }
 
-      setActiveStoreIdState(previous => {
-        if (previous === storeId) {
-          return previous
-        }
+      const currentActiveStoreId = getActiveStoreIdSnapshot()
+      if (currentActiveStoreId === storeId) {
+        return
+      }
 
-        if (user?.uid) {
-          persistActiveStoreIdForUser(user.uid, storeId)
-        }
+      if (user?.uid) {
+        persistActiveStoreIdForUser(user.uid, storeId)
+      }
 
-        return storeId
-      })
+      setActiveStoreId(storeId)
     },
     [membershipStoreIds, user?.uid],
   )
@@ -106,8 +108,33 @@ export function useActiveStore(): ActiveStoreState {
       isLoading: loading,
       error: hasError ? STORE_ERROR_MESSAGE : null,
       memberships,
-      setActiveStoreId,
+      setActiveStoreId: selectActiveStoreId,
     }),
-    [activeStoreId, hasError, loading, memberships, setActiveStoreId],
+    [activeStoreId, hasError, loading, memberships, selectActiveStoreId],
   )
+}
+
+type ActiveStoreListener = () => void
+
+let activeStoreIdSnapshot: string | null = null
+const listeners = new Set<ActiveStoreListener>()
+
+function getActiveStoreIdSnapshot() {
+  return activeStoreIdSnapshot
+}
+
+function setActiveStoreId(storeId: string | null) {
+  if (activeStoreIdSnapshot === storeId) {
+    return
+  }
+
+  activeStoreIdSnapshot = storeId
+  listeners.forEach(listener => listener())
+}
+
+function subscribeToActiveStoreId(listener: ActiveStoreListener) {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
 }
