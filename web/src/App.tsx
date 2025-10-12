@@ -768,6 +768,9 @@ export default function App() {
 
       setStatus({ tone: 'loading', message: 'Checking your payment…' })
 
+      const fallbackTarget = signupConfig.paymentUrl ?? `mailto:${signupConfig.salesEmail}`
+      const checkoutWindow = window.open('', '_blank', 'noopener,noreferrer')
+
       let unlockResult: SignupUnlockResult | null = null
       try {
         unlockResult = await checkSignupUnlock(normalizedLowerEmail)
@@ -779,8 +782,11 @@ export default function App() {
           'We could not verify your payment automatically. Continue to checkout to start your signup.'
         setStatus({ tone: 'error', message })
         publish({ tone: 'error', message, duration: 8000 })
-        const target = signupConfig.paymentUrl ?? `mailto:${signupConfig.salesEmail}`
-        window.open(target, '_blank', 'noopener,noreferrer')
+        if (checkoutWindow) {
+          checkoutWindow.location.href = fallbackTarget
+        } else {
+          window.open(fallbackTarget, '_blank', 'noopener,noreferrer')
+        }
         return
       }
 
@@ -788,6 +794,7 @@ export default function App() {
         const message = 'Payment confirmed! Create your workspace below.'
         setStatus({ tone: 'success', message })
         publish({ tone: 'success', message, duration: 6000 })
+        checkoutWindow?.close()
         setMode('signup')
         return
       }
@@ -796,8 +803,11 @@ export default function App() {
       const message =
         'Sedifex requires an active subscription before we can create your workspace.'
       publish({ tone: 'info', message, duration: 8000 })
-      const target = signupConfig.paymentUrl ?? `mailto:${signupConfig.salesEmail}`
-      window.open(target, '_blank', 'noopener,noreferrer')
+      if (checkoutWindow) {
+        checkoutWindow.location.href = fallbackTarget
+      } else {
+        window.open(fallbackTarget, '_blank', 'noopener,noreferrer')
+      }
       return
     }
 
