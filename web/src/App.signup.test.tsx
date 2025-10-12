@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { User } from 'firebase/auth'
 import { MemoryRouter } from 'react-router-dom'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import App from './App'
@@ -43,6 +43,7 @@ const mocks = vi.hoisted(() => {
       products: [],
       customers: [],
     })),
+    checkSignupUnlock: vi.fn(),
   }
 })
 
@@ -92,6 +93,10 @@ vi.mock('./controllers/accessController', () => ({
   INACTIVE_WORKSPACE_MESSAGE: 'Your workspace is inactive.',
 }))
 
+vi.mock('./controllers/signupUnlockController', () => ({
+  checkSignupUnlock: (...args: unknown[]) => mocks.checkSignupUnlock(...args),
+}))
+
 vi.mock('./components/ToastProvider', () => ({
   useToast: () => ({ publish: mocks.publish }),
 }))
@@ -104,6 +109,18 @@ describe('App signup access control', () => {
     signupConfigMock.paymentUrl = 'https://billing.example.com/checkout'
     signupConfigMock.salesEmail = 'billing@example.com'
     signupConfigMock.salesBookingUrl = 'https://calendly.com/sedifex/demo'
+    mocks.checkSignupUnlock.mockResolvedValue({
+      eligible: false,
+      email: 'owner@example.com',
+      status: 'missing',
+      planCode: null,
+      planId: null,
+      reference: null,
+      amount: null,
+      currency: null,
+      paidAt: null,
+      unlockedAt: null,
+    })
   })
 
   it('opens the payment link when the sign up tab is selected', async () => {
@@ -116,8 +133,12 @@ describe('App signup access control', () => {
     )
 
     const user = userEvent.setup()
+    const emailInput = await screen.findByLabelText(/email/i)
+    await user.type(emailInput, 'owner@example.com')
     const signUpTab = await screen.findByRole('tab', { name: /sign up/i })
     await user.click(signUpTab)
+
+    await waitFor(() => expect(mocks.checkSignupUnlock).toHaveBeenCalled())
 
     expect(openSpy).toHaveBeenCalledWith(
       'https://billing.example.com/checkout',
@@ -143,14 +164,56 @@ describe('App signup access control', () => {
     )
 
     const user = userEvent.setup()
+    const emailInput = await screen.findByLabelText(/email/i)
+    await user.type(emailInput, 'owner@example.com')
     const signUpTab = await screen.findByRole('tab', { name: /sign up/i })
     await user.click(signUpTab)
+
+    await waitFor(() => expect(mocks.checkSignupUnlock).toHaveBeenCalled())
 
     expect(openSpy).toHaveBeenCalledWith(
       `mailto:${signupConfigMock.salesEmail}`,
       '_blank',
       'noopener,noreferrer',
     )
+
+    openSpy.mockRestore()
+  })
+
+  it('allows signup when Paystack confirmation is present', async () => {
+    mocks.checkSignupUnlock.mockResolvedValueOnce({
+      eligible: true,
+      email: 'owner@example.com',
+      status: 'paid',
+      planCode: 'starter-001',
+      planId: 'starter',
+      reference: 'paystack-ref',
+      amount: 99,
+      currency: 'GHS',
+      paidAt: Date.now(),
+      unlockedAt: Date.now(),
+    })
+
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+
+    const user = userEvent.setup()
+    const emailInput = await screen.findByLabelText(/email/i)
+    await user.type(emailInput, 'owner@example.com')
+
+    const signUpTab = await screen.findByRole('tab', { name: /sign up/i })
+    await user.click(signUpTab)
+
+    await waitFor(() => expect(mocks.checkSignupUnlock).toHaveBeenCalled())
+
+    expect(signUpTab).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByLabelText(/full name/i)).toBeVisible()
+    expect(openSpy).not.toHaveBeenCalled()
 
     openSpy.mockRestore()
   })
