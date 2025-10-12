@@ -28,6 +28,7 @@ import {
   extractCallableErrorMessage,
   INACTIVE_WORKSPACE_MESSAGE,
 } from './controllers/accessController'
+import { checkSignupUnlock, type SignupUnlockResult } from './controllers/signupUnlockController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 import { signupConfig } from './config/signup'
@@ -427,6 +428,8 @@ export default function App() {
   const [town, setTown] = useState('')
   const [signupRole, setSignupRole] = useState<SignupRoleOption>('owner')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
+  const [signupUnlock, setSignupUnlock] = useState<SignupUnlockResult | null>(null)
+  const [signupUnlockEmail, setSignupUnlockEmail] = useState<string | null>(null)
   const isLoading = status.tone === 'loading'
   const { publish } = useToast()
   const navigate = useNavigate()
@@ -461,6 +464,18 @@ export default function App() {
 
   const isLoginFormValid = EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
+
+  useEffect(() => {
+    if (!signupUnlockEmail) {
+      return
+    }
+
+    const normalizedLower = normalizedEmail.toLowerCase()
+    if (normalizedLower !== signupUnlockEmail) {
+      setSignupUnlock(null)
+      setSignupUnlockEmail(null)
+    }
+  }, [normalizedEmail, signupUnlockEmail])
 
   useEffect(() => {
     // Ensure persistence is configured before we react to auth changes
@@ -725,7 +740,7 @@ export default function App() {
     }
   }, [publish, status.message, status.tone])
 
-  function handleModeChange(nextMode: AuthMode) {
+  async function handleModeChange(nextMode: AuthMode) {
     setStatus({ tone: 'idle', message: '' })
     setConfirmPassword('')
     setFullName('')
@@ -737,6 +752,47 @@ export default function App() {
     setSignupRole('owner')
 
     if (nextMode === 'signup') {
+      const normalizedLowerEmail = normalizedEmail.toLowerCase()
+
+      if (signupUnlock?.eligible && signupUnlockEmail === normalizedLowerEmail) {
+        setMode('signup')
+        return
+      }
+
+      if (!EMAIL_PATTERN.test(normalizedEmail)) {
+        const message = 'Enter the email you used during checkout to continue.'
+        setStatus({ tone: 'error', message })
+        publish({ tone: 'error', message, duration: 6000 })
+        return
+      }
+
+      setStatus({ tone: 'loading', message: 'Checking your payment…' })
+
+      let unlockResult: SignupUnlockResult | null = null
+      try {
+        unlockResult = await checkSignupUnlock(normalizedLowerEmail)
+        setSignupUnlock(unlockResult)
+        setSignupUnlockEmail(normalizedLowerEmail)
+      } catch (error) {
+        console.warn('[signup] Failed to verify Paystack confirmation', error)
+        const message =
+          'We could not verify your payment automatically. Continue to checkout to start your signup.'
+        setStatus({ tone: 'error', message })
+        publish({ tone: 'error', message, duration: 8000 })
+        const target = signupConfig.paymentUrl ?? `mailto:${signupConfig.salesEmail}`
+        window.open(target, '_blank', 'noopener,noreferrer')
+        return
+      }
+
+      if (unlockResult?.eligible) {
+        const message = 'Payment confirmed! Create your workspace below.'
+        setStatus({ tone: 'success', message })
+        publish({ tone: 'success', message, duration: 6000 })
+        setMode('signup')
+        return
+      }
+
+      setStatus({ tone: 'idle', message: '' })
       const message =
         'Sedifex requires an active subscription before we can create your workspace.'
       publish({ tone: 'info', message, duration: 8000 })
@@ -908,7 +964,7 @@ export default function App() {
                 role="tab"
                 aria-selected={mode === 'login'}
                 className={`toggle-button${mode === 'login' ? ' is-active' : ''}`}
-                onClick={() => handleModeChange('login')}
+                onClick={() => void handleModeChange('login')}
                 disabled={isLoading}
               >
                 Log in
@@ -918,7 +974,7 @@ export default function App() {
                 role="tab"
                 aria-selected={mode === 'signup'}
                 className={`toggle-button${mode === 'signup' ? ' is-active' : ''}`}
-                onClick={() => handleModeChange('signup')}
+                onClick={() => void handleModeChange('signup')}
                 disabled={isLoading}
               >
                 Sign up

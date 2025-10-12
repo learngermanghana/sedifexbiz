@@ -2,9 +2,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Billing config (plans & trial)
 import { getBillingConfig, type PlanId } from './plans'
+import { paystackWebhook, checkSignupUnlock } from './paystack'
 
 // Re-export any other triggers so they’re included in the build
 export { onAuthCreate } from './onAuthCreate'
+export { confirmPayment } from './confirmPayment'
+export { paystackWebhook, checkSignupUnlock }
 
 import * as functions from 'firebase-functions'
 import { admin, defaultDb } from './firestore'
@@ -40,8 +43,6 @@ function logCallableError(
 }
 
 const db = defaultDb
-
-export { confirmPayment } from './confirmPayment'
 
 
 type ContactPayload = {
