@@ -173,6 +173,41 @@ describe('App signup access control', () => {
     openSpy.mockRestore()
   })
 
+  it('initializes a workspace when optional signup details are omitted', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('tab', { name: /sign up/i }))
+
+    await user.type(screen.getByLabelText(/^email/i), 'owner@example.com')
+    await user.type(screen.getByLabelText(/^password/i), 'StrongPassw0rd!')
+    await user.type(screen.getByLabelText(/confirm password/i), 'StrongPassw0rd!')
+
+    await user.click(screen.getByRole('button', { name: /create account/i }))
+
+    await waitFor(() => expect(mocks.createUserWithEmailAndPassword).toHaveBeenCalled())
+
+    expect(mocks.initializeStore).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phone: null,
+        firstSignupEmail: 'owner@example.com',
+        ownerName: null,
+        businessName: null,
+        country: null,
+        town: null,
+        signupRole: 'owner',
+      }),
+    )
+
+    openSpy.mockRestore()
+  })
+
   it('falls back to contacting sales via email when no checkout link is set', async () => {
     signupConfigMock.paymentUrl = null
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
