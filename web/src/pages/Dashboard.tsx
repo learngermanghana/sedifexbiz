@@ -42,6 +42,20 @@ function formatPercent(value: number) {
   return `${sign}${value.toFixed(1)}%`
 }
 
+function formatCurrency(value: number) {
+  return `GHS ${value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+function formatQuantity(value: number) {
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })
+}
+
 export default function Dashboard() {
   const {
     rangePresets,
@@ -64,7 +78,30 @@ export default function Dashboard() {
     isSavingGoals,
     inventoryAlerts,
     teamCallouts,
+    costMetrics,
+    costSummary,
+    supplierInsights,
   } = useStoreMetrics()
+
+  const supplierDateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+  const costSummaryItems = [
+    { label: 'Units received', value: formatQuantity(costSummary.receivedQty) },
+    { label: 'Units sold', value: formatQuantity(costSummary.unitsSold) },
+    {
+      label: 'Average unit cost',
+      value:
+        costSummary.averageReceivedCost !== null
+          ? formatCurrency(costSummary.averageReceivedCost)
+          : '—',
+    },
+    {
+      label: 'Gross margin %',
+      value:
+        costSummary.grossMarginPercent !== null
+          ? formatPercent(costSummary.grossMarginPercent)
+          : '—',
+    },
+  ]
 
   return (
     <div>
@@ -432,6 +469,246 @@ export default function Dashboard() {
             </div>
           </form>
         </div>
+      </section>
+
+      <section
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 20,
+          marginBottom: 32,
+        }}
+        aria-label="Cost of goods insights"
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 16,
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0F172A' }}>
+              Cost of goods overview
+            </h3>
+            <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+              Track how much stock you invested in, what it cost to sell it, and how margins are
+              trending for the selected range.
+            </p>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: 16,
+          }}
+        >
+          {costMetrics.map(metric => {
+            const change = metric.changePercent
+            const color = change === null ? '#475569' : change < 0 ? '#DC2626' : '#16A34A'
+            const icon = change === null ? '▬' : change < 0 ? '▼' : '▲'
+            const changeText = change !== null ? formatPercent(change) : '—'
+            return (
+              <article
+                key={metric.id}
+                style={{
+                  background: '#FFFFFF',
+                  borderRadius: 16,
+                  padding: '18px 20px',
+                  border: '1px solid #E2E8F0',
+                  boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: '#64748B',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                  }}
+                >
+                  {metric.title}
+                </div>
+                <div style={{ fontSize: 30, fontWeight: 700, color: '#0F172A', lineHeight: 1 }}>
+                  {metric.value}
+                </div>
+                <div style={{ fontSize: 13, color: '#64748B' }}>{metric.subtitle}</div>
+                <div style={{ height: 56 }} aria-hidden="true">
+                  {metric.sparkline && metric.sparkline.length ? (
+                    <Sparkline
+                      data={metric.sparkline}
+                      comparisonData={metric.comparisonSparkline ?? undefined}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: '#94A3B8',
+                        display: 'flex',
+                        alignItems: 'center',
+                        height: '100%',
+                      }}
+                    >
+                      Snapshot metric
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 26,
+                      height: 26,
+                      borderRadius: '999px',
+                      background: '#EEF2FF',
+                      color,
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                    aria-hidden="true"
+                  >
+                    {icon}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color }}>{changeText}</span>
+                  <span style={{ fontSize: 13, color: '#64748B' }}>{metric.changeDescription}</span>
+                </div>
+              </article>
+            )
+          })}
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: 12,
+          }}
+        >
+          {costSummaryItems.map(item => (
+            <div
+              key={item.label}
+              style={{
+                background: '#F8FAFC',
+                borderRadius: 12,
+                border: '1px solid #E2E8F0',
+                padding: '14px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+              }}
+            >
+              <span style={{ fontSize: 12, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                {item.label}
+              </span>
+              <span style={{ fontSize: 18, fontWeight: 600, color: '#0F172A' }}>{item.value}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section
+        style={{
+          background: '#FFFFFF',
+          borderRadius: 20,
+          border: '1px solid #E2E8F0',
+          padding: '20px 22px',
+          marginBottom: 32,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+        }}
+        aria-label="Supplier insights"
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            gap: 16,
+            alignItems: 'center',
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0F172A' }}>
+              Supplier insights
+            </h3>
+            <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+              See which vendors are supplying the most inventory and how pricing trends are
+              shifting.
+            </p>
+          </div>
+        </div>
+
+        {supplierInsights.length ? (
+          <div style={{ overflowX: 'auto' }}>
+            <table
+              style={{
+                width: '100%',
+                minWidth: 520,
+                borderCollapse: 'collapse',
+              }}
+            >
+              <thead>
+                <tr style={{ background: '#F8FAFC', textAlign: 'left' }}>
+                  <th style={{ padding: '10px 12px', fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                    Supplier
+                  </th>
+                  <th style={{ padding: '10px 12px', fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                    Receipts
+                  </th>
+                  <th style={{ padding: '10px 12px', fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                    Units received
+                  </th>
+                  <th style={{ padding: '10px 12px', fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                    Total cost
+                  </th>
+                  <th style={{ padding: '10px 12px', fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                    Avg unit cost
+                  </th>
+                  <th style={{ padding: '10px 12px', fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                    Last delivery
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {supplierInsights.map(row => (
+                  <tr key={row.supplier} style={{ borderTop: '1px solid #E2E8F0' }}>
+                    <td style={{ padding: '12px', fontSize: 13, color: '#0F172A', fontWeight: 600 }}>
+                      {row.supplier}
+                    </td>
+                    <td style={{ padding: '12px', fontSize: 13, color: '#334155' }}>{row.receiptCount}</td>
+                    <td style={{ padding: '12px', fontSize: 13, color: '#334155' }}>
+                      {formatQuantity(row.totalQty)}
+                    </td>
+                    <td style={{ padding: '12px', fontSize: 13, color: '#334155' }}>
+                      {formatCurrency(row.totalCost)}
+                    </td>
+                    <td style={{ padding: '12px', fontSize: 13, color: '#334155' }}>
+                      {row.averageUnitCost !== null ? formatCurrency(row.averageUnitCost) : '—'}
+                    </td>
+                    <td style={{ padding: '12px', fontSize: 13, color: '#334155' }}>
+                      {row.lastReceivedAt ? supplierDateFormatter.format(row.lastReceivedAt) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: 13, color: '#475569' }}>
+            Log receipts with supplier information to unlock spend analysis and cost trends.
+          </p>
+        )}
       </section>
 
       <section

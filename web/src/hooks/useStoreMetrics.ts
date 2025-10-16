@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, where, type Timestamp } from 'firebase/firestore'
 
 import { db } from '../firebase'
@@ -46,6 +46,28 @@ type ProductRecord = {
   createdAt?: unknown
   updatedAt?: unknown
   storeId?: string | null
+}
+
+type ReceiptRecord = {
+  id: string
+  productId?: string | null
+  qty?: number
+  supplier?: string | null
+  reference?: string | null
+  unitCost?: number | null
+  totalCost?: number | null
+  createdAt?: Timestamp | Date | null
+  storeId?: string | null
+}
+
+type LedgerRecord = {
+  id: string
+  productId?: string | null
+  qtyChange?: number
+  type?: string | null
+  refId?: string | null
+  storeId?: string | null
+  createdAt?: Timestamp | Date | null
 }
 
 type CustomerRecord = {
@@ -113,6 +135,22 @@ type GoalFormValues = {
 
 type CustomRange = { start: string; end: string }
 
+type CostSummary = {
+  receivedQty: number
+  unitsSold: number
+  averageReceivedCost: number | null
+  grossMarginPercent: number | null
+}
+
+type SupplierInsight = {
+  supplier: string
+  totalCost: number
+  totalQty: number
+  receiptCount: number
+  averageUnitCost: number | null
+  lastReceivedAt: Date | null
+}
+
 type UseStoreMetricsResult = {
   rangePresets: RangePreset[]
   selectedRangeId: PresetRangeId
@@ -134,12 +172,17 @@ type UseStoreMetricsResult = {
   isSavingGoals: boolean
   inventoryAlerts: InventoryAlert[]
   teamCallouts: TeamCallout[]
+  costMetrics: MetricCard[]
+  costSummary: CostSummary
+  supplierInsights: SupplierInsight[]
 }
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24
 const DEFAULT_REVENUE_TARGET = 5000
 const DEFAULT_CUSTOMER_TARGET = 50
 const DEFAULT_REORDER_THRESHOLD = 5
+const RECEIPT_CACHE_LIMIT = 500
+const LEDGER_CACHE_LIMIT = 750
 
 const RANGE_PRESETS: RangePreset[] = [
   {
@@ -280,6 +323,80 @@ function parseDateInput(value: string) {
   return new Date(year, month - 1, day)
 }
 
+function resolveReceiptCost(receipt: ReceiptRecord): number | null {
+  const total = typeof receipt.totalCost === 'number' ? receipt.totalCost : null
+  if (total !== null && Number.isFinite(total)) {
+    return total
+  }
+  const unitCost = typeof receipt.unitCost === 'number' ? receipt.unitCost : null
+  const qty = Number(receipt.qty ?? 0)
+  if (unitCost !== null && Number.isFinite(unitCost) && Number.isFinite(qty)) {
+    return unitCost * qty
+  }
+  return null
+}
+
+function buildDailyReceiptSeries(
+  receipts: ReceiptRecord[],
+  start: Date,
+  end: Date,
+  metric: 'cost' | 'qty',
+) {
+  const buckets = new Map<string, { cost: number; qty: number }>()
+  receipts.forEach(receipt => {
+    const created = asDate(receipt.createdAt)
+    if (!created) return
+    const key = formatDateKey(created)
+    const current = buckets.get(key) ?? { cost: 0, qty: 0 }
+    const qty = Number(receipt.qty ?? 0) || 0
+    current.qty += qty
+    const cost = resolveReceiptCost(receipt)
+    if (cost !== null) {
+      current.cost += cost
+    }
+    buckets.set(key, current)
+  })
+
+  return enumerateDaysBetween(start, end).map(day => {
+    const bucket = buckets.get(formatDateKey(day))
+    if (!bucket) return 0
+    return metric === 'cost' ? bucket.cost : bucket.qty
+  })
+}
+
+type UnitCostResolver = (productId: string | null | undefined) => number
+
+function buildDailyLedgerCostSeries(
+  entries: LedgerRecord[],
+  start: Date,
+  end: Date,
+  resolveUnitCost: UnitCostResolver,
+) {
+  const buckets = new Map<string, number>()
+  entries.forEach(entry => {
+    const created = asDate(entry.createdAt)
+    if (!created) return
+    const key = formatDateKey(created)
+    const qty = Math.abs(Number(entry.qtyChange ?? 0) || 0)
+    if (!qty) return
+    const unitCost = resolveUnitCost(entry.productId)
+    const cost = qty * unitCost
+    const current = buckets.get(key) ?? 0
+    buckets.set(key, current + cost)
+  })
+
+  return enumerateDaysBetween(start, end).map(day => buckets.get(formatDateKey(day)) ?? 0)
+}
+
+function calculateLedgerCogs(entries: LedgerRecord[], resolveUnitCost: UnitCostResolver) {
+  return entries.reduce((sum, entry) => {
+    const qty = Math.abs(Number(entry.qtyChange ?? 0) || 0)
+    if (!qty) return sum
+    const unitCost = resolveUnitCost(entry.productId)
+    return sum + qty * unitCost
+  }, 0)
+}
+
 function buildDailyMetricSeries(
   sales: SaleRecord[],
   start: Date,
@@ -316,6 +433,8 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   const [sales, setSales] = useState<SaleRecord[]>([])
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [customers, setCustomers] = useState<CustomerRecord[]>([])
+  const [receipts, setReceipts] = useState<ReceiptRecord[]>([])
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerRecord[]>([])
   const [monthlyGoals, setMonthlyGoals] = useState<Record<string, GoalTargets>>({})
   const [selectedGoalMonth, setSelectedGoalMonth] = useState(() => formatMonthInput(new Date()))
   const [goalFormValues, setGoalFormValues] = useState<GoalFormValues>({
@@ -464,6 +583,50 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       cancelled = true
       unsubscribe()
     }
+  }, [activeStoreId])
+
+  useEffect(() => {
+    if (!activeStoreId) {
+      setReceipts([])
+      return () => {}
+    }
+
+    const q = query(
+      collection(db, 'receipts'),
+      where('storeId', '==', activeStoreId),
+      orderBy('createdAt', 'desc'),
+      limit(RECEIPT_CACHE_LIMIT),
+    )
+
+    return onSnapshot(q, snapshot => {
+      const rows: ReceiptRecord[] = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<ReceiptRecord, 'id'>),
+      }))
+      setReceipts(rows)
+    })
+  }, [activeStoreId])
+
+  useEffect(() => {
+    if (!activeStoreId) {
+      setLedgerEntries([])
+      return () => {}
+    }
+
+    const q = query(
+      collection(db, 'ledger'),
+      where('storeId', '==', activeStoreId),
+      orderBy('createdAt', 'desc'),
+      limit(LEDGER_CACHE_LIMIT),
+    )
+
+    return onSnapshot(q, snapshot => {
+      const rows: LedgerRecord[] = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<LedgerRecord, 'id'>),
+      }))
+      setLedgerEntries(rows)
+    })
   }, [activeStoreId])
 
   useEffect(() => {
@@ -691,6 +854,199 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     [previousSales, previousRangeStart, previousRangeEnd],
   )
 
+  const receiptsInRange = useMemo(
+    () =>
+      receipts.filter(record => {
+        const created = asDate(record.createdAt)
+        return created ? created >= rangeStart && created <= rangeEnd : false
+      }),
+    [receipts, rangeStart, rangeEnd],
+  )
+
+  const previousReceipts = useMemo(
+    () =>
+      receipts.filter(record => {
+        const created = asDate(record.createdAt)
+        return created ? created >= previousRangeStart && created <= previousRangeEnd : false
+      }),
+    [receipts, previousRangeStart, previousRangeEnd],
+  )
+
+  const saleLedgerEntries = useMemo(
+    () => ledgerEntries.filter(entry => entry.type === 'sale'),
+    [ledgerEntries],
+  )
+
+  const currentSaleLedgerEntries = useMemo(
+    () =>
+      saleLedgerEntries.filter(entry => {
+        const created = asDate(entry.createdAt)
+        return created ? created >= rangeStart && created <= rangeEnd : false
+      }),
+    [saleLedgerEntries, rangeStart, rangeEnd],
+  )
+
+  const previousSaleLedgerEntries = useMemo(
+    () =>
+      saleLedgerEntries.filter(entry => {
+        const created = asDate(entry.createdAt)
+        return created ? created >= previousRangeStart && created <= previousRangeEnd : false
+      }),
+    [saleLedgerEntries, previousRangeStart, previousRangeEnd],
+  )
+
+  const productCostBasis = useMemo(() => {
+    const basis = new Map<
+      string,
+      { totalQty: number; totalCost: number; lastUnitCost: number | null; lastDate: Date | null }
+    >()
+    receipts.forEach(receipt => {
+      const productId = typeof receipt.productId === 'string' ? receipt.productId : null
+      if (!productId) return
+      const qty = Number(receipt.qty ?? 0) || 0
+      const cost = resolveReceiptCost(receipt)
+      const created = asDate(receipt.createdAt)
+      const entry =
+        basis.get(productId) ?? { totalQty: 0, totalCost: 0, lastUnitCost: null, lastDate: null }
+      if (cost !== null) {
+        entry.totalQty += qty
+        entry.totalCost += cost
+      }
+      const unitCost = typeof receipt.unitCost === 'number' ? receipt.unitCost : null
+      if (created && unitCost !== null && Number.isFinite(unitCost)) {
+        if (!entry.lastDate || created >= entry.lastDate) {
+          entry.lastDate = created
+          entry.lastUnitCost = unitCost
+        }
+      }
+      basis.set(productId, entry)
+    })
+    return basis
+  }, [receipts])
+
+  const resolveUnitCost = useCallback<UnitCostResolver>(
+    productId => {
+      if (!productId) return 0
+      const entry = productCostBasis.get(productId)
+      if (!entry) return 0
+      if (entry.totalQty > 0 && entry.totalCost > 0) {
+        return entry.totalCost / entry.totalQty
+      }
+      return entry.lastUnitCost ?? 0
+    },
+    [productCostBasis],
+  )
+
+  const currentCogs = useMemo(
+    () => calculateLedgerCogs(currentSaleLedgerEntries, resolveUnitCost),
+    [currentSaleLedgerEntries, resolveUnitCost],
+  )
+
+  const previousCogs = useMemo(
+    () => calculateLedgerCogs(previousSaleLedgerEntries, resolveUnitCost),
+    [previousSaleLedgerEntries, resolveUnitCost],
+  )
+
+  const cogsSeries = useMemo(
+    () => buildDailyLedgerCostSeries(currentSaleLedgerEntries, rangeStart, rangeEnd, resolveUnitCost),
+    [currentSaleLedgerEntries, rangeStart, rangeEnd, resolveUnitCost],
+  )
+
+  const previousCogsSeries = useMemo(
+    () =>
+      buildDailyLedgerCostSeries(previousSaleLedgerEntries, previousRangeStart, previousRangeEnd, resolveUnitCost),
+    [previousSaleLedgerEntries, previousRangeStart, previousRangeEnd, resolveUnitCost],
+  )
+
+  const currentUnitsSold = useMemo(
+    () =>
+      currentSaleLedgerEntries.reduce(
+        (sum, entry) => sum + Math.abs(Number(entry.qtyChange ?? 0) || 0),
+        0,
+      ),
+    [currentSaleLedgerEntries],
+  )
+
+  const currentReceivedCost = useMemo(
+    () =>
+      receiptsInRange.reduce((sum, receipt) => {
+        const cost = resolveReceiptCost(receipt)
+        return sum + (cost ?? 0)
+      }, 0),
+    [receiptsInRange],
+  )
+
+  const previousReceivedCost = useMemo(
+    () =>
+      previousReceipts.reduce((sum, receipt) => {
+        const cost = resolveReceiptCost(receipt)
+        return sum + (cost ?? 0)
+      }, 0),
+    [previousReceipts],
+  )
+
+  const currentReceivedQty = useMemo(
+    () => receiptsInRange.reduce((sum, receipt) => sum + (Number(receipt.qty ?? 0) || 0), 0),
+    [receiptsInRange],
+  )
+
+  const receiptCostSeries = useMemo(
+    () => buildDailyReceiptSeries(receiptsInRange, rangeStart, rangeEnd, 'cost'),
+    [receiptsInRange, rangeStart, rangeEnd],
+  )
+
+  const previousReceiptCostSeries = useMemo(
+    () =>
+      buildDailyReceiptSeries(previousReceipts, previousRangeStart, previousRangeEnd, 'cost'),
+    [previousReceipts, previousRangeStart, previousRangeEnd],
+  )
+
+  const receivedCostChange = useMemo(() => {
+    if (previousReceivedCost > 0) {
+      return ((currentReceivedCost - previousReceivedCost) / previousReceivedCost) * 100
+    }
+    return null
+  }, [currentReceivedCost, previousReceivedCost])
+
+  const cogsChange = useMemo(() => {
+    if (previousCogs > 0) {
+      return ((currentCogs - previousCogs) / previousCogs) * 100
+    }
+    return null
+  }, [currentCogs, previousCogs])
+
+  const currentMargin = useMemo(() => currentRevenue - currentCogs, [currentRevenue, currentCogs])
+  const previousMargin = useMemo(() => previousRevenue - previousCogs, [previousRevenue, previousCogs])
+
+  const marginChange = useMemo(() => {
+    if (Math.abs(previousMargin) > 0.01) {
+      return ((currentMargin - previousMargin) / Math.abs(previousMargin)) * 100
+    }
+    return null
+  }, [currentMargin, previousMargin])
+
+  const grossMarginPercent = useMemo(() => {
+    if (currentRevenue > 0) {
+      return ((currentRevenue - currentCogs) / currentRevenue) * 100
+    }
+    return null
+  }, [currentRevenue, currentCogs])
+
+  const marginSeries = useMemo(
+    () => revenueSeries.map((value, index) => value - (cogsSeries[index] ?? 0)),
+    [revenueSeries, cogsSeries],
+  )
+
+  const previousMarginSeries = useMemo(
+    () => previousRevenueSeries.map((value, index) => value - (previousCogsSeries[index] ?? 0)),
+    [previousRevenueSeries, previousCogsSeries],
+  )
+
+  const hasPreviousCostData = previousReceipts.length > 0 || previousSaleLedgerEntries.length > 0
+  const costComparisonLabel = hasPreviousCostData
+    ? `vs previous ${rangeDays === 1 ? 'day' : `${rangeDays} days`}`
+    : 'No prior data'
+
   const metrics: MetricCard[] = [
     {
       id: 'revenue',
@@ -733,6 +1089,99 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       comparisonSparkline: null,
     },
   ]
+
+  const costMetrics: MetricCard[] = [
+    {
+      id: 'cogs',
+      title: 'Cost of goods sold',
+      subtitle: rangeLabel,
+      value: formatAmount(currentCogs),
+      changePercent: cogsChange,
+      changeDescription: costComparisonLabel,
+      sparkline: cogsSeries,
+      comparisonSparkline: previousCogsSeries,
+    },
+    {
+      id: 'received-cost',
+      title: 'Stock received cost',
+      subtitle: rangeLabel,
+      value: formatAmount(currentReceivedCost),
+      changePercent: receivedCostChange,
+      changeDescription: costComparisonLabel,
+      sparkline: receiptCostSeries,
+      comparisonSparkline: previousReceiptCostSeries,
+    },
+    {
+      id: 'gross-margin',
+      title: 'Gross margin',
+      subtitle: rangeLabel,
+      value: formatAmount(currentMargin),
+      changePercent: marginChange,
+      changeDescription: costComparisonLabel,
+      sparkline: marginSeries,
+      comparisonSparkline: previousMarginSeries,
+    },
+  ]
+
+  const costSummary = useMemo<CostSummary>(() => {
+    const averageCost =
+      currentReceivedQty > 0
+        ? currentReceivedCost / currentReceivedQty
+        : receiptsInRange.length > 0
+        ? 0
+        : null
+
+    return {
+      receivedQty: currentReceivedQty,
+      unitsSold: currentUnitsSold,
+      averageReceivedCost: averageCost,
+      grossMarginPercent,
+    }
+  }, [
+    currentReceivedQty,
+    currentUnitsSold,
+    currentReceivedCost,
+    receiptsInRange.length,
+    grossMarginPercent,
+  ])
+
+  const supplierInsights = useMemo<SupplierInsight[]>(() => {
+    const stats = new Map<
+      string,
+      { totalCost: number; totalQty: number; receiptCount: number; lastReceivedAt: Date | null }
+    >()
+    receiptsInRange.forEach(receipt => {
+      const supplier =
+        typeof receipt.supplier === 'string' && receipt.supplier.trim()
+          ? receipt.supplier.trim()
+          : 'Unknown supplier'
+      const current =
+        stats.get(supplier) ?? { totalCost: 0, totalQty: 0, receiptCount: 0, lastReceivedAt: null }
+      const cost = resolveReceiptCost(receipt)
+      if (cost !== null) {
+        current.totalCost += cost
+      }
+      current.totalQty += Number(receipt.qty ?? 0) || 0
+      current.receiptCount += 1
+      const created = asDate(receipt.createdAt)
+      if (created && (!current.lastReceivedAt || created > current.lastReceivedAt)) {
+        current.lastReceivedAt = created
+      }
+      stats.set(supplier, current)
+    })
+
+    return Array.from(stats.entries())
+      .map(([supplier, info]) => ({
+        supplier,
+        totalCost: info.totalCost,
+        totalQty: info.totalQty,
+        receiptCount: info.receiptCount,
+        averageUnitCost: info.totalQty > 0 ? info.totalCost / info.totalQty : null,
+        lastReceivedAt: info.lastReceivedAt,
+      }))
+      .sort((a, b) => b.totalCost - a.totalCost)
+      .slice(0, 5)
+  }, [receiptsInRange])
 
   const goalMonthDate = useMemo(() => parseMonthInput(selectedGoalMonth) ?? startOfMonth(today), [selectedGoalMonth, today])
   const goalMonthStart = useMemo(() => startOfMonth(goalMonthDate), [goalMonthDate])
@@ -906,6 +1355,9 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     isSavingGoals,
     inventoryAlerts,
     teamCallouts,
+    costMetrics,
+    costSummary,
+    supplierInsights,
   }
 }
 
@@ -917,4 +1369,6 @@ export type {
   PresetRangeId,
   CustomRange,
   RangePreset,
+  CostSummary,
+  SupplierInsight,
 }
