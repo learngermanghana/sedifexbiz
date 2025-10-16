@@ -16,6 +16,7 @@ import { getAuth } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { firebaseEnv } from '../config/firebaseEnv'
 import { useAutoRerun } from './useAutoRerun'
+import { normalizeStaffRole } from '../utils/normalizeStaffRole'
 
 export type Membership = {
   id: string
@@ -30,10 +31,6 @@ export type Membership = {
   updatedAt: Timestamp | null
 }
 
-function normalizeRole(role: unknown): Membership['role'] {
-  return role === 'owner' ? 'owner' : 'staff'
-}
-
 function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): Membership {
   const data = snapshot.data()
 
@@ -44,7 +41,7 @@ function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): M
   return {
     id: snapshot.id,
     uid: typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id,
-    role: normalizeRole(data.role),
+    role: normalizeStaffRole(data.role),
     storeId,
     email: typeof data.email === 'string' ? data.email : null,
     phone: typeof data.phone === 'string' ? data.phone : null,

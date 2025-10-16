@@ -18,6 +18,7 @@ import { manageStaffAccount } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
 import './AccountOverview.css'
 import { useAutoRerun } from '../hooks/useAutoRerun'
+import { normalizeStaffRole } from '../utils/normalizeStaffRole'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -91,7 +92,7 @@ function mapStoreSnapshot(
 
 function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): RosterMember {
   const data = snapshot.data()
-  const role = data.role === 'owner' ? 'owner' : 'staff'
+  const role = normalizeStaffRole(data.role)
   const uid = typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id
   const storeId = typeof data.storeId === 'string' && data.storeId.trim() ? data.storeId : null
 
