@@ -401,7 +401,11 @@ export default function AccountOverview() {
     )
   }
 
-  const isBusy = storeLoading || membershipsLoading || profileLoading || rosterLoading
+  const isBusy =
+    storeLoading ||
+    membershipsLoading ||
+    (profileLoading && !profile) ||
+    (rosterLoading && roster.length === 0)
 
   return (
     <div className="account-overview">
