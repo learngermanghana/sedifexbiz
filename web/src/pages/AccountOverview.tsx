@@ -232,19 +232,28 @@ export default function AccountOverview() {
         }
 
         const storesRef = collection(db, 'stores')
-        const fallbackQuery = query(storesRef, where('ownerId', '==', storeId))
-        const fallbackSnapshot = await getDocs(fallbackQuery)
-        if (cancelled) return
+        const fallbackLookups: Array<{ field: string; value: string }> = [
+          { field: 'ownerId', value: storeId },
+          { field: 'ownerUid', value: storeId },
+          { field: 'storeId', value: storeId },
+        ]
 
-        const firstMatch = fallbackSnapshot.docs[0] ?? null
-        if (firstMatch) {
-          const mapped = mapStoreSnapshot(firstMatch)
-          setProfile(mapped)
-          setProfileError(null)
-        } else {
-          setProfile(null)
-          setProfileError('We could not find this workspace profile.')
+        for (const { field, value } of fallbackLookups) {
+          const fallbackQuery = query(storesRef, where(field, '==', value))
+          const fallbackSnapshot = await getDocs(fallbackQuery)
+          if (cancelled) return
+
+          const firstMatch = fallbackSnapshot.docs[0] ?? null
+          if (firstMatch) {
+            const mapped = mapStoreSnapshot(firstMatch)
+            setProfile(mapped)
+            setProfileError(null)
+            return
+          }
         }
+
+        setProfile(null)
+        setProfileError('We could not find this workspace profile.')
       } catch (error) {
         if (cancelled) return
         console.error('Failed to load store profile', error)

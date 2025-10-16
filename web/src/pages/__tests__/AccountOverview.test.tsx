@@ -255,49 +255,42 @@ describe('AccountOverview', () => {
       exists: () => false,
     })
 
-    getDocsMock.mockImplementation(async request => {
-      const ref = (request as { ref?: { path?: string } } | undefined)?.ref
-      if (ref?.path === 'stores') {
-        return {
-          docs: [
-            {
-              id: 'store-document-id',
-              data: () => ({
-                displayName: 'Fallback Coffee',
-                status: 'Active',
-                currency: 'USD',
-                billingPlan: 'Annual',
-                paymentProvider: 'Stripe',
-                createdAt: { toDate: () => new Date('2023-03-01T00:00:00Z') },
-                updatedAt: { toDate: () => new Date('2023-03-02T00:00:00Z') },
-              }),
-            },
-          ],
-        }
-      }
-
-      if (ref?.path === 'teamMembers') {
-        return {
-          docs: [
-            {
-              id: 'member-owner',
-              data: () => ({
-                uid: 'owner-1',
-                storeId: 'owner-1',
-                email: 'owner@example.com',
-                role: 'owner',
-                invitedBy: null,
-                phone: '+1-555-0000',
-                firstSignupEmail: null,
-                updatedAt: { toDate: () => new Date('2023-03-02T00:00:00Z') },
-              }),
-            },
-          ],
-        }
-      }
-
-      return { docs: [] }
-    })
+    getDocsMock
+      .mockResolvedValueOnce({ docs: [] })
+      .mockResolvedValueOnce({ docs: [] })
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'store-document-id',
+            data: () => ({
+              displayName: 'Fallback Coffee',
+              status: 'Active',
+              currency: 'USD',
+              billingPlan: 'Annual',
+              paymentProvider: 'Stripe',
+              createdAt: { toDate: () => new Date('2023-03-01T00:00:00Z') },
+              updatedAt: { toDate: () => new Date('2023-03-02T00:00:00Z') },
+            }),
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'member-owner',
+            data: () => ({
+              uid: 'owner-1',
+              storeId: 'owner-1',
+              email: 'owner@example.com',
+              role: 'owner',
+              invitedBy: null,
+              phone: '+1-555-0000',
+              firstSignupEmail: null,
+              updatedAt: { toDate: () => new Date('2023-03-02T00:00:00Z') },
+            }),
+          },
+        ],
+      })
 
     render(<AccountOverview />)
     await act(async () => {
@@ -305,11 +298,22 @@ describe('AccountOverview', () => {
     })
 
     await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(4))
 
-    expect(queryMock).toHaveBeenCalledWith(
+    expect(queryMock).toHaveBeenNthCalledWith(
+      1,
       { type: 'collection', path: 'stores' },
       { field: 'ownerId', op: '==', value: 'owner-1' },
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      2,
+      { type: 'collection', path: 'stores' },
+      { field: 'ownerUid', op: '==', value: 'owner-1' },
+    )
+    expect(queryMock).toHaveBeenNthCalledWith(
+      3,
+      { type: 'collection', path: 'stores' },
+      { field: 'storeId', op: '==', value: 'owner-1' },
     )
 
     expect(await screen.findByText('Fallback Coffee')).toBeInTheDocument()
