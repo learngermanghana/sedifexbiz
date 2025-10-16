@@ -364,7 +364,17 @@ function buildDailyReceiptSeries(
   })
 }
 
-type UnitCostResolver = (productId: string | null | undefined) => number
+type UnitCostResolver = (
+  productId: string | null | undefined,
+  createdAt: Date | null,
+) => number
+
+type ProductCostSnapshot = {
+  createdAt: Date
+  totalQty: number
+  totalCost: number
+  lastUnitCost: number | null
+}
 
 function buildDailyLedgerCostSeries(
   entries: LedgerRecord[],
@@ -379,7 +389,7 @@ function buildDailyLedgerCostSeries(
     const key = formatDateKey(created)
     const qty = Math.abs(Number(entry.qtyChange ?? 0) || 0)
     if (!qty) return
-    const unitCost = resolveUnitCost(entry.productId)
+    const unitCost = resolveUnitCost(entry.productId, created)
     const cost = qty * unitCost
     const current = buckets.get(key) ?? 0
     buckets.set(key, current + cost)
@@ -392,7 +402,8 @@ function calculateLedgerCogs(entries: LedgerRecord[], resolveUnitCost: UnitCostR
   return entries.reduce((sum, entry) => {
     const qty = Math.abs(Number(entry.qtyChange ?? 0) || 0)
     if (!qty) return sum
-    const unitCost = resolveUnitCost(entry.productId)
+    const created = asDate(entry.createdAt)
+    const unitCost = resolveUnitCost(entry.productId, created)
     return sum + qty * unitCost
   }, 0)
 }
@@ -895,46 +906,92 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     [saleLedgerEntries, previousRangeStart, previousRangeEnd],
   )
 
-  const productCostBasis = useMemo(() => {
-    const basis = new Map<
-      string,
-      { totalQty: number; totalCost: number; lastUnitCost: number | null; lastDate: Date | null }
-    >()
+  const productCostSnapshots = useMemo(() => {
+    const groupedReceipts = new Map<string, ReceiptRecord[]>()
+
     receipts.forEach(receipt => {
       const productId = typeof receipt.productId === 'string' ? receipt.productId : null
       if (!productId) return
-      const qty = Number(receipt.qty ?? 0) || 0
-      const cost = resolveReceiptCost(receipt)
-      const created = asDate(receipt.createdAt)
-      const entry =
-        basis.get(productId) ?? { totalQty: 0, totalCost: 0, lastUnitCost: null, lastDate: null }
-      if (cost !== null) {
-        entry.totalQty += qty
-        entry.totalCost += cost
-      }
-      const unitCost = typeof receipt.unitCost === 'number' ? receipt.unitCost : null
-      if (created && unitCost !== null && Number.isFinite(unitCost)) {
-        if (!entry.lastDate || created >= entry.lastDate) {
-          entry.lastDate = created
-          entry.lastUnitCost = unitCost
-        }
-      }
-      basis.set(productId, entry)
+      const group = groupedReceipts.get(productId) ?? []
+      group.push(receipt)
+      groupedReceipts.set(productId, group)
     })
-    return basis
+
+    const snapshotMap = new Map<string, ProductCostSnapshot[]>()
+
+    groupedReceipts.forEach((productReceipts, productId) => {
+      const sortedReceipts = productReceipts
+        .map(receipt => ({ receipt, created: asDate(receipt.createdAt) ?? new Date(0) }))
+        .sort((a, b) => a.created.getTime() - b.created.getTime())
+
+      let totalQty = 0
+      let totalCost = 0
+      let lastUnitCost: number | null = null
+      const snapshots: ProductCostSnapshot[] = []
+
+      sortedReceipts.forEach(({ receipt, created }) => {
+        const qty = Number(receipt.qty ?? 0) || 0
+        const cost = resolveReceiptCost(receipt)
+        if (cost !== null) {
+          totalQty += qty
+          totalCost += cost
+        }
+
+        const unitCost =
+          typeof receipt.unitCost === 'number' && Number.isFinite(receipt.unitCost)
+            ? receipt.unitCost
+            : null
+        if (unitCost !== null) {
+          lastUnitCost = unitCost
+        }
+
+        snapshots.push({
+          createdAt: created,
+          totalQty,
+          totalCost,
+          lastUnitCost,
+        })
+      })
+
+      if (snapshots.length) {
+        snapshotMap.set(productId, snapshots)
+      }
+    })
+
+    return snapshotMap
   }, [receipts])
 
   const resolveUnitCost = useCallback<UnitCostResolver>(
-    productId => {
+    (productId, createdAt) => {
       if (!productId) return 0
-      const entry = productCostBasis.get(productId)
-      if (!entry) return 0
-      if (entry.totalQty > 0 && entry.totalCost > 0) {
-        return entry.totalCost / entry.totalQty
+      const snapshots = productCostSnapshots.get(productId)
+      if (!snapshots || snapshots.length === 0) return 0
+
+      const targetTime = createdAt ? createdAt.getTime() : null
+      let snapshot: ProductCostSnapshot | undefined
+
+      if (targetTime === null) {
+        snapshot = snapshots[snapshots.length - 1]
+      } else {
+        for (let index = snapshots.length - 1; index >= 0; index -= 1) {
+          const candidate = snapshots[index]
+          if (candidate.createdAt.getTime() <= targetTime) {
+            snapshot = candidate
+            break
+          }
+        }
       }
-      return entry.lastUnitCost ?? 0
+
+      if (!snapshot) {
+        return 0
+      }
+
+      if (snapshot.totalQty > 0 && snapshot.totalCost > 0) {
+        return snapshot.totalCost / snapshot.totalQty
+      }
+      return snapshot.lastUnitCost ?? 0
     },
-    [productCostBasis],
+    [productCostSnapshots],
   )
 
   const currentCogs = useMemo(
