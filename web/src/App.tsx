@@ -197,12 +197,6 @@ interface StatusState {
   message: string
 }
 
-type QueueRequestType = 'sale' | 'receipt'
-
-function isQueueRequestType(value: unknown): value is QueueRequestType {
-  return value === 'sale' || value === 'receipt'
-}
-
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
@@ -399,9 +393,28 @@ function isQueueFailedMessage(value: unknown): value is QueueFailedMessage {
   return isRecord(value) && (value as any).type === 'QUEUE_REQUEST_FAILED'
 }
 
+const QUEUE_REQUEST_LABELS: Record<string, string> = {
+  sale: 'sale',
+  receipt: 'stock receipt',
+}
+
 function getQueueRequestLabel(requestType: unknown): string {
-  if (!isQueueRequestType(requestType)) return 'request'
-  return requestType === 'receipt' ? 'stock receipt' : 'sale'
+  if (typeof requestType !== 'string') return 'request'
+
+  const trimmed = requestType.trim()
+  if (!trimmed) return 'request'
+
+  const normalizedKey = trimmed.toLowerCase()
+  if (QUEUE_REQUEST_LABELS[normalizedKey]) {
+    return QUEUE_REQUEST_LABELS[normalizedKey]
+  }
+
+  const spaced = trimmed
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_]+/g, ' ')
+    .trim()
+
+  return spaced.length > 0 ? spaced.toLowerCase() : 'request'
 }
 
 function normalizeQueueError(value: unknown): string | null {

@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  requestQueueStatus,
+  subscribeToQueue,
+  type QueueEvent,
+  type QueueStatusEvent,
+  type QueueStatusValue,
+} from '../utils/offlineQueue'
 
 const HEARTBEAT_URL = import.meta.env.VITE_HEARTBEAT_URL ?? '/heartbeat.json'
 const DEFAULT_HEARTBEAT_INTERVAL = 30_000
-
-type QueueStatusValue = 'idle' | 'pending' | 'processing' | 'error'
 
 type QueueState = {
   status: QueueStatusValue
@@ -19,29 +24,6 @@ type ConnectivityState = {
   lastHeartbeatAt: number | null
   heartbeatError: string | null
   queue: QueueState
-}
-
-type QueueStatusMessage = {
-  type: 'QUEUE_STATUS'
-  status?: unknown
-  pending?: unknown
-  error?: unknown
-}
-
-type ServiceWorkerMessage = MessageEvent['data']
-
-function parseQueueStatus(value: unknown): QueueStatusValue {
-  if (value === 'processing' || value === 'pending' || value === 'error') {
-    return value
-  }
-  return 'idle'
-}
-
-function normalizeQueuePending(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(0, Math.floor(value))
-  }
-  return 0
 }
 
 export type ConnectivitySnapshot = ConnectivityState & {
@@ -182,47 +164,42 @@ export function useConnectivityStatus(intervalMs = DEFAULT_HEARTBEAT_INTERVAL): 
   }, [runHeartbeat])
 
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) {
-      return
+    function updateQueueFromStatus(event: QueueStatusEvent) {
+      setState(prev => ({
+        ...prev,
+        queue: {
+          status: event.status,
+          pending: event.pending,
+          lastError: event.error,
+          updatedAt: event.timestamp,
+        },
+      }))
     }
 
-    const handleMessage = (event: MessageEvent<ServiceWorkerMessage>) => {
-      const data = event.data
-      if (!data || typeof data !== 'object') {
+    function handleQueueEvent(event: QueueEvent) {
+      if (event.type === 'status') {
+        updateQueueFromStatus(event)
         return
       }
 
-      if ((data as QueueStatusMessage).type === 'QUEUE_STATUS') {
-        const queueData = data as QueueStatusMessage
-        const pending = normalizeQueuePending(queueData.pending)
-        setState(prev => ({
-          ...prev,
-          queue: {
-            status: pending === 0 ? 'idle' : parseQueueStatus(queueData.status),
-            pending,
-            lastError:
-              typeof queueData.error === 'string' && queueData.error.trim().length > 0
-                ? queueData.error
-                : null,
-            updatedAt: Date.now(),
-          },
-        }))
-      }
+      setState(prev => ({
+        ...prev,
+        queue: {
+          ...prev.queue,
+          lastError:
+            event.type === 'request-failed'
+              ? event.error ?? prev.queue.lastError
+              : prev.queue.lastError,
+          updatedAt: event.timestamp,
+        },
+      }))
     }
 
-    navigator.serviceWorker.addEventListener('message', handleMessage)
-
-    navigator.serviceWorker.ready
-      .then(registration => {
-        const controller = registration.active ?? registration.waiting ?? registration.installing
-        controller?.postMessage({ type: 'REQUEST_QUEUE_STATUS' })
-      })
-      .catch(() => {
-        // No-op: service worker may not be registered yet.
-      })
+    const unsubscribe = subscribeToQueue(handleQueueEvent)
+    void requestQueueStatus()
 
     return () => {
-      navigator.serviceWorker.removeEventListener('message', handleMessage)
+      unsubscribe()
     }
   }, [])
 
