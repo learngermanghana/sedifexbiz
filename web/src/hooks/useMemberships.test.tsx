@@ -130,6 +130,43 @@ describe('useMemberships', () => {
     ])
   })
 
+  it('treats owner roles with whitespace or casing variations as owner', async () => {
+    mockUseAuthUser.mockReturnValue({ uid: 'user-000' })
+
+    const membershipDoc = {
+      id: 'member-owner',
+      data: () => ({
+        uid: 'user-000',
+        role: ' Owner ',
+        storeId: 'store-123',
+        email: 'owner@example.com',
+      }),
+    }
+
+    getDocsMock.mockResolvedValueOnce({ docs: [membershipDoc] })
+
+    const { result } = renderHook(() => useMemberships())
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    expect(result.current.memberships).toEqual([
+      {
+        id: 'member-owner',
+        uid: 'user-000',
+        role: 'owner',
+        storeId: 'store-123',
+        email: 'owner@example.com',
+        phone: null,
+        invitedBy: null,
+        firstSignupEmail: null,
+        createdAt: null,
+        updatedAt: null,
+      },
+    ])
+  })
+
   it('automatically retries when connectivity returns', async () => {
     mockUseAuthUser.mockReturnValue({ uid: 'user-789' })
 
