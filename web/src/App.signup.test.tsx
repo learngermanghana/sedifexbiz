@@ -43,7 +43,6 @@ const mocks = vi.hoisted(() => {
       products: [],
       customers: [],
     })),
-    checkSignupUnlock: vi.fn(),
   }
 })
 
@@ -93,10 +92,6 @@ vi.mock('./controllers/accessController', () => ({
   INACTIVE_WORKSPACE_MESSAGE: 'Your workspace is inactive.',
 }))
 
-vi.mock('./controllers/signupUnlockController', () => ({
-  checkSignupUnlock: (...args: unknown[]) => mocks.checkSignupUnlock(...args),
-}))
-
 vi.mock('./components/ToastProvider', () => ({
   useToast: () => ({ publish: mocks.publish }),
 }))
@@ -109,21 +104,20 @@ describe('App signup access control', () => {
     signupConfigMock.paymentUrl = 'https://billing.example.com/checkout'
     signupConfigMock.salesEmail = 'billing@example.com'
     signupConfigMock.salesBookingUrl = 'https://calendly.com/sedifex/demo'
-    mocks.checkSignupUnlock.mockResolvedValue({
-      eligible: false,
+    const mockUser = {
+      uid: 'user-123',
       email: 'owner@example.com',
-      status: 'missing',
-      planCode: null,
-      planId: null,
-      reference: null,
-      amount: null,
-      currency: null,
-      paidAt: null,
-      unlockedAt: null,
+      displayName: null,
+      getIdToken: vi.fn(async () => 'token-123'),
+    } as unknown as User
+    mocks.createUserWithEmailAndPassword.mockImplementation(async () => {
+      mocks.auth.currentUser = mockUser
+      return { user: mockUser }
     })
+    mocks.initializeStore.mockResolvedValue({ storeId: 'store-123' })
   })
 
-  it('opens the payment link when the sign up tab is selected', async () => {
+  it('shows the full sign up form without opening checkout immediately', async () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(
@@ -133,27 +127,53 @@ describe('App signup access control', () => {
     )
 
     const user = userEvent.setup()
-    const emailInput = await screen.findByLabelText(/email/i)
-    await user.type(emailInput, 'owner@example.com')
     const signUpTab = await screen.findByRole('tab', { name: /sign up/i })
     await user.click(signUpTab)
 
-    await waitFor(() => expect(mocks.checkSignupUnlock).toHaveBeenCalled())
+    expect(signUpTab).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByLabelText(/full name/i)).toBeVisible()
+    expect(openSpy).not.toHaveBeenCalled()
 
+    openSpy.mockRestore()
+  })
+
+  it('opens the payment checkout after a successful signup', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('tab', { name: /sign up/i }))
+
+    await user.type(await screen.findByLabelText(/full name/i), 'Owner Example')
+    await user.type(screen.getByLabelText(/business name/i), 'Example Stores')
+    await user.type(screen.getByLabelText(/phone/i), '0551234567')
+    await user.type(screen.getByLabelText(/country/i), 'Ghana')
+    await user.type(screen.getByLabelText(/town/i), 'Accra')
+    await user.type(screen.getByLabelText(/^email/i), 'owner@example.com')
+    await user.type(screen.getByLabelText(/^password/i), 'StrongPassw0rd!')
+    await user.type(screen.getByLabelText(/confirm password/i), 'StrongPassw0rd!')
+
+    await user.click(screen.getByRole('button', { name: /create account/i }))
+
+    await waitFor(() => expect(mocks.createUserWithEmailAndPassword).toHaveBeenCalled())
     expect(openSpy).toHaveBeenCalledWith(
       'https://billing.example.com/checkout',
       '_blank',
       'noopener,noreferrer',
     )
 
-    const infoToastCall = mocks.publish.mock.calls.find(([options]) => options.tone === 'info')
-    expect(infoToastCall?.[0].message).toContain('Sedifex requires an active subscription')
-    expect(screen.getByRole('tab', { name: /log in/i })).toHaveAttribute('aria-selected', 'true')
+    const statusMessage = await screen.findByRole('status')
+    expect(statusMessage.textContent).toContain('Complete your payment')
 
     openSpy.mockRestore()
   })
 
-  it('falls back to emailing sales when no payment URL is configured', async () => {
+  it('falls back to contacting sales via email when no checkout link is set', async () => {
     signupConfigMock.paymentUrl = null
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
@@ -164,56 +184,28 @@ describe('App signup access control', () => {
     )
 
     const user = userEvent.setup()
-    const emailInput = await screen.findByLabelText(/email/i)
-    await user.type(emailInput, 'owner@example.com')
-    const signUpTab = await screen.findByRole('tab', { name: /sign up/i })
-    await user.click(signUpTab)
+    await user.click(await screen.findByRole('tab', { name: /sign up/i }))
 
-    await waitFor(() => expect(mocks.checkSignupUnlock).toHaveBeenCalled())
+    await user.type(await screen.findByLabelText(/full name/i), 'Owner Example')
+    await user.type(screen.getByLabelText(/business name/i), 'Example Stores')
+    await user.type(screen.getByLabelText(/phone/i), '0551234567')
+    await user.type(screen.getByLabelText(/country/i), 'Ghana')
+    await user.type(screen.getByLabelText(/town/i), 'Accra')
+    await user.type(screen.getByLabelText(/^email/i), 'owner@example.com')
+    await user.type(screen.getByLabelText(/^password/i), 'StrongPassw0rd!')
+    await user.type(screen.getByLabelText(/confirm password/i), 'StrongPassw0rd!')
 
+    await user.click(screen.getByRole('button', { name: /create account/i }))
+
+    await waitFor(() => expect(mocks.createUserWithEmailAndPassword).toHaveBeenCalled())
     expect(openSpy).toHaveBeenCalledWith(
       `mailto:${signupConfigMock.salesEmail}`,
       '_blank',
       'noopener,noreferrer',
     )
 
-    openSpy.mockRestore()
-  })
-
-  it('allows signup when Paystack confirmation is present', async () => {
-    mocks.checkSignupUnlock.mockResolvedValueOnce({
-      eligible: true,
-      email: 'owner@example.com',
-      status: 'paid',
-      planCode: 'starter-001',
-      planId: 'starter',
-      reference: 'paystack-ref',
-      amount: 99,
-      currency: 'GHS',
-      paidAt: Date.now(),
-      unlockedAt: Date.now(),
-    })
-
-    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
-
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
-
-    const user = userEvent.setup()
-    const emailInput = await screen.findByLabelText(/email/i)
-    await user.type(emailInput, 'owner@example.com')
-
-    const signUpTab = await screen.findByRole('tab', { name: /sign up/i })
-    await user.click(signUpTab)
-
-    await waitFor(() => expect(mocks.checkSignupUnlock).toHaveBeenCalled())
-
-    expect(signUpTab).toHaveAttribute('aria-selected', 'true')
-    expect(await screen.findByLabelText(/full name/i)).toBeVisible()
-    expect(openSpy).not.toHaveBeenCalled()
+    const statusMessage = await screen.findByRole('status')
+    expect(statusMessage.textContent).toContain('Please contact billing@example.com')
 
     openSpy.mockRestore()
   })
