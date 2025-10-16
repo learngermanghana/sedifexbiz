@@ -129,3 +129,35 @@ Follow the flow below to connect Paystack as the card/mobile processor for Sedif
    - Confirm that `resolveStoreAccess` still returns billing metadata for new signups and that the UI gracefully handles both paid and trial workspaces with Paystack enabled.
 
 Documenting these steps keeps the integration consistent across environments and makes it easy to onboard additional stores with Paystack support.
+
+### Automated payment reconciliation workflow
+
+Finance teams can lean on the persisted `payment` payload from the `commitSale` callable to continuously compare Paystack settlements against Sedifex sales records. The outline below extends the guidance above and keeps the workflow fully auditable:
+
+1. **Source of truth**
+   - Treat Paystack as the authority for cash settlement while Firestore’s `sales` collection remains the record of issued receipts.
+   - Because `commitSale` stores the payment object verbatim, every sale already includes Paystack metadata such as `provider`, `providerRef`, `status`, `amountPaid`, and `changeDue`.
+
+2. **Daily extraction job**
+   - Schedule a Cloud Function (or Cloud Scheduler + HTTPS endpoint) to run at least daily.
+   - Use Paystack’s Transaction API to list charges from the previous reconciliation window. Filter by `status = success` (or any state your finance policy requires) and capture the Paystack reference, amount, currency, and processed timestamp.
+
+3. **Firestore comparison**
+   - Query Firestore for `sales` documents whose `payment.provider` is `paystack` and whose `createdAt` falls within the same window.
+   - Create an in-memory map keyed by the Paystack `providerRef`. For each Paystack transaction:
+     - If a matching sale is found but `payment.status` is not `success`, update the sale with a `payment.status = 'settled'` flag and append a `reconciliationLogs` array entry noting the timestamp and actor (e.g. the scheduler).
+     - If no matching sale exists, write a `financeAlerts` document (or send Slack/email) detailing the orphaned transaction so the team can investigate.
+
+4. **Mismatch handling**
+   - For each sale that lacks a matching Paystack transaction, set a `payment.reconciliationStatus = 'mismatch'` field and optionally freeze fulfillment (e.g. hold inventory release) until the issue is resolved.
+   - Surface mismatches in a dedicated Firestore collection or BigQuery export that the finance dashboard can subscribe to. Include the sale ID, cashier, register, and captured Paystack values to speed up resolution.
+
+5. **Audit and reporting**
+   - Persist every automated change in the sale document’s `reconciliationLogs` array (e.g. `{ actor: 'scheduler', action: 'marked-settled', processedAt: <timestamp> }`). This creates a tamper-evident history tied to the original payment payload.
+   - Export the daily reconciliation results to BigQuery or CSV so finance can attach summaries to period-close packets.
+
+6. **Exception queue**
+   - When a human updates a mismatched sale, require them to submit a short note (stored alongside the log entry) explaining what changed and why.
+   - Close the loop by clearing the `reconciliationStatus` field once the Paystack reference appears or the transaction is confirmed void.
+
+Following this workflow ensures Paystack settlement data and Sedifex sales stay aligned without manual spreadsheet checks, while still giving finance teams a structured queue for anomalies.
