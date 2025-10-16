@@ -363,6 +363,41 @@ function evaluatePasswordStrength(password: string): PasswordStrength {
   }
 }
 
+type SignupValidationInput = {
+  email: string
+  password: string
+  confirmPassword: string
+  passwordStrength?: PasswordStrength
+}
+
+function getSignupValidationError({
+  email,
+  password,
+  confirmPassword,
+  passwordStrength,
+}: SignupValidationInput): string | null {
+  if (!email) return 'Enter your email.'
+  if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
+  if (!password) return 'Create a password.'
+
+  const strength = passwordStrength ?? evaluatePasswordStrength(password)
+  const meetsAllChecks =
+    strength.isLongEnough &&
+    strength.hasUppercase &&
+    strength.hasLowercase &&
+    strength.hasNumber &&
+    strength.hasSymbol
+
+  if (!meetsAllChecks) {
+    return 'Choose a password that meets all of the requirements.'
+  }
+
+  if (!confirmPassword) return 'Confirm your password.'
+  if (password !== confirmPassword) return 'Passwords must match.'
+
+  return null
+}
+
 function getLoginValidationError(email: string, password: string): string | null {
   if (!email) return 'Enter your email.'
   if (!EMAIL_PATTERN.test(email)) return 'Enter a valid email address.'
@@ -463,14 +498,16 @@ export default function App() {
   ] as const
 
   const doesPasswordMeetAllChecks = passwordChecklist.every(item => item.passed)
-  const isSignupFormValid =
-    normalizedEmail.length > 0 &&
-    normalizedPassword.length > 0 &&
-    normalizedFullName.length > 0 &&
-    normalizedBusinessName.length > 0 &&
-    normalizedPhone.length > 0 &&
-    normalizedCountry.length > 0 &&
-    normalizedTown.length > 0
+  const signupValidationError =
+    mode === 'signup'
+      ? getSignupValidationError({
+          email: normalizedEmail,
+          password: normalizedPassword,
+          confirmPassword: normalizedConfirmPassword,
+          passwordStrength,
+        })
+      : null
+  const isSignupFormValid = signupValidationError === null
 
   const isLoginFormValid = EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
@@ -560,7 +597,13 @@ export default function App() {
     const sanitizedSignupRole = normalizeSignupRole(signupRole)
 
     const validationError =
-      mode === 'login' ? getLoginValidationError(sanitizedEmail, sanitizedPassword) : null
+      mode === 'login'
+        ? getLoginValidationError(sanitizedEmail, sanitizedPassword)
+        : getSignupValidationError({
+            email: sanitizedEmail,
+            password: sanitizedPassword,
+            confirmPassword: sanitizedConfirmPassword,
+          })
 
     if (mode === 'signup') {
       setPhone(sanitizedPhone)
@@ -985,13 +1028,12 @@ export default function App() {
                     type="text"
                     autoComplete="name"
                     placeholder="Alex Morgan"
-                    required
                     disabled={isLoading}
                     aria-invalid={fullName.length > 0 && normalizedFullName.length === 0}
                     aria-describedby="full-name-hint"
                   />
                   <p className="form__hint" id="full-name-hint">
-                    Helps personalize your workspace and invites.
+                    Optional. Helps personalize your workspace and invites.
                   </p>
                 </div>
               )}
@@ -1007,13 +1049,12 @@ export default function App() {
                     type="text"
                     autoComplete="organization"
                     placeholder="Morgan Retail Co."
-                    required
                     disabled={isLoading}
                     aria-invalid={businessName.length > 0 && normalizedBusinessName.length === 0}
                     aria-describedby="business-name-hint"
                   />
                   <p className="form__hint" id="business-name-hint">
-                    We’ll tailor onboarding based on your store name.
+                    Optional. We’ll tailor onboarding based on your store name.
                   </p>
                 </div>
               )}
@@ -1041,13 +1082,12 @@ export default function App() {
                     autoComplete="tel"
                     inputMode="tel"
                     placeholder="(555) 123-4567"
-                    required
                     disabled={isLoading}
                     aria-invalid={phone.length > 0 && normalizedPhone.length === 0}
                     aria-describedby="phone-hint"
                   />
                   <p className="form__hint" id="phone-hint">
-                    We’ll use this to tailor your onboarding.
+                    Optional. We’ll use this to tailor your onboarding.
                   </p>
                 </div>
               )}
@@ -1063,13 +1103,12 @@ export default function App() {
                     type="text"
                     autoComplete="country-name"
                     placeholder="Ghana"
-                    required
                     disabled={isLoading}
                     aria-invalid={country.length > 0 && normalizedCountry.length === 0}
                     aria-describedby="country-hint"
                   />
                   <p className="form__hint" id="country-hint">
-                    Let us know where your business operates.
+                    Optional. Let us know where your business operates.
                   </p>
                 </div>
               )}
@@ -1085,13 +1124,12 @@ export default function App() {
                     type="text"
                     autoComplete="address-level2"
                     placeholder="Accra"
-                    required
                     disabled={isLoading}
                     aria-invalid={town.length > 0 && normalizedTown.length === 0}
                     aria-describedby="town-hint"
                   />
                   <p className="form__hint" id="town-hint">
-                    We’ll adapt recommendations for your local market.
+                    Optional. We’ll adapt recommendations for your local market.
                   </p>
                 </div>
               )}
