@@ -35,6 +35,7 @@ function normalizeSignupRoleInput(value: SignupRoleOption | null | undefined): S
 
 type InitializeStorePayload = {
   contact?: InitializeStoreContactPayload
+  planId?: string | null
 }
 
 type RawInitializeStoreResponse = {
@@ -156,45 +157,57 @@ export function extractCallableErrorMessage(error: FirebaseError): string | null
   return normalized || null
 }
 
-export async function initializeStore(contact?: InitializeStoreContactPayload) {
+type InitializeStoreOptions = {
+  contact?: InitializeStoreContactPayload
+  planId?: string | null
+}
+
+export async function initializeStore(options?: InitializeStoreOptions) {
   let payload: InitializeStorePayload | undefined
 
-  if (contact) {
+  if (options?.contact) {
     const payloadContact: InitializeStoreContactPayload = {}
     let hasContactField = false
 
-    if (contact.phone !== undefined) {
-      payloadContact.phone = contact.phone ?? null
+    if (options.contact.phone !== undefined) {
+      payloadContact.phone = options.contact.phone ?? null
       hasContactField = true
     }
-    if (contact.firstSignupEmail !== undefined) {
-      payloadContact.firstSignupEmail = contact.firstSignupEmail ?? null
+    if (options.contact.firstSignupEmail !== undefined) {
+      payloadContact.firstSignupEmail = options.contact.firstSignupEmail ?? null
       hasContactField = true
     }
-    if (contact.ownerName !== undefined) {
-      payloadContact.ownerName = contact.ownerName ?? null
+    if (options.contact.ownerName !== undefined) {
+      payloadContact.ownerName = options.contact.ownerName ?? null
       hasContactField = true
     }
-    if (contact.businessName !== undefined) {
-      payloadContact.businessName = contact.businessName ?? null
+    if (options.contact.businessName !== undefined) {
+      payloadContact.businessName = options.contact.businessName ?? null
       hasContactField = true
     }
-    if (contact.country !== undefined) {
-      payloadContact.country = contact.country ?? null
+    if (options.contact.country !== undefined) {
+      payloadContact.country = options.contact.country ?? null
       hasContactField = true
     }
-    if (contact.town !== undefined) {
-      payloadContact.town = contact.town ?? null
+    if (options.contact.town !== undefined) {
+      payloadContact.town = options.contact.town ?? null
       hasContactField = true
     }
-    if (contact.signupRole !== undefined) {
-      payloadContact.signupRole = normalizeSignupRoleInput(contact.signupRole)
+    if (options.contact.signupRole !== undefined) {
+      payloadContact.signupRole = normalizeSignupRoleInput(options.contact.signupRole)
       hasContactField = true
     }
 
     if (hasContactField) {
       payload = { contact: payloadContact }
     }
+  }
+
+  if (options?.planId !== undefined) {
+    if (!payload) {
+      payload = {}
+    }
+    payload.planId = options.planId ?? null
   }
 
   const response = await initializeStoreCallable(payload)

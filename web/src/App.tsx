@@ -31,7 +31,9 @@ import {
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 import { signupConfig } from './config/signup'
-import { PLAN_LIST } from '@catalog/plans'
+import { clearPaidMarker, getPaidMarker } from './lib/paid'
+import { clearActiveStoreIdForUser } from './utils/activeStoreStorage'
+import { PLAN_LIST, type PlanId } from '@catalog/plans'
 
 /* -------------------------------------------------------------------------- */
 /*                              Paystack helpers                              */
@@ -202,6 +204,31 @@ const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
 
+function resolvePlanIdFromMarker(): PlanId | null {
+  const marker = getPaidMarker()
+  const rawPlan = marker?.plan
+  if (typeof rawPlan !== 'string') {
+    return null
+  }
+
+  const normalized = rawPlan.trim().toLowerCase()
+  if (!normalized) {
+    return null
+  }
+
+  for (const plan of PLAN_LIST) {
+    if (plan.id === normalized) {
+      return plan.id
+    }
+
+    if (plan.name.trim().toLowerCase() === normalized) {
+      return plan.id
+    }
+  }
+
+  return null
+}
+
 function sanitizePhone(value: string): string {
   return value.replace(/\D+/g, '')
 }
@@ -280,11 +307,17 @@ async function persistTeamMemberMetadata(
 }
 
 // We intentionally keep the auth account so administrators can investigate the failure later.
-async function cleanupFailedSignup(_user: User) {
+function cleanupFailedSignup(user: User) {
   try {
-    await auth.signOut()
+    clearPaidMarker()
   } catch (error) {
-    console.warn('[signup] Unable to sign out after rejected signup', error)
+    console.warn('[signup] Unable to clear plan marker after rejected signup', error)
+  }
+
+  try {
+    clearActiveStoreIdForUser(user.uid)
+  } catch (error) {
+    console.warn('[signup] Unable to clear local workspace selection after rejected signup', error)
   }
 }
 
@@ -655,29 +688,47 @@ export default function App() {
         }
         successMessage = 'Welcome back! Redirecting…'
       } else {
-        const { user: nextUser } = await createUserWithEmailAndPassword(
-          auth,
-          sanitizedEmail,
-          sanitizedPassword,
-        )
+        const existingUser = (auth.currentUser as User | null) ?? user ?? null
+        let nextUser: User
+
+        if (existingUser) {
+          nextUser = existingUser
+        } else {
+          const created = await createUserWithEmailAndPassword(
+            auth,
+            sanitizedEmail,
+            sanitizedPassword,
+          )
+          nextUser = created.user
+        }
+
         await persistSession(nextUser)
 
         let initializedStoreId: string | undefined
         try {
-          const initialization = await initializeStore({
-            phone: sanitizedPhone || null,
-            firstSignupEmail: sanitizedEmail ? sanitizedEmail.toLowerCase() : null,
-            ownerName: sanitizedFullName || null,
-            businessName: sanitizedBusinessName || null,
-            country: sanitizedCountry || null,
-            town: sanitizedTown || null,
-            signupRole: sanitizedSignupRole,
-          })
+          const initializeOptions: Parameters<typeof initializeStore>[0] = {
+            contact: {
+              phone: sanitizedPhone || null,
+              firstSignupEmail: sanitizedEmail ? sanitizedEmail.toLowerCase() : null,
+              ownerName: sanitizedFullName || null,
+              businessName: sanitizedBusinessName || null,
+              country: sanitizedCountry || null,
+              town: sanitizedTown || null,
+              signupRole: sanitizedSignupRole,
+            },
+          }
+
+          const selectedPlanId = resolvePlanIdFromMarker()
+          if (selectedPlanId) {
+            initializeOptions.planId = selectedPlanId
+          }
+
+          const initialization = await initializeStore(initializeOptions)
           initializedStoreId = initialization.storeId
         } catch (error) {
           console.warn('[signup] Failed to initialize workspace', error)
           setStatus({ tone: 'error', message: getErrorMessage(error) })
-          await cleanupFailedSignup(nextUser)
+          cleanupFailedSignup(nextUser)
           return
         }
 
@@ -687,7 +738,7 @@ export default function App() {
         } catch (error) {
           console.warn('[signup] Failed to resolve workspace access', error)
           setStatus({ tone: 'error', message: getErrorMessage(error) })
-          await cleanupFailedSignup(nextUser)
+          cleanupFailedSignup(nextUser)
           return
         }
 

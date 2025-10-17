@@ -46,6 +46,13 @@ const mocks = vi.hoisted(() => {
   }
 })
 
+const paidMarkerMocks = vi.hoisted(() => ({
+  getPaidMarker: vi.fn(() => null),
+  clearPaidMarker: vi.fn(),
+}))
+
+const clearActiveStoreIdForUserMock = vi.hoisted(() => vi.fn())
+
 vi.mock('./config/signup', () => ({ signupConfig: signupConfigMock }))
 
 vi.mock('./firebase', () => ({
@@ -92,6 +99,15 @@ vi.mock('./controllers/accessController', () => ({
   INACTIVE_WORKSPACE_MESSAGE: 'Your workspace is inactive.',
 }))
 
+vi.mock('./lib/paid', () => ({
+  getPaidMarker: () => paidMarkerMocks.getPaidMarker(),
+  clearPaidMarker: () => paidMarkerMocks.clearPaidMarker(),
+}))
+
+vi.mock('./utils/activeStoreStorage', () => ({
+  clearActiveStoreIdForUser: (...args: unknown[]) => clearActiveStoreIdForUserMock(...args),
+}))
+
 vi.mock('./components/ToastProvider', () => ({
   useToast: () => ({ publish: mocks.publish }),
 }))
@@ -104,6 +120,10 @@ describe('App signup access control', () => {
     signupConfigMock.paymentUrl = 'https://billing.example.com/checkout'
     signupConfigMock.salesEmail = 'billing@example.com'
     signupConfigMock.salesBookingUrl = 'https://calendly.com/sedifex/demo'
+    paidMarkerMocks.getPaidMarker.mockReset()
+    paidMarkerMocks.getPaidMarker.mockReturnValue(null)
+    paidMarkerMocks.clearPaidMarker.mockReset()
+    clearActiveStoreIdForUserMock.mockReset()
     const mockUser = {
       uid: 'user-123',
       email: 'owner@example.com',
@@ -195,17 +215,74 @@ describe('App signup access control', () => {
 
     expect(mocks.initializeStore).toHaveBeenCalledWith(
       expect.objectContaining({
-        phone: null,
-        firstSignupEmail: 'owner@example.com',
-        ownerName: null,
-        businessName: null,
-        country: null,
-        town: null,
-        signupRole: 'owner',
+        contact: expect.objectContaining({
+          phone: null,
+          firstSignupEmail: 'owner@example.com',
+          ownerName: null,
+          businessName: null,
+          country: null,
+          town: null,
+          signupRole: 'owner',
+        }),
       }),
     )
 
     openSpy.mockRestore()
+  })
+
+  it('passes the paid plan marker to initializeStore when available', async () => {
+    paidMarkerMocks.getPaidMarker.mockReturnValue({ plan: 'pro', at: Date.now() })
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('tab', { name: /sign up/i }))
+
+    await user.type(screen.getByLabelText(/^email/i), 'owner@example.com')
+    await user.type(screen.getByLabelText(/^password/i), 'StrongPassw0rd!')
+    await user.type(screen.getByLabelText(/confirm password/i), 'StrongPassw0rd!')
+
+    await user.click(screen.getByRole('button', { name: /create account/i }))
+
+    await waitFor(() => expect(mocks.initializeStore).toHaveBeenCalled())
+    expect(mocks.initializeStore).toHaveBeenCalledWith(
+      expect.objectContaining({ planId: 'pro' }),
+    )
+  })
+
+  it('allows reinitializing the workspace without recreating the user after a reset', async () => {
+    mocks.initializeStore.mockRejectedValueOnce(new Error('init failed'))
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('tab', { name: /sign up/i }))
+
+    await user.type(screen.getByLabelText(/^email/i), 'owner@example.com')
+    await user.type(screen.getByLabelText(/^password/i), 'StrongPassw0rd!')
+    await user.type(screen.getByLabelText(/confirm password/i), 'StrongPassw0rd!')
+
+    const submitButton = screen.getByRole('button', { name: /create account/i })
+    await user.click(submitButton)
+
+    await waitFor(() => expect(mocks.initializeStore).toHaveBeenCalledTimes(1))
+
+    expect(paidMarkerMocks.clearPaidMarker).toHaveBeenCalledTimes(1)
+    expect(clearActiveStoreIdForUserMock).toHaveBeenCalledWith('user-123')
+    expect(mocks.auth.signOut).not.toHaveBeenCalled()
+
+    await user.click(submitButton)
+
+    await waitFor(() => expect(mocks.initializeStore).toHaveBeenCalledTimes(2))
+    expect(mocks.createUserWithEmailAndPassword).toHaveBeenCalledTimes(1)
   })
 
   it('falls back to contacting sales via email when no checkout link is set', async () => {
