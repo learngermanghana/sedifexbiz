@@ -1,7 +1,7 @@
 // functions/src/index.ts
 // ─────────────────────────────────────────────────────────────────────────────
 // Billing config (plans & trial)
-import { getBillingConfig, type PlanId } from './plans'
+import { getBillingConfig, PLAN_IDS, type PlanId } from './plans'
 import { paystackWebhook, checkSignupUnlock } from './paystack'
 
 // Re-export any other triggers so they’re included in the build
@@ -57,6 +57,7 @@ type ContactPayload = {
 
 type InitializeStorePayload = {
   contact?: ContactPayload
+  planId?: unknown
 }
 
 type ManageStaffPayload = {
@@ -69,6 +70,42 @@ type ManageStaffPayload = {
 const VALID_ROLES = new Set(['owner', 'staff'])
 const INACTIVE_WORKSPACE_MESSAGE =
   'Your Sedifex workspace contract is not active. Reach out to your Sedifex administrator to restore access.'
+const VALID_PLAN_IDS = new Set<PlanId>(PLAN_IDS as PlanId[])
+
+function normalizePlanId(value: unknown): PlanId | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim().toLowerCase()
+  if (!trimmed) return null
+  return VALID_PLAN_IDS.has(trimmed as PlanId) ? (trimmed as PlanId) : null
+}
+
+function toTimestamp(value: unknown): admin.firestore.Timestamp | null {
+  if (!value) return null
+  if (typeof value === 'object' && value !== null) {
+    if (typeof (value as { toMillis?: unknown }).toMillis === 'function') {
+      return value as admin.firestore.Timestamp
+    }
+    const millis = (value as { _millis?: unknown })._millis
+    if (typeof millis === 'number') {
+      return admin.firestore.Timestamp.fromMillis(millis)
+    }
+  }
+  return null
+}
+
+function isTimestamp(value: unknown): value is admin.firestore.Timestamp {
+  return toTimestamp(value) !== null
+}
+
+function normalizeWorkspaceSlug(value: unknown, fallback: string): string {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed) {
+      return trimmed
+    }
+  }
+  return fallback
+}
 
 function normalizeContactPayload(contact: ContactPayload | undefined) {
   let hasPhone = false
@@ -670,11 +707,11 @@ async function initializeStoreImpl(
   ])
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
-  // NEW: compute the trial end once per new workspace
   const { trialDays } = getBillingConfig()
-  const trialEndsAt = admin.firestore.Timestamp.fromMillis(
-    Date.now() + trialDays * 24 * 60 * 60 * 1000,
-  )
+  const requestedPlanId = normalizePlanId(payload.planId)
+  if (payload.planId !== undefined && requestedPlanId === null) {
+    throw new functions.https.HttpsError('invalid-argument', 'Choose a valid Sedifex plan.')
+  }
 
   const existingData = memberSnap.data() ?? {}
   const existingStoreId =
@@ -682,6 +719,40 @@ async function initializeStoreImpl(
       ? ((existingData as any).storeId as string)
       : null
   const storeId = existingStoreId ?? uid
+
+  const storeRef = defaultDb.collection('stores').doc(storeId)
+  const storeSnap = await storeRef.get()
+  const existingStoreData = (storeSnap.data() ?? {}) as admin.firestore.DocumentData
+  const workspaceSlug = normalizeWorkspaceSlug(
+    (existingStoreData as any).workspaceSlug ??
+      (existingStoreData as any).slug ??
+      (existingStoreData as any).storeSlug ??
+      null,
+    storeId,
+  )
+  const workspaceRef = defaultDb.collection('workspaces').doc(workspaceSlug)
+  const workspaceSnap = await workspaceRef.get()
+  const existingWorkspaceData = (workspaceSnap.data() ?? {}) as admin.firestore.DocumentData
+
+  const existingBillingRaw =
+    typeof (existingStoreData as any).billing === 'object' && (existingStoreData as any).billing !== null
+      ? ({ ...(existingStoreData as any).billing } as Record<string, unknown>)
+      : {}
+  const existingPlanId = normalizePlanId(
+    (existingBillingRaw as Record<string, unknown>).planId ?? (existingStoreData as any).planId ?? null,
+  )
+  const resolvedPlanId = requestedPlanId ?? existingPlanId ?? 'starter'
+
+  const trialDurationMs = Math.max(trialDays, 0) * 24 * 60 * 60 * 1000
+  const nowTimestampValue = admin.firestore.Timestamp.now()
+  const existingContractStart = toTimestamp((existingStoreData as any).contractStart)
+  const hasContractStart = Boolean(existingContractStart)
+  const contractStartTimestamp = existingContractStart ?? nowTimestampValue
+  const existingContractEnd = toTimestamp((existingStoreData as any).contractEnd)
+  const hasContractEnd = Boolean(existingContractEnd)
+  const contractEndTimestamp = hasContractEnd
+    ? (existingContractEnd as admin.firestore.Timestamp)
+    : admin.firestore.Timestamp.fromMillis(contractStartTimestamp.toMillis() + trialDurationMs)
 
   const memberData: admin.firestore.DocumentData = {
     uid,
@@ -692,6 +763,7 @@ async function initializeStoreImpl(
     firstSignupEmail: resolvedFirstSignupEmail,
     invitedBy: uid,
     updatedAt: timestamp,
+    workspaceSlug,
   }
 
   if (resolvedOwnerName !== null) {
@@ -730,6 +802,7 @@ async function initializeStoreImpl(
         firstSignupEmail: resolvedFirstSignupEmail,
         invitedBy: uid,
         updatedAt: timestamp,
+        workspaceSlug,
       }
 
       if (resolvedOwnerName !== null) {
@@ -772,6 +845,7 @@ async function initializeStoreImpl(
       firstSignupEmail: resolvedFirstSignupEmail,
       invitedBy: uid,
       updatedAt: timestamp,
+      workspaceSlug,
     }
 
     if (resolvedOwnerName !== null) {
@@ -799,21 +873,27 @@ async function initializeStoreImpl(
     await emailRef.set(emailData, { merge: true })
   }
 
-  const storeRef = defaultDb.collection('stores').doc(storeId)
-  const storeSnap = await storeRef.get()
   const storeData: admin.firestore.DocumentData = {
     ownerId: uid,
     updatedAt: timestamp,
-    status: 'Active',
-    contractStatus: 'Active',
-    // NEW: billing defaults for new workspace
-    billing: {
-      planId: ('starter' as PlanId),  // label only; Paystack plan code is stored in config/env
-      status: 'trial',                // 'trial' | 'active' | 'past_due' | 'canceled'
-      trialEndsAt,                    // Firestore Timestamp
-      provider: 'paystack',
-    },
+    workspaceSlug,
   }
+
+  const existingStatus = getOptionalString((existingStoreData as any).status ?? undefined)
+  if (!existingStatus) {
+    ;(storeData as any).status = 'Active'
+  }
+  const existingContractStatus = getOptionalString((existingStoreData as any).contractStatus ?? undefined)
+  if (!existingContractStatus) {
+    ;(storeData as any).contractStatus = 'Active'
+  }
+  if (!hasContractStart) {
+    ;(storeData as any).contractStart = contractStartTimestamp
+  }
+  if (!hasContractEnd) {
+    ;(storeData as any).contractEnd = contractEndTimestamp
+  }
+
   if (email) {
     ;(storeData as any).ownerEmail = email
   }
@@ -830,10 +910,102 @@ async function initializeStoreImpl(
   if (resolvedTown) {
     ;(storeData as any).town = resolvedTown
   }
+  if (resolvedPhone) {
+    ;(storeData as any).ownerPhone = resolvedPhone
+  }
+
+  const existingTrialEndsAt = toTimestamp((existingBillingRaw as any).trialEndsAt)
+  const nextBilling: Record<string, unknown> = { ...existingBillingRaw }
+  nextBilling.planId = resolvedPlanId
+  if (!getOptionalString((nextBilling as any).provider ?? undefined)) {
+    ;(nextBilling as any).provider = 'paystack'
+  }
+  if (!getOptionalString((nextBilling as any).status ?? undefined)) {
+    ;(nextBilling as any).status = 'trial'
+  }
+  ;(nextBilling as any).trialEndsAt = existingTrialEndsAt ?? contractEndTimestamp
+  ;(storeData as any).billing = nextBilling
+
+  const existingInventory = (existingStoreData as any).inventorySummary
   if (!storeSnap.exists) {
     ;(storeData as any).createdAt = timestamp
+    if (!existingInventory) {
+      ;(storeData as any).inventorySummary = {
+        trackedSkus: 0,
+        lowStockSkus: 0,
+        incomingShipments: 0,
+      }
+    }
+  } else if (!existingInventory) {
+    ;(storeData as any).inventorySummary = {
+      trackedSkus: 0,
+      lowStockSkus: 0,
+      incomingShipments: 0,
+    }
   }
+
   await storeRef.set(storeData, { merge: true })
+
+  const workspaceData: admin.firestore.DocumentData = {
+    slug: workspaceSlug,
+    storeId,
+    ownerId: uid,
+    updatedAt: timestamp,
+    planId: resolvedPlanId,
+  }
+  if (!workspaceSnap.exists) {
+    ;(workspaceData as any).createdAt = timestamp
+  }
+  if (email) {
+    ;(workspaceData as any).ownerEmail = email
+  }
+  if (resolvedPhone) {
+    ;(workspaceData as any).ownerPhone = resolvedPhone
+  }
+  if (resolvedOwnerName) {
+    ;(workspaceData as any).ownerName = resolvedOwnerName
+  }
+  if (resolvedBusinessName) {
+    ;(workspaceData as any).company = resolvedBusinessName
+    ;(workspaceData as any).displayName = resolvedBusinessName
+  }
+  if (resolvedCountry) {
+    ;(workspaceData as any).country = resolvedCountry
+  }
+  if (resolvedTown) {
+    ;(workspaceData as any).town = resolvedTown
+  }
+  if (resolvedFirstSignupEmail !== null) {
+    ;(workspaceData as any).firstSignupEmail = resolvedFirstSignupEmail
+  }
+
+  const existingWorkspaceContractStart = toTimestamp((existingWorkspaceData as any).contractStart)
+  if (!existingWorkspaceContractStart) {
+    ;(workspaceData as any).contractStart = contractStartTimestamp
+  }
+  const existingWorkspaceContractEnd = toTimestamp((existingWorkspaceData as any).contractEnd)
+  if (!existingWorkspaceContractEnd) {
+    ;(workspaceData as any).contractEnd = contractEndTimestamp
+  }
+
+  const existingWorkspaceStatus = getOptionalString((existingWorkspaceData as any).status ?? undefined)
+  if (!existingWorkspaceStatus) {
+    ;(workspaceData as any).status = 'active'
+  }
+  const existingWorkspaceContractStatus = getOptionalString(
+    (existingWorkspaceData as any).contractStatus ?? undefined,
+  )
+  if (!existingWorkspaceContractStatus) {
+    ;(workspaceData as any).contractStatus = 'active'
+  }
+  const existingWorkspacePaymentStatus = getOptionalString(
+    (existingWorkspaceData as any).paymentStatus ?? undefined,
+  )
+  if (!existingWorkspacePaymentStatus) {
+    ;(workspaceData as any).paymentStatus = 'trial'
+  }
+
+  await workspaceRef.set(workspaceData, { merge: true })
   const claims = await updateUserClaims(uid, 'owner')
 
   return { ok: true, claims, storeId }
