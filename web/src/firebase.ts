@@ -1,7 +1,7 @@
 // web/src/firebase.ts
 import { initializeApp } from 'firebase/app'
 import { getAuth, RecaptchaVerifier } from 'firebase/auth'
-import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore'
+import { enableIndexedDbPersistence, getFirestore, initializeFirestore } from 'firebase/firestore'
 import { getFunctions } from 'firebase/functions'
 import { getStorage } from 'firebase/storage'
 import { firebaseEnv } from './config/firebaseEnv'
@@ -26,7 +26,11 @@ const FIRESTORE_SETTINGS = {
   experimentalAutoDetectLongPolling: true,
 }
 
-export const db = initializeFirestore(app, FIRESTORE_SETTINGS)
+initializeFirestore(app, FIRESTORE_SETTINGS)
+initializeFirestore(app, FIRESTORE_SETTINGS, 'roster')
+
+export const db = getFirestore(app)
+export const rosterDb = getFirestore(app, 'roster')
 
 // --- Offline persistence (browser-only guards) ---
 if (typeof window !== 'undefined') {

@@ -9,7 +9,7 @@ import {
 import { doc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { auth, db } from './firebase'
+import { auth, db, rosterDb } from './firebase'
 import './App.css'
 import './pwa'
 import { useToast } from './components/ToastProvider'
@@ -262,12 +262,12 @@ async function persistTeamMemberMetadata(
     }
 
     const writes: Array<Promise<unknown>> = [
-      setDoc(doc(db, 'teamMembers', user.uid), basePayload, { merge: true }),
+      setDoc(doc(rosterDb, 'teamMembers', user.uid), basePayload, { merge: true }),
     ]
 
     const normalizedEmail = email.trim().toLowerCase()
     if (normalizedEmail) {
-      writes.push(setDoc(doc(db, 'teamMembers', normalizedEmail), basePayload, { merge: true }))
+      writes.push(setDoc(doc(rosterDb, 'teamMembers', normalizedEmail), basePayload, { merge: true }))
     }
 
     await Promise.all(writes)
@@ -332,7 +332,8 @@ async function persistStoreSeedData(resolution: ResolveStoreAccessResult) {
   const enqueue = (collectionName: string, document: SeededDocument | null) => {
     if (!document) return
     const normalized = normalizeSeededDocumentData(document.data)
-    writes.push(setDoc(doc(db, collectionName, document.id), normalized, { merge: true }))
+    const targetDb = collectionName === 'teamMembers' ? rosterDb : db
+    writes.push(setDoc(doc(targetDb, collectionName, document.id), normalized, { merge: true }))
   }
 
   enqueue('teamMembers', resolution.teamMember)

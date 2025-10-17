@@ -10,6 +10,7 @@ vi.mock('./useAuthUser', () => ({
 
 vi.mock('../firebase', () => ({
   db: { name: 'primary-db' },
+  rosterDb: { name: 'roster-db' },
 }))
 
 const collectionMock = vi.fn(() => ({ type: 'collection' }))
