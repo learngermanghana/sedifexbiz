@@ -2,6 +2,9 @@
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '../firebase'
+import { INACTIVE_WORKSPACE_MESSAGE } from '@functions/constants/access'
+
+export { INACTIVE_WORKSPACE_MESSAGE } from '@functions/constants/access'
 
 type RawSeededDocument = {
   id?: unknown
@@ -124,9 +127,6 @@ const resolveStoreAccessCallable = httpsCallable<
   functions,
   'resolveStoreAccess',
 )
-
-export const INACTIVE_WORKSPACE_MESSAGE =
-  'Your Sedifex workspace contract is not active. Reach out to your Sedifex administrator to restore access.'
 
 type FirebaseCallableError = FirebaseError & {
   customData?: {

@@ -7,6 +7,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@catalog': path.resolve(__dirname, '../functions/src/catalog'),
+      '@functions/constants': path.resolve(
+        __dirname,
+        '../functions/src/constants',
+      ),
     },
   },
   server: {

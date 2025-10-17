@@ -3,6 +3,7 @@
 // Billing config (plans & trial)
 import { getBillingConfig, PLAN_IDS, type PlanId } from './plans'
 import { paystackWebhook, checkSignupUnlock } from './paystack'
+import { INACTIVE_WORKSPACE_MESSAGE } from './constants/access'
 
 // Re-export any other triggers so they’re included in the build
 export { onAuthCreate } from './onAuthCreate'
@@ -68,8 +69,7 @@ type ManageStaffPayload = {
 }
 
 const VALID_ROLES = new Set(['owner', 'staff'])
-const INACTIVE_WORKSPACE_MESSAGE =
-  'Your Sedifex workspace contract is not active. Reach out to your Sedifex administrator to restore access.'
+
 const VALID_PLAN_IDS = new Set<PlanId>(PLAN_IDS as PlanId[])
 
 function normalizePlanId(value: unknown): PlanId | null {
