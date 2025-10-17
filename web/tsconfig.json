@@ -16,7 +16,8 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@catalog/*": ["../functions/src/catalog/*"]
+      "@catalog/*": ["../functions/src/catalog/*"],
+      "@functions/constants/*": ["../functions/src/constants/*"]
     }
   },
   "include": [
