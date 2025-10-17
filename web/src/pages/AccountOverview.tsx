@@ -59,6 +59,17 @@ function toNullableString(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' ? value : null
 }
 
+function coalesceString(...values: unknown[]): string | null {
+  for (const value of values) {
+    const normalized = toNullableString(value)
+    if (normalized) {
+      return normalized
+    }
+  }
+
+  return null
+}
+
 function isTimestamp(value: unknown): value is Timestamp {
   return typeof value === 'object' && value !== null && typeof (value as Timestamp).toDate === 'function'
 }
@@ -105,21 +116,52 @@ function mapStoreSnapshot(
   if (!snapshot) return null
   const data = snapshot.data()
 
+  const status = coalesceString(data.status, data.contractStatus, data.contract?.status)
+  const billingPlan = coalesceString(
+    data.billingPlan,
+    data.plan,
+    data.planId,
+    data.billing?.plan,
+    data.billing?.planId,
+    data.billing?.planName,
+    data.subscription?.plan,
+    data.subscription?.planId,
+  )
+  const paymentStatus = coalesceString(
+    data.paymentStatus,
+    data.payment?.status,
+    data.billing?.status,
+    data.subscription?.status,
+  )
+  const paymentProvider = coalesceString(
+    data.paymentProvider,
+    data.payment?.provider,
+    data.billing?.provider,
+  )
+  const paymentMethod = coalesceString(data.paymentMethod, data.payment?.method, data.billing?.method)
+  const paymentAmount = formatAmount(
+    data.amountPaid ??
+      data.payment?.amount ??
+      data.payment?.amountPaid ??
+      data.billing?.amount ??
+      data.billing?.amountPaid ??
+      data.subscription?.amount ??
+      data.subscription?.amountPaid,
+  )
+  const payment = [paymentStatus, paymentProvider, paymentMethod, paymentAmount]
+    .filter((value): value is string => Boolean(value && value.trim()))
+    .join(' • ') || null
+
   return {
     name: toNullableString(data.name ?? data.storeId ?? snapshot.id),
     displayName: toNullableString(data.displayName ?? data.company ?? data.name ?? data.storeId),
     email: toNullableString(data.email ?? data.contactEmail),
     phone: toNullableString(data.phone),
-    status: toNullableString(data.status ?? data.contract?.status),
+    status,
     timezone: toNullableString(data.timezone),
-    currency: toNullableString(data.currency),
-    billingPlan: toNullableString(data.billingPlan ?? data.plan ?? data.billing?.plan),
-    payment: [
-      toNullableString(data.paymentStatus ?? data.payment?.status ?? data.billing?.status),
-      formatAmount(data.amountPaid),
-    ]
-      .filter((value): value is string => Boolean(value && value.trim()))
-      .join(' • ') || null,
+    currency: toNullableString(data.currency ?? data.billing?.currency ?? data.subscription?.currency),
+    billingPlan,
+    payment,
     addressLine1: toNullableString(data.addressLine1),
     addressLine2: toNullableString(data.addressLine2),
     city: toNullableString(data.city),

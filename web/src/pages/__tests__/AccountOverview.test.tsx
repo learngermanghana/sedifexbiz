@@ -230,6 +230,56 @@ describe('AccountOverview', () => {
     expect(screen.queryByTestId('account-invite-link')).not.toBeInTheDocument()
   })
 
+  it('displays contract and billing details from workspace billing fields', async () => {
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-owner',
+          uid: 'owner-1',
+          role: 'owner',
+          storeId: 'store-123',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        displayName: 'Sedifex Coffee',
+        contractStatus: 'Paused',
+        planId: 'starter-plus',
+        paymentStatus: 'active',
+        paymentProvider: 'Stripe',
+        paymentMethod: 'Card',
+        subscription: {
+          planId: 'starter-plus',
+          amount: 14900,
+          currency: 'USD',
+          status: 'active',
+        },
+      }),
+    })
+
+    render(<AccountOverview />)
+
+    const contractDt = await screen.findByText('Contract status')
+    expect(contractDt.nextElementSibling).toHaveTextContent('Paused')
+
+    const planDt = screen.getByText('Billing plan')
+    expect(planDt.nextElementSibling).toHaveTextContent('starter-plus')
+
+    const paymentDt = screen.getByText('Payment')
+    expect(paymentDt.nextElementSibling).toHaveTextContent('active • Stripe • Card • 14,900.00')
+  })
+
   it('falls back to ownerId lookup when the store document id differs from the storeId', async () => {
     mockUseActiveStore.mockReturnValue({ storeId: 'owner-1', isLoading: false, error: null })
     mockUseMemberships.mockReturnValue({
