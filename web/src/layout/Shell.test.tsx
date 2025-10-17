@@ -83,8 +83,8 @@ describe('Shell', () => {
 
     mockUseStoreDirectory.mockReturnValue({
       options: [
-        { id: 'store-1', label: 'Downtown HQ' },
-        { id: 'store-2', label: 'Uptown Kiosk' },
+        { storeId: 'store-1', slug: 'downtown-hq', label: 'Downtown HQ (downtown-hq)' },
+        { storeId: 'store-2', slug: 'uptown-kiosk', label: 'Uptown Kiosk (uptown-kiosk)' },
       ],
       loading: false,
       error: null,
@@ -95,8 +95,8 @@ describe('Shell', () => {
     renderShell()
 
     const selector = screen.getByRole('combobox', { name: /workspace/i })
-    expect(selector).toHaveValue('store-1')
-    expect(screen.getByRole('option', { name: 'Downtown HQ' })).toBeInTheDocument()
+    expect(selector).toHaveValue('downtown-hq')
+    expect(screen.getByRole('option', { name: 'Downtown HQ (downtown-hq)' })).toBeInTheDocument()
   })
 
   it('invokes the setter when choosing another workspace', () => {
@@ -125,8 +125,8 @@ describe('Shell', () => {
     renderShell()
 
     const selector = screen.getByRole('combobox', { name: /workspace/i })
-    screen.getByRole('option', { name: 'Uptown Kiosk' })
-    fireEvent.change(selector, { target: { value: 'store-2' } })
+    screen.getByRole('option', { name: 'Uptown Kiosk (uptown-kiosk)' })
+    fireEvent.change(selector, { target: { value: 'uptown-kiosk' } })
 
     expect(setActiveStoreId).toHaveBeenCalledWith('store-2')
   })
