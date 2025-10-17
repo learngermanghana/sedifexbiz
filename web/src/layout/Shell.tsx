@@ -86,6 +86,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const { options: storeOptions, loading: storeDirectoryLoading, error: storeDirectoryError } = useStoreDirectory(storeIds)
 
+  const activeStoreSlug = useMemo(() => {
+    if (!activeStoreId) return ''
+    const match = storeOptions.find(option => option.storeId === activeStoreId)
+    return match?.slug ?? ''
+  }, [activeStoreId, storeOptions])
+
   const { isOnline, isReachable, queue } = connectivity
 
   const banner = useMemo<BannerState>(() => {
@@ -153,14 +159,20 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <select
                 id="shell-store-switcher"
                 className="shell__store-select"
-                value={activeStoreId ?? ''}
-                onChange={event => setActiveStoreId(event.target.value || null)}
+                value={activeStoreSlug}
+                onChange={event => {
+                  const selectedSlug = event.target.value
+                  if (!selectedSlug) return
+                  const match = storeOptions.find(option => option.slug === selectedSlug)
+                  if (!match) return
+                  setActiveStoreId(match.storeId)
+                }}
                 disabled={storeLoading || storeDirectoryLoading || storeOptions.length === 0}
                 aria-describedby={storeError || storeDirectoryError ? 'shell-store-status' : undefined}
               >
                 {storeOptions.length > 0 ? (
                   storeOptions.map(option => (
-                    <option key={option.id} value={option.id}>
+                    <option key={option.slug} value={option.slug}>
                       {option.label}
                     </option>
                   ))

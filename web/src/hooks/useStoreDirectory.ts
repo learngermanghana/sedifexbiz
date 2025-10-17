@@ -3,7 +3,8 @@ import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 
 export interface StoreDirectoryOption {
-  id: string
+  storeId: string
+  slug: string
   label: string
 }
 
@@ -17,13 +18,35 @@ function normalizeStoreId(storeId: string): string {
   return storeId.trim()
 }
 
-function extractStoreLabel(data: Record<string, unknown> | undefined, fallback: string): string {
+function extractCompanyName(data: Record<string, unknown> | undefined, fallback: string): string {
   if (!data) return fallback
 
+  const company = typeof data.company === 'string' ? data.company.trim() : ''
   const displayName = typeof data.displayName === 'string' ? data.displayName.trim() : ''
   const name = typeof data.name === 'string' ? data.name.trim() : ''
 
-  return displayName || name || fallback
+  return company || displayName || name || fallback
+}
+
+function extractWorkspaceSlug(data: Record<string, unknown> | undefined, fallback: string): string {
+  if (!data) return fallback
+
+  const workspaceSlug = typeof data.workspaceSlug === 'string' ? data.workspaceSlug.trim() : ''
+  const slug = typeof data.slug === 'string' ? data.slug.trim() : ''
+  const storeSlug = typeof data.storeSlug === 'string' ? data.storeSlug.trim() : ''
+
+  return workspaceSlug || slug || storeSlug || fallback
+}
+
+function buildOptionLabel(company: string, slug: string, fallback: string): string {
+  const companyLabel = company.trim()
+  const slugLabel = slug.trim()
+
+  if (companyLabel && slugLabel && companyLabel !== slugLabel) {
+    return `${companyLabel} (${slugLabel})`
+  }
+
+  return companyLabel || slugLabel || fallback
 }
 
 export function useStoreDirectory(storeIds: string[]): StoreDirectoryState {
@@ -39,7 +62,7 @@ export function useStoreDirectory(storeIds: string[]): StoreDirectoryState {
       })
   }, [storeIds])
 
-  const [labels, setLabels] = useState<Record<string, string>>({})
+  const [directory, setDirectory] = useState<Record<string, StoreDirectoryOption>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -47,7 +70,7 @@ export function useStoreDirectory(storeIds: string[]): StoreDirectoryState {
     let cancelled = false
 
     if (normalizedIds.length === 0) {
-      setLabels({})
+      setDirectory({})
       setLoading(false)
       setError(null)
       return
@@ -63,25 +86,38 @@ export function useStoreDirectory(storeIds: string[]): StoreDirectoryState {
             try {
               const snapshot = await getDoc(doc(db, 'stores', storeId))
               if (!snapshot.exists()) {
-                return [storeId, storeId] as const
+                return {
+                  storeId,
+                  slug: storeId,
+                  label: storeId,
+                }
               }
 
-              return [storeId, extractStoreLabel(snapshot.data(), storeId)] as const
+              const data = snapshot.data()
+              const slug = extractWorkspaceSlug(data, storeId)
+              const company = extractCompanyName(data, slug)
+              const label = buildOptionLabel(company, slug, storeId)
+
+              return { storeId, slug, label }
             } catch (innerError) {
               console.error('Failed to load store label', innerError)
-              return [storeId, storeId] as const
+              return {
+                storeId,
+                slug: storeId,
+                label: storeId,
+              }
             }
           }),
         )
 
         if (cancelled) return
 
-        const next: Record<string, string> = {}
-        for (const [storeId, label] of entries) {
-          next[storeId] = label
+        const next: Record<string, StoreDirectoryOption> = {}
+        for (const entry of entries) {
+          next[entry.storeId] = entry
         }
 
-        setLabels(next)
+        setDirectory(next)
         setLoading(false)
       } catch (fetchError) {
         if (cancelled) return
@@ -99,8 +135,15 @@ export function useStoreDirectory(storeIds: string[]): StoreDirectoryState {
   }, [normalizedIds])
 
   const options = useMemo<StoreDirectoryOption[]>(
-    () => normalizedIds.map(storeId => ({ id: storeId, label: labels[storeId] ?? storeId })),
-    [labels, normalizedIds],
+    () =>
+      normalizedIds.map(storeId =>
+        directory[storeId] ?? {
+          storeId,
+          slug: storeId,
+          label: storeId,
+        },
+      ),
+    [directory, normalizedIds],
   )
 
   return { options, loading, error }
