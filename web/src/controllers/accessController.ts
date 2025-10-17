@@ -10,6 +10,8 @@ type RawSeededDocument = {
 
 export type SignupRoleOption = 'owner' | 'team-member'
 
+export type PlanId = 'starter' | 'pro' | 'enterprise'
+
 export type InitializeStoreContactPayload = {
   phone?: string | null
   firstSignupEmail?: string | null
@@ -30,8 +32,24 @@ function normalizeSignupRoleInput(value: SignupRoleOption | null | undefined): S
   return null
 }
 
+function normalizePlanIdInput(value: PlanId | null | undefined): PlanId | null {
+  if (!value) {
+    return null
+  }
+
+  switch (value) {
+    case 'starter':
+    case 'pro':
+    case 'enterprise':
+      return value
+    default:
+      return null
+  }
+}
+
 type InitializeStorePayload = {
   contact?: InitializeStoreContactPayload
+  planId?: PlanId
 }
 
 type RawInitializeStoreResponse = {
@@ -156,7 +174,7 @@ export function extractCallableErrorMessage(error: FirebaseError): string | null
   return normalized || null
 }
 
-export async function initializeStore(contact?: InitializeStoreContactPayload) {
+export async function initializeStore(contact?: InitializeStoreContactPayload, planId?: PlanId | null) {
   let payload: InitializeStorePayload | undefined
 
   if (contact) {
@@ -195,6 +213,12 @@ export async function initializeStore(contact?: InitializeStoreContactPayload) {
     if (hasContactField) {
       payload = { contact: payloadContact }
     }
+  }
+
+  const normalizedPlanId = normalizePlanIdInput(planId ?? null)
+
+  if (normalizedPlanId) {
+    payload = { ...(payload ?? {}), planId: normalizedPlanId }
   }
 
   const response = await initializeStoreCallable(payload)

@@ -64,20 +64,30 @@ async function runInitializeStoreCreatesWorkspaceTest() {
     },
   }
 
-  const initResult = await initializeStore.run(
-    {
-      contact: {
-        phone: ' +1 (555) 000-0000 ',
-        firstSignupEmail: 'Fresh.Owner@Example.com',
-        ownerName: ' Fresh Owner ',
-        businessName: ' Fresh Retail ',
-        country: '  United States ',
-        town: '  Portland ',
-        signupRole: 'team-member',
+  const fixedNow = Date.parse('2024-01-01T00:00:00.000Z')
+  const realDateNow = Date.now
+
+  let initResult
+  try {
+    Date.now = () => fixedNow
+    initResult = await initializeStore.run(
+      {
+        contact: {
+          phone: ' +1 (555) 000-0000 ',
+          firstSignupEmail: 'Fresh.Owner@Example.com',
+          ownerName: ' Fresh Owner ',
+          businessName: ' Fresh Retail ',
+          country: '  United States ',
+          town: '  Portland ',
+          signupRole: 'team-member',
+        },
+        planId: 'pro',
       },
-    },
-    context,
-  )
+      context,
+    )
+  } finally {
+    Date.now = realDateNow
+  }
   assert.strictEqual(initResult.ok, true, 'Expected initializeStore to succeed')
   assert.ok(initResult.storeId, 'Expected initializeStore to return a storeId')
 
@@ -92,6 +102,23 @@ async function runInitializeStoreCreatesWorkspaceTest() {
   assert.strictEqual(storeDoc.businessName, 'Fresh Retail')
   assert.strictEqual(storeDoc.country, 'United States')
   assert.strictEqual(storeDoc.town, 'Portland')
+  assert.strictEqual(storeDoc.planId, 'pro')
+  assert.strictEqual(storeDoc.plan, 'Pro')
+  assert.strictEqual(storeDoc.billingPlan, 'Pro')
+  assert.strictEqual(storeDoc.paymentStatus, 'trial')
+  assert.strictEqual(storeDoc.billing.planId, 'pro')
+  assert.strictEqual(storeDoc.billing.plan, 'Pro')
+  assert.strictEqual(storeDoc.billing.interval, 'monthly')
+  const dayInMs = 24 * 60 * 60 * 1000
+  const expectedContractEnd = fixedNow + 30 * dayInMs
+  const expectedTrialEnd = fixedNow + 14 * dayInMs
+  assert.strictEqual(storeDoc.contractStart._millis, fixedNow)
+  assert.strictEqual(storeDoc.contractEnd._millis, expectedContractEnd)
+  assert.strictEqual(storeDoc.contract.status, 'active')
+  assert.strictEqual(storeDoc.contract.interval, 'monthly')
+  assert.strictEqual(storeDoc.contract.planId, 'pro')
+  assert.strictEqual(storeDoc.contract.plan, 'Pro')
+  assert.strictEqual(storeDoc.billing.trialEndsAt._millis, expectedTrialEnd)
   assert.ok(storeDoc.updatedAt, 'Expected updatedAt to be set')
   assert.ok(storeDoc.createdAt, 'Expected createdAt to be set on new store')
 

@@ -1,7 +1,7 @@
 // functions/src/index.ts
 // ─────────────────────────────────────────────────────────────────────────────
 // Billing config (plans & trial)
-import { getBillingConfig, type PlanId } from './plans'
+import { getBillingConfig, PLANS, type PlanId } from './plans'
 import { paystackWebhook, checkSignupUnlock } from './paystack'
 
 // Re-export any other triggers so they’re included in the build
@@ -57,6 +57,7 @@ type ContactPayload = {
 
 type InitializeStorePayload = {
   contact?: ContactPayload
+  planId?: unknown
 }
 
 type ManageStaffPayload = {
@@ -204,6 +205,23 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
     signupRole,
     hasSignupRole,
   }
+}
+
+function normalizePlanIdInput(value: unknown): PlanId | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) {
+    return null
+  }
+
+  if (normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
+    return normalized as PlanId
+  }
+
+  return null
 }
 
 function getRoleFromToken(token: Record<string, unknown> | undefined) {
@@ -652,6 +670,9 @@ async function initializeStoreImpl(
 
   const payload = (data ?? {}) as InitializeStorePayload
   const contact = normalizeContactPayload(payload.contact)
+  const requestedPlanId = normalizePlanIdInput(payload.planId)
+  const planId: PlanId = requestedPlanId ?? 'starter'
+  const planConfig = PLANS[planId]
   const resolvedPhone = contact.hasPhone ? contact.phone ?? null : tokenPhone ?? null
   const resolvedFirstSignupEmail = contact.hasFirstSignupEmail
     ? contact.firstSignupEmail ?? null
@@ -670,11 +691,13 @@ async function initializeStoreImpl(
   ])
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
+  const nowMillis = Date.now()
+  const dayInMs = 24 * 60 * 60 * 1000
   // NEW: compute the trial end once per new workspace
   const { trialDays } = getBillingConfig()
-  const trialEndsAt = admin.firestore.Timestamp.fromMillis(
-    Date.now() + trialDays * 24 * 60 * 60 * 1000,
-  )
+  const trialEndsAt = admin.firestore.Timestamp.fromMillis(nowMillis + trialDays * dayInMs)
+  const contractStart = admin.firestore.Timestamp.fromMillis(nowMillis)
+  const contractEnd = admin.firestore.Timestamp.fromMillis(nowMillis + 30 * dayInMs)
 
   const existingData = memberSnap.data() ?? {}
   const existingStoreId =
@@ -801,18 +824,44 @@ async function initializeStoreImpl(
 
   const storeRef = defaultDb.collection('stores').doc(storeId)
   const storeSnap = await storeRef.get()
+  const existingStore = (storeSnap.data() ?? {}) as admin.firestore.DocumentData
   const storeData: admin.firestore.DocumentData = {
     ownerId: uid,
     updatedAt: timestamp,
     status: 'Active',
     contractStatus: 'Active',
+    planId,
+    plan: planConfig.name,
+    billingPlan: planConfig.name,
+    contract: {
+      status: 'active',
+      interval: 'monthly',
+      planId,
+      plan: planConfig.name,
+      start: contractStart,
+      end: contractEnd,
+    },
     // NEW: billing defaults for new workspace
     billing: {
-      planId: ('starter' as PlanId),  // label only; Paystack plan code is stored in config/env
-      status: 'trial',                // 'trial' | 'active' | 'past_due' | 'canceled'
-      trialEndsAt,                    // Firestore Timestamp
+      planId,
+      plan: planConfig.name,
+      status: 'trial',
+      interval: 'monthly',
+      trialEndsAt,
       provider: 'paystack',
     },
+  }
+
+  if (!('paymentStatus' in existingStore)) {
+    ;(storeData as any).paymentStatus = 'trial'
+  }
+
+  if (!('contractStart' in existingStore) || !(existingStore as any).contractStart) {
+    ;(storeData as any).contractStart = contractStart
+  }
+
+  if (!('contractEnd' in existingStore) || !(existingStore as any).contractEnd) {
+    ;(storeData as any).contractEnd = contractEnd
   }
   if (email) {
     ;(storeData as any).ownerEmail = email
