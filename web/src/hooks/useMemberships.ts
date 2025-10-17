@@ -10,7 +10,7 @@ import {
   type Firestore,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { rosterDb } from '../firebase'
 import { useAuthUser } from './useAuthUser'
 import { getAuth } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
@@ -60,7 +60,7 @@ async function loadMembershipsFromDb(firestore: Firestore, uid: string): Promise
 }
 
 async function loadMembershipsForUser(uid: string): Promise<Membership[]> {
-  return loadMembershipsFromDb(db, uid)
+  return loadMembershipsFromDb(rosterDb, uid)
 }
 
 /**
