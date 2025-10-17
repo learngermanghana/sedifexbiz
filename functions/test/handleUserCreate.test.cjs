@@ -3,6 +3,7 @@ const Module = require('module')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore.cjs')
 
 let currentDefaultDb
+let currentRosterDb
 const apps = []
 
 const originalLoad = Module._load
@@ -39,7 +40,12 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
   if (request === 'firebase-admin/firestore') {
     return {
-      getFirestore: () => currentDefaultDb,
+      getFirestore: (_app, databaseId) => {
+        if (databaseId && databaseId !== '(default)') {
+          return currentRosterDb
+        }
+        return currentDefaultDb
+      },
     }
   }
 
@@ -53,22 +59,30 @@ function loadFunctionsModule() {
   return require('../lib/index.js')
 }
 
+function resetDbs(defaultData = {}, rosterData = {}) {
+  currentDefaultDb = new MockFirestore(defaultData)
+  currentRosterDb = new MockFirestore(rosterData)
+}
+
 async function runHandleUserCreateMergesRosterDataTest() {
   const existingCreatedAt = MockTimestamp.fromMillis(Date.parse('2024-05-01T12:00:00.000Z'))
 
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/staff@example.com': {
-      storeId: ' store-123 ',
-      role: 'Staff',
-      invitedBy: 'owner-1',
-      firstSignupEmail: 'staff@example.com',
-      name: 'Staff Sample',
-      companyName: 'Sample Co',
-      status: 'Active',
-      contractStatus: 'Active',
-      createdAt: existingCreatedAt,
+  resetDbs(
+    {},
+    {
+      'teamMembers/staff@example.com': {
+        storeId: ' store-123 ',
+        role: 'Staff',
+        invitedBy: 'owner-1',
+        firstSignupEmail: 'staff@example.com',
+        name: 'Staff Sample',
+        companyName: 'Sample Co',
+        status: 'Active',
+        contractStatus: 'Active',
+        createdAt: existingCreatedAt,
+      },
     },
-  })
+  )
 
   const { handleUserCreate } = loadFunctionsModule()
 
@@ -78,7 +92,7 @@ async function runHandleUserCreateMergesRosterDataTest() {
     phoneNumber: '+15555550123',
   })
 
-  const rosterDoc = currentDefaultDb.getDoc('teamMembers/staff-uid')
+  const rosterDoc = currentRosterDb.getDoc('teamMembers/staff-uid')
   assert.ok(rosterDoc, 'Expected roster member document to be created')
   assert.strictEqual(rosterDoc.storeId, 'store-123')
   assert.strictEqual(rosterDoc.role, 'staff')
@@ -93,7 +107,7 @@ async function runHandleUserCreateMergesRosterDataTest() {
   assert.ok(rosterDoc.updatedAt, 'Expected updatedAt to be set')
   assert.ok(rosterDoc.createdAt, 'Expected createdAt to be set')
 
-  const rosterEmailDoc = currentDefaultDb.getDoc('teamMembers/staff@example.com')
+  const rosterEmailDoc = currentRosterDb.getDoc('teamMembers/staff@example.com')
   assert.ok(rosterEmailDoc, 'Expected roster email document to remain')
   assert.strictEqual(rosterEmailDoc.uid, 'staff-uid')
   assert.strictEqual(rosterEmailDoc.storeId, 'store-123')
@@ -104,7 +118,7 @@ async function runHandleUserCreateMergesRosterDataTest() {
 }
 
 async function runHandleUserCreateSeedsDefaultStoreTest() {
-  currentDefaultDb = new MockFirestore()
+  resetDbs()
 
   const { handleUserCreate } = loadFunctionsModule()
 
@@ -114,7 +128,7 @@ async function runHandleUserCreateSeedsDefaultStoreTest() {
     phoneNumber: '+15555550111',
   })
 
-  const rosterDoc = currentDefaultDb.getDoc('teamMembers/new-owner')
+  const rosterDoc = currentRosterDb.getDoc('teamMembers/new-owner')
   assert.ok(rosterDoc, 'Expected roster member document to be created')
   assert.strictEqual(rosterDoc.storeId, 'new-owner')
   assert.strictEqual(rosterDoc.role, 'owner')

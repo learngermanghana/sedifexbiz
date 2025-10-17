@@ -3,6 +3,7 @@ const Module = require('module')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore.cjs')
 
 let currentDefaultDb
+let currentRosterDb
 const apps = []
 
 const originalLoad = Module._load
@@ -39,7 +40,12 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
   if (request === 'firebase-admin/firestore') {
     return {
-      getFirestore: () => currentDefaultDb,
+      getFirestore: (_app, databaseId) => {
+        if (databaseId && databaseId !== '(default)') {
+          return currentRosterDb
+        }
+        return currentDefaultDb
+      },
     }
   }
 
@@ -53,8 +59,13 @@ function loadFunctionsModule() {
   return require('../lib/index.js')
 }
 
+function resetDbs(defaultData = {}, rosterData = {}) {
+  currentDefaultDb = new MockFirestore(defaultData)
+  currentRosterDb = new MockFirestore(rosterData)
+}
+
 async function runInitializeStoreCreatesWorkspaceTest() {
-  currentDefaultDb = new MockFirestore()
+  resetDbs()
 
   const { initializeStore, resolveStoreAccess } = loadFunctionsModule()
   const context = {
@@ -95,15 +106,18 @@ async function runInitializeStoreCreatesWorkspaceTest() {
   assert.ok(storeDoc.updatedAt, 'Expected updatedAt to be set')
   assert.ok(storeDoc.createdAt, 'Expected createdAt to be set on new store')
 
+  const rosterMemberDoc = currentRosterDb.getDoc('teamMembers/new-owner-uid')
+  assert.ok(rosterMemberDoc, 'Expected roster team member document to be created')
+  assert.strictEqual(rosterMemberDoc.name, 'Fresh Owner')
+  assert.strictEqual(rosterMemberDoc.companyName, 'Fresh Retail')
+  assert.strictEqual(rosterMemberDoc.phone, '+1 (555) 000-0000')
+  assert.strictEqual(rosterMemberDoc.firstSignupEmail, 'fresh.owner@example.com')
+  assert.strictEqual(rosterMemberDoc.country, 'United States')
+  assert.strictEqual(rosterMemberDoc.town, 'Portland')
+  assert.strictEqual(rosterMemberDoc.signupRole, 'team-member')
+
   const defaultMemberDoc = currentDefaultDb.getDoc('teamMembers/new-owner-uid')
-  assert.ok(defaultMemberDoc, 'Expected default database team member document to be created')
-  assert.strictEqual(defaultMemberDoc.name, 'Fresh Owner')
-  assert.strictEqual(defaultMemberDoc.companyName, 'Fresh Retail')
-  assert.strictEqual(defaultMemberDoc.phone, '+1 (555) 000-0000')
-  assert.strictEqual(defaultMemberDoc.firstSignupEmail, 'fresh.owner@example.com')
-  assert.strictEqual(defaultMemberDoc.country, 'United States')
-  assert.strictEqual(defaultMemberDoc.town, 'Portland')
-  assert.strictEqual(defaultMemberDoc.signupRole, 'team-member')
+  assert.ok(defaultMemberDoc, 'Expected default database team member document to be mirrored')
 
   const resolveResult = await resolveStoreAccess.run({}, context)
   assert.strictEqual(resolveResult.ok, true, 'Expected resolveStoreAccess to succeed')

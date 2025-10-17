@@ -4,6 +4,7 @@ const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore.cjs')
 const { FIREBASE_CALLABLES } = require('../lib/shared/firebaseCallables.js')
 
 let currentDefaultDb
+let currentRosterDb
 const apps = []
 
 const originalLoad = Module._load
@@ -37,7 +38,12 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
   if (request === 'firebase-admin/firestore') {
     return {
-      getFirestore: () => currentDefaultDb,
+      getFirestore: (_app, databaseId) => {
+        if (databaseId && databaseId !== '(default)') {
+          return currentRosterDb
+        }
+        return currentDefaultDb
+      },
     }
   }
 
@@ -70,6 +76,11 @@ function loadIndexModule() {
   return require('../lib/index.js')
 }
 
+function resetDbs(defaultData = {}, rosterData = {}) {
+  currentDefaultDb = new MockFirestore(defaultData)
+  currentRosterDb = new MockFirestore(rosterData)
+}
+
 function extractLatestLog() {
   const dateDocs = currentDefaultDb.listCollection('logs')
   assert.strictEqual(dateDocs.length, 1, 'Expected one log date document')
@@ -80,7 +91,7 @@ function extractLatestLog() {
 }
 
 async function runBackfillLoggingTest() {
-  currentDefaultDb = new MockFirestore()
+  resetDbs()
   const { backfillMyStore } = loadCallablesModule()
 
   const context = {
@@ -110,13 +121,16 @@ async function runBackfillLoggingTest() {
 }
 
 async function runManageStaffLoggingTest() {
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/owner-1': {
-      uid: 'owner-1',
-      storeId: 'store-abc',
-      role: 'owner',
+  resetDbs(
+    {},
+    {
+      'teamMembers/owner-1': {
+        uid: 'owner-1',
+        storeId: 'store-abc',
+        role: 'owner',
+      },
     },
-  })
+  )
   const { manageStaffAccount } = loadIndexModule()
 
   const context = {

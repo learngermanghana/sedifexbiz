@@ -6,6 +6,7 @@ const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore.cjs')
 const { DEFAULT_CURRENCY_CODE } = require('../../shared/currency')
 
 let currentDefaultDb
+let currentRosterDb
 const apps = []
 
 const originalLoad = Module._load
@@ -39,7 +40,12 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
   if (request === 'firebase-admin/firestore') {
     return {
-      getFirestore: () => currentDefaultDb,
+      getFirestore: (_app, databaseId) => {
+        if (databaseId && databaseId !== '(default)') {
+          return currentRosterDb
+        }
+        return currentDefaultDb
+      },
     }
   }
 
@@ -64,20 +70,29 @@ function loadFunctionsModule() {
   return require('../lib/index.js')
 }
 
+function resetDbs(defaultData = {}, rosterData = {}) {
+  currentDefaultDb = new MockFirestore(defaultData)
+  currentRosterDb = new MockFirestore(rosterData)
+}
+
 async function runOwnerUpdateTest() {
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/owner-1': {
-      uid: 'owner-1',
-      storeId: 'store-123',
-      role: 'owner',
+  resetDbs(
+    {
+      'stores/store-123': {
+        name: 'Sedifex Coffee',
+        displayName: 'Sedifex Coffee',
+        timezone: 'UTC',
+        currency: 'USD',
+      },
     },
-    'stores/store-123': {
-      name: 'Sedifex Coffee',
-      displayName: 'Sedifex Coffee',
-      timezone: 'UTC',
-      currency: 'USD',
+    {
+      'teamMembers/owner-1': {
+        uid: 'owner-1',
+        storeId: 'store-123',
+        role: 'owner',
+      },
     },
-  })
+  )
 
   const { updateStoreProfile } = loadFunctionsModule()
   const context = {
@@ -104,19 +119,23 @@ async function runOwnerUpdateTest() {
 }
 
 async function runNonOwnerRejectionTest() {
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/staff-1': {
-      uid: 'staff-1',
-      storeId: 'store-456',
-      role: 'staff',
+  resetDbs(
+    {
+      'stores/store-456': {
+        name: 'Test Store',
+        displayName: 'Test Store',
+        timezone: 'UTC',
+        currency: 'USD',
+      },
     },
-    'stores/store-456': {
-      name: 'Test Store',
-      displayName: 'Test Store',
-      timezone: 'UTC',
-      currency: 'USD',
+    {
+      'teamMembers/staff-1': {
+        uid: 'staff-1',
+        storeId: 'store-456',
+        role: 'staff',
+      },
     },
-  })
+  )
 
   const { updateStoreProfile } = loadFunctionsModule()
   const context = {
@@ -141,19 +160,23 @@ async function runNonOwnerRejectionTest() {
 }
 
 async function runInvalidTimezoneTest() {
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/owner-2': {
-      uid: 'owner-2',
-      storeId: 'store-789',
-      role: 'owner',
+  resetDbs(
+    {
+      'stores/store-789': {
+        name: 'Example',
+        displayName: 'Example',
+        timezone: 'UTC',
+        currency: 'USD',
+      },
     },
-    'stores/store-789': {
-      name: 'Example',
-      displayName: 'Example',
-      timezone: 'UTC',
-      currency: 'USD',
+    {
+      'teamMembers/owner-2': {
+        uid: 'owner-2',
+        storeId: 'store-789',
+        role: 'owner',
+      },
     },
-  })
+  )
 
   const { updateStoreProfile } = loadFunctionsModule()
   const context = {
@@ -179,7 +202,7 @@ async function runInvalidTimezoneTest() {
 }
 
 async function runMissingMembershipTest() {
-  currentDefaultDb = new MockFirestore({
+  resetDbs({
     'stores/store-000': {
       name: 'Ghost Store',
       displayName: 'Ghost Store',
@@ -211,18 +234,22 @@ async function runMissingMembershipTest() {
 }
 
 async function runMissingStoreAssignmentTest() {
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/owner-3': {
-      uid: 'owner-3',
-      role: 'owner',
+  resetDbs(
+    {
+      'stores/store-001': {
+        name: 'Configless Store',
+        displayName: 'Configless Store',
+        timezone: 'UTC',
+        currency: 'USD',
+      },
     },
-    'stores/store-001': {
-      name: 'Configless Store',
-      displayName: 'Configless Store',
-      timezone: 'UTC',
-      currency: 'USD',
+    {
+      'teamMembers/owner-3': {
+        uid: 'owner-3',
+        role: 'owner',
+      },
     },
-  })
+  )
 
   const { updateStoreProfile } = loadFunctionsModule()
   const context = {

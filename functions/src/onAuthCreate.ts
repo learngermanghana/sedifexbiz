@@ -1,5 +1,5 @@
 import * as functions from 'firebase-functions'
-import { admin, defaultDb } from './firestore'
+import { admin, defaultDb, rosterDb } from './firestore'
 
 function slugify(value: string): string {
   return value
@@ -160,9 +160,16 @@ export const onAuthCreate = functions.auth.user().onCreate(async (user) => {
   const uid = user.uid
   const now = admin.firestore.FieldValue.serverTimestamp()
 
-  const teamMemberRef = defaultDb.collection('teamMembers').doc(uid)
+  const rosterTeamMemberRef = rosterDb.collection('teamMembers').doc(uid)
+  const defaultTeamMemberRef = defaultDb.collection('teamMembers').doc(uid)
   const storeRef = defaultDb.collection('stores').doc(uid)
-  const [teamMemberSnap, storeSnap] = await Promise.all([teamMemberRef.get(), storeRef.get()])
+  const [rosterTeamMemberSnap, defaultTeamMemberSnap, storeSnap] = await Promise.all([
+    rosterTeamMemberRef.get(),
+    defaultTeamMemberRef.get(),
+    storeRef.get(),
+  ])
+
+  const teamMemberSnap = rosterTeamMemberSnap.exists ? rosterTeamMemberSnap : defaultTeamMemberSnap
 
   const existingStoreData = storeSnap.exists ? storeSnap.data() : undefined
   const existingWorkspaceSlug = existingStoreData
@@ -222,7 +229,8 @@ export const onAuthCreate = functions.auth.user().onCreate(async (user) => {
   }
 
   await Promise.all([
-    teamMemberRef.set(teamMemberData, { merge: true }),
+    rosterTeamMemberRef.set(teamMemberData, { merge: true }),
+    defaultTeamMemberRef.set(teamMemberData, { merge: true }),
     storeRef.set(storeData, { merge: true }),
   ])
 })
