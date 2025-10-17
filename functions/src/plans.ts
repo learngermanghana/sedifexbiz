@@ -1,41 +1,28 @@
 // functions/src/plans.ts
 import * as functions from "firebase-functions";
+import { PLAN_CATALOG, PLAN_IDS } from "./catalog/plans";
+import type { PlanId } from "./catalog/plans";
 
-export type PlanId = "starter" | "pro" | "enterprise";
+export { PLAN_CATALOG, PLAN_LIST, PLAN_IDS } from "./catalog/plans";
+export type { PlanCatalogEntry, PlanId } from "./catalog/plans";
 
-export const PLANS: Record<PlanId, {
+type PlanSnapshot = {
   name: string;
   monthlyGhs: number;
   features: string[];
-}> = {
-  starter: {
-    name: "Starter",
-    monthlyGhs: 99,
-    features: [
-      "Up to 1,000 SKUs",
-      "Single location",
-      "Email support",
-    ],
-  },
-  pro: {
-    name: "Pro",
-    monthlyGhs: 249,
-    features: [
-      "Up to 10,000 SKUs",
-      "Multi-location",
-      "Priority email + chat support",
-    ],
-  },
-  enterprise: {
-    name: "Enterprise",
-    monthlyGhs: 499,
-    features: [
-      "Unlimited SKUs",
-      "Multi-location + advanced roles",
-      "Dedicated success manager",
-    ],
-  },
 };
+
+export const PLANS: Record<PlanId, PlanSnapshot> = Object.fromEntries(
+  PLAN_IDS.map(planId => {
+    const entry = PLAN_CATALOG[planId];
+    const snapshot: PlanSnapshot = {
+      name: entry.name,
+      monthlyGhs: entry.monthlyGhs,
+      features: Array.from(entry.billingFeatures),
+    };
+    return [planId, snapshot] as const;
+  })
+) as Record<PlanId, PlanSnapshot>;
 
 // Read Paystack plan codes and trial length from functions config
 //   firebase functions:config:set \

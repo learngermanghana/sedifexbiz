@@ -31,6 +31,7 @@ import {
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 import { signupConfig } from './config/signup'
+import { PLAN_LIST } from '@catalog/plans'
 
 /* -------------------------------------------------------------------------- */
 /*                              Paystack helpers                              */
@@ -870,39 +871,14 @@ export default function App() {
       },
     ] as const
 
-    const PRICING_PLANS = [
-      {
-        name: 'Starter',
-        price: 99,
-        badge: 'Best for single stores',
-        description: 'Kick off with a lightweight workspace for owner-operators.',
-        features: [
-          '1 store',
-          'Up to 2 staff accounts',
-          '500 SKUs',
-          'Products, Sell, Receive, Customers',
-        ],
-      },
-      {
-        name: 'Pro',
-        price: 299,
-        badge: 'Most popular',
-        highlight: true,
-        description: 'Grow into multi-store ops with team workflows and support.',
-        features: [
-          'Up to 3 stores',
-          '10 staff accounts',
-          '10k SKUs',
-          'Close Day + priority email support',
-        ],
-      },
-      {
-        name: 'Enterprise',
-        price: 899,
-        description: 'Scale a nationwide fleet with advanced controls and limits.',
-        features: ['Unlimited stores & users', 'Advanced limits'],
-      },
-    ] as const
+    const PRICING_PLANS = PLAN_LIST.map(plan => ({
+      name: plan.name,
+      price: plan.monthlyGhs,
+      badge: plan.marketing.badge,
+      highlight: plan.marketing.highlight,
+      description: plan.marketing.description,
+      features: [...plan.marketing.features],
+    }))
 
     const salesEmail = signupConfig.salesEmail
     const salesEmailLink = `mailto:${salesEmail}`
