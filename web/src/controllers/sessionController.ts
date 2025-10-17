@@ -7,7 +7,7 @@ import {
   inMemoryPersistence,
   setPersistence,
 } from 'firebase/auth'
-import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { db, rosterDb } from '../firebase'
 
 const SESSION_COOKIE = 'sedifex_session'
@@ -80,28 +80,36 @@ const DEFAULT_INVENTORY_SUMMARY: StoreInventorySummary = {
  */
 export async function ensureStoreDocument(user: User) {
   try {
-    await setDoc(
-      doc(db, 'stores', user.uid),
-      {
-        // Access-related fields
-        storeId: user.uid,                // stable ID used by access resolution
-        ownerUid: user.uid,               // link back to the creator/owner
-        paymentStatus: 'trial',           // 'trial' | 'active' | 'suspended'
-        contractStart: serverTimestamp(), // good default
-        contractEnd: null,                // set later if you time-box trials
+    const storeRef = doc(db, 'stores', user.uid)
+    const snapshot = await getDoc(storeRef)
+    const existing = snapshot.exists() ? (snapshot.data() as Record<string, unknown>) : null
 
-        // Inventory snapshot
-        inventorySummary: { ...DEFAULT_INVENTORY_SUMMARY },
+    const payload: Record<string, unknown> = {
+      storeId: user.uid,
+      ownerUid: user.uid,
+      ownerId: user.uid,
+      status: existing?.status ?? 'active',
+      updatedAt: serverTimestamp(),
+      inventorySummary: existing?.inventorySummary ?? { ...DEFAULT_INVENTORY_SUMMARY },
+    }
 
-        // Back-compat (optional): keep legacy aliases if older code references them
-        ownerId: user.uid,
-        status: 'active',
+    if (!existing?.paymentStatus) {
+      payload.paymentStatus = 'trial'
+    }
 
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    )
+    if (!existing?.contractStart) {
+      payload.contractStart = serverTimestamp()
+    }
+
+    if (!('contractEnd' in (existing ?? {}))) {
+      payload.contractEnd = existing?.contractEnd ?? null
+    }
+
+    if (!existing) {
+      payload.createdAt = serverTimestamp()
+    }
+
+    await setDoc(storeRef, payload, { merge: true })
   } catch (error) {
     console.warn('[store] Failed to ensure store metadata for user', user.uid, error)
   }

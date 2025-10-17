@@ -24,6 +24,7 @@ import {
   resolveStoreAccess,
   type ResolveStoreAccessResult,
   type SeededDocument,
+  type PlanId,
   type SignupRoleOption,
   extractCallableErrorMessage,
   INACTIVE_WORKSPACE_MESSAGE,
@@ -474,6 +475,7 @@ export default function App() {
   const [normalizedPhone, setNormalizedPhone] = useState('')
   const [country, setCountry] = useState('')
   const [town, setTown] = useState('')
+  const [selectedPlanId, setSelectedPlanId] = useState<PlanId>('starter')
   const [signupRole, setSignupRole] = useState<SignupRoleOption>('owner')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
   const isLoading = status.tone === 'loading'
@@ -596,6 +598,7 @@ export default function App() {
     const sanitizedCountry = country.trim()
     const sanitizedTown = town.trim()
     const sanitizedSignupRole = normalizeSignupRole(signupRole)
+    const sanitizedPlanId = selectedPlanId
 
     const validationError =
       mode === 'login'
@@ -663,15 +666,18 @@ export default function App() {
 
         let initializedStoreId: string | undefined
         try {
-          const initialization = await initializeStore({
-            phone: sanitizedPhone || null,
-            firstSignupEmail: sanitizedEmail ? sanitizedEmail.toLowerCase() : null,
-            ownerName: sanitizedFullName || null,
-            businessName: sanitizedBusinessName || null,
-            country: sanitizedCountry || null,
-            town: sanitizedTown || null,
-            signupRole: sanitizedSignupRole,
-          })
+          const initialization = await initializeStore(
+            {
+              phone: sanitizedPhone || null,
+              firstSignupEmail: sanitizedEmail ? sanitizedEmail.toLowerCase() : null,
+              ownerName: sanitizedFullName || null,
+              businessName: sanitizedBusinessName || null,
+              country: sanitizedCountry || null,
+              town: sanitizedTown || null,
+              signupRole: sanitizedSignupRole,
+            },
+            sanitizedPlanId,
+          )
           initializedStoreId = initialization.storeId
         } catch (error) {
           console.warn('[signup] Failed to initialize workspace', error)
@@ -791,6 +797,7 @@ export default function App() {
       setNormalizedPhone('')
       setCountry('')
       setTown('')
+      setSelectedPlanId('starter')
       setSignupRole('owner')
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
@@ -813,6 +820,7 @@ export default function App() {
     setNormalizedPhone('')
     setCountry('')
     setTown('')
+    setSelectedPlanId('starter')
     setSignupRole('owner')
 
     if (nextMode === 'signup') {
@@ -872,6 +880,7 @@ export default function App() {
 
     const PRICING_PLANS = [
       {
+        id: 'starter' as PlanId,
         name: 'Starter',
         price: 99,
         badge: 'Best for single stores',
@@ -884,6 +893,7 @@ export default function App() {
         ],
       },
       {
+        id: 'pro' as PlanId,
         name: 'Pro',
         price: 299,
         badge: 'Most popular',
@@ -897,6 +907,7 @@ export default function App() {
         ],
       },
       {
+        id: 'enterprise' as PlanId,
         name: 'Enterprise',
         price: 899,
         description: 'Scale a nationwide fleet with advanced controls and limits.',
@@ -1166,6 +1177,37 @@ export default function App() {
                 </fieldset>
               )}
 
+              {mode === 'signup' && (
+                <fieldset className="form__field form__field--choices">
+                  <legend>Select your plan</legend>
+                  <div
+                    className="form__choice-group"
+                    role="radiogroup"
+                    aria-label="Pricing plans"
+                    aria-describedby="plan-hint"
+                  >
+                    {PRICING_PLANS.map(plan => (
+                      <label key={plan.id} className="form__choice" data-selected={selectedPlanId === plan.id}>
+                        <input
+                          type="radio"
+                          name="signup-plan"
+                          value={plan.id}
+                          checked={selectedPlanId === plan.id}
+                          onChange={() => setSelectedPlanId(plan.id)}
+                          disabled={isLoading}
+                        />
+                        <span>
+                          <strong>{plan.name}</strong> — GHS {plan.price}/month
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="form__hint" id="plan-hint">
+                    We’ll start you on a monthly contract. You can upgrade or change plans anytime.
+                  </p>
+                </fieldset>
+              )}
+
               <div className="form__field">
                 <label htmlFor="password">Password</label>
                 <input
@@ -1306,7 +1348,7 @@ export default function App() {
           <div className="app__pricing-grid" role="list">
             {PRICING_PLANS.map(plan => (
               <article
-                key={plan.name}
+                key={plan.id}
                 role="listitem"
                 className={`plan-card${plan.highlight ? ' is-highlighted' : ''}`}
               >

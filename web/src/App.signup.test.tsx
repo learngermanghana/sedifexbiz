@@ -203,7 +203,35 @@ describe('App signup access control', () => {
         town: null,
         signupRole: 'owner',
       }),
+      'starter',
     )
+
+    openSpy.mockRestore()
+  })
+
+  it('sends the selected plan to workspace initialization', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('tab', { name: /sign up/i }))
+
+    await user.click(screen.getByRole('radio', { name: /pro/i }))
+
+    await user.type(screen.getByLabelText(/^email/i), 'owner@example.com')
+    await user.type(screen.getByLabelText(/^password/i), 'StrongPassw0rd!')
+    await user.type(screen.getByLabelText(/confirm password/i), 'StrongPassw0rd!')
+
+    await user.click(screen.getByRole('button', { name: /create account/i }))
+
+    await waitFor(() => expect(mocks.initializeStore).toHaveBeenCalled())
+
+    expect(mocks.initializeStore).toHaveBeenLastCalledWith(expect.anything(), 'pro')
 
     openSpy.mockRestore()
   })
