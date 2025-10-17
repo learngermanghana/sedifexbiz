@@ -31,7 +31,7 @@ type StoreProfile = {
   timezone: string | null
   currency: string | null
   billingPlan: string | null
-  paymentProvider: string | null
+  payment: string | null
   addressLine1: string | null
   addressLine2: string | null
   city: string | null
@@ -63,6 +63,42 @@ function isTimestamp(value: unknown): value is Timestamp {
   return typeof value === 'object' && value !== null && typeof (value as Timestamp).toDate === 'function'
 }
 
+function toTimestamp(value: unknown): Timestamp | null {
+  if (isTimestamp(value)) {
+    return value
+  }
+
+  if (value instanceof Date) {
+    return Timestamp.fromDate(value)
+  }
+
+  if (typeof value === 'string') {
+    const parsed = new Date(value)
+    if (!Number.isNaN(parsed.getTime())) {
+      return Timestamp.fromDate(parsed)
+    }
+  }
+
+  return null
+}
+
+function formatAmount(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const numericValue = Number(value)
+    if (Number.isFinite(numericValue)) {
+      return numericValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    }
+
+    return value
+  }
+
+  return null
+}
+
 function mapStoreSnapshot(
   snapshot: DocumentSnapshot<DocumentData> | QueryDocumentSnapshot<DocumentData> | null,
 ): StoreProfile | null {
@@ -70,23 +106,28 @@ function mapStoreSnapshot(
   const data = snapshot.data()
 
   return {
-    name: toNullableString(data.name),
-    displayName: toNullableString(data.displayName),
-    email: toNullableString(data.email),
+    name: toNullableString(data.name ?? data.storeId ?? snapshot.id),
+    displayName: toNullableString(data.displayName ?? data.company ?? data.name ?? data.storeId),
+    email: toNullableString(data.email ?? data.contactEmail),
     phone: toNullableString(data.phone),
-    status: toNullableString(data.status),
+    status: toNullableString(data.status ?? data.contract?.status),
     timezone: toNullableString(data.timezone),
     currency: toNullableString(data.currency),
-    billingPlan: toNullableString(data.billingPlan),
-    paymentProvider: toNullableString(data.paymentProvider),
+    billingPlan: toNullableString(data.billingPlan ?? data.plan ?? data.billing?.plan),
+    payment: [
+      toNullableString(data.paymentStatus ?? data.payment?.status ?? data.billing?.status),
+      formatAmount(data.amountPaid),
+    ]
+      .filter((value): value is string => Boolean(value && value.trim()))
+      .join(' • ') || null,
     addressLine1: toNullableString(data.addressLine1),
     addressLine2: toNullableString(data.addressLine2),
     city: toNullableString(data.city),
     region: toNullableString(data.region),
     postalCode: toNullableString(data.postalCode),
     country: toNullableString(data.country),
-    createdAt: isTimestamp(data.createdAt) ? data.createdAt : null,
-    updatedAt: isTimestamp(data.updatedAt) ? data.updatedAt : null,
+    createdAt: toTimestamp(data.contractStart ?? data.createdAt ?? data.contract?.start) ?? null,
+    updatedAt: toTimestamp(data.contractEnd ?? data.updatedAt ?? data.contract?.end) ?? null,
   }
 }
 
@@ -221,6 +262,17 @@ export default function AccountOverview() {
       setProfileError(null)
 
       try {
+        const workspaceRef = doc(db, 'workspaces', storeId)
+        const workspaceSnapshot = await getDoc(workspaceRef)
+        if (cancelled) return
+
+        if (workspaceSnapshot.exists()) {
+          const mapped = mapStoreSnapshot(workspaceSnapshot)
+          setProfile(mapped)
+          setProfileError(null)
+          return
+        }
+
         const ref = doc(db, 'stores', storeId)
         const snapshot = await getDoc(ref)
         if (cancelled) return
@@ -486,8 +538,8 @@ export default function AccountOverview() {
             <dd>{formatValue(profile?.billingPlan ?? null)}</dd>
           </div>
           <div>
-            <dt>Payment provider</dt>
-            <dd>{formatValue(profile?.paymentProvider ?? null)}</dd>
+            <dt>Payment</dt>
+            <dd>{formatValue(profile?.payment ?? null)}</dd>
           </div>
         </dl>
       </section>
