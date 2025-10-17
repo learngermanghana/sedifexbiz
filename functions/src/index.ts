@@ -10,7 +10,7 @@ export { confirmPayment } from './confirmPayment'
 export { paystackWebhook, checkSignupUnlock }
 
 import * as functions from 'firebase-functions'
-import { admin, defaultDb } from './firestore'
+import { admin, defaultDb, rosterDb } from './firestore'
 import { buildSimplePdf } from './utils/pdf'
 
 function serializeError(error: unknown) {
@@ -43,6 +43,7 @@ function logCallableError(
 }
 
 const db = defaultDb
+const rosterDatabase = rosterDb
 
 
 type ContactPayload = {
@@ -471,8 +472,8 @@ function serializeFirestoreData(data: admin.firestore.DocumentData): Record<stri
 export const handleUserCreate = functions.auth.user().onCreate(async user => {
   const uid = user.uid
   const email = typeof user.email === 'string' ? user.email.toLowerCase() : null
-  const memberRef = db.collection('teamMembers').doc(uid)
-  const emailRef = email ? db.collection('teamMembers').doc(email) : null
+  const memberRef = rosterDatabase.collection('teamMembers').doc(uid)
+  const emailRef = email ? rosterDatabase.collection('teamMembers').doc(email) : null
   const [memberSnap, emailSnap] = await Promise.all([
     memberRef.get(),
     emailRef ? emailRef.get() : Promise.resolve(null),
@@ -662,7 +663,7 @@ async function initializeStoreImpl(
   const resolvedTown = contact.hasTown ? contact.town ?? null : null
   const resolvedSignupRole = contact.hasSignupRole ? contact.signupRole ?? null : null
 
-  const memberRef = db.collection('teamMembers').doc(uid)
+  const memberRef = rosterDatabase.collection('teamMembers').doc(uid)
   const defaultMemberRef = defaultDb.collection('teamMembers').doc(uid)
   const [memberSnap, defaultMemberSnap] = await Promise.all([
     memberRef.get(),
@@ -761,7 +762,7 @@ async function initializeStoreImpl(
   ])
 
   if (normalizedEmail) {
-    const emailRef = db.collection('teamMembers').doc(normalizedEmail)
+    const emailRef = rosterDatabase.collection('teamMembers').doc(normalizedEmail)
     const emailSnap = await emailRef.get()
     const emailData: admin.firestore.DocumentData = {
       uid,
@@ -875,7 +876,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     requestedStoreId = trimmed
   }
 
-  const teamMembersCollection = db.collection('teamMembers')
+  const teamMembersCollection = rosterDatabase.collection('teamMembers')
   const memberRef = teamMembersCollection.doc(uid)
   const rosterEmailRef = emailFromToken ? teamMembersCollection.doc(emailFromToken) : null
   const [memberSnap, rosterEmailSnap] = await Promise.all([
@@ -1098,7 +1099,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   const invitedBy = context.auth?.uid ?? null
   const { record, created } = await ensureAuthUser(email, password)
 
-  const memberRef = db.collection('teamMembers').doc(record.uid)
+  const memberRef = rosterDatabase.collection('teamMembers').doc(record.uid)
   const memberSnap = await memberRef.get()
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
@@ -1116,7 +1117,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   }
 
   await memberRef.set(memberData, { merge: true })
-  const emailRef = db.collection('teamMembers').doc(email)
+  const emailRef = rosterDatabase.collection('teamMembers').doc(email)
   const emailSnap = await emailRef.get()
   const emailData: admin.firestore.DocumentData = {
     uid: record.uid,

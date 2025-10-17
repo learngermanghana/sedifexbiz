@@ -3,6 +3,7 @@ const Module = require('module')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore.cjs')
 
 let currentDefaultDb
+let currentRosterDb
 const apps = []
 let claimsUpdates
 
@@ -39,7 +40,12 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
   if (request === 'firebase-admin/firestore') {
     return {
-      getFirestore: () => currentDefaultDb,
+      getFirestore: (_app, databaseId) => {
+        if (databaseId && databaseId !== '(default)') {
+          return currentRosterDb
+        }
+        return currentDefaultDb
+      },
     }
   }
 
@@ -65,21 +71,29 @@ function loadFunctionsModule() {
   return require('../lib/index.js')
 }
 
+function resetDbs(defaultData = {}, rosterData = {}) {
+  currentDefaultDb = new MockFirestore(defaultData)
+  currentRosterDb = new MockFirestore(rosterData)
+}
+
 async function runRevocationSuccessTest() {
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/owner-1': {
-      uid: 'owner-1',
-      storeId: 'store-123',
-      role: 'owner',
+  resetDbs(
+    {},
+    {
+      'teamMembers/owner-1': {
+        uid: 'owner-1',
+        storeId: 'store-123',
+        role: 'owner',
+      },
+      'teamMembers/member-2': {
+        uid: 'member-2',
+        email: 'staff@example.com',
+        storeId: 'store-123',
+        role: 'staff',
+        invitedBy: 'owner-1',
+      },
     },
-    'teamMembers/member-2': {
-      uid: 'member-2',
-      email: 'staff@example.com',
-      storeId: 'store-123',
-      role: 'staff',
-      invitedBy: 'owner-1',
-    },
-  })
+  )
 
   const { revokeStaffAccess } = loadFunctionsModule()
   const context = {
@@ -92,20 +106,23 @@ async function runRevocationSuccessTest() {
   const result = await revokeStaffAccess.run({ storeId: 'store-123', uid: 'member-2' }, context)
 
   assert.deepStrictEqual(result, { ok: true, storeId: 'store-123', uid: 'member-2' })
-  assert.strictEqual(currentDefaultDb.getDoc('teamMembers/member-2'), undefined)
+  assert.strictEqual(currentRosterDb.getDoc('teamMembers/member-2'), undefined)
   assert.deepStrictEqual(claimsUpdates, [{ uid: 'member-2', claims: {} }])
 }
 
 async function runOwnerProtectionTest() {
-  currentDefaultDb = new MockFirestore({
-    'teamMembers/owner-1': {
-      uid: 'owner-1',
-      email: 'owner@example.com',
-      storeId: 'store-123',
-      role: 'owner',
-      invitedBy: 'owner-1',
+  resetDbs(
+    {},
+    {
+      'teamMembers/owner-1': {
+        uid: 'owner-1',
+        email: 'owner@example.com',
+        storeId: 'store-123',
+        role: 'owner',
+        invitedBy: 'owner-1',
+      },
     },
-  })
+  )
 
   const { revokeStaffAccess } = loadFunctionsModule()
   const context = {
@@ -124,7 +141,7 @@ async function runOwnerProtectionTest() {
 
   assert.ok(error, 'Expected revoking owner access to throw')
   assert.strictEqual(error.code, 'failed-precondition')
-  assert.ok(currentDefaultDb.getDoc('teamMembers/owner-1'), 'Owner document should remain')
+  assert.ok(currentRosterDb.getDoc('teamMembers/owner-1'), 'Owner document should remain')
 }
 
 async function main() {

@@ -3,6 +3,7 @@ const Module = require('module')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore.cjs')
 
 let currentDefaultDb
+let currentRosterDb
 const apps = []
 
 const originalLoad = Module._load
@@ -32,7 +33,12 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
   if (request === 'firebase-admin/firestore') {
     return {
-      getFirestore: () => currentDefaultDb,
+      getFirestore: (_app, databaseId) => {
+        if (databaseId && databaseId !== '(default)') {
+          return currentRosterDb
+        }
+        return currentDefaultDb
+      },
     }
   }
 
@@ -46,8 +52,13 @@ function loadOnAuthCreateModule() {
   return require('../lib/onAuthCreate.js')
 }
 
+function resetDbs(defaultData = {}, rosterData = {}) {
+  currentDefaultDb = new MockFirestore(defaultData)
+  currentRosterDb = new MockFirestore(rosterData)
+}
+
 async function runCreatesWorkspaceWithGeneratedSlugTest() {
-  currentDefaultDb = new MockFirestore()
+  resetDbs()
 
   const { onAuthCreate } = loadOnAuthCreateModule()
 
@@ -71,13 +82,13 @@ async function runCreatesWorkspaceWithGeneratedSlugTest() {
   assert.ok(storeDoc, 'Expected store document to be created')
   assert.strictEqual(storeDoc.workspaceSlug, 'owner-example')
 
-  const memberDoc = currentDefaultDb.getDoc('teamMembers/user-123')
+  const memberDoc = currentRosterDb.getDoc('teamMembers/user-123')
   assert.ok(memberDoc, 'Expected team member document to be created')
   assert.strictEqual(memberDoc.workspaceSlug, 'owner-example')
 }
 
 async function runGeneratesUniqueSlugWhenTakenTest() {
-  currentDefaultDb = new MockFirestore({
+  resetDbs({
     'workspaces/owner-example': {
       slug: 'owner-example',
       storeId: 'existing-store',
