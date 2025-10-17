@@ -2,7 +2,7 @@ require('ts-node/register/transpile-only')
 
 const assert = require('assert')
 const Module = require('module')
-const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
+const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore.cjs')
 const { DEFAULT_CURRENCY_CODE } = require('../../shared/currency')
 
 let currentDefaultDb

@@ -1,6 +1,6 @@
 const assert = require('assert')
 const Module = require('module')
-const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
+const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore.cjs')
 
 let currentDb
 const originalLoad = Module._load

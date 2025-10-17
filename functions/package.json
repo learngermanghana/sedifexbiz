@@ -2,7 +2,7 @@
   "name": "sedifex-functions",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
+  "type": "commonjs",
   "main": "lib/index.js",
   "engines": {
     "node": "20"
@@ -11,7 +11,7 @@
     "build": "tsc",
     "serve": "firebase emulators:start --only functions,firestore",
     "deploy": "npm run build && firebase deploy --only functions",
-    "test": "npm run build && node ./test/commitSale.test.js && node ./test/resolveStoreAccess.test.js && node ./test/handleUserCreate.test.js && node ./test/initializeStore.test.js",
+    "test": "npm run build && node --experimental-specifier-resolution=node ./test/commitSale.test.cjs && node --experimental-specifier-resolution=node ./test/resolveStoreAccess.test.cjs && node --experimental-specifier-resolution=node ./test/handleUserCreate.test.cjs && node --experimental-specifier-resolution=node ./test/onAuthCreate.test.cjs && node --experimental-specifier-resolution=node ./test/initializeStore.test.cjs",
     "backfill-store": "ts-node ./scripts/backfillStoreIds.ts"
   },
   "dependencies": {
