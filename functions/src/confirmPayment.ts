@@ -5,25 +5,35 @@ export const confirmPayment = functions.https.onRequest(async (req, res) => {
   // CORS (basic)
   res.set('Access-Control-Allow-Origin', '*')
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS')
-  if (req.method === 'OPTIONS') return res.status(204).send('')
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('')
+    return
+  }
 
   try {
     const reference = String(req.query.reference || '').trim()
-    if (!reference) return res.status(400).json({ ok: false, error: 'Missing reference' })
+    if (!reference) {
+      res.status(400).json({ ok: false, error: 'Missing reference' })
+      return
+    }
 
     const snap = await db.collection('payments').doc(reference).get()
-    if (!snap.exists) return res.status(404).json({ ok: false, error: 'Reference not found' })
+    if (!snap.exists) {
+      res.status(404).json({ ok: false, error: 'Reference not found' })
+      return
+    }
     const data = snap.data() || {}
 
     // Expect webhook to set status:'paid'
     if (data.status !== 'paid') {
-      return res.status(200).json({ ok: false, status: data.status || 'pending' })
+      res.status(200).json({ ok: false, status: data.status || 'pending' })
+      return
     }
 
     // Mark the reference usable once (optional):
     await snap.ref.set({ ...data, confirmedAt: new Date() }, { merge: true })
 
-    return res.status(200).json({
+    res.status(200).json({
       ok: true,
       status: 'paid',
       email: data.email || null,
@@ -31,8 +41,9 @@ export const confirmPayment = functions.https.onRequest(async (req, res) => {
       planId: data.planId || null,
       amount: data.amount || null,
     })
+    return
   } catch (err: any) {
     functions.logger.error('confirmPayment failed', err)
-    return res.status(500).json({ ok: false, error: err?.message || 'Internal error' })
+    res.status(500).json({ ok: false, error: err?.message || 'Internal error' })
   }
 })

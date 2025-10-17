@@ -126,19 +126,22 @@ function isUnlockRecordPaid(record: SignupUnlockRecord): boolean {
 export const paystackWebhook = functions.https.onRequest(async (req, res) => {
   if (req.method !== 'POST') {
     res.set('Allow', 'POST')
-    return res.status(405).send('Method Not Allowed')
+    res.status(405).send('Method Not Allowed')
+    return
   }
 
   const secret = getPaystackSecret()
   if (!secret) {
     functions.logger.error('Paystack webhook rejected: missing secret configuration')
-    return res.status(500).send('Paystack secret not configured')
+    res.status(500).send('Paystack secret not configured')
+    return
   }
 
   const signatureHeader = normalizeString(req.get('x-paystack-signature'))
   if (!signatureHeader) {
     functions.logger.warn('Paystack webhook missing signature header')
-    return res.status(401).send('Unauthorized')
+    res.status(401).send('Unauthorized')
+    return
   }
 
   const rawBody = req.rawBody ?? Buffer.from('')
@@ -146,11 +149,13 @@ export const paystackWebhook = functions.https.onRequest(async (req, res) => {
   try {
     if (!verifySignature(rawBody, signatureHeader, secret)) {
       functions.logger.warn('Paystack webhook signature mismatch')
-      return res.status(401).send('Unauthorized')
+      res.status(401).send('Unauthorized')
+      return
     }
   } catch (error) {
     functions.logger.error('Paystack webhook signature verification failed', error)
-    return res.status(401).send('Unauthorized')
+    res.status(401).send('Unauthorized')
+    return
   }
 
   let payload: PaystackEvent
@@ -158,25 +163,29 @@ export const paystackWebhook = functions.https.onRequest(async (req, res) => {
     payload = JSON.parse(rawBody.toString('utf8')) as PaystackEvent
   } catch (error) {
     functions.logger.warn('Paystack webhook received invalid JSON payload', error)
-    return res.status(400).send('Invalid payload')
+    res.status(400).send('Invalid payload')
+    return
   }
 
   const eventType = normalizeString(payload.event)
   if (!eventType) {
     functions.logger.warn('Paystack webhook missing event type')
-    return res.status(400).send('Missing event type')
+    res.status(400).send('Missing event type')
+    return
   }
 
   if (eventType !== 'charge.success' && eventType !== 'invoice.payment_succeeded') {
     functions.logger.info('Paystack webhook ignored unsupported event', { eventType })
-    return res.status(200).json({ ok: true, ignored: true })
+    res.status(200).json({ ok: true, ignored: true })
+    return
   }
 
   const data = (payload.data ?? {}) as PaystackChargeData
   const reference = normalizeString(data.reference)
   if (!reference) {
     functions.logger.warn('Paystack webhook missing transaction reference', { eventType })
-    return res.status(400).send('Missing reference')
+    res.status(400).send('Missing reference')
+    return
   }
 
   const status = normalizeString(data.status) ?? 'pending'
@@ -239,7 +248,8 @@ export const paystackWebhook = functions.https.onRequest(async (req, res) => {
     await Promise.all(writes)
   } catch (error) {
     functions.logger.error('Paystack webhook failed to persist payment metadata', error)
-    return res.status(500).send('Failed to persist payment metadata')
+    res.status(500).send('Failed to persist payment metadata')
+    return
   }
 
   functions.logger.info('Paystack webhook processed', {
@@ -251,7 +261,7 @@ export const paystackWebhook = functions.https.onRequest(async (req, res) => {
     status: paymentStatus,
   })
 
-  return res.status(200).json({ ok: true })
+  res.status(200).json({ ok: true })
 })
 
 export const checkSignupUnlock = functions.https.onCall(async (data: unknown) => {

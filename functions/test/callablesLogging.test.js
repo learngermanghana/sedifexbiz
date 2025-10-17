@@ -1,6 +1,6 @@
 const assert = require('assert')
 const Module = require('module')
-const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore')
+const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore.cjs')
 const { FIREBASE_CALLABLES } = require('../lib/shared/firebaseCallables.js')
 
 let currentDefaultDb
