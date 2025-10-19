@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { doc, onSnapshot, setDoc, updateDoc, type DocumentReference } from 'firebase/firestore'
 
-import { db } from '../lib/db'
+import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
 import { useActiveStore } from './useActiveStore'
 import { useToast } from '../components/ToastProvider'

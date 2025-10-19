@@ -14,7 +14,7 @@ import {
 import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
 
-import { db } from '../lib/db'
+import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import {
   PRODUCT_CACHE_LIMIT,

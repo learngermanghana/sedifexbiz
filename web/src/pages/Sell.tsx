@@ -4,7 +4,7 @@ import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 
 import { functions as cloudFunctions } from '../firebase'
-import { db } from '../lib/db'
+import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'

@@ -23,7 +23,7 @@ vi.mock('firebase/firestore', () => ({
 const mockDb = { name: 'primary-db' }
 const mockRosterDb = { name: 'roster-db' }
 
-vi.mock('../lib/db', () => ({
+vi.mock('../firebase', () => ({
   db: mockDb,
   rosterDb: mockRosterDb,
 }))

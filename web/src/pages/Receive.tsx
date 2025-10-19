@@ -4,7 +4,7 @@ import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 
 import { functions } from '../firebase'
-import { db } from '../lib/db'
+import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Receive.css'
 import { queueCallableRequest } from '../utils/offlineQueue'

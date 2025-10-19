@@ -3,7 +3,7 @@ import { doc, getDoc, Timestamp } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { useAuthUser } from '../hooks/useAuthUser'
 
-import { db, rosterDb } from '../lib/db'
+import { db, rosterDb } from '../firebase'
 import { getOnboardingStatus, setOnboardingStatus, type OnboardingStatus } from '../utils/onboarding'
 import './Onboarding.css'
 
