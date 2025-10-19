@@ -5,7 +5,10 @@ if (!admin.apps.length) {
   admin.initializeApp()
 }
 
-export const defaultDb = getFirestore()
+const app = admin.app()
+
+export const defaultDb = getFirestore(app)
+export const rosterDb = getFirestore(app, 'roster')
 
 export const supabaseAdmin = {
   from() {

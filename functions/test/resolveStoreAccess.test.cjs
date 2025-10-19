@@ -3,6 +3,7 @@ const Module = require('module')
 const { MockFirestore, MockTimestamp } = require('./helpers/mockFirestore.cjs')
 
 let currentDefaultDb
+let currentRosterDb
 const apps = []
 
 const originalLoad = Module._load
@@ -39,7 +40,8 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
   if (request === 'firebase-admin/firestore') {
     return {
-      getFirestore: () => currentDefaultDb,
+      getFirestore: (_app, databaseId) =>
+        databaseId === 'roster' ? currentRosterDb || currentDefaultDb : currentDefaultDb,
     }
   }
 
@@ -82,6 +84,7 @@ async function runActiveStatusTest() {
       invitedBy: 'admin-user',
     },
   })
+  currentRosterDb = currentDefaultDb
 
   const { resolveStoreAccess } = loadFunctionsModule()
   const context = {
@@ -93,19 +96,22 @@ async function runActiveStatusTest() {
 
   const result = await resolveStoreAccess.run({ storeId: 'store-001' }, context)
 
-  assert.strictEqual(result.ok, true)
-  assert.strictEqual(result.storeId, 'store-001')
-  assert.strictEqual(result.role, 'owner')
-  assert.ok(!('spreadsheetId' in result))
+    assert.strictEqual(result.ok, true)
+    assert.strictEqual(result.storeId, 'store-001')
+    assert.strictEqual(result.role, 'owner')
+    assert.ok(!('spreadsheetId' in result))
+    assert.strictEqual(result.teamMember.data.workspaceSlug, 'store-001')
 
-  const rosterDoc = currentDefaultDb.getDoc('teamMembers/user-1')
-  assert.ok(rosterDoc)
-  assert.strictEqual(rosterDoc.storeId, 'store-001')
-  assert.strictEqual(rosterDoc.email, 'owner@example.com')
+    const rosterDoc = currentDefaultDb.getDoc('teamMembers/user-1')
+    assert.ok(rosterDoc)
+    assert.strictEqual(rosterDoc.storeId, 'store-001')
+    assert.strictEqual(rosterDoc.email, 'owner@example.com')
+    assert.strictEqual(rosterDoc.workspaceSlug, 'store-001')
 
-  const rosterEmailDoc = currentDefaultDb.getDoc('teamMembers/owner@example.com')
-  assert.ok(rosterEmailDoc)
-  assert.strictEqual(rosterEmailDoc.uid, 'user-1')
+    const rosterEmailDoc = currentDefaultDb.getDoc('teamMembers/owner@example.com')
+    assert.ok(rosterEmailDoc)
+    assert.strictEqual(rosterEmailDoc.uid, 'user-1')
+    assert.strictEqual(rosterEmailDoc.workspaceSlug, 'store-001')
 
   const storeDoc = currentDefaultDb.getDoc('stores/store-001')
   assert.ok(storeDoc)
@@ -148,6 +154,7 @@ async function runInactiveStatusTest() {
       role: 'Owner',
     },
   })
+  currentRosterDb = currentDefaultDb
 
   const { resolveStoreAccess } = loadFunctionsModule()
   const context = {
@@ -182,6 +189,7 @@ async function runStoreOwnerFallbackTest() {
       role: 'Owner',
     },
   })
+  currentRosterDb = currentDefaultDb
 
   const { resolveStoreAccess } = loadFunctionsModule()
   const context = {
@@ -216,6 +224,7 @@ async function runStoreIdMismatchTest() {
       role: 'Owner',
     },
   })
+  currentRosterDb = currentDefaultDb
 
   const { resolveStoreAccess } = loadFunctionsModule()
   const context = {
@@ -248,6 +257,7 @@ async function runMissingStoreIdTest() {
       role: 'Owner',
     },
   })
+  currentRosterDb = currentDefaultDb
 
   const { resolveStoreAccess } = loadFunctionsModule()
   const context = {
@@ -266,16 +276,17 @@ async function runMissingStoreIdTest() {
 
   assert.ok(error, 'Expected missing store ID to throw')
   assert.strictEqual(error.code, 'failed-precondition')
-  assert.strictEqual(
-    error.message,
-    'We could not confirm the store ID assigned to your Sedifex workspace. Reach out to your Sedifex administrator.',
-  )
+    assert.strictEqual(
+      error.message,
+      'We could not confirm the workspace assigned to your Sedifex account. Reach out to your Sedifex administrator.',
+    )
 }
 
 async function runManagedStaffAccessTest() {
   currentDefaultDb = new MockFirestore({
     'stores/store-003': { status: 'Active' },
   })
+  currentRosterDb = currentDefaultDb
 
   const { manageStaffAccount, resolveStoreAccess } = loadFunctionsModule()
 
@@ -336,6 +347,7 @@ async function runMissingEmailTokenTest() {
       invitedBy: 'owner-9',
     },
   })
+  currentRosterDb = currentDefaultDb
 
   const { resolveStoreAccess } = loadFunctionsModule()
   const context = {

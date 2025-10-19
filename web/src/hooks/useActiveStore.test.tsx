@@ -22,6 +22,7 @@ describe('useActiveStore', () => {
       uid: 'user-1',
       role: 'owner' as const,
       storeId,
+      workspaceSlug: null,
       email: null,
       phone: null,
       invitedBy: null,

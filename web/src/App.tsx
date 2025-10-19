@@ -272,6 +272,16 @@ async function persistTeamMemberMetadata(
     const town = metadata?.town?.trim() || null
     const signupRole = metadata?.signupRole ?? null
 
+    const teamMemberSlug =
+      typeof resolution.teamMember?.data?.workspaceSlug === 'string'
+        ? resolution.teamMember.data.workspaceSlug.trim()
+        : ''
+    const storeSlug =
+      typeof resolution.store?.data?.workspaceSlug === 'string'
+        ? resolution.store.data.workspaceSlug.trim()
+        : ''
+    const workspaceSlugValue = teamMemberSlug || storeSlug || null
+
     const basePayload = {
       uid: user.uid,
       role: resolution.role,
@@ -287,6 +297,7 @@ async function persistTeamMemberMetadata(
       signupRole,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      workspaceSlug: workspaceSlugValue,
     }
 
     const writes: Array<Promise<unknown>> = [

@@ -23,6 +23,7 @@ export type Membership = {
   uid: string
   role: 'owner' | 'staff'
   storeId: string | null
+  workspaceSlug: string | null
   email: string | null
   phone: string | null
   invitedBy: string | null
@@ -37,12 +38,23 @@ function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): M
   const createdAt = data.createdAt instanceof Timestamp ? data.createdAt : null
   const updatedAt = data.updatedAt instanceof Timestamp ? data.updatedAt : null
   const storeId = typeof data.storeId === 'string' && data.storeId.trim() !== '' ? data.storeId : null
+  const workspaceSlugCandidate =
+    typeof data.workspaceSlug === 'string' && data.workspaceSlug.trim()
+      ? data.workspaceSlug.trim()
+      : typeof data.slug === 'string' && data.slug.trim()
+        ? data.slug.trim()
+        : typeof data.workspace === 'string' && data.workspace.trim()
+          ? data.workspace.trim()
+          : typeof data.storeSlug === 'string' && data.storeSlug.trim()
+            ? data.storeSlug.trim()
+            : null
 
   return {
     id: snapshot.id,
     uid: typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id,
     role: normalizeStaffRole(data.role),
     storeId,
+    workspaceSlug: workspaceSlugCandidate,
     email: typeof data.email === 'string' ? data.email : null,
     phone: typeof data.phone === 'string' ? data.phone : null,
     invitedBy: typeof data.invitedBy === 'string' ? data.invitedBy : null,

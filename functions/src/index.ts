@@ -11,7 +11,7 @@ export { confirmPayment } from './confirmPayment'
 export { paystackWebhook, checkSignupUnlock }
 
 import * as functions from 'firebase-functions'
-import { admin, defaultDb } from './firestore'
+import { admin, defaultDb, rosterDb } from './firestore'
 import { buildSimplePdf } from './utils/pdf'
 
 function serializeError(error: unknown) {
@@ -508,8 +508,8 @@ function serializeFirestoreData(data: admin.firestore.DocumentData): Record<stri
 export const handleUserCreate = functions.auth.user().onCreate(async user => {
   const uid = user.uid
   const email = typeof user.email === 'string' ? user.email.toLowerCase() : null
-  const memberRef = db.collection('teamMembers').doc(uid)
-  const emailRef = email ? db.collection('teamMembers').doc(email) : null
+  const memberRef = rosterDb.collection('teamMembers').doc(uid)
+  const emailRef = email ? rosterDb.collection('teamMembers').doc(email) : null
   const [memberSnap, emailSnap] = await Promise.all([
     memberRef.get(),
     emailRef ? emailRef.get() : Promise.resolve(null),
@@ -699,7 +699,7 @@ async function initializeStoreImpl(
   const resolvedTown = contact.hasTown ? contact.town ?? null : null
   const resolvedSignupRole = contact.hasSignupRole ? contact.signupRole ?? null : null
 
-  const memberRef = db.collection('teamMembers').doc(uid)
+  const memberRef = rosterDb.collection('teamMembers').doc(uid)
   const defaultMemberRef = defaultDb.collection('teamMembers').doc(uid)
   const [memberSnap, defaultMemberSnap] = await Promise.all([
     memberRef.get(),
@@ -834,7 +834,7 @@ async function initializeStoreImpl(
   ])
 
   if (normalizedEmail) {
-    const emailRef = db.collection('teamMembers').doc(normalizedEmail)
+    const emailRef = rosterDb.collection('teamMembers').doc(normalizedEmail)
     const emailSnap = await emailRef.get()
     const emailData: admin.firestore.DocumentData = {
       uid,
@@ -1020,6 +1020,36 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   }
 })
 
+async function lookupWorkspaceBySelector(selector: string): Promise<{
+  slug: string
+  storeId: string | null
+  data: admin.firestore.DocumentData
+} | null> {
+  const normalized = selector.trim()
+  if (!normalized) {
+    return null
+  }
+
+  const workspacesCollection = defaultDb.collection('workspaces')
+  const directRef = workspacesCollection.doc(normalized)
+  const directSnap = await directRef.get()
+  if (directSnap.exists) {
+    const data = (directSnap.data() ?? {}) as admin.firestore.DocumentData
+    const storeId = getOptionalString((data as any).storeId ?? undefined)
+    return { slug: directRef.id, storeId, data }
+  }
+
+  const fallbackQuery = await workspacesCollection.where('storeId', '==', normalized).limit(1).get()
+  const fallbackDoc = fallbackQuery.docs[0]
+  if (!fallbackDoc) {
+    return null
+  }
+
+  const fallbackData = (fallbackDoc.data() ?? {}) as admin.firestore.DocumentData
+  const fallbackStoreId = getOptionalString((fallbackData as any).storeId ?? undefined)
+  return { slug: fallbackDoc.id, storeId: fallbackStoreId, data: fallbackData }
+}
+
 export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
   assertAuthenticated(context)
 
@@ -1047,7 +1077,7 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     requestedStoreId = trimmed
   }
 
-  const teamMembersCollection = db.collection('teamMembers')
+  const teamMembersCollection = rosterDb.collection('teamMembers')
   const memberRef = teamMembersCollection.doc(uid)
   const rosterEmailRef = emailFromToken ? teamMembersCollection.doc(emailFromToken) : null
   const [memberSnap, rosterEmailSnap] = await Promise.all([
@@ -1064,10 +1094,33 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     )
   }
 
+  const rosterWorkspaceSlugFromMember =
+    getOptionalString(
+      (existingMember as any).workspaceSlug ??
+        (existingMember as any).workspace_slug ??
+        (existingMember as any).workspace ??
+        (existingMember as any).slug ??
+        undefined,
+    ) ?? null
+  const rosterWorkspaceSlugFromEmail =
+    getOptionalString(
+      (emailMember as any).workspaceSlug ??
+        (emailMember as any).workspace_slug ??
+        (emailMember as any).workspace ??
+        (emailMember as any).slug ??
+        undefined,
+    ) ?? null
+
+  let rosterWorkspaceSlug = rosterWorkspaceSlugFromMember ?? rosterWorkspaceSlugFromEmail ?? null
+
   const rosterStoreIdFromMember =
-    getOptionalString((existingMember as any).storeId ?? (existingMember as any).storeID ?? (existingMember as any).store_id ?? undefined) ?? null
+    getOptionalString(
+      (existingMember as any).storeId ?? (existingMember as any).storeID ?? (existingMember as any).store_id ?? undefined,
+    ) ?? null
   const rosterStoreIdFromEmail =
-    getOptionalString((emailMember as any).storeId ?? (emailMember as any).storeID ?? (emailMember as any).store_id ?? undefined) ?? null
+    getOptionalString(
+      (emailMember as any).storeId ?? (emailMember as any).storeID ?? (emailMember as any).store_id ?? undefined,
+    ) ?? null
 
   let rosterStoreId = rosterStoreIdFromMember ?? rosterStoreIdFromEmail ?? null
 
@@ -1080,22 +1133,82 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   if (rosterStoreId) {
     ;(rosterEntry as any).storeId = rosterStoreId
   }
-
-  const missingStoreIdMessage =
-    'We could not confirm the store ID assigned to your Sedifex workspace. Reach out to your Sedifex administrator.'
-
-  if (!rosterStoreId) {
-    throw new functions.https.HttpsError('failed-precondition', missingStoreIdMessage)
+  if (rosterWorkspaceSlug) {
+    ;(rosterEntry as any).workspaceSlug = rosterWorkspaceSlug
   }
 
-  if (requestedStoreId !== null && requestedStoreId !== rosterStoreId) {
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      `Your account is assigned to store ${rosterStoreId}. Enter the correct store ID to continue.`,
-    )
+  const missingWorkspaceMessage =
+    'We could not confirm the workspace assigned to your Sedifex account. Reach out to your Sedifex administrator.'
+
+  if (!rosterStoreId && !rosterWorkspaceSlug) {
+    throw new functions.https.HttpsError('failed-precondition', missingWorkspaceMessage)
   }
 
-  const storeId = rosterStoreId
+  let resolvedWorkspaceSlug = rosterWorkspaceSlug
+  let resolvedStoreId = rosterStoreId
+  let requestedWorkspaceData: admin.firestore.DocumentData | null = null
+
+  if (requestedStoreId !== null) {
+    const lookup = await lookupWorkspaceBySelector(requestedStoreId)
+    if (lookup) {
+      requestedWorkspaceData = lookup.data
+      const lookupSlug = lookup.slug
+      const lookupStoreId = lookup.storeId
+
+      if (rosterWorkspaceSlug && lookupSlug !== rosterWorkspaceSlug) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          `Your account is assigned to workspace ${rosterWorkspaceSlug}. Enter the correct workspace slug to continue.`,
+        )
+      }
+
+      if (!rosterWorkspaceSlug && rosterStoreId && lookupStoreId && lookupStoreId !== rosterStoreId) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          `Your account is assigned to store ${rosterStoreId}. Enter the correct store ID to continue.`,
+        )
+      }
+
+      resolvedWorkspaceSlug = lookupSlug ?? resolvedWorkspaceSlug ?? requestedStoreId
+      if (lookupStoreId) {
+        resolvedStoreId = lookupStoreId
+      }
+    } else {
+      if (rosterWorkspaceSlug && requestedStoreId !== rosterWorkspaceSlug) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          `Your account is assigned to workspace ${rosterWorkspaceSlug}. Enter the correct workspace slug to continue.`,
+        )
+      }
+
+      if (!rosterWorkspaceSlug && rosterStoreId && requestedStoreId !== rosterStoreId) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          `Your account is assigned to store ${rosterStoreId}. Enter the correct store ID to continue.`,
+        )
+      }
+
+      if (!resolvedWorkspaceSlug) {
+        resolvedWorkspaceSlug = rosterWorkspaceSlug ?? requestedStoreId
+      }
+      if (!resolvedStoreId) {
+        resolvedStoreId = rosterStoreId ?? requestedStoreId
+      }
+    }
+  }
+
+  if (!resolvedStoreId) {
+    const fallbackStoreId = requestedWorkspaceData
+      ? getOptionalString((requestedWorkspaceData as any).storeId ?? undefined)
+      : null
+    resolvedStoreId = fallbackStoreId ?? rosterStoreId ?? null
+  }
+
+  if (!resolvedStoreId) {
+    throw new functions.https.HttpsError('failed-precondition', missingWorkspaceMessage)
+  }
+
+  const storeId = resolvedStoreId
 
   const storesCollection = defaultDb.collection('stores')
   let storeRef = storesCollection.doc(storeId)
@@ -1129,6 +1242,15 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   }
 
   const storeData = (storeSnap.data() ?? {}) as admin.firestore.DocumentData
+  const storeWorkspaceSlug = getOptionalString(
+    (storeData as any).workspaceSlug ?? (storeData as any).slug ?? (storeData as any).storeSlug ?? undefined,
+  )
+  if (!resolvedWorkspaceSlug && storeWorkspaceSlug) {
+    resolvedWorkspaceSlug = storeWorkspaceSlug
+  }
+  if (!resolvedWorkspaceSlug) {
+    resolvedWorkspaceSlug = storeId
+  }
   const storeStatus = getOptionalString((storeData as any).status ?? (storeData as any).contractStatus ?? undefined)
   if (isInactiveContractStatus(storeStatus)) {
     throw new functions.https.HttpsError('permission-denied', INACTIVE_WORKSPACE_MESSAGE)
@@ -1197,10 +1319,15 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   if (rosterName) (memberData as any).name = rosterName
   if (rosterFirstSignupEmail) (memberData as any).firstSignupEmail = rosterFirstSignupEmail
   if (rosterInvitedBy) (memberData as any).invitedBy = rosterInvitedBy
+  if (resolvedWorkspaceSlug) (memberData as any).workspaceSlug = resolvedWorkspaceSlug
 
   await memberRef.set(memberData, { merge: true })
   if (rosterEmailRef) {
-    await rosterEmailRef.set({ uid, lastResolvedAt: now }, { merge: true })
+    const emailUpdate: admin.firestore.DocumentData = { uid, lastResolvedAt: now }
+    if (resolvedWorkspaceSlug) {
+      ;(emailUpdate as any).workspaceSlug = resolvedWorkspaceSlug
+    }
+    await rosterEmailRef.set(emailUpdate, { merge: true })
   }
 
   const productSeedRecords = toSeedRecords((storeData as any).seedProducts ?? (rosterEntry as any).seedProducts ?? null)
@@ -1250,6 +1377,9 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
   const claims = await updateUserClaims(uid, resolvedRole)
 
   const storeResponseData: admin.firestore.DocumentData = { ...storeData, storeId }
+  if (resolvedWorkspaceSlug) {
+    ;(storeResponseData as any).workspaceSlug = resolvedWorkspaceSlug
+  }
 
   return {
     ok: true,
@@ -1270,7 +1400,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   const invitedBy = context.auth?.uid ?? null
   const { record, created } = await ensureAuthUser(email, password)
 
-  const memberRef = db.collection('teamMembers').doc(record.uid)
+  const memberRef = rosterDb.collection('teamMembers').doc(record.uid)
   const memberSnap = await memberRef.get()
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
@@ -1288,7 +1418,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   }
 
   await memberRef.set(memberData, { merge: true })
-  const emailRef = db.collection('teamMembers').doc(email)
+  const emailRef = rosterDb.collection('teamMembers').doc(email)
   const emailSnap = await emailRef.get()
   const emailData: admin.firestore.DocumentData = {
     uid: record.uid,
