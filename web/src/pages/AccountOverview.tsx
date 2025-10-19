@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   query,
   where,
   type DocumentData,
@@ -110,28 +111,44 @@ function formatAmount(value: unknown): string | null {
   return null
 }
 
+function formatMinorUnitAmount(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return formatAmount(value / 100)
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const numericValue = Number(value)
+    if (Number.isFinite(numericValue)) {
+      return formatAmount(numericValue / 100)
+    }
+  }
+
+  return null
+}
+
 function mapStoreSnapshot(
   snapshot: DocumentSnapshot<DocumentData> | QueryDocumentSnapshot<DocumentData> | null,
 ): StoreProfile | null {
   if (!snapshot) return null
   const data = snapshot.data()
 
-  const status = coalesceString(data.status, data.contractStatus, data.contract?.status)
+  const status = coalesceString(data.contractStatus, data.status, data.contract?.status)
   const billingPlan = coalesceString(
-    data.billingPlan,
-    data.plan,
-    data.planId,
     data.billing?.plan,
+    data.subscription?.plan,
+    data.plan,
+    data.billingPlan,
+    data.planId,
     data.billing?.planId,
     data.billing?.planName,
-    data.subscription?.plan,
     data.subscription?.planId,
   )
   const paymentStatus = coalesceString(
+    data.billing?.paymentStatus,
+    data.subscription?.status,
     data.paymentStatus,
     data.payment?.status,
     data.billing?.status,
-    data.subscription?.status,
   )
   const paymentProvider = coalesceString(
     data.paymentProvider,
@@ -139,15 +156,16 @@ function mapStoreSnapshot(
     data.billing?.provider,
   )
   const paymentMethod = coalesceString(data.paymentMethod, data.payment?.method, data.billing?.method)
-  const paymentAmount = formatAmount(
-    data.amountPaid ??
+  const paymentAmount =
+    formatAmount(data.billing?.amountPaid) ??
+    formatMinorUnitAmount(data.amountPaid) ??
+    formatAmount(
       data.payment?.amount ??
-      data.payment?.amountPaid ??
-      data.billing?.amount ??
-      data.billing?.amountPaid ??
-      data.subscription?.amount ??
-      data.subscription?.amountPaid,
-  )
+        data.payment?.amountPaid ??
+        data.billing?.amount ??
+        data.subscription?.amount ??
+        data.subscription?.amountPaid,
+    )
   const payment = [paymentStatus, paymentProvider, paymentMethod, paymentAmount]
     .filter((value): value is string => Boolean(value && value.trim()))
     .join(' • ') || null
@@ -168,8 +186,8 @@ function mapStoreSnapshot(
     region: toNullableString(data.region),
     postalCode: toNullableString(data.postalCode),
     country: toNullableString(data.country),
-    createdAt: toTimestamp(data.contractStart ?? data.createdAt ?? data.contract?.start) ?? null,
-    updatedAt: toTimestamp(data.contractEnd ?? data.updatedAt ?? data.contract?.end) ?? null,
+    createdAt: toTimestamp(data.contractStart ?? data.contract?.start ?? data.createdAt) ?? null,
+    updatedAt: toTimestamp(data.contractEnd ?? data.contract?.end ?? data.updatedAt) ?? null,
   }
 }
 
@@ -254,6 +272,9 @@ export default function AccountOverview() {
     return memberships.find(m => m.storeId === storeId) ?? null
   }, [memberships, storeId])
 
+  const workspaceSlug = activeMembership?.workspaceSlug ?? null
+  const profileSelector = workspaceSlug ?? storeId ?? null
+
   const isOwner = activeMembership?.role === 'owner'
 
   const inviteLink = useMemo(() => {
@@ -276,13 +297,13 @@ export default function AccountOverview() {
       '',
       `You have been invited to join ${workspaceName} on Sedifex.`,
       `Sign in here: ${inviteLink}`,
-      storeId ? `Workspace ID: ${storeId}` : null,
+      (workspaceSlug ?? storeId) ? `Workspace ID: ${workspaceSlug ?? storeId}` : null,
       '',
       'Use the email address we invited and the password provided by your workspace admin.',
     ].filter((line): line is string => Boolean(line && line.trim()))
 
     return `mailto:?subject=${subject}&body=${encodeURIComponent(bodyLines.join('\n'))}`
-  }, [inviteLink, profile?.displayName, profile?.name, storeId])
+  }, [inviteLink, profile?.displayName, profile?.name, storeId, workspaceSlug])
 
   useEffect(() => {
     if (copyStatus === 'idle') return
@@ -291,7 +312,7 @@ export default function AccountOverview() {
   }, [copyStatus])
 
   useEffect(() => {
-    if (!storeId) {
+    if (!profileSelector && !storeId) {
       setProfile(null)
       setProfileError(null)
       return
@@ -304,43 +325,39 @@ export default function AccountOverview() {
       setProfileError(null)
 
       try {
-        const workspaceRef = doc(db, 'workspaces', storeId)
-        const workspaceSnapshot = await getDoc(workspaceRef)
-        if (cancelled) return
-
-        if (workspaceSnapshot.exists()) {
-          const mapped = mapStoreSnapshot(workspaceSnapshot)
-          setProfile(mapped)
-          setProfileError(null)
-          return
-        }
-
-        const ref = doc(db, 'stores', storeId)
-        const snapshot = await getDoc(ref)
-        if (cancelled) return
-
-        if (snapshot.exists()) {
-          const mapped = mapStoreSnapshot(snapshot)
-          setProfile(mapped)
-          setProfileError(null)
-          return
-        }
-
-        const storesRef = collection(db, 'stores')
-        const fallbackLookups: Array<{ field: string; value: string }> = [
-          { field: 'ownerId', value: storeId },
-          { field: 'ownerUid', value: storeId },
-          { field: 'storeId', value: storeId },
-        ]
-
-        for (const { field, value } of fallbackLookups) {
-          const fallbackQuery = query(storesRef, where(field, '==', value))
-          const fallbackSnapshot = await getDocs(fallbackQuery)
+        if (profileSelector) {
+          const workspaceRef = doc(db, 'workspaces', profileSelector)
+          const workspaceSnapshot = await getDoc(workspaceRef)
           if (cancelled) return
 
-          const firstMatch = fallbackSnapshot.docs[0] ?? null
-          if (firstMatch) {
-            const mapped = mapStoreSnapshot(firstMatch)
+          if (workspaceSnapshot.exists()) {
+            const mapped = mapStoreSnapshot(workspaceSnapshot)
+            setProfile(mapped)
+            setProfileError(null)
+            return
+          }
+        }
+
+        if (storeId) {
+          const workspacesRef = collection(db, 'workspaces')
+          const workspaceQuery = query(workspacesRef, where('storeId', '==', storeId), limit(1))
+          const workspaceMatches = await getDocs(workspaceQuery)
+          if (cancelled) return
+
+          const firstWorkspace = workspaceMatches.docs[0] ?? null
+          if (firstWorkspace) {
+            const mapped = mapStoreSnapshot(firstWorkspace)
+            setProfile(mapped)
+            setProfileError(null)
+            return
+          }
+
+          const storeRef = doc(db, 'stores', storeId)
+          const storeSnapshot = await getDoc(storeRef)
+          if (cancelled) return
+
+          if (storeSnapshot.exists()) {
+            const mapped = mapStoreSnapshot(storeSnapshot)
             setProfile(mapped)
             setProfileError(null)
             return
@@ -365,7 +382,7 @@ export default function AccountOverview() {
     return () => {
       cancelled = true
     }
-  }, [autoRefreshToken, publish, storeId])
+  }, [autoRefreshToken, profileSelector, publish, storeId])
 
   useEffect(() => {
     if (!storeId) {
