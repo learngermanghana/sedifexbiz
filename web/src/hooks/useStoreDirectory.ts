@@ -39,14 +39,18 @@ function extractWorkspaceSlug(data: Record<string, unknown> | undefined, fallbac
 }
 
 function buildOptionLabel(company: string, slug: string, fallback: string): string {
-  const companyLabel = company.trim()
-  const slugLabel = slug.trim()
+  const trimmedCompany = company.trim()
+  const slugLabel = slug.trim() || fallback
 
-  if (companyLabel && slugLabel && companyLabel !== slugLabel) {
-    return `${companyLabel} (${slugLabel})`
+  if (trimmedCompany) {
+    return `${trimmedCompany} (${slugLabel})`
   }
 
-  return companyLabel || slugLabel || fallback
+  if (slugLabel) {
+    return slugLabel
+  }
+
+  return fallback
 }
 
 export function useStoreDirectory(storeIds: string[]): StoreDirectoryState {

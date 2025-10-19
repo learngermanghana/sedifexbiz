@@ -19,7 +19,60 @@ const BLOCKED_STATUSES = new Set([
   'cancelled',
   'canceled',
   'expired',
+  'payment_due',
+  'payment-due',
+  'payment due',
+  'past_due',
+  'past-due',
+  'past due',
+  'mismatch',
 ])
+
+type WorkspaceDenialReason = 'expired' | 'payment_due' | 'mismatch'
+
+function detectWorkspaceDenialReason(snapshot: TeamMemberSnapshot): WorkspaceDenialReason | null {
+  const statuses = [snapshot.status, snapshot.contractStatus]
+    .map(value => normalizeString(value))
+    .filter((value): value is string => Boolean(value))
+    .map(value => value.toLowerCase())
+
+  if (statuses.some(status => status.includes('mismatch'))) {
+    return 'mismatch'
+  }
+
+  if (
+    statuses.some(status => {
+      if (status.includes('payment') && status.includes('due')) {
+        return true
+      }
+      if (status.includes('past') && status.includes('due')) {
+        return true
+      }
+      return false
+    })
+  ) {
+    return 'payment_due'
+  }
+
+  if (statuses.some(status => status.includes('expired') || status.includes('cancel'))) {
+    return 'expired'
+  }
+
+  return null
+}
+
+function formatDenialMessage(reason: WorkspaceDenialReason): string {
+  switch (reason) {
+    case 'expired':
+      return 'Access denied: expired. Your Sedifex workspace subscription has expired. Contact your Sedifex administrator to restore access.'
+    case 'payment_due':
+      return 'Access denied: payment due. Complete payment with your Sedifex administrator to restore access.'
+    case 'mismatch':
+      return 'Access denied: mismatch. Your Sedifex account is assigned to a different workspace. Confirm your invitation details with your Sedifex administrator.'
+    default:
+      return 'Access denied.'
+  }
+}
 
 function normalizeString(value: unknown): string | null {
   if (typeof value === 'string') {
@@ -71,6 +124,10 @@ async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMe
   }
 
   if (!isWorkspaceActive(lastSnapshot)) {
+    const reason = detectWorkspaceDenialReason(lastSnapshot)
+    if (reason) {
+      throw new Error(formatDenialMessage(reason))
+    }
     throw new Error('Your Sedifex workspace contract is not active.')
   }
 
