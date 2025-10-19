@@ -2,17 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Timestamp,
   collection,
-  doc,
-  getDoc,
   getDocs,
-  limit,
   query,
   where,
   type DocumentData,
-  type DocumentSnapshot,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { db, rosterDb } from '../firebase'
+import { rosterDb } from '../lib/db'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
 import { manageStaffAccount } from '../controllers/storeController'
@@ -20,28 +16,15 @@ import { useToast } from '../components/ToastProvider'
 import './AccountOverview.css'
 import { useAutoRerun } from '../hooks/useAutoRerun'
 import { normalizeStaffRole } from '../utils/normalizeStaffRole'
+import { useAuthUser } from '../hooks/useAuthUser'
+import {
+  getActiveStoreId,
+  loadWorkspaceProfile,
+  mapAccount,
+  type WorkspaceAccountProfile,
+} from '../data/loadWorkspace'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-type StoreProfile = {
-  name: string | null
-  displayName: string | null
-  email: string | null
-  phone: string | null
-  status: string | null
-  timezone: string | null
-  currency: string | null
-  billingPlan: string | null
-  payment: string | null
-  addressLine1: string | null
-  addressLine2: string | null
-  city: string | null
-  region: string | null
-  postalCode: string | null
-  country: string | null
-  createdAt: Timestamp | null
-  updatedAt: Timestamp | null
-}
 
 type RosterMember = {
   id: string
@@ -60,135 +43,8 @@ function toNullableString(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' ? value : null
 }
 
-function coalesceString(...values: unknown[]): string | null {
-  for (const value of values) {
-    const normalized = toNullableString(value)
-    if (normalized) {
-      return normalized
-    }
-  }
-
-  return null
-}
-
 function isTimestamp(value: unknown): value is Timestamp {
   return typeof value === 'object' && value !== null && typeof (value as Timestamp).toDate === 'function'
-}
-
-function toTimestamp(value: unknown): Timestamp | null {
-  if (isTimestamp(value)) {
-    return value
-  }
-
-  if (value instanceof Date) {
-    return Timestamp.fromDate(value)
-  }
-
-  if (typeof value === 'string') {
-    const parsed = new Date(value)
-    if (!Number.isNaN(parsed.getTime())) {
-      return Timestamp.fromDate(parsed)
-    }
-  }
-
-  return null
-}
-
-function formatAmount(value: unknown): string | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  }
-
-  if (typeof value === 'string' && value.trim()) {
-    const numericValue = Number(value)
-    if (Number.isFinite(numericValue)) {
-      return numericValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    }
-
-    return value
-  }
-
-  return null
-}
-
-function formatMinorUnitAmount(value: unknown): string | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return formatAmount(value / 100)
-  }
-
-  if (typeof value === 'string' && value.trim()) {
-    const numericValue = Number(value)
-    if (Number.isFinite(numericValue)) {
-      return formatAmount(numericValue / 100)
-    }
-  }
-
-  return null
-}
-
-function mapStoreSnapshot(
-  snapshot: DocumentSnapshot<DocumentData> | QueryDocumentSnapshot<DocumentData> | null,
-): StoreProfile | null {
-  if (!snapshot) return null
-  const data = snapshot.data()
-
-  const status = coalesceString(data.contractStatus, data.status, data.contract?.status)
-  const billingPlan = coalesceString(
-    data.billing?.plan,
-    data.subscription?.plan,
-    data.plan,
-    data.billingPlan,
-    data.planId,
-    data.billing?.planId,
-    data.billing?.planName,
-    data.subscription?.planId,
-  )
-  const paymentStatus = coalesceString(
-    data.billing?.paymentStatus,
-    data.subscription?.status,
-    data.paymentStatus,
-    data.payment?.status,
-    data.billing?.status,
-  )
-  const paymentProvider = coalesceString(
-    data.paymentProvider,
-    data.payment?.provider,
-    data.billing?.provider,
-  )
-  const paymentMethod = coalesceString(data.paymentMethod, data.payment?.method, data.billing?.method)
-  const paymentAmount =
-    formatAmount(data.billing?.amountPaid) ??
-    formatMinorUnitAmount(data.amountPaid) ??
-    formatAmount(
-      data.payment?.amount ??
-        data.payment?.amountPaid ??
-        data.billing?.amount ??
-        data.subscription?.amount ??
-        data.subscription?.amountPaid,
-    )
-  const payment = [paymentStatus, paymentProvider, paymentMethod, paymentAmount]
-    .filter((value): value is string => Boolean(value && value.trim()))
-    .join(' • ') || null
-
-  return {
-    name: toNullableString(data.name ?? data.storeId ?? snapshot.id),
-    displayName: toNullableString(data.displayName ?? data.company ?? data.name ?? data.storeId),
-    email: toNullableString(data.email ?? data.contactEmail),
-    phone: toNullableString(data.phone),
-    status,
-    timezone: toNullableString(data.timezone),
-    currency: toNullableString(data.currency ?? data.billing?.currency ?? data.subscription?.currency),
-    billingPlan,
-    payment,
-    addressLine1: toNullableString(data.addressLine1),
-    addressLine2: toNullableString(data.addressLine2),
-    city: toNullableString(data.city),
-    region: toNullableString(data.region),
-    postalCode: toNullableString(data.postalCode),
-    country: toNullableString(data.country),
-    createdAt: toTimestamp(data.contractStart ?? data.contract?.start ?? data.createdAt) ?? null,
-    updatedAt: toTimestamp(data.contractEnd ?? data.contract?.end ?? data.updatedAt) ?? null,
-  }
 }
 
 function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): RosterMember {
@@ -215,14 +71,35 @@ function formatValue(value: string | null) {
   return value ?? '—'
 }
 
-function formatTimestamp(timestamp: Timestamp | null) {
-  if (!timestamp) return '—'
+function formatTimestamp(value: Timestamp | Date | null) {
+  if (!value) return '—'
   try {
-    return timestamp.toDate().toLocaleString()
+    if (value instanceof Timestamp) {
+      return value.toDate().toLocaleString()
+    }
+
+    if (value instanceof Date) {
+      return value.toLocaleString()
+    }
+
+    if (typeof value === 'object' && value && typeof (value as Timestamp).toDate === 'function') {
+      const date = (value as Timestamp).toDate()
+      return date.toLocaleString()
+    }
   } catch (error) {
     console.warn('Unable to render timestamp', error)
-    return '—'
   }
+
+  return '—'
+}
+
+function formatAmountPaid(amount: number | null, currency: string | null): string {
+  if (typeof amount === 'number' && Number.isFinite(amount)) {
+    const formatted = amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    return currency ? `${currency} ${formatted}` : formatted
+  }
+
+  return '—'
 }
 
 async function copyToClipboard(text: string) {
@@ -246,12 +123,15 @@ async function copyToClipboard(text: string) {
 }
 
 export default function AccountOverview() {
+  const user = useAuthUser()
+  const uid = user?.uid ?? null
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
   const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships()
   const { publish } = useToast()
-  const { token: autoRefreshToken, trigger: requestAutoRefresh } = useAutoRerun(Boolean(storeId))
+  const [resolvedStoreId, setResolvedStoreId] = useState<string | null>(storeId ?? null)
+  const { token: autoRefreshToken, trigger: requestAutoRefresh } = useAutoRerun(Boolean(resolvedStoreId))
 
-  const [profile, setProfile] = useState<StoreProfile | null>(null)
+  const [profile, setProfile] = useState<WorkspaceAccountProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
 
@@ -268,24 +148,35 @@ export default function AccountOverview() {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle')
 
   const activeMembership = useMemo(() => {
-    if (!storeId) return null
-    return memberships.find(m => m.storeId === storeId) ?? null
-  }, [memberships, storeId])
+    if (storeId) {
+      return memberships.find(m => m.storeId === storeId) ?? null
+    }
+
+    if (resolvedStoreId) {
+      return memberships.find(m => m.storeId === resolvedStoreId) ?? null
+    }
+
+    if (memberships.length === 1) {
+      return memberships[0]
+    }
+
+    return null
+  }, [memberships, resolvedStoreId, storeId])
 
   const workspaceSlug = activeMembership?.workspaceSlug ?? null
-  const profileSelector = workspaceSlug ?? storeId ?? null
+  const profileSlug = workspaceSlug ?? null
 
   const isOwner = activeMembership?.role === 'owner'
 
   const inviteLink = useMemo(() => {
-    if (!storeId) return ''
+    if (!resolvedStoreId) return ''
     if (typeof window === 'undefined') return ''
 
     const { origin, pathname } = window.location
     const base = `${origin}${pathname}`
     const normalizedBase = base.endsWith('/') ? base : `${base}/`
     return `${normalizedBase}#/`
-  }, [storeId])
+  }, [resolvedStoreId])
 
   const inviteMailtoHref = useMemo(() => {
     if (!inviteLink) return ''
@@ -297,13 +188,13 @@ export default function AccountOverview() {
       '',
       `You have been invited to join ${workspaceName} on Sedifex.`,
       `Sign in here: ${inviteLink}`,
-      (workspaceSlug ?? storeId) ? `Workspace ID: ${workspaceSlug ?? storeId}` : null,
+      (workspaceSlug ?? resolvedStoreId) ? `Workspace ID: ${workspaceSlug ?? resolvedStoreId}` : null,
       '',
       'Use the email address we invited and the password provided by your workspace admin.',
     ].filter((line): line is string => Boolean(line && line.trim()))
 
     return `mailto:?subject=${subject}&body=${encodeURIComponent(bodyLines.join('\n'))}`
-  }, [inviteLink, profile?.displayName, profile?.name, storeId, workspaceSlug])
+  }, [inviteLink, profile?.displayName, profile?.name, resolvedStoreId, workspaceSlug])
 
   useEffect(() => {
     if (copyStatus === 'idle') return
@@ -312,7 +203,45 @@ export default function AccountOverview() {
   }, [copyStatus])
 
   useEffect(() => {
-    if (!profileSelector && !storeId) {
+    let cancelled = false
+
+    if (storeId) {
+      setResolvedStoreId(previous => (previous === storeId ? previous : storeId))
+      return () => {
+        cancelled = true
+      }
+    }
+
+    if (!uid) {
+      setResolvedStoreId(null)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    async function resolveStoreId() {
+      try {
+        const nextStoreId = await getActiveStoreId(uid)
+        if (!cancelled) {
+          setResolvedStoreId(nextStoreId)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to resolve active store ID', error)
+          setResolvedStoreId(null)
+        }
+      }
+    }
+
+    void resolveStoreId()
+
+    return () => {
+      cancelled = true
+    }
+  }, [storeId, uid])
+
+  useEffect(() => {
+    if (!profileSlug && !resolvedStoreId) {
       setProfile(null)
       setProfileError(null)
       return
@@ -325,47 +254,18 @@ export default function AccountOverview() {
       setProfileError(null)
 
       try {
-        if (profileSelector) {
-          const workspaceRef = doc(db, 'workspaces', profileSelector)
-          const workspaceSnapshot = await getDoc(workspaceRef)
-          if (cancelled) return
+        const workspace = await loadWorkspaceProfile({ slug: profileSlug, storeId: resolvedStoreId })
+        if (cancelled) return
 
-          if (workspaceSnapshot.exists()) {
-            const mapped = mapStoreSnapshot(workspaceSnapshot)
-            setProfile(mapped)
-            setProfileError(null)
-            return
-          }
+        if (!workspace) {
+          setProfile(null)
+          setProfileError('We could not find this workspace profile.')
+          return
         }
 
-        if (storeId) {
-          const workspacesRef = collection(db, 'workspaces')
-          const workspaceQuery = query(workspacesRef, where('storeId', '==', storeId), limit(1))
-          const workspaceMatches = await getDocs(workspaceQuery)
-          if (cancelled) return
-
-          const firstWorkspace = workspaceMatches.docs[0] ?? null
-          if (firstWorkspace) {
-            const mapped = mapStoreSnapshot(firstWorkspace)
-            setProfile(mapped)
-            setProfileError(null)
-            return
-          }
-
-          const storeRef = doc(db, 'stores', storeId)
-          const storeSnapshot = await getDoc(storeRef)
-          if (cancelled) return
-
-          if (storeSnapshot.exists()) {
-            const mapped = mapStoreSnapshot(storeSnapshot)
-            setProfile(mapped)
-            setProfileError(null)
-            return
-          }
-        }
-
-        setProfile(null)
-        setProfileError('We could not find this workspace profile.')
+        const mapped = mapAccount(workspace)
+        setProfile(mapped)
+        setProfileError(null)
       } catch (error) {
         if (cancelled) return
         console.error('Failed to load store profile', error)
@@ -382,10 +282,10 @@ export default function AccountOverview() {
     return () => {
       cancelled = true
     }
-  }, [autoRefreshToken, profileSelector, publish, storeId])
+  }, [autoRefreshToken, profileSlug, publish, resolvedStoreId])
 
   useEffect(() => {
-    if (!storeId) {
+    if (!resolvedStoreId) {
       setRoster([])
       setRosterError(null)
       return
@@ -397,7 +297,7 @@ export default function AccountOverview() {
     setRosterError(null)
 
     const membersRef = collection(rosterDb, 'teamMembers')
-    const rosterQuery = query(membersRef, where('storeId', '==', storeId))
+    const rosterQuery = query(membersRef, where('storeId', '==', resolvedStoreId))
     getDocs(rosterQuery)
       .then(snapshot => {
         if (cancelled) return
@@ -419,10 +319,10 @@ export default function AccountOverview() {
     return () => {
       cancelled = true
     }
-  }, [autoRefreshToken, publish, rosterVersion, storeId])
+  }, [autoRefreshToken, publish, resolvedStoreId, rosterVersion])
 
   function validateForm() {
-    if (!storeId) {
+    if (!resolvedStoreId) {
       return 'A storeId is required to manage staff.'
     }
 
@@ -458,10 +358,10 @@ export default function AccountOverview() {
       return
     }
 
-    if (!storeId) return
+    if (!resolvedStoreId) return
 
     const payload = {
-      storeId,
+      storeId: resolvedStoreId,
       email: email.trim().toLowerCase(),
       role,
       password: password.trim() || undefined,
@@ -504,7 +404,7 @@ export default function AccountOverview() {
     return <div role="alert">{storeError}</div>
   }
 
-  if (!storeId && !storeLoading) {
+  if (!resolvedStoreId && !storeLoading) {
     return (
       <div className="account-overview" role="status">
         <h1>Account overview</h1>
@@ -593,12 +493,24 @@ export default function AccountOverview() {
             <dd>{formatValue(profile?.status ?? null)}</dd>
           </div>
           <div>
-            <dt>Billing plan</dt>
-            <dd>{formatValue(profile?.billingPlan ?? null)}</dd>
+            <dt>Plan</dt>
+            <dd>{formatValue(profile?.plan ?? null)}</dd>
           </div>
           <div>
-            <dt>Payment</dt>
-            <dd>{formatValue(profile?.payment ?? null)}</dd>
+            <dt>Payment status</dt>
+            <dd>{formatValue(profile?.paymentStatus ?? null)}</dd>
+          </div>
+          <div>
+            <dt>Contract start</dt>
+            <dd>{formatTimestamp(profile?.contractStart ?? null)}</dd>
+          </div>
+          <div>
+            <dt>Contract end</dt>
+            <dd>{formatTimestamp(profile?.contractEnd ?? null)}</dd>
+          </div>
+          <div>
+            <dt>Amount paid</dt>
+            <dd>{formatAmountPaid(profile?.amountPaid ?? null, profile?.currency ?? null)}</dd>
           </div>
         </dl>
       </section>

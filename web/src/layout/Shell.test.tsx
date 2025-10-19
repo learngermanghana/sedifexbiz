@@ -83,8 +83,8 @@ describe('Shell', () => {
 
     mockUseStoreDirectory.mockReturnValue({
       options: [
-        { storeId: 'store-1', slug: 'downtown-hq', label: 'Downtown HQ (downtown-hq)' },
-        { storeId: 'store-2', slug: 'uptown-kiosk', label: 'Uptown Kiosk (uptown-kiosk)' },
+        { storeId: 'store-1', slug: 'downtown-hq', company: 'Downtown HQ', label: 'Downtown HQ (downtown-hq)' },
+        { storeId: 'store-2', slug: 'uptown-kiosk', company: 'Uptown Kiosk', label: 'Uptown Kiosk (uptown-kiosk)' },
       ],
       loading: false,
       error: null,
