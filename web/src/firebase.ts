@@ -29,15 +29,16 @@ const FIRESTORE_SETTINGS = {
 initializeFirestore(app, FIRESTORE_SETTINGS)
 initializeFirestore(app, FIRESTORE_SETTINGS, 'roster')
 
-export const db = getFirestore(app)
-export const rosterDb = getFirestore(app, 'roster')
+const primaryDb = getFirestore(app)
 
-// --- Offline persistence (browser-only guards) ---
 if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).catch(() => {
+  enableIndexedDbPersistence(primaryDb).catch(() => {
     // multi-tab/unsupported; safe to ignore
   })
 }
+
+// initialize roster persistence lazily when requested through the shared handles
+getFirestore(app, 'roster')
 
 // --- Helpers ---
 export function setupRecaptcha(containerId = 'recaptcha-container') {

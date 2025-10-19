@@ -14,7 +14,8 @@ import {
 } from 'firebase/firestore'
 import { Timestamp } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
-import { db } from '../firebase'
+
+import { db } from '../lib/db'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Customers.css'
 import {

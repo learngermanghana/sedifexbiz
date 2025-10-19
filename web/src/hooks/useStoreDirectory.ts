@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { doc, getDoc } from 'firebase/firestore'
-import { db } from '../firebase'
+
+import { loadWorkspaceProfile, mapAccount } from '../data/loadWorkspace'
 
 export interface StoreDirectoryOption {
   storeId: string
   slug: string
+  company: string
   label: string
 }
 
@@ -16,26 +17,6 @@ interface StoreDirectoryState {
 
 function normalizeStoreId(storeId: string): string {
   return storeId.trim()
-}
-
-function extractCompanyName(data: Record<string, unknown> | undefined, fallback: string): string {
-  if (!data) return fallback
-
-  const company = typeof data.company === 'string' ? data.company.trim() : ''
-  const displayName = typeof data.displayName === 'string' ? data.displayName.trim() : ''
-  const name = typeof data.name === 'string' ? data.name.trim() : ''
-
-  return company || displayName || name || fallback
-}
-
-function extractWorkspaceSlug(data: Record<string, unknown> | undefined, fallback: string): string {
-  if (!data) return fallback
-
-  const workspaceSlug = typeof data.workspaceSlug === 'string' ? data.workspaceSlug.trim() : ''
-  const slug = typeof data.slug === 'string' ? data.slug.trim() : ''
-  const storeSlug = typeof data.storeSlug === 'string' ? data.storeSlug.trim() : ''
-
-  return workspaceSlug || slug || storeSlug || fallback
 }
 
 function buildOptionLabel(company: string, slug: string, fallback: string): string {
@@ -51,6 +32,11 @@ function buildOptionLabel(company: string, slug: string, fallback: string): stri
   }
 
   return fallback
+}
+
+function fallbackOption(storeId: string): StoreDirectoryOption {
+  const label = buildOptionLabel(storeId, storeId, storeId)
+  return { storeId, slug: storeId, company: storeId, label }
 }
 
 export function useStoreDirectory(storeIds: string[]): StoreDirectoryState {
@@ -88,28 +74,21 @@ export function useStoreDirectory(storeIds: string[]): StoreDirectoryState {
         const entries = await Promise.all(
           normalizedIds.map(async storeId => {
             try {
-              const snapshot = await getDoc(doc(db, 'stores', storeId))
-              if (!snapshot.exists()) {
-                return {
-                  storeId,
-                  slug: storeId,
-                  label: storeId,
-                }
+              const workspace = await loadWorkspaceProfile({ storeId })
+              if (!workspace) {
+                return fallbackOption(storeId)
               }
 
-              const data = snapshot.data()
-              const slug = extractWorkspaceSlug(data, storeId)
-              const company = extractCompanyName(data, slug)
-              const label = buildOptionLabel(company, slug, storeId)
+              const profile = mapAccount(workspace)
+              const slug = profile.slug ?? storeId
+              const company = profile.company ?? profile.displayName ?? slug
+              const resolvedCompany = company ?? slug
+              const label = buildOptionLabel(resolvedCompany, slug, storeId)
 
-              return { storeId, slug, label }
+              return { storeId, slug, company: resolvedCompany, label }
             } catch (innerError) {
               console.error('Failed to load store label', innerError)
-              return {
-                storeId,
-                slug: storeId,
-                label: storeId,
-              }
+              return fallbackOption(storeId)
             }
           }),
         )
@@ -140,13 +119,7 @@ export function useStoreDirectory(storeIds: string[]): StoreDirectoryState {
 
   const options = useMemo<StoreDirectoryOption[]>(
     () =>
-      normalizedIds.map(storeId =>
-        directory[storeId] ?? {
-          storeId,
-          slug: storeId,
-          label: storeId,
-        },
-      ),
+      normalizedIds.map(storeId => directory[storeId] ?? fallbackOption(storeId)),
     [directory, normalizedIds],
   )
 
