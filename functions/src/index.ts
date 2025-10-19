@@ -1084,14 +1084,29 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     memberRef.get(),
     rosterEmailRef ? rosterEmailRef.get() : Promise.resolve(null),
   ])
-  const existingMember = (memberSnap.data() ?? {}) as admin.firestore.DocumentData
-  const emailMember = (rosterEmailSnap?.data() ?? {}) as admin.firestore.DocumentData
+  let existingMember = (memberSnap.data() ?? {}) as admin.firestore.DocumentData
+  let emailMember = (rosterEmailSnap?.data() ?? {}) as admin.firestore.DocumentData
+  let rosterEntrySource: 'roster' | 'default' = 'roster'
 
   if (!memberSnap.exists && (!rosterEmailSnap || !rosterEmailSnap.exists)) {
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      'We could not find a workspace assignment for this account. Reach out to your Sedifex administrator.',
-    )
+    const defaultTeamMembersCollection = defaultDb.collection('teamMembers')
+    const defaultMemberRef = defaultTeamMembersCollection.doc(uid)
+    const defaultEmailRef = emailFromToken ? defaultTeamMembersCollection.doc(emailFromToken) : null
+    const [defaultMemberSnap, defaultEmailSnap] = await Promise.all([
+      defaultMemberRef.get(),
+      defaultEmailRef ? defaultEmailRef.get() : Promise.resolve(null),
+    ])
+
+    if (!defaultMemberSnap.exists && (!defaultEmailSnap || !defaultEmailSnap.exists)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'We could not find a workspace assignment for this account. Reach out to your Sedifex administrator.',
+      )
+    }
+
+    existingMember = (defaultMemberSnap.data() ?? {}) as admin.firestore.DocumentData
+    emailMember = (defaultEmailSnap?.data() ?? {}) as admin.firestore.DocumentData
+    rosterEntrySource = 'default'
   }
 
   const rosterWorkspaceSlugFromMember =
@@ -1142,6 +1157,19 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
 
   if (!rosterStoreId && !rosterWorkspaceSlug) {
     throw new functions.https.HttpsError('failed-precondition', missingWorkspaceMessage)
+  }
+
+  if (rosterEntrySource === 'default') {
+    const writes: Promise<unknown>[] = []
+    if (!memberSnap.exists) {
+      writes.push(memberRef.set(rosterEntry, { merge: true }))
+    }
+    if (rosterEmailRef && (!rosterEmailSnap || !rosterEmailSnap.exists)) {
+      writes.push(rosterEmailRef.set(rosterEntry, { merge: true }))
+    }
+    if (writes.length > 0) {
+      await Promise.all(writes)
+    }
   }
 
   let resolvedWorkspaceSlug = rosterWorkspaceSlug
