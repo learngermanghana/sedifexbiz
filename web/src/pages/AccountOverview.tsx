@@ -8,7 +8,7 @@ import {
   type DocumentData,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { rosterDb } from '../lib/db'
+import { rosterDb } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
 import { manageStaffAccount } from '../controllers/storeController'

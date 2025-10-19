@@ -11,7 +11,7 @@ import {
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
 
-import { db, rosterDb } from '../lib/db'
+import { db, rosterDb } from '../firebase'
 
 export type WorkspaceRecord = Record<string, unknown> & { id: string }
 

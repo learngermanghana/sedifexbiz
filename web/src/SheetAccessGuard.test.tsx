@@ -26,8 +26,10 @@ vi.mock('firebase/firestore', () => ({
 
 const signOutMock = vi.fn().mockResolvedValue(undefined)
 
+const mockRosterDb = { name: 'roster-db' }
 vi.mock('./firebase', () => ({
   auth: { signOut: signOutMock },
+  rosterDb: mockRosterDb,
 }))
 
 const persistActiveStoreMock = vi.fn()
@@ -39,9 +41,6 @@ vi.mock('./utils/activeStoreStorage', () => ({
   clearActiveStoreIdForUser: (...args: Parameters<typeof clearActiveStoreMock>) =>
     clearActiveStoreMock(...args),
 }))
-
-const mockRosterDb = { name: 'roster-db' }
-vi.mock('./lib/db', () => ({ rosterDb: mockRosterDb }))
 
 describe('SheetAccessGuard', () => {
   beforeEach(() => {
