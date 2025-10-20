@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { collection, query, orderBy, limit, onSnapshot, doc, where } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot, doc, where, db } from '../lib/db'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 
 import { functions as cloudFunctions } from '../firebase'
-import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Sell.css'

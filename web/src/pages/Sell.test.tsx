@@ -58,7 +58,6 @@ vi.mock('../utils/offlineCache', () => ({
 }))
 
 vi.mock('../firebase', () => ({
-  db: {},
   functions: {},
 }))
 
@@ -114,7 +113,8 @@ const onSnapshotMock = vi.fn((queryRef: { collection: { path: string } }, callba
   }
 })
 
-vi.mock('firebase/firestore', () => ({
+vi.mock('../lib/db', () => ({
+  db: {},
   collection: (
     ...args: Parameters<typeof collectionMock>
   ) => collectionMock(...args),

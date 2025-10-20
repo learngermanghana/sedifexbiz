@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, where, type Timestamp } from 'firebase/firestore'
-
-import { db } from '../firebase'
+import {
+  collection,
+  doc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  where,
+  type Timestamp,
+  db,
+} from '../lib/db'
 import { useAuthUser } from './useAuthUser'
 import { useActiveStore } from './useActiveStore'
 import { useToast } from '../components/ToastProvider'

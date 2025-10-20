@@ -6,12 +6,11 @@ import {
   collection,
   getDocs,
   query,
+  rosterDb,
   where,
   type DocumentData,
   type QueryDocumentSnapshot,
-} from 'firebase/firestore';
-
-import { rosterDb } from '../lib/db'; // roster DB handle (default DB is used inside the loader)
+} from '../lib/db'; // roster DB handle (default DB is used inside the loader)
 import { useActiveStore } from '../hooks/useActiveStore';
 import { useMemberships, type Membership } from '../hooks/useMemberships';
 import { manageStaffAccount } from '../controllers/storeController';

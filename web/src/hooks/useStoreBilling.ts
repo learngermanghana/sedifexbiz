@@ -1,7 +1,5 @@
 // web/src/hooks/useStoreBilling.ts
-import { doc, onSnapshot } from 'firebase/firestore'
-
-import { db } from '../firebase'
+import { doc, onSnapshot, db } from '../lib/db'
 import { useEffect, useState } from 'react'
 
 export function useStoreBilling(storeId?: string | null) {

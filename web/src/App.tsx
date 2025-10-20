@@ -6,10 +6,17 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
 } from 'firebase/auth'
-import { doc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore'
+import {
+  Timestamp,
+  db,
+  doc,
+  rosterDb,
+  serverTimestamp,
+  setDoc,
+} from './lib/db'
 import { FirebaseError } from 'firebase/app'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { auth, db, rosterDb } from './firebase'
+import { auth } from './firebase'
 import './App.css'
 import './pwa'
 import { useToast } from './components/ToastProvider'

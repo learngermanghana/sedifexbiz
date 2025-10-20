@@ -10,7 +10,10 @@ const queryMock = vi.fn()
 const whereMock = vi.fn()
 const limitMock = vi.fn()
 
-vi.mock('firebase/firestore', () => ({
+const mockDb = { name: 'primary-db' }
+const mockRosterDb = { name: 'roster-db' }
+
+vi.mock('../lib/db', () => ({
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
   getDoc: (...args: Parameters<typeof getDocMock>) => getDocMock(...args),
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
@@ -18,12 +21,6 @@ vi.mock('firebase/firestore', () => ({
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   limit: (...args: Parameters<typeof limitMock>) => limitMock(...args),
-}))
-
-const mockDb = { name: 'primary-db' }
-const mockRosterDb = { name: 'roster-db' }
-
-vi.mock('../firebase', () => ({
   db: mockDb,
   rosterDb: mockRosterDb,
 }))

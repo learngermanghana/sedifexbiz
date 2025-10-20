@@ -1,17 +1,17 @@
 import {
   collection,
+  db,
   doc,
   getDoc,
   getDocs,
   limit,
   query,
+  rosterDb,
   where,
   type DocumentData,
   type DocumentSnapshot,
   type QueryDocumentSnapshot,
-} from 'firebase/firestore'
-
-import { db, rosterDb } from '../firebase'
+} from '../lib/db'
 
 export type WorkspaceRecord = Record<string, unknown> & { id: string }
 
