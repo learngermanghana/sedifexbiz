@@ -1,18 +1,29 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+// Minimal request/response types so we do not depend on "@vercel/node"
+type WebhookRequest = {
+  method?: string;
+  headers?: Record<string, string | string[] | undefined>;
+  body?: any;
+};
+
+type WebhookResponse = {
+  status: (statusCode: number) => WebhookResponse;
+  send: (body: unknown) => WebhookResponse;
+};
+
 // ⬇️ add ".js" in the local import
 import { db } from "./_firebase-admin.js";
 import { createHmac } from "node:crypto";
 
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: WebhookRequest, res: WebhookResponse) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   const secret = process.env.PAYSTACK_SECRET;
   if (!secret) return res.status(500).send("PAYSTACK_SECRET not configured");
 
-  const signature = req.headers["x-paystack-signature"] as string | undefined;
+  const signature = req.headers?.["x-paystack-signature"] as string | undefined;
   const raw = typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
-  const hash = crypto.createHmac("sha512", secret).update(raw).digest("hex");
+  const hash = createHmac("sha512", secret).update(raw).digest("hex");
   if (!signature || signature !== hash) return res.status(403).send("Invalid signature");
 
   const event = req.body?.event as string;
