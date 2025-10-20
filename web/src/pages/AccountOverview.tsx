@@ -11,7 +11,7 @@ import {
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 
-import { rosterDb } from '../lib/db'; // ← shared Firestore handles (roster DB)
+import { rosterDb } from '../lib/db'; // roster DB handle (default DB is used inside the loader)
 import { useActiveStore } from '../hooks/useActiveStore';
 import { useMemberships, type Membership } from '../hooks/useMemberships';
 import { manageStaffAccount } from '../controllers/storeController';
@@ -21,9 +21,10 @@ import { useAutoRerun } from '../hooks/useAutoRerun';
 import { normalizeStaffRole } from '../utils/normalizeStaffRole';
 import { useAuthUser } from '../hooks/useAuthUser';
 
-// ⬇️ selector value is the current WORKSPACE SLUG from the header dropdown
+// Current workspace slug selected in the header (provider you added)
 import { useSelectedWorkspaceSlug } from '../hooks/useWorkspaceSelect';
 
+// Slug-first loader + roster-backed store resolution + mapper
 import {
   getActiveStoreId,
   loadWorkspaceProfile,
@@ -103,31 +104,29 @@ async function copyToClipboard(text: string) {
     await navigator.clipboard.writeText(text);
     return;
   }
-  const textArea = document.createElement('textarea');
-  textArea.value = text;
-  textArea.setAttribute('readonly', '');
-  textArea.style.position = 'fixed';
-  textArea.style.top = '-9999px';
-  textArea.style.left = '-9999px';
-  document.body.appendChild(textArea);
-  textArea.select();
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.top = '-9999px';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
   document.execCommand('copy');
-  document.body.removeChild(textArea);
+  document.body.removeChild(ta);
 }
 
 export default function AccountOverview() {
   const user = useAuthUser();
   const uid = user?.uid ?? null;
 
-  // storeId from legacy/roster-based active store
+  // Legacy/roster-based active store (still useful for roster queries)
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore();
 
-  // memberships (for role display etc.)
   const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships();
-
   const { publish } = useToast();
 
-  // current slug from the header selector (SOURCE OF TRUTH for workspace)
+  // SOURCE OF TRUTH for workspace choice
   const selectedSlug = useSelectedWorkspaceSlug();
 
   const [resolvedStoreId, setResolvedStoreId] = useState<string | null>(storeId ?? null);
@@ -155,7 +154,7 @@ export default function AccountOverview() {
     return memberships.length === 1 ? memberships[0] : null;
   }, [memberships, resolvedStoreId, storeId]);
 
-  // prefer selector slug; fall back to membership slug if selector not set yet
+  // Prefer the UI-selected slug; fall back to membership’s slug if selector not set yet
   const profileSlug = selectedSlug || activeMembership?.workspaceSlug || null;
   const isOwner = activeMembership?.role === 'owner';
 
@@ -163,15 +162,15 @@ export default function AccountOverview() {
     if (!resolvedStoreId || typeof window === 'undefined') return '';
     const { origin, pathname } = window.location;
     const base = `${origin}${pathname}`;
-    const normalizedBase = base.endsWith('/') ? base : `${base}/`;
-    return `${normalizedBase}#/`;
+    const normalized = base.endsWith('/') ? base : `${base}/`;
+    return `${normalized}#/`;
   }, [resolvedStoreId]);
 
   const inviteMailtoHref = useMemo(() => {
     if (!inviteLink) return '';
     const workspaceName = profile?.displayName ?? profile?.name ?? 'our Sedifex workspace';
     const subject = encodeURIComponent(`Join ${workspaceName} on Sedifex`);
-    const bodyLines = [
+    const body = [
       'Hi there,',
       '',
       `You have been invited to join ${workspaceName} on Sedifex.`,
@@ -179,8 +178,10 @@ export default function AccountOverview() {
       (profileSlug ?? resolvedStoreId) ? `Workspace ID: ${profileSlug ?? resolvedStoreId}` : null,
       '',
       'Use the email address we invited and the password provided by your workspace admin.',
-    ].filter((line): line is string => Boolean(line && line.trim()));
-    return `mailto:?subject=${subject}&body=${encodeURIComponent(bodyLines.join('\n'))}`;
+    ]
+      .filter(Boolean)
+      .join('\n');
+    return `mailto:?subject=${subject}&body=${encodeURIComponent(body)}`;
   }, [inviteLink, profile?.displayName, profile?.name, resolvedStoreId, profileSlug]);
 
   useEffect(() => {
@@ -189,7 +190,7 @@ export default function AccountOverview() {
     return () => clearTimeout(t);
   }, [copyStatus]);
 
-  // Resolve storeId (from roster DB) when not provided by hook
+  // Resolve storeId from roster if hook didn’t provide one
   useEffect(() => {
     let cancelled = false;
 
@@ -218,7 +219,7 @@ export default function AccountOverview() {
     return () => { cancelled = true; };
   }, [storeId, uid]);
 
-  // SLUG-FIRST workspace load (falls back to storeId->query)
+  // SLUG-FIRST workspace load (falls back to storeId → query)
   useEffect(() => {
     if (!profileSlug && !resolvedStoreId) {
       setProfile(null);
@@ -233,19 +234,23 @@ export default function AccountOverview() {
       setProfileError(null);
 
       try {
-        // Debug (optional): console.log('AA slug', profileSlug, 'storeId', resolvedStoreId);
-        const workspace = await loadWorkspaceProfile({ slug: profileSlug, storeId: resolvedStoreId });
+        const ws = await loadWorkspaceProfile({ slug: profileSlug, storeId: resolvedStoreId });
         if (cancelled) return;
 
-        if (!workspace) {
+        if (!ws) {
           setProfile(null);
           setProfileError('We could not find this workspace profile.');
           return;
         }
 
-        const mapped = mapAccount(workspace);
+        const mapped = mapAccount(ws);
         setProfile(mapped);
         setProfileError(null);
+
+        // Keep roster in sync with the loaded workspace
+        if (mapped.storeId && mapped.storeId !== resolvedStoreId) {
+          setResolvedStoreId(mapped.storeId);
+        }
       } catch (error) {
         if (cancelled) return;
         console.error('Failed to load store profile', error);
@@ -471,6 +476,7 @@ export default function AccountOverview() {
 
         {isOwner ? (
           <>
+            {/* Invite link */}
             {inviteLink && (
               <section className="account-overview__invite" aria-labelledby="account-overview-invite-heading">
                 <h3 id="account-overview-invite-heading">Share an invite link</h3>
@@ -482,25 +488,16 @@ export default function AccountOverview() {
                     type="url"
                     value={inviteLink}
                     readOnly
-                    onFocus={event => event.target.select()}
+                    onFocus={e => e.target.select()}
                     className="account-overview__invite-input"
                     aria-label="Invite link"
                     data-testid="account-invite-link"
                   />
-                  <button
-                    type="button"
-                    className="button button--outline"
-                    onClick={handleCopyInviteLink}
-                    data-testid="account-copy-invite-link"
-                  >
+                  <button type="button" className="button button--outline" onClick={() => copyToClipboard(inviteLink)}>
                     {copyStatus === 'copied' ? 'Link copied' : 'Copy invite link'}
                   </button>
                   {inviteMailtoHref && (
-                    <a
-                      className="button button--ghost"
-                      href={inviteMailtoHref}
-                      data-testid="account-share-invite-email"
-                    >
+                    <a className="button button--ghost" href={inviteMailtoHref} data-testid="account-share-invite-email">
                       Share via email
                     </a>
                   )}
@@ -518,6 +515,7 @@ export default function AccountOverview() {
               </section>
             )}
 
+            {/* Invite form */}
             <form onSubmit={handleSubmit} data-testid="account-invite-form" className="account-overview__form">
               <fieldset disabled={submitting}>
                 <legend className="sr-only">Invite or update a teammate</legend>
@@ -560,6 +558,7 @@ export default function AccountOverview() {
           <p role="note">You have read-only access to the team roster.</p>
         )}
 
+        {/* Roster list */}
         <div className="account-overview__roster" role="table" aria-label="Team roster">
           <div className="account-overview__roster-header" role="row">
             <span role="columnheader">Email</span>
