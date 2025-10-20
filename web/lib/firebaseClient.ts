@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { firebaseEnv } from "../path/to/firebaseEnv"; // the file you showed
+import { firebaseEnv } from "../src/config/firebaseEnv";
 
 const appConfig = {
   apiKey: firebaseEnv.apiKey,
