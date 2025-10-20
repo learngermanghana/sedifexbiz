@@ -70,7 +70,11 @@ export function WorkspaceSelectProvider({ children }: { children: React.ReactNod
     [workspaceSlug, setWorkspaceSlug],
   )
 
-  return <WorkspaceSelectContext.Provider value={value}>{children}</WorkspaceSelectContext.Provider>
+  return (
+    <WorkspaceSelectContext.Provider value={value}>
+      {children}
+    </WorkspaceSelectContext.Provider>
+  )
 }
 
 export function useWorkspaceSelect() {
