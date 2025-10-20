@@ -419,9 +419,14 @@ export default function AccountOverview() {
     (profileLoading && !profile) ||
     (rosterLoading && roster.length === 0)
 
+  const workspaceIdentifier = workspaceSlug ?? resolvedStoreId ?? null
+
   return (
     <div className="account-overview">
-      <h1>Account overview</h1>
+      <h1>
+        Account overview
+        {workspaceIdentifier ? ` / ${workspaceIdentifier}` : ''}
+      </h1>
 
       {(membershipsError || profileError || rosterError) && (
         <div className="account-overview__error" role="alert">
@@ -433,7 +438,9 @@ export default function AccountOverview() {
 
       {isBusy && (
         <p role="status" aria-live="polite">
-          Loading account details…
+          {workspaceIdentifier
+            ? `Loading account details for workspace/${workspaceIdentifier}…`
+            : 'Loading account details…'}
         </p>
       )}
 
