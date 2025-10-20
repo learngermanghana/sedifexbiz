@@ -7,8 +7,7 @@ import {
   inMemoryPersistence,
   setPersistence,
 } from 'firebase/auth'
-import { doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
-import { db, rosterDb } from '../firebase'
+import { doc, serverTimestamp, setDoc, updateDoc, db, rosterDb } from '../lib/db'
 
 const SESSION_COOKIE = 'sedifex_session'
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 90 // 90 days

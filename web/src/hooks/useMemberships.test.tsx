@@ -8,18 +8,15 @@ vi.mock('./useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
-vi.mock('../firebase', () => ({
-  db: { name: 'primary-db' },
-  rosterDb: { name: 'roster-db' },
-}))
-
 const collectionMock = vi.fn(() => ({ type: 'collection' }))
 const whereMock = vi.fn(() => ({ type: 'where' }))
 const queryMock = vi.fn(() => ({ type: 'query' }))
 const getDocsMock = vi.fn()
 
-vi.mock('firebase/firestore', () => ({
+vi.mock('../lib/db', () => ({
   Timestamp: class MockTimestamp {},
+  db: { name: 'primary-db' },
+  rosterDb: { name: 'roster-db' },
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),

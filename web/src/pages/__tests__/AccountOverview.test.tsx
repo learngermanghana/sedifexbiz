@@ -41,12 +41,13 @@ const getDocsMock = vi.fn()
 const queryMock = vi.fn((ref: unknown, ...clauses: unknown[]) => ({ ref, clauses }))
 const whereMock = vi.fn((field: string, op: string, value: unknown) => ({ field, op, value }))
 
-vi.mock('firebase/firestore', () => ({
+vi.mock('../../lib/db', () => ({
   Timestamp: class {},
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   getDocs: (...args: Parameters<typeof getDocsMock>) => getDocsMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
+  rosterDb: { name: 'roster-db' },
 }))
 
 const mockGetActiveStoreId = vi.fn()

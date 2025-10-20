@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore'
+import { collection, query, orderBy, limit, onSnapshot, where, db } from '../lib/db'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 
 import { functions } from '../firebase'
-import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Receive.css'
 import { queueCallableRequest } from '../utils/offlineQueue'

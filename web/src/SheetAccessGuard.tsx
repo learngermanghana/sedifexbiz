@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
-import { auth, rosterDb } from './firebase'
+import { collection, doc, getDoc, getDocs, query, where, rosterDb } from './lib/db'
+import { auth } from './firebase'
 import { clearActiveStoreIdForUser, persistActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { useAuthUser } from './hooks/useAuthUser'
 import type { User } from 'firebase/auth'

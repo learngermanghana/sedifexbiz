@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { collection, query, where, orderBy, onSnapshot, Timestamp, addDoc, serverTimestamp } from 'firebase/firestore'
-
-import { db } from '../firebase'
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+  Timestamp,
+  addDoc,
+  serverTimestamp,
+  db,
+} from '../lib/db'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 

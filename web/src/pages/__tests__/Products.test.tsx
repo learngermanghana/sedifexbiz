@@ -16,10 +16,6 @@ vi.mock('../../utils/offlineCache', () => ({
     mockSaveCachedProducts(...args),
 }))
 
-vi.mock('../../firebase', () => ({
-  db: {},
-}))
-
 const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
 vi.mock('../../hooks/useActiveStore', () => ({
   useActiveStore: () => mockUseActiveStore(),
@@ -57,7 +53,8 @@ const docMock = vi.fn((collectionRef: { path: string }, id: string) => ({
   path: `${collectionRef.path}/${id}`,
 }))
 
-vi.mock('firebase/firestore', () => ({
+vi.mock('../../lib/db', () => ({
+  db: {},
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   orderBy: (...args: Parameters<typeof orderByMock>) => orderByMock(...args),

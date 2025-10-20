@@ -15,13 +15,14 @@ const getDocsMock = vi.fn()
 const queryMock = vi.fn()
 const whereMock = vi.fn()
 
-vi.mock('firebase/firestore', () => ({
+vi.mock('./lib/db', () => ({
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
   getDoc: (...args: Parameters<typeof getDocMock>) => getDocMock(...args),
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   getDocs: (...args: Parameters<typeof getDocsMock>) => getDocsMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
+  rosterDb: mockRosterDb,
 }))
 
 const signOutMock = vi.fn().mockResolvedValue(undefined)
@@ -29,7 +30,6 @@ const signOutMock = vi.fn().mockResolvedValue(undefined)
 const mockRosterDb = { name: 'roster-db' }
 vi.mock('./firebase', () => ({
   auth: { signOut: signOutMock },
-  rosterDb: mockRosterDb,
 }))
 
 const persistActiveStoreMock = vi.fn()

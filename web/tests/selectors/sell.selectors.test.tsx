@@ -143,10 +143,11 @@ describe('Sell page selectors', () => {
     }))
 
     vi.doMock('../../src/firebase', () => ({
-      db: {},
+      functions: {},
     }))
 
-    vi.doMock('firebase/firestore', () => ({
+    vi.doMock('../../src/lib/db', () => ({
+      db: {},
       collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
       query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
       where: (...args: Parameters<typeof whereMock>) => whereMock(...args),

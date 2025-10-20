@@ -2,6 +2,7 @@ import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc,
   collection,
+  db,
   doc,
   limit,
   onSnapshot,
@@ -10,11 +11,10 @@ import {
   serverTimestamp,
   updateDoc,
   where,
-} from 'firebase/firestore'
+} from '../lib/db'
 import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
 
-import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import {
   PRODUCT_CACHE_LIMIT,

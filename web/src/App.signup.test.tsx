@@ -57,7 +57,6 @@ vi.mock('./config/signup', () => ({ signupConfig: signupConfigMock }))
 
 vi.mock('./firebase', () => ({
   auth: mocks.auth,
-  db: {},
 }))
 
 vi.mock('firebase/auth', () => ({
@@ -72,7 +71,9 @@ vi.mock('firebase/auth', () => ({
   },
 }))
 
-vi.mock('firebase/firestore', () => ({
+vi.mock('./lib/db', () => ({
+  db: {},
+  rosterDb: {},
   doc: vi.fn(() => ({})),
   setDoc: vi.fn(async () => {}),
   updateDoc: vi.fn(async () => {}),

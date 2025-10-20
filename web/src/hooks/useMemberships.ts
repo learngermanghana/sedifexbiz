@@ -5,12 +5,12 @@ import {
   collection,
   getDocs,
   query,
+  rosterDb,
   where,
   type DocumentData,
   type Firestore,
   type QueryDocumentSnapshot,
-} from 'firebase/firestore'
-import { rosterDb } from '../firebase'
+} from '../lib/db'
 import { useAuthUser } from './useAuthUser'
 import { getAuth } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'

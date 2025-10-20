@@ -1,21 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Timestamp,
   addDoc,
   collection,
+  db,
   deleteDoc,
   doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
-  limit,
   serverTimestamp,
   updateDoc,
   where,
-} from 'firebase/firestore'
-import { Timestamp } from 'firebase/firestore'
+} from '../lib/db'
 import { Link } from 'react-router-dom'
 
-import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Customers.css'
 import {

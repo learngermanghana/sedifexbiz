@@ -21,11 +21,9 @@ vi.mock('../utils/onboarding', () => ({
 const mockDoc = vi.fn()
 const mockGetDoc = vi.fn()
 
-vi.mock('../firebase', () => ({
+vi.mock('../lib/db', () => ({
   db: { __name: 'defaultDb' },
-}))
-
-vi.mock('firebase/firestore', () => ({
+  rosterDb: { __name: 'rosterDb' },
   doc: (...args: Parameters<typeof mockDoc>) => mockDoc(...args),
   getDoc: (...args: Parameters<typeof mockGetDoc>) => mockGetDoc(...args),
   Timestamp: class {

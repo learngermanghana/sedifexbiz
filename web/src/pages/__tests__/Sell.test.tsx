@@ -32,7 +32,6 @@ vi.mock('../../utils/pdf', () => ({
 }))
 
 vi.mock('../../firebase', () => ({
-  db: {},
   functions: {},
 }))
 
@@ -76,7 +75,8 @@ const docMock = vi.fn((collectionRef: { path: string }, id?: string) => ({
   id,
 }))
 
-vi.mock('firebase/firestore', () => ({
+vi.mock('../../lib/db', () => ({
+  db: {},
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   orderBy: (...args: Parameters<typeof orderByMock>) => orderByMock(...args),

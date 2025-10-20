@@ -22,7 +22,6 @@ vi.mock('../../components/ToastProvider', () => ({
 }))
 
 vi.mock('../../firebase', () => ({
-  db: {},
   auth: {},
 }))
 
@@ -55,7 +54,8 @@ const onSnapshotMock = vi.fn((ref: { path: string }, onNext: (snapshot: any) => 
   return () => {}
 })
 
-vi.mock('firebase/firestore', () => ({
+vi.mock('../../lib/db', () => ({
+  db: {},
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
   setDoc: (...args: Parameters<typeof setDocMock>) => setDocMock(...args),
   updateDoc: (...args: Parameters<typeof updateDocMock>) => updateDocMock(...args),

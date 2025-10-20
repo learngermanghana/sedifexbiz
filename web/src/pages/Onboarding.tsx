@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { doc, getDoc, Timestamp } from 'firebase/firestore'
+import { doc, getDoc, Timestamp, db, rosterDb } from '../lib/db'
 import { useNavigate } from 'react-router-dom'
 import { useAuthUser } from '../hooks/useAuthUser'
 
-import { db, rosterDb } from '../firebase'
 import { getOnboardingStatus, setOnboardingStatus, type OnboardingStatus } from '../utils/onboarding'
 import './Onboarding.css'
 
