@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+'use client';
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Timestamp,
   collection,
@@ -7,51 +9,54 @@ import {
   where,
   type DocumentData,
   type QueryDocumentSnapshot,
-} from 'firebase/firestore'
-import { rosterDb } from '../firebase'
-import { useActiveStore } from '../hooks/useActiveStore'
-import { useMemberships, type Membership } from '../hooks/useMemberships'
-import { manageStaffAccount } from '../controllers/storeController'
-import { useToast } from '../components/ToastProvider'
-import './AccountOverview.css'
-import { useAutoRerun } from '../hooks/useAutoRerun'
-import { normalizeStaffRole } from '../utils/normalizeStaffRole'
-import { useAuthUser } from '../hooks/useAuthUser'
+} from 'firebase/firestore';
+
+import { rosterDb } from '../lib/db'; // ← shared Firestore handles (roster DB)
+import { useActiveStore } from '../hooks/useActiveStore';
+import { useMemberships, type Membership } from '../hooks/useMemberships';
+import { manageStaffAccount } from '../controllers/storeController';
+import { useToast } from '../components/ToastProvider';
+import './AccountOverview.css';
+import { useAutoRerun } from '../hooks/useAutoRerun';
+import { normalizeStaffRole } from '../utils/normalizeStaffRole';
+import { useAuthUser } from '../hooks/useAuthUser';
+
+// ⬇️ selector value is the current WORKSPACE SLUG from the header dropdown
+import { useSelectedWorkspaceSlug } from '../hooks/useWorkspaceSelect';
+
 import {
   getActiveStoreId,
   loadWorkspaceProfile,
   mapAccount,
   type WorkspaceAccountProfile,
-} from '../data/loadWorkspace'
+} from '../data/loadWorkspace';
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type RosterMember = {
-  id: string
-  uid: string
-  storeId: string | null
-  email: string | null
-  role: Membership['role']
-  invitedBy: string | null
-  phone: string | null
-  firstSignupEmail: string | null
-  createdAt: Timestamp | null
-  updatedAt: Timestamp | null
-}
+  id: string;
+  uid: string;
+  storeId: string | null;
+  email: string | null;
+  role: Membership['role'];
+  invitedBy: string | null;
+  phone: string | null;
+  firstSignupEmail: string | null;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+};
 
 function toNullableString(value: unknown) {
-  return typeof value === 'string' && value.trim() !== '' ? value : null
+  return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
-
 function isTimestamp(value: unknown): value is Timestamp {
-  return typeof value === 'object' && value !== null && typeof (value as Timestamp).toDate === 'function'
+  return typeof value === 'object' && value !== null && typeof (value as Timestamp).toDate === 'function';
 }
-
 function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): RosterMember {
-  const data = snapshot.data()
-  const role = normalizeStaffRole(data.role)
-  const uid = typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id
-  const storeId = typeof data.storeId === 'string' && data.storeId.trim() ? data.storeId : null
+  const data = snapshot.data();
+  const role = normalizeStaffRole(data.role);
+  const uid = typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id;
+  const storeId = typeof data.storeId === 'string' && data.storeId.trim() ? data.storeId : null;
 
   return {
     id: snapshot.id,
@@ -64,345 +69,284 @@ function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): Roste
     firstSignupEmail: toNullableString(data.firstSignupEmail),
     createdAt: isTimestamp(data.createdAt) ? data.createdAt : null,
     updatedAt: isTimestamp(data.updatedAt) ? data.updatedAt : null,
-  }
+  };
 }
 
 function formatValue(value: string | null) {
-  return value ?? '—'
+  return value ?? '—';
 }
-
 function formatTimestamp(value: Timestamp | Date | null) {
-  if (!value) return '—'
+  if (!value) return '—';
   try {
-    if (value instanceof Timestamp) {
-      return value.toDate().toLocaleString()
-    }
-
-    if (value instanceof Date) {
-      return value.toLocaleString()
-    }
-
+    if (value instanceof Timestamp) return value.toDate().toLocaleString();
+    if (value instanceof Date) return value.toLocaleString();
     if (typeof value === 'object' && value && typeof (value as Timestamp).toDate === 'function') {
-      const date = (value as Timestamp).toDate()
-      return date.toLocaleString()
+      return (value as Timestamp).toDate().toLocaleString();
     }
-  } catch (error) {
-    console.warn('Unable to render timestamp', error)
-  }
-
-  return '—'
+  } catch {}
+  return '—';
 }
 
-function formatAmountPaid(amount: number | null, currency: string | null): string {
+/** Minor-unit aware currency formatter (default 2dp currencies like GHS/USD) */
+function formatAmountPaid(amount: number | null, currency: string | null, minor = 100): string {
   if (typeof amount === 'number' && Number.isFinite(amount)) {
-    const formatted = amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    return currency ? `${currency} ${formatted}` : formatted
+    const value = amount / (minor || 100);
+    const formatted = value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return currency ? `${currency} ${formatted}` : formatted;
   }
-
-  return '—'
+  return '—';
 }
 
 async function copyToClipboard(text: string) {
-  if (!text) return
-
+  if (!text) return;
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
+    await navigator.clipboard.writeText(text);
+    return;
   }
-
-  const textArea = document.createElement('textarea')
-  textArea.value = text
-  textArea.setAttribute('readonly', '')
-  textArea.style.position = 'fixed'
-  textArea.style.top = '-9999px'
-  textArea.style.left = '-9999px'
-  document.body.appendChild(textArea)
-  textArea.select()
-  document.execCommand('copy')
-  document.body.removeChild(textArea)
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', '');
+  textArea.style.position = 'fixed';
+  textArea.style.top = '-9999px';
+  textArea.style.left = '-9999px';
+  document.body.appendChild(textArea);
+  textArea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textArea);
 }
 
 export default function AccountOverview() {
-  const user = useAuthUser()
-  const uid = user?.uid ?? null
-  const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
-  const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships()
-  const { publish } = useToast()
-  const [resolvedStoreId, setResolvedStoreId] = useState<string | null>(storeId ?? null)
-  const { token: autoRefreshToken, trigger: requestAutoRefresh } = useAutoRerun(Boolean(resolvedStoreId))
+  const user = useAuthUser();
+  const uid = user?.uid ?? null;
 
-  const [profile, setProfile] = useState<WorkspaceAccountProfile | null>(null)
-  const [profileLoading, setProfileLoading] = useState(false)
-  const [profileError, setProfileError] = useState<string | null>(null)
+  // storeId from legacy/roster-based active store
+  const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore();
 
-  const [roster, setRoster] = useState<RosterMember[]>([])
-  const [rosterLoading, setRosterLoading] = useState(false)
-  const [rosterError, setRosterError] = useState<string | null>(null)
-  const [rosterVersion, setRosterVersion] = useState(0)
+  // memberships (for role display etc.)
+  const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships();
 
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState<Membership['role']>('staff')
-  const [password, setPassword] = useState('')
-  const [formError, setFormError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle')
+  const { publish } = useToast();
+
+  // current slug from the header selector (SOURCE OF TRUTH for workspace)
+  const selectedSlug = useSelectedWorkspaceSlug();
+
+  const [resolvedStoreId, setResolvedStoreId] = useState<string | null>(storeId ?? null);
+  const { token: autoRefreshToken, trigger: requestAutoRefresh } = useAutoRerun(Boolean(resolvedStoreId));
+
+  const [profile, setProfile] = useState<WorkspaceAccountProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  const [roster, setRoster] = useState<RosterMember[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterError, setRosterError] = useState<string | null>(null);
+  const [rosterVersion, setRosterVersion] = useState(0);
+
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<Membership['role']>('staff');
+  const [password, setPassword] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
 
   const activeMembership = useMemo(() => {
-    if (storeId) {
-      return memberships.find(m => m.storeId === storeId) ?? null
-    }
+    if (storeId) return memberships.find(m => m.storeId === storeId) ?? null;
+    if (resolvedStoreId) return memberships.find(m => m.storeId === resolvedStoreId) ?? null;
+    return memberships.length === 1 ? memberships[0] : null;
+  }, [memberships, resolvedStoreId, storeId]);
 
-    if (resolvedStoreId) {
-      return memberships.find(m => m.storeId === resolvedStoreId) ?? null
-    }
-
-    if (memberships.length === 1) {
-      return memberships[0]
-    }
-
-    return null
-  }, [memberships, resolvedStoreId, storeId])
-
-  const workspaceSlug = activeMembership?.workspaceSlug ?? null
-  const profileSlug = workspaceSlug ?? null
-
-  const isOwner = activeMembership?.role === 'owner'
+  // prefer selector slug; fall back to membership slug if selector not set yet
+  const profileSlug = selectedSlug || activeMembership?.workspaceSlug || null;
+  const isOwner = activeMembership?.role === 'owner';
 
   const inviteLink = useMemo(() => {
-    if (!resolvedStoreId) return ''
-    if (typeof window === 'undefined') return ''
-
-    const { origin, pathname } = window.location
-    const base = `${origin}${pathname}`
-    const normalizedBase = base.endsWith('/') ? base : `${base}/`
-    return `${normalizedBase}#/`
-  }, [resolvedStoreId])
+    if (!resolvedStoreId || typeof window === 'undefined') return '';
+    const { origin, pathname } = window.location;
+    const base = `${origin}${pathname}`;
+    const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+    return `${normalizedBase}#/`;
+  }, [resolvedStoreId]);
 
   const inviteMailtoHref = useMemo(() => {
-    if (!inviteLink) return ''
-
-    const workspaceName = profile?.displayName ?? profile?.name ?? 'our Sedifex workspace'
-    const subject = encodeURIComponent(`Join ${workspaceName} on Sedifex`)
+    if (!inviteLink) return '';
+    const workspaceName = profile?.displayName ?? profile?.name ?? 'our Sedifex workspace';
+    const subject = encodeURIComponent(`Join ${workspaceName} on Sedifex`);
     const bodyLines = [
       'Hi there,',
       '',
       `You have been invited to join ${workspaceName} on Sedifex.`,
       `Sign in here: ${inviteLink}`,
-      (workspaceSlug ?? resolvedStoreId) ? `Workspace ID: ${workspaceSlug ?? resolvedStoreId}` : null,
+      (profileSlug ?? resolvedStoreId) ? `Workspace ID: ${profileSlug ?? resolvedStoreId}` : null,
       '',
       'Use the email address we invited and the password provided by your workspace admin.',
-    ].filter((line): line is string => Boolean(line && line.trim()))
-
-    return `mailto:?subject=${subject}&body=${encodeURIComponent(bodyLines.join('\n'))}`
-  }, [inviteLink, profile?.displayName, profile?.name, resolvedStoreId, workspaceSlug])
-
-  useEffect(() => {
-    if (copyStatus === 'idle') return
-    const timeout = setTimeout(() => setCopyStatus('idle'), 4000)
-    return () => clearTimeout(timeout)
-  }, [copyStatus])
+    ].filter((line): line is string => Boolean(line && line.trim()));
+    return `mailto:?subject=${subject}&body=${encodeURIComponent(bodyLines.join('\n'))}`;
+  }, [inviteLink, profile?.displayName, profile?.name, resolvedStoreId, profileSlug]);
 
   useEffect(() => {
-    let cancelled = false
+    if (copyStatus === 'idle') return;
+    const t = setTimeout(() => setCopyStatus('idle'), 4000);
+    return () => clearTimeout(t);
+  }, [copyStatus]);
+
+  // Resolve storeId (from roster DB) when not provided by hook
+  useEffect(() => {
+    let cancelled = false;
 
     if (storeId) {
-      setResolvedStoreId(previous => (previous === storeId ? previous : storeId))
-      return () => {
-        cancelled = true
-      }
+      setResolvedStoreId(prev => (prev === storeId ? prev : storeId));
+      return () => { cancelled = true; };
     }
 
     if (!uid) {
-      setResolvedStoreId(null)
-      return () => {
-        cancelled = true
-      }
+      setResolvedStoreId(null);
+      return () => { cancelled = true; };
     }
 
-    async function resolveStoreId() {
+    (async () => {
       try {
-        const nextStoreId = await getActiveStoreId(uid)
+        const nextStoreId = await getActiveStoreId(uid);
+        if (!cancelled) setResolvedStoreId(nextStoreId);
+      } catch (err) {
         if (!cancelled) {
-          setResolvedStoreId(nextStoreId)
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error('Failed to resolve active store ID', error)
-          setResolvedStoreId(null)
+          console.error('Failed to resolve active store ID', err);
+          setResolvedStoreId(null);
         }
       }
-    }
+    })();
 
-    void resolveStoreId()
+    return () => { cancelled = true; };
+  }, [storeId, uid]);
 
-    return () => {
-      cancelled = true
-    }
-  }, [storeId, uid])
-
+  // SLUG-FIRST workspace load (falls back to storeId->query)
   useEffect(() => {
     if (!profileSlug && !resolvedStoreId) {
-      setProfile(null)
-      setProfileError(null)
-      return
+      setProfile(null);
+      setProfileError(null);
+      return;
     }
 
-    let cancelled = false
+    let cancelled = false;
 
-    async function loadProfile() {
-      setProfileLoading(true)
-      setProfileError(null)
+    (async () => {
+      setProfileLoading(true);
+      setProfileError(null);
 
       try {
-        const workspace = await loadWorkspaceProfile({ slug: profileSlug, storeId: resolvedStoreId })
-        if (cancelled) return
+        // Debug (optional): console.log('AA slug', profileSlug, 'storeId', resolvedStoreId);
+        const workspace = await loadWorkspaceProfile({ slug: profileSlug, storeId: resolvedStoreId });
+        if (cancelled) return;
 
         if (!workspace) {
-          setProfile(null)
-          setProfileError('We could not find this workspace profile.')
-          return
+          setProfile(null);
+          setProfileError('We could not find this workspace profile.');
+          return;
         }
 
-        const mapped = mapAccount(workspace)
-        setProfile(mapped)
-        setProfileError(null)
+        const mapped = mapAccount(workspace);
+        setProfile(mapped);
+        setProfileError(null);
       } catch (error) {
-        if (cancelled) return
-        console.error('Failed to load store profile', error)
-        setProfile(null)
-        setProfileError('We could not load the workspace profile.')
-        publish({ message: 'Unable to load store details.', tone: 'error' })
+        if (cancelled) return;
+        console.error('Failed to load store profile', error);
+        setProfile(null);
+        setProfileError('We could not load the workspace profile.');
+        publish({ message: 'Unable to load store details.', tone: 'error' });
       } finally {
-        if (!cancelled) setProfileLoading(false)
+        if (!cancelled) setProfileLoading(false);
       }
-    }
+    })();
 
-    void loadProfile()
+    return () => { cancelled = true; };
+  }, [autoRefreshToken, profileSlug, publish, resolvedStoreId]);
 
-    return () => {
-      cancelled = true
-    }
-  }, [autoRefreshToken, profileSlug, publish, resolvedStoreId])
-
+  // Roster (always by storeId, from roster DB)
   useEffect(() => {
     if (!resolvedStoreId) {
-      setRoster([])
-      setRosterError(null)
-      return
+      setRoster([]);
+      setRosterError(null);
+      return;
     }
 
-    let cancelled = false
+    let cancelled = false;
+    setRosterLoading(true);
+    setRosterError(null);
 
-    setRosterLoading(true)
-    setRosterError(null)
+    const membersRef = collection(rosterDb, 'teamMembers');
+    const rosterQuery = query(membersRef, where('storeId', '==', resolvedStoreId));
 
-    const membersRef = collection(rosterDb, 'teamMembers')
-    const rosterQuery = query(membersRef, where('storeId', '==', resolvedStoreId))
     getDocs(rosterQuery)
       .then(snapshot => {
-        if (cancelled) return
-        const members = snapshot.docs.map(mapRosterSnapshot)
-        setRoster(members)
-        setRosterError(null)
+        if (cancelled) return;
+        const members = snapshot.docs.map(mapRosterSnapshot);
+        setRoster(members);
+        setRosterError(null);
       })
       .catch(error => {
-        if (cancelled) return
-        console.error('Failed to load roster', error)
-        setRoster([])
-        setRosterError('We could not load the team roster.')
-        publish({ message: 'Unable to load team members.', tone: 'error' })
+        if (cancelled) return;
+        console.error('Failed to load roster', error);
+        setRoster([]);
+        setRosterError('We could not load the team roster.');
+        publish({ message: 'Unable to load team members.', tone: 'error' });
       })
       .finally(() => {
-        if (!cancelled) setRosterLoading(false)
-      })
+        if (!cancelled) setRosterLoading(false);
+      });
 
-    return () => {
-      cancelled = true
-    }
-  }, [autoRefreshToken, publish, resolvedStoreId, rosterVersion])
+    return () => { cancelled = true; };
+  }, [autoRefreshToken, publish, resolvedStoreId, rosterVersion]);
 
   function validateForm() {
-    if (!resolvedStoreId) {
-      return 'A storeId is required to manage staff.'
-    }
-
-    const normalizedEmail = email.trim().toLowerCase()
-    if (!normalizedEmail) {
-      return 'Enter the teammate’s email address.'
-    }
-
-    if (!EMAIL_PATTERN.test(normalizedEmail)) {
-      return 'Enter a valid email address.'
-    }
-
-    const normalizedRole = role?.trim()
-    if (!normalizedRole) {
-      return 'Select a role for this teammate.'
-    }
-
-    if (normalizedRole !== 'owner' && normalizedRole !== 'staff') {
-      return 'Choose either owner or staff for the role.'
-    }
-
-    return null
+    if (!resolvedStoreId) return 'A storeId is required to manage staff.';
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) return 'Enter the teammate’s email address.';
+    if (!EMAIL_PATTERN.test(normalizedEmail)) return 'Enter a valid email address.';
+    const normalizedRole = role?.trim();
+    if (!normalizedRole) return 'Select a role for this teammate.';
+    if (normalizedRole !== 'owner' && normalizedRole !== 'staff') return 'Choose either owner or staff for the role.';
+    return null;
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (submitting) return
+    event.preventDefault();
+    if (submitting) return;
 
-    const error = validateForm()
+    const error = validateForm();
     if (error) {
-      setFormError(error)
-      publish({ message: error, tone: 'error' })
-      return
+      setFormError(error);
+      publish({ message: error, tone: 'error' });
+      return;
     }
-
-    if (!resolvedStoreId) return
+    if (!resolvedStoreId) return;
 
     const payload = {
       storeId: resolvedStoreId,
       email: email.trim().toLowerCase(),
       role,
       password: password.trim() || undefined,
-    }
+    };
 
-    setSubmitting(true)
-    setFormError(null)
+    setSubmitting(true);
+    setFormError(null);
     try {
-      await manageStaffAccount(payload)
-      publish({ message: 'Team member updated.', tone: 'success' })
-      setEmail('')
-      setRole('staff')
-      setPassword('')
-      setRosterVersion(version => version + 1)
-      requestAutoRefresh()
+      await manageStaffAccount(payload);
+      publish({ message: 'Team member updated.', tone: 'success' });
+      setEmail('');
+      setRole('staff');
+      setPassword('');
+      setRosterVersion(v => v + 1);
+      requestAutoRefresh();
     } catch (error) {
-      console.error('Failed to manage staff account', error)
-      const message = error instanceof Error ? error.message : 'We could not submit the request.'
-      setFormError(message)
-      publish({ message, tone: 'error' })
+      console.error('Failed to manage staff account', error);
+      const message = error instanceof Error ? error.message : 'We could not submit the request.';
+      setFormError(message);
+      publish({ message, tone: 'error' });
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
   }
 
-  const handleCopyInviteLink = useCallback(async () => {
-    if (!inviteLink) return
-
-    try {
-      await copyToClipboard(inviteLink)
-      setCopyStatus('copied')
-    } catch (error) {
-      console.error('Failed to copy invite link', error)
-      setCopyStatus('error')
-      publish({ message: 'We could not copy the invite link.', tone: 'error' })
-    }
-  }, [inviteLink, publish])
-
-  if (storeError) {
-    return <div role="alert">{storeError}</div>
-  }
+  if (storeError) return <div role="alert">{storeError}</div>;
 
   if (!resolvedStoreId && !storeLoading) {
     return (
@@ -410,16 +354,16 @@ export default function AccountOverview() {
         <h1>Account overview</h1>
         <p>Select a workspace to view account details.</p>
       </div>
-    )
+    );
   }
 
   const isBusy =
     storeLoading ||
     membershipsLoading ||
     (profileLoading && !profile) ||
-    (rosterLoading && roster.length === 0)
+    (rosterLoading && roster.length === 0);
 
-  const workspaceIdentifier = workspaceSlug ?? resolvedStoreId ?? null
+  const workspaceIdentifier = profileSlug ?? resolvedStoreId ?? null;
 
   return (
     <div className="account-overview">
@@ -580,34 +524,34 @@ export default function AccountOverview() {
                 <div className="account-overview__form-grid">
                   <label>
                     <span>Email</span>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={event => setEmail(event.target.value)}
-                    required
-                    autoComplete="email"
-                  />
-                </label>
-                <label>
-                  <span>Role</span>
-                  <select value={role} onChange={event => setRole(event.target.value as Membership['role'])}>
-                    <option value="owner">Owner</option>
-                    <option value="staff">Staff</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Password (optional)</span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={event => setPassword(event.target.value)}
-                    autoComplete="new-password"
-                  />
-                </label>
-                <button type="submit" className="button button--primary">
-                  {submitting ? 'Sending…' : 'Send invite'}
-                </button>
-              </div>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={event => setEmail(event.target.value)}
+                      required
+                      autoComplete="email"
+                    />
+                  </label>
+                  <label>
+                    <span>Role</span>
+                    <select value={role} onChange={event => setRole(event.target.value as Membership['role'])}>
+                      <option value="owner">Owner</option>
+                      <option value="staff">Staff</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Password (optional)</span>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={event => setPassword(event.target.value)}
+                      autoComplete="new-password"
+                    />
+                  </label>
+                  <button type="submit" className="button button--primary">
+                    {submitting ? 'Sending…' : 'Send invite'}
+                  </button>
+                </div>
                 {formError && <p className="account-overview__form-error">{formError}</p>}
               </fieldset>
             </form>
@@ -650,5 +594,5 @@ export default function AccountOverview() {
         </div>
       </section>
     </div>
-  )
+  );
 }
