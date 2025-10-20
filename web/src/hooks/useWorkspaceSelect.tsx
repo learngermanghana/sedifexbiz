@@ -84,3 +84,7 @@ export function useWorkspaceSelect() {
   }
   return context
 }
+
+export function useSelectedWorkspaceSlug() {
+  return useWorkspaceSelect().workspaceSlug
+}
