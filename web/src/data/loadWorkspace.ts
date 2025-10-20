@@ -65,11 +65,9 @@ export async function loadWorkspaceProfile({
   if (normalizedSlug) {
     const workspaceRef = doc(db, 'workspaces', normalizedSlug)
     const workspaceSnapshot = await getDoc(workspaceRef)
-    if (!workspaceSnapshot.exists()) {
-      return null
+    if (workspaceSnapshot.exists()) {
+      return snapshotToRecord(workspaceSnapshot)
     }
-
-    return snapshotToRecord(workspaceSnapshot)
   }
 
   const normalizedStoreId = normalizeString(storeId)
