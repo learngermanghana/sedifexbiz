@@ -106,11 +106,21 @@ describe('mapAccount', () => {
   it('falls back to amountPaid minor units when billing amount is missing', () => {
     const profile = mapAccount({
       id: 'workspace-2',
-      amountPaid: 2500,
+      amountPaidMinor: 2500,
       storeId: 'store-456',
     })
 
     expect(profile.amountPaid).toBeCloseTo(25)
+  })
+
+  it('uses the top-level amountPaid value without converting units', () => {
+    const profile = mapAccount({
+      id: 'workspace-3',
+      amountPaid: 20,
+      storeId: 'store-789',
+    })
+
+    expect(profile.amountPaid).toBe(20)
   })
 })
 
