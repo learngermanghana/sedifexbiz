@@ -14,6 +14,7 @@ import AccountOverview from './pages/AccountOverview'
 import AuthScreen from './pages/AuthScreen'
 import BillingThanks from './pages/BillingThanks'
 import { ToastProvider } from './components/ToastProvider'
+import { WorkspaceSelectProvider } from './hooks/useWorkspaceSelect'
 
 const router = createBrowserRouter([
   // Public, standalone screens
@@ -42,8 +43,10 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ToastProvider>
-      <RouterProvider router={router} />
-    </ToastProvider>
+    <WorkspaceSelectProvider>
+      <ToastProvider>
+        <RouterProvider router={router} />
+      </ToastProvider>
+    </WorkspaceSelectProvider>
   </React.StrictMode>,
 )
