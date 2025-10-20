@@ -113,18 +113,20 @@ export function mapAccount(workspace: WorkspaceRecord): WorkspaceAccountProfile 
     getNested(workspace, ['contract', 'end']),
   ])
 
-  const billingAmount = pickNumber([
+  const majorAmount = pickNumber([
     getNested(workspace, ['billing', 'amountPaid']),
     getNested(workspace, ['subscription', 'amountPaid']),
+    workspace.amountPaid,
   ])
 
   const minorAmount = pickNumber([
-    workspace.amountPaid,
     getNested(workspace, ['billing', 'amountPaidMinor']),
     getNested(workspace, ['subscription', 'amountPaidMinor']),
+    workspace.amountPaidMinor,
   ])
 
-  const amountPaid = billingAmount ?? (minorAmount != null ? minorAmount / 100 : null)
+  const amountPaid =
+    majorAmount != null ? majorAmount : minorAmount != null ? minorAmount / 100 : null
 
   const slug = pickString([
     workspace.slug,
