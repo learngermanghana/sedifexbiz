@@ -38,6 +38,38 @@
       "plan": "Standard",
       "contactEmail": "finance@nairobi-collective.com",
       "notes": "Flagged for follow-up by customer success due to outstanding balance."
+    },
+    "lagos-roastery": {
+      "company": "Lagos Roastery",
+      "displayName": "Lagos Roastery HQ",
+      "storeId": "store-lagos",
+      "status": "active",
+      "contract": {
+        "status": "trial",
+        "start": "2024-09-01T00:00:00.000Z",
+        "end": "2025-02-28T23:59:59.000Z"
+      },
+      "billing": {
+        "plan": "Pro",
+        "paymentStatus": "trialing",
+        "amountPaid": 0,
+        "currency": "NGN"
+      },
+      "subscription": {
+        "plan": "Pro",
+        "status": "trialing",
+        "amountPaidMinor": 0,
+        "currency": "NGN"
+      },
+      "timezone": "Africa/Lagos",
+      "addressLine1": "12 Marina Rd",
+      "city": "Lagos",
+      "region": "LA",
+      "postalCode": "101223",
+      "country": "NG",
+      "contactEmail": "hello@lagosroastery.test",
+      "contactPhone": "+234 810 000 1234",
+      "notes": "Workspace used for validating nested billing fields in the account overview."
     }
   }
 }
