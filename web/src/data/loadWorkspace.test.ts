@@ -72,6 +72,34 @@ describe('loadWorkspaceProfile', () => {
     expect(queryMock).toHaveBeenCalledWith({ type: 'collection', path: 'workspaces' }, { clause: 'where-store' }, { clause: 'limit-1' })
     expect(workspace).toEqual({ id: 'workspace-coffee', storeId: 'store-123', plan: 'Monthly' })
   })
+
+  it('falls back to querying by storeId when slug does not exist', async () => {
+    docMock.mockReturnValue({ type: 'doc', path: 'workspaces/missing-slug' })
+    getDocMock.mockResolvedValueOnce({
+      exists: () => false,
+    })
+
+    collectionMock.mockReturnValue({ type: 'collection', path: 'workspaces' })
+    whereMock.mockReturnValue({ clause: 'where-store' })
+    limitMock.mockReturnValue({ clause: 'limit-1' })
+    queryMock.mockReturnValue({ type: 'query' })
+    getDocsMock.mockResolvedValue({
+      docs: [
+        {
+          id: 'workspace-store-match',
+          data: () => ({ storeId: 'store-123', plan: 'Annual' }),
+        },
+      ],
+    })
+
+    const workspace = await loadWorkspaceProfile({ slug: 'missing-slug', storeId: 'store-123' })
+
+    expect(docMock).toHaveBeenCalledWith(mockDb, 'workspaces', 'missing-slug')
+    expect(getDocMock).toHaveBeenCalled()
+    expect(collectionMock).toHaveBeenCalledWith(mockDb, 'workspaces')
+    expect(whereMock).toHaveBeenCalledWith('storeId', '==', 'store-123')
+    expect(workspace).toEqual({ id: 'workspace-store-match', storeId: 'store-123', plan: 'Annual' })
+  })
 })
 
 describe('mapAccount', () => {
