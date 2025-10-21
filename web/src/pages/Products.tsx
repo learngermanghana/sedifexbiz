@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc,
   collection,
@@ -7,8 +7,10 @@ import {
   limit,
   onSnapshot,
   orderBy,
+  rosterDb,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from '../lib/db'
@@ -52,6 +54,13 @@ interface StatusState {
 
 function sanitizePrice(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value
+  }
+  return null
+}
+
+function sanitizeOptionalNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
     return value
   }
   return null
@@ -158,6 +167,7 @@ export default function Products() {
   const [filterText, setFilterText] = useState('')
   const [showLowStockOnly, setShowLowStockOnly] = useState(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const rosterSyncSignatureRef = useRef<string | null>(null)
   const [createForm, setCreateForm] = useState(DEFAULT_CREATE_FORM)
   const [createStatus, setCreateStatus] = useState<StatusState | null>(null)
   const [isCreating, setIsCreating] = useState(false)
@@ -165,6 +175,63 @@ export default function Products() {
   const [editStatus, setEditStatus] = useState<StatusState | null>(null)
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
+
+  const persistRosterSnapshot = useCallback(
+    async (storeId: string, snapshotProducts: ProductRecord[]) => {
+      if (!storeId) return
+
+      const rosterItems = snapshotProducts.map(product => ({
+        id: product.id,
+        name: product.name ?? null,
+        sku: product.sku ?? null,
+        price: sanitizePrice(product.price),
+        stockCount: sanitizeOptionalNumber(product.stockCount),
+        reorderThreshold: sanitizeOptionalNumber(product.reorderThreshold),
+        createdAt: product.createdAt ?? null,
+        updatedAt: product.updatedAt ?? null,
+        lastReceipt: product.lastReceipt ?? null,
+        status: product.__optimistic ? 'pending' : 'confirmed',
+      }))
+
+      const signature = JSON.stringify(
+        rosterItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          sku: item.sku,
+          price: item.price,
+          stockCount: item.stockCount,
+          reorderThreshold: item.reorderThreshold,
+          status: item.status,
+        })),
+      )
+
+      if (rosterSyncSignatureRef.current === signature) {
+        return
+      }
+
+      rosterSyncSignatureRef.current = signature
+
+      try {
+        await setDoc(
+          doc(rosterDb, 'inventorySnapshots', storeId),
+          {
+            storeId,
+            workspaceId: storeId,
+            totalSkus: rosterItems.length,
+            pendingSkus: rosterItems.filter(item => item.status === 'pending').length,
+            items: rosterItems,
+            syncedAt: serverTimestamp(),
+            capturedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        )
+      } catch (error) {
+        rosterSyncSignatureRef.current = null
+        console.warn('[products] Failed to persist roster inventory snapshot', error)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -252,6 +319,7 @@ export default function Products() {
         saveCachedProducts(sanitizedRows, { storeId: activeStoreId }).catch(error => {
           console.warn('[products] Failed to cache products', error)
         })
+        void persistRosterSnapshot(activeStoreId, sanitizedRows)
         setProducts(prev => {
           const optimistic = prev.filter(
             product => product.__optimistic && product.storeId === activeStoreId,
@@ -398,6 +466,7 @@ export default function Products() {
     setIsCreating(true)
     setCreateStatus(null)
     setProducts(prev => sortProducts([optimisticProduct, ...prev]))
+    void persistRosterSnapshot(activeStoreId, [optimisticProduct])
 
     try {
       const ref = await addDoc(collection(db, 'products'), {
@@ -521,6 +590,8 @@ export default function Products() {
           product.id === editingProductId ? { ...product, __optimistic: false } : product,
         ),
       )
+      const updatedProduct = { ...previous, ...updatedValues, __optimistic: false } as ProductRecord
+      void persistRosterSnapshot(activeStoreId, [updatedProduct])
       setEditingProductId(null)
     } catch (error) {
       console.error('[products] Failed to update product', error)
@@ -542,6 +613,15 @@ export default function Products() {
       setIsUpdating(false)
     }
   }
+
+  useEffect(() => {
+    rosterSyncSignatureRef.current = null
+  }, [activeStoreId])
+
+  useEffect(() => {
+    if (!activeStoreId) return
+    void persistRosterSnapshot(activeStoreId, products)
+  }, [activeStoreId, products, persistRosterSnapshot])
 
   function renderStatus(status: StatusState | null) {
     if (!status) return null

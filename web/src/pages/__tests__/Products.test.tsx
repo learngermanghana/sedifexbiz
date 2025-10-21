@@ -48,13 +48,22 @@ const onSnapshotMock = vi.fn(
 const addDocMock = vi.fn()
 const updateDocMock = vi.fn(async () => {})
 const serverTimestampMock = vi.fn(() => 'server-timestamp')
-const docMock = vi.fn((collectionRef: { path: string }, id: string) => ({
-  type: 'doc',
-  path: `${collectionRef.path}/${id}`,
-}))
+const setDocMock = vi.fn(async () => {})
+const docMock = vi.fn((...args: unknown[]) => {
+  if (args.length === 2) {
+    const [collectionRef, id] = args as [{ path: string }, string]
+    return { type: 'doc', path: `${collectionRef.path}/${id}` }
+  }
+  if (args.length === 3) {
+    const [, collectionPath, id] = args as [unknown, string, string]
+    return { type: 'doc', path: `${collectionPath}/${id}` }
+  }
+  return { type: 'doc', path: 'unknown' }
+})
 
 vi.mock('../../lib/db', () => ({
   db: {},
+  rosterDb: { name: 'roster-db' },
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   orderBy: (...args: Parameters<typeof orderByMock>) => orderByMock(...args),
@@ -65,6 +74,7 @@ vi.mock('../../lib/db', () => ({
   addDoc: (...args: Parameters<typeof addDocMock>) => addDocMock(...args),
   updateDoc: (...args: Parameters<typeof updateDocMock>) => updateDocMock(...args),
   serverTimestamp: (...args: Parameters<typeof serverTimestampMock>) => serverTimestampMock(...args),
+  setDoc: (...args: Parameters<typeof setDocMock>) => setDocMock(...args),
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
 }))
@@ -81,6 +91,7 @@ describe('Products page', () => {
     addDocMock.mockClear()
     updateDocMock.mockClear()
     serverTimestampMock.mockClear()
+    setDocMock.mockClear()
     docMock.mockClear()
     whereMock.mockClear()
     mockUseActiveStore.mockReset()
@@ -179,6 +190,7 @@ describe('Products page', () => {
     expect(within(productRow).getByText(/low stock/i)).toBeInTheDocument()
     expect(within(productRow).getByText(/GHS 12\.00/)).toBeInTheDocument()
     expect(mockSaveCachedProducts).toHaveBeenCalled()
+    await waitFor(() => expect(setDocMock).toHaveBeenCalled())
   })
 
   it('shows a placeholder when a product is missing a price', async () => {
