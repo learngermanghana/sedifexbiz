@@ -23,6 +23,13 @@ import {
   loadCachedProducts,
   saveCachedProducts,
 } from '../utils/offlineCache'
+import {
+  listPendingProductOperations,
+  queuePendingProductCreate,
+  queuePendingProductUpdate,
+  removePendingProductCreate,
+  removePendingProductUpdate,
+} from '../utils/pendingProductQueue'
 import './Products.css'
 
 interface ReceiptDetails {
@@ -168,6 +175,7 @@ export default function Products() {
   const [showLowStockOnly, setShowLowStockOnly] = useState(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const rosterSyncSignatureRef = useRef<string | null>(null)
+  const isSyncingPendingRef = useRef(false)
   const [createForm, setCreateForm] = useState(DEFAULT_CREATE_FORM)
   const [createStatus, setCreateStatus] = useState<StatusState | null>(null)
   const [isCreating, setIsCreating] = useState(false)
@@ -257,6 +265,15 @@ export default function Products() {
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [])
+
+  const optimisticSignature = useMemo(() => {
+    if (!activeStoreId) return ''
+    const ids = products
+      .filter(product => product.__optimistic && product.storeId === activeStoreId)
+      .map(product => product.id)
+    ids.sort()
+    return ids.join('|')
+  }, [activeStoreId, products])
 
   useEffect(() => {
     let cancelled = false
@@ -492,6 +509,19 @@ export default function Products() {
     } catch (error) {
       console.error('[products] Failed to create product', error)
       if (isOfflineError(error)) {
+        try {
+          await queuePendingProductCreate({
+            clientId: optimisticProduct.id,
+            storeId: activeStoreId,
+            name,
+            sku,
+            price,
+            reorderThreshold: reorderThreshold ?? null,
+            stockCount: initialStock ?? 0,
+          })
+        } catch (queueError) {
+          console.warn('[products] Failed to queue product create for retry', queueError)
+        }
         setProducts(prev =>
           prev.map(product =>
             product.id === optimisticProduct.id
@@ -595,12 +625,25 @@ export default function Products() {
       setEditingProductId(null)
     } catch (error) {
       console.error('[products] Failed to update product', error)
-      setProducts(prev =>
-        prev.map(product =>
-          product.id === editingProductId ? previous : product,
-        ),
-      )
       if (isOfflineError(error)) {
+        try {
+          await queuePendingProductUpdate({
+            productId: editingProductId,
+            storeId: activeStoreId,
+            name,
+            sku,
+            price,
+            reorderThreshold: reorderThreshold ?? null,
+            previous: {
+              name: previous.name ?? '',
+              sku: previous.sku ?? '',
+              price: sanitizePrice(previous.price),
+              reorderThreshold: sanitizeOptionalNumber(previous.reorderThreshold),
+            },
+          })
+        } catch (queueError) {
+          console.warn('[products] Failed to queue product update for retry', queueError)
+        }
         setEditStatus({
           tone: 'success',
           message: 'Offline — product edits saved and will sync when you reconnect.',
@@ -608,6 +651,11 @@ export default function Products() {
         setEditingProductId(null)
         return
       }
+      setProducts(prev =>
+        prev.map(product =>
+          product.id === editingProductId ? previous : product,
+        ),
+      )
       setEditStatus({ tone: 'error', message: 'Unable to update product. Please try again.' })
     } finally {
       setIsUpdating(false)
@@ -617,6 +665,183 @@ export default function Products() {
   useEffect(() => {
     rosterSyncSignatureRef.current = null
   }, [activeStoreId])
+
+  useEffect(() => {
+    if (!activeStoreId) return
+    if (typeof window === 'undefined') return
+
+    let cancelled = false
+
+    async function syncPendingOperations() {
+      if (cancelled) return
+      if (isSyncingPendingRef.current) return
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return
+
+      isSyncingPendingRef.current = true
+      try {
+        const pending = await listPendingProductOperations(activeStoreId)
+        if (!pending.length || cancelled) {
+          return
+        }
+
+        const ordered = [...pending].sort((a, b) => a.createdAt - b.createdAt)
+
+        for (const operation of ordered) {
+          if (cancelled) break
+          if (operation.kind === 'create') {
+            try {
+              const ref = await addDoc(collection(db, 'products'), {
+                name: operation.name,
+                price: operation.price,
+                sku: operation.sku,
+                reorderThreshold: operation.reorderThreshold,
+                stockCount: operation.stockCount ?? 0,
+                storeId: operation.storeId,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              })
+              if (cancelled) return
+              await removePendingProductCreate(operation.clientId, operation.storeId)
+              let syncedProduct: ProductRecord | null = null
+              let found = false
+              setProducts(prev => {
+                const mapped = prev.map(product => {
+                  if (product.id === operation.clientId) {
+                    found = true
+                    const updatedProduct = {
+                      ...product,
+                      id: ref.id,
+                      name: operation.name,
+                      sku: operation.sku,
+                      price: operation.price,
+                      reorderThreshold: operation.reorderThreshold,
+                      stockCount:
+                        typeof operation.stockCount === 'number'
+                          ? operation.stockCount
+                          : typeof product.stockCount === 'number'
+                            ? product.stockCount
+                            : 0,
+                      storeId: operation.storeId,
+                      __optimistic: false,
+                      updatedAt: new Date(),
+                    } as ProductRecord
+                    syncedProduct = updatedProduct
+                    return updatedProduct
+                  }
+                  return product
+                })
+                if (!found) {
+                  return prev
+                }
+                return sortProducts(mapped)
+              })
+              if (!found) {
+                syncedProduct = {
+                  id: ref.id,
+                  name: operation.name,
+                  sku: operation.sku,
+                  price: operation.price,
+                  reorderThreshold: operation.reorderThreshold,
+                  stockCount: typeof operation.stockCount === 'number' ? operation.stockCount : 0,
+                  storeId: operation.storeId,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                  lastReceipt: null,
+                  __optimistic: false,
+                }
+              }
+              if (syncedProduct) {
+                void persistRosterSnapshot(operation.storeId, [syncedProduct])
+              }
+            } catch (error) {
+              if (isOfflineError(error)) {
+                break
+              }
+              await removePendingProductCreate(operation.clientId, operation.storeId)
+              setProducts(prev => prev.filter(product => product.id !== operation.clientId))
+              setCreateStatus({ tone: 'error', message: 'Unable to create product. Please try again.' })
+            }
+            continue
+          }
+
+          if (operation.kind === 'update') {
+            try {
+              await updateDoc(doc(collection(db, 'products'), operation.productId), {
+                name: operation.name,
+                price: operation.price,
+                sku: operation.sku,
+                reorderThreshold: operation.reorderThreshold,
+                storeId: operation.storeId,
+                updatedAt: serverTimestamp(),
+              })
+              if (cancelled) return
+              await removePendingProductUpdate(operation.productId, operation.storeId)
+              let syncedProduct: ProductRecord | null = null
+              setProducts(prev => {
+                const mapped = prev.map(product => {
+                  if (product.id === operation.productId) {
+                    const updatedProduct = {
+                      ...product,
+                      name: operation.name,
+                      sku: operation.sku,
+                      price: operation.price,
+                      reorderThreshold: operation.reorderThreshold,
+                      __optimistic: false,
+                      updatedAt: new Date(),
+                    } as ProductRecord
+                    syncedProduct = updatedProduct
+                    return updatedProduct
+                  }
+                  return product
+                })
+                return sortProducts(mapped)
+              })
+              if (syncedProduct) {
+                void persistRosterSnapshot(operation.storeId, [syncedProduct])
+              }
+            } catch (error) {
+              if (isOfflineError(error)) {
+                break
+              }
+              await removePendingProductUpdate(operation.productId, operation.storeId)
+              setProducts(prev =>
+                sortProducts(
+                  prev.map(product => {
+                    if (product.id === operation.productId) {
+                      return {
+                        ...product,
+                        name: operation.previous.name,
+                        sku: operation.previous.sku,
+                        price: operation.previous.price,
+                        reorderThreshold: operation.previous.reorderThreshold,
+                        __optimistic: false,
+                      }
+                    }
+                    return product
+                  }),
+                ),
+              )
+              setEditStatus({ tone: 'error', message: 'Unable to update product. Please try again.' })
+            }
+          }
+        }
+      } finally {
+        isSyncingPendingRef.current = false
+      }
+    }
+
+    void syncPendingOperations()
+
+    function handleOnline() {
+      void syncPendingOperations()
+    }
+
+    window.addEventListener('online', handleOnline)
+    return () => {
+      cancelled = true
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [activeStoreId, optimisticSignature, persistRosterSnapshot, products])
 
   useEffect(() => {
     if (!activeStoreId) return
