@@ -29,6 +29,7 @@ import {
   queuePendingProductUpdate,
   removePendingProductCreate,
   removePendingProductUpdate,
+  replacePendingProductUpdateId,
 } from '../utils/pendingProductQueue'
 import './Products.css'
 
@@ -702,6 +703,16 @@ export default function Products() {
               })
               if (cancelled) return
               await removePendingProductCreate(operation.clientId, operation.storeId)
+              await replacePendingProductUpdateId(operation.clientId, ref.id, operation.storeId)
+              for (const pendingOperation of ordered) {
+                if (
+                  pendingOperation.kind === 'update' &&
+                  pendingOperation.storeId === operation.storeId &&
+                  pendingOperation.productId === operation.clientId
+                ) {
+                  pendingOperation.productId = ref.id
+                }
+              }
               let syncedProduct: ProductRecord | null = null
               let found = false
               setProducts(prev => {

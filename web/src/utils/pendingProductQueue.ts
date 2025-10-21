@@ -245,6 +245,45 @@ export async function removePendingProductUpdate(productId: string, storeId: str
   writeQueue(queue)
 }
 
+export async function replacePendingProductUpdateId(
+  clientId: string,
+  productId: string,
+  storeId: string,
+): Promise<void> {
+  const queue = readQueue()
+  let didUpdate = false
+  const updated = queue.map(operation => {
+    if (
+      operation.kind === 'update' &&
+      operation.storeId === storeId &&
+      operation.productId === clientId
+    ) {
+      didUpdate = true
+      return { ...operation, productId }
+    }
+    return operation
+  })
+
+  if (!didUpdate) {
+    return
+  }
+
+  const deduped = updated.filter((operation, index) => {
+    if (operation.kind !== 'update' || operation.storeId !== storeId) {
+      return true
+    }
+    const firstIndex = updated.findIndex(
+      other =>
+        other.kind === 'update' &&
+        other.storeId === storeId &&
+        other.productId === operation.productId,
+    )
+    return firstIndex === index
+  })
+
+  writeQueue(deduped)
+}
+
 export async function clearPendingProductOperationsForStore(storeId: string): Promise<void> {
   const queue = readQueue().filter(item => item.storeId !== storeId)
   writeQueue(queue)
