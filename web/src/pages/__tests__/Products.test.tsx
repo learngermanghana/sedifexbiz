@@ -7,6 +7,12 @@ import Products from '../Products'
 
 const mockLoadCachedProducts = vi.fn(async () => [] as unknown[])
 const mockSaveCachedProducts = vi.fn(async () => {})
+const mockQueuePendingProductCreate = vi.fn(async () => {})
+const mockQueuePendingProductUpdate = vi.fn(async () => {})
+const mockListPendingProductOperations = vi.fn(async () => [] as unknown[])
+const mockRemovePendingProductCreate = vi.fn(async () => {})
+const mockRemovePendingProductUpdate = vi.fn(async () => {})
+const mockReplacePendingProductUpdateId = vi.fn(async () => {})
 
 vi.mock('../../utils/offlineCache', () => ({
   PRODUCT_CACHE_LIMIT: 200,
@@ -14,6 +20,27 @@ vi.mock('../../utils/offlineCache', () => ({
     mockLoadCachedProducts(...args),
   saveCachedProducts: (...args: Parameters<typeof mockSaveCachedProducts>) =>
     mockSaveCachedProducts(...args),
+}))
+
+vi.mock('../../utils/pendingProductQueue', () => ({
+  listPendingProductOperations: (
+    ...args: Parameters<typeof mockListPendingProductOperations>
+  ) => mockListPendingProductOperations(...args),
+  queuePendingProductCreate: (
+    ...args: Parameters<typeof mockQueuePendingProductCreate>
+  ) => mockQueuePendingProductCreate(...args),
+  queuePendingProductUpdate: (
+    ...args: Parameters<typeof mockQueuePendingProductUpdate>
+  ) => mockQueuePendingProductUpdate(...args),
+  removePendingProductCreate: (
+    ...args: Parameters<typeof mockRemovePendingProductCreate>
+  ) => mockRemovePendingProductCreate(...args),
+  removePendingProductUpdate: (
+    ...args: Parameters<typeof mockRemovePendingProductUpdate>
+  ) => mockRemovePendingProductUpdate(...args),
+  replacePendingProductUpdateId: (
+    ...args: Parameters<typeof mockReplacePendingProductUpdateId>
+  ) => mockReplacePendingProductUpdateId(...args),
 }))
 
 const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
@@ -83,6 +110,12 @@ describe('Products page', () => {
   beforeEach(() => {
     mockLoadCachedProducts.mockReset()
     mockSaveCachedProducts.mockReset()
+    mockQueuePendingProductCreate.mockReset()
+    mockQueuePendingProductUpdate.mockReset()
+    mockListPendingProductOperations.mockReset()
+    mockRemovePendingProductCreate.mockReset()
+    mockRemovePendingProductUpdate.mockReset()
+    mockReplacePendingProductUpdateId.mockReset()
     collectionMock.mockClear()
     queryMock.mockClear()
     orderByMock.mockClear()
@@ -101,6 +134,10 @@ describe('Products page', () => {
 
     mockLoadCachedProducts.mockResolvedValue([])
     mockSaveCachedProducts.mockResolvedValue(undefined)
+    mockListPendingProductOperations.mockResolvedValue([])
+    mockRemovePendingProductCreate.mockResolvedValue(undefined)
+    mockRemovePendingProductUpdate.mockResolvedValue(undefined)
+    mockReplacePendingProductUpdateId.mockResolvedValue(undefined)
     onSnapshotMock.mockImplementation((queryRef, onNext) => {
       queueMicrotask(() => {
         onNext({ docs: [] })
