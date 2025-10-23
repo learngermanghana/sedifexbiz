@@ -5,7 +5,7 @@ import {
   collection,
   onSnapshot,
   query,
-  rosterDb,
+  db,
   where,
   type QuerySnapshot,
   type Timestamp,
@@ -101,7 +101,7 @@ export default function Products(): React.ReactElement {
 
     setLoading(true)
 
-    const productsQuery = query(collection(rosterDb, 'products'), where('storeId', '==', storeId))
+    const productsQuery = query(collection(db, 'products'), where('storeId', '==', storeId))
 
     const unsubscribe = onSnapshot(
       productsQuery,

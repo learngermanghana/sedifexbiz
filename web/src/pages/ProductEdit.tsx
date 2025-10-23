@@ -1,15 +1,7 @@
 // web/src/pages/ProductEdit.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import {
-  doc,
-  getDoc,
-  rosterDb,
-  serverTimestamp,
-  updateDoc,
-  deleteDoc,
-  type Timestamp,
-} from '../lib/db'
+import { doc, getDoc, db, serverTimestamp, updateDoc, deleteDoc, type Timestamp } from '../lib/db'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useToast } from '../components/ToastProvider'
 import './form.css'
@@ -72,7 +64,7 @@ export default function ProductEdit() {
     ;(async () => {
       try {
         setLoading(true)
-        const ref = doc(rosterDb, 'products', id)
+        const ref = doc(db, 'products', id)
         const snap = await getDoc(ref)
         if (!snap.exists()) {
           pushToast({ type: 'error', message: 'Product not found' })
@@ -116,7 +108,7 @@ export default function ProductEdit() {
 
     try {
       setSaving(true)
-      const ref = doc(rosterDb, 'products', id)
+      const ref = doc(db, 'products', id)
       await updateDoc(ref, {
         name: values.name.trim(),
         sku: values.sku.trim() || null,
@@ -146,7 +138,7 @@ export default function ProductEdit() {
     }
     if (!window.confirm('Delete this product? This cannot be undone.')) return
     try {
-      await deleteDoc(doc(rosterDb, 'products', id))
+      await deleteDoc(doc(db, 'products', id))
       pushToast({ type: 'success', message: 'Product deleted' })
       nav('/products')
     } catch (e: any) {
