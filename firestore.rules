@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow authenticated users to read and write any documents. This
+    // enables saving records such as staff, customers, products, and
+    // other domain entities across the database.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
