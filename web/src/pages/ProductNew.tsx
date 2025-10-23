@@ -1,6 +1,6 @@
 // web/src/pages/ProductNew.tsx
 import React, { useState } from 'react'
-import { addDoc, collection, serverTimestamp, rosterDb } from '../lib/db'
+import { addDoc, collection, serverTimestamp, db } from '../lib/db'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useToast } from '../components/ToastProvider'
 import './form.css'
@@ -60,8 +60,8 @@ export default function ProductNew() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }
-      // Save to Firestore "roster" database default products collection
-      await addDoc(collection(rosterDb, 'products'), payload)
+      // Save to the shared Firestore products collection
+      await addDoc(collection(db, 'products'), payload)
       pushToast({ type: 'success', message: 'Product saved!' })
       // reset
       setValues({
@@ -128,7 +128,7 @@ export default function ProductNew() {
         <div className="actions">
           <button type="submit" disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Product'}</button>
         </div>
-        <p className="hint">Saved to Firestore (roster database) with your current workspace ID.</p>
+        <p className="hint">Saved to Firestore with your current workspace ID.</p>
       </form>
     </div>
   )
