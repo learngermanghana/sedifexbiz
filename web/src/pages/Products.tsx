@@ -1,6 +1,5 @@
 // web/src/pages/Products.tsx
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   collection,
   onSnapshot,
@@ -165,11 +164,6 @@ export default function Products(): React.ReactElement {
           <h1 className="page__title">Products</h1>
           <p className="page__subtitle">Track inventory, pricing, and availability across your stores.</p>
         </div>
-        <div className="page__actions">
-          <Link className="button button--primary" to="/products/new">
-            Add product
-          </Link>
-        </div>
       </header>
 
       <section className="card card--flush">
@@ -180,12 +174,7 @@ export default function Products(): React.ReactElement {
         ) : products.length === 0 ? (
           <div className="empty-state">
             <p>No products yet.</p>
-            <p>Start by adding your first product to keep your catalog in sync.</p>
-            <div>
-              <Link className="button button--primary" to="/products/new">
-                Create product
-              </Link>
-            </div>
+            <p>Products you add to your workspace will appear here.</p>
           </div>
         ) : (
           <div className="table-wrapper">
@@ -199,7 +188,6 @@ export default function Products(): React.ReactElement {
                   <th scope="col">Stock</th>
                   <th scope="col">Status</th>
                   <th scope="col">Updated</th>
-                  <th scope="col" aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -207,9 +195,9 @@ export default function Products(): React.ReactElement {
                   <tr key={product.id}>
                     <td>
                       <div style={{ display: 'grid', gap: 4 }}>
-                        <Link to={`/products/${product.id}`} style={{ fontWeight: 600 }}>
+                        <span style={{ fontWeight: 600 }}>
                           {product.name ?? 'Untitled product'}
-                        </Link>
+                        </span>
                         {product.sku ? (
                           <span style={{ fontSize: 12, color: '#64748b' }}>SKU: {product.sku}</span>
                         ) : null}
@@ -221,11 +209,6 @@ export default function Products(): React.ReactElement {
                     <td>{formatStock(product.stockQty)}</td>
                     <td>{getStatusBadge(product)}</td>
                     <td>{formatUpdatedAt(product.updatedAt)}</td>
-                    <td>
-                      <Link className="button button--ghost button--small" to={`/products/${product.id}`}>
-                        Manage
-                      </Link>
-                    </td>
                   </tr>
                 ))}
               </tbody>
