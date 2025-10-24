@@ -512,6 +512,7 @@ export default function Products() {
       resetCreateForm()
     } catch (error) {
       console.error('[products] Failed to create product', error)
+      console.error('Firestore create product error details:', error)
       if (isOfflineError(error)) {
         try {
           await queuePendingProductCreate({
