@@ -5,6 +5,12 @@ import userEvent from '@testing-library/user-event'
 
 import Products from '../Products'
 
+const mockPublishToast = vi.fn()
+
+vi.mock('../../components/ToastProvider', () => ({
+  useToast: () => ({ publish: mockPublishToast }),
+}))
+
 const mockLoadCachedProducts = vi.fn(async () => [] as unknown[])
 const mockSaveCachedProducts = vi.fn(async () => {})
 const mockQueuePendingProductCreate = vi.fn(async () => {})
@@ -116,6 +122,7 @@ describe('Products page', () => {
     mockRemovePendingProductCreate.mockReset()
     mockRemovePendingProductUpdate.mockReset()
     mockReplacePendingProductUpdateId.mockReset()
+    mockPublishToast.mockReset()
     collectionMock.mockClear()
     queryMock.mockClear()
     orderByMock.mockClear()
