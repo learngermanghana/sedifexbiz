@@ -18,7 +18,6 @@ import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
 
 import { useActiveStore } from '../hooks/useActiveStore'
-import { useToast } from '../components/ToastProvider'
 import {
   PRODUCT_CACHE_LIMIT,
   loadCachedProducts,
@@ -170,7 +169,6 @@ function isOfflineError(error: unknown) {
 
 export default function Products() {
   const { storeId: activeStoreId } = useActiveStore()
-  const { publish: publishToast } = useToast()
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -508,11 +506,9 @@ export default function Products() {
         ),
       )
       setCreateStatus({ tone: 'success', message: 'Product created successfully.' })
-      publishToast({ tone: 'success', message: 'Product created successfully.' })
       resetCreateForm()
     } catch (error) {
       console.error('[products] Failed to create product', error)
-      console.error('Firestore create product error details:', error)
       if (isOfflineError(error)) {
         try {
           await queuePendingProductCreate({
@@ -538,11 +534,6 @@ export default function Products() {
           tone: 'success',
           message: 'Offline — product saved locally and will sync when you reconnect.',
         })
-        publishToast({
-          tone: 'success',
-          message: 'Offline — product saved locally and will sync when you reconnect.',
-        })
-        resetCreateForm()
         return
       }
       setProducts(prev => prev.filter(product => product.id !== optimisticProduct.id))
