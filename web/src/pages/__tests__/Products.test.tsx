@@ -342,6 +342,7 @@ describe('Products page', () => {
         price: 18,
         reorderThreshold: 4,
         stockCount: 10,
+        workspaceId: 'store-123',
       }),
     )
     expect(screen.getByText('Syncing…')).toBeInTheDocument()

@@ -496,6 +496,7 @@ export default function Products() {
         reorderThreshold: reorderThreshold ?? null,
         stockCount: initialStock ?? 0,
         storeId: activeStoreId,
+        workspaceId: activeStoreId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
@@ -730,6 +731,7 @@ export default function Products() {
                 reorderThreshold: operation.reorderThreshold,
                 stockCount: operation.stockCount ?? 0,
                 storeId: operation.storeId,
+                workspaceId: operation.storeId,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
               })
