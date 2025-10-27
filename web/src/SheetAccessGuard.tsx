@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, where, rosterDb } from './lib/db'
-import { auth } from './firebase'
-import { clearActiveStoreIdForUser, persistActiveStoreIdForUser } from './utils/activeStoreStorage'
+import { persistActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { useAuthUser } from './hooks/useAuthUser'
 import type { User } from 'firebase/auth'
 
@@ -9,69 +8,6 @@ type TeamMemberSnapshot = {
   storeId: string | null
   status: string | null
   contractStatus: string | null
-}
-
-const BLOCKED_STATUSES = new Set([
-  'inactive',
-  'disabled',
-  'suspended',
-  'terminated',
-  'cancelled',
-  'canceled',
-  'expired',
-  'payment_due',
-  'payment-due',
-  'payment due',
-  'past_due',
-  'past-due',
-  'past due',
-  'mismatch',
-])
-
-type WorkspaceDenialReason = 'expired' | 'payment_due' | 'mismatch'
-
-function detectWorkspaceDenialReason(snapshot: TeamMemberSnapshot): WorkspaceDenialReason | null {
-  const statuses = [snapshot.status, snapshot.contractStatus]
-    .map(value => normalizeString(value))
-    .filter((value): value is string => Boolean(value))
-    .map(value => value.toLowerCase())
-
-  if (statuses.some(status => status.includes('mismatch'))) {
-    return 'mismatch'
-  }
-
-  if (
-    statuses.some(status => {
-      if (status.includes('payment') && status.includes('due')) {
-        return true
-      }
-      if (status.includes('past') && status.includes('due')) {
-        return true
-      }
-      return false
-    })
-  ) {
-    return 'payment_due'
-  }
-
-  if (statuses.some(status => status.includes('expired') || status.includes('cancel'))) {
-    return 'expired'
-  }
-
-  return null
-}
-
-function formatDenialMessage(reason: WorkspaceDenialReason): string {
-  switch (reason) {
-    case 'expired':
-      return 'Access denied: expired. Your Sedifex workspace subscription has expired. Contact your Sedifex administrator to restore access.'
-    case 'payment_due':
-      return 'Access denied: payment due. Complete payment with your Sedifex administrator to restore access.'
-    case 'mismatch':
-      return 'Access denied: mismatch. Your Sedifex account is assigned to a different workspace. Confirm your invitation details with your Sedifex administrator.'
-    default:
-      return 'Access denied.'
-  }
 }
 
 function normalizeString(value: unknown): string | null {
@@ -103,14 +39,14 @@ function delay(ms: number): Promise<void> {
 
 type ActiveTeamMemberSnapshot = TeamMemberSnapshot & { storeId: string }
 
-async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMemberSnapshot> {
+async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMemberSnapshot | null> {
   let lastSnapshot: TeamMemberSnapshot | null = null
 
   for (let attempt = 0; attempt < MEMBERSHIP_RETRY_ATTEMPTS; attempt++) {
     const snapshot = await loadTeamMember(user)
     lastSnapshot = snapshot
 
-    if (snapshot.storeId && isWorkspaceActive(snapshot)) {
+    if (snapshot.storeId) {
       return { ...snapshot, storeId: snapshot.storeId }
     }
 
@@ -119,19 +55,11 @@ async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMe
     }
   }
 
-  if (!lastSnapshot || !lastSnapshot.storeId) {
-    throw new Error('We could not find a workspace assignment for this account.')
+  if (lastSnapshot?.storeId) {
+    return { ...lastSnapshot, storeId: lastSnapshot.storeId }
   }
 
-  if (!isWorkspaceActive(lastSnapshot)) {
-    const reason = detectWorkspaceDenialReason(lastSnapshot)
-    if (reason) {
-      throw new Error(formatDenialMessage(reason))
-    }
-    throw new Error('Your Sedifex workspace contract is not active.')
-  }
-
-  throw new Error('Access denied.')
+  return null
 }
 
 async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
@@ -155,18 +83,6 @@ async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
   }
 
   return snapshotFromData(match.data())
-}
-
-function isWorkspaceActive({ status, contractStatus }: TeamMemberSnapshot): boolean {
-  const candidates = [status, contractStatus]
-    .map(value => normalizeString(value ?? undefined))
-    .filter((value): value is string => Boolean(value))
-
-  if (candidates.length === 0) {
-    return true
-  }
-
-  return candidates.every(value => !BLOCKED_STATUSES.has(value.toLowerCase()))
 }
 
 export default function SheetAccessGuard({ children }: { children: React.ReactNode }) {
@@ -202,7 +118,9 @@ export default function SheetAccessGuard({ children }: { children: React.ReactNo
           return
         }
 
-        persistActiveStoreIdForUser(user.uid, member.storeId)
+        if (member?.storeId) {
+          persistActiveStoreIdForUser(user.uid, member.storeId)
+        }
         setError(null)
       } catch (e: unknown) {
         if (!isMounted || requestId !== requestIdRef.current) {
@@ -211,8 +129,6 @@ export default function SheetAccessGuard({ children }: { children: React.ReactNo
 
         const message = e instanceof Error ? e.message : 'Access denied.'
         setError(message)
-        await auth.signOut()
-        clearActiveStoreIdForUser(user.uid)
       } finally {
         if (isMounted && requestId === requestIdRef.current) {
           setReady(true)
