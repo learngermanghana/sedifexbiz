@@ -680,11 +680,24 @@ export default function Products() {
     const confirmed = typeof window !== 'undefined' ? window.confirm('Delete this product?') : true
     if (!confirmed) return
 
+    if (!activeStoreId) {
+      setEditStatus({ tone: 'error', message: 'Select a store before removing products.' })
+      return
+    }
+
     setIsDeleting(true)
     setEditStatus(null)
 
     try {
       await deleteDoc(doc(collection(db, 'products'), editingProductId))
+      try {
+        await Promise.all([
+          removePendingProductCreate(editingProductId, activeStoreId),
+          removePendingProductUpdate(editingProductId, activeStoreId),
+        ])
+      } catch (queueError) {
+        console.warn('[products] Failed to clear pending product operations after delete', queueError)
+      }
       setProducts(prev => prev.filter(item => item.id !== editingProductId))
       setEditingProductId(null)
     } catch (error) {
