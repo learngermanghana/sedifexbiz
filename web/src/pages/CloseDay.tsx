@@ -44,6 +44,7 @@ export default function CloseDay() {
 
   const [total, setTotal] = useState(0)
   const [cashCounts, setCashCounts] = useState<CashCountState>(() => createInitialCashCountState())
+  const [currencyLabel, setCurrencyLabel] = useState('GHS')
   const [looseCash, setLooseCash] = useState('')
   const [cardAndDigital, setCardAndDigital] = useState('')
   const [cashRemoved, setCashRemoved] = useState('')
@@ -113,6 +114,26 @@ export default function CloseDay() {
     window.print()
   }
 
+  const formatCurrency = (
+    value: number,
+    { minimumFractionDigits = 2, maximumFractionDigits = 2 }: { minimumFractionDigits?: number; maximumFractionDigits?: number } = {},
+  ) => {
+    const trimmedCurrency = currencyLabel.trim()
+    const safeMinimum = Math.max(0, Math.floor(minimumFractionDigits))
+    const safeMaximum = Math.max(safeMinimum, Math.floor(maximumFractionDigits))
+    const safeValue = Number.isFinite(value) ? value : 0
+    const formatted = safeValue.toLocaleString(undefined, {
+      minimumFractionDigits: safeMinimum,
+      maximumFractionDigits: safeMaximum,
+    })
+    return trimmedCurrency ? `${trimmedCurrency} ${formatted}` : formatted
+  }
+
+  const formatDenomination = (value: number) => {
+    const digits = value % 1 === 0 ? 0 : 2
+    return formatCurrency(value, { minimumFractionDigits: digits, maximumFractionDigits: digits })
+  }
+
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async event => {
     event.preventDefault()
     setSubmitError(null)
@@ -180,7 +201,18 @@ export default function CloseDay() {
         <section style={{ marginTop: 24 }}>
           <h3 style={{ marginBottom: 8 }}>Sales Summary</h3>
           <p style={{ marginBottom: 8 }}>Today’s sales total</p>
-          <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 16 }}>GHS {total.toFixed(2)}</div>
+          <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 16 }}>
+            {formatCurrency(total)}
+          </div>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 240, marginBottom: 16 }}>
+            <span>Currency</span>
+            <input
+              type="text"
+              value={currencyLabel}
+              onChange={event => setCurrencyLabel(event.target.value)}
+              placeholder="e.g. GHS"
+            />
+          </label>
           <div style={{ display: 'grid', gap: 12, maxWidth: 420 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span>Card &amp; digital payments</span>
@@ -239,7 +271,7 @@ export default function CloseDay() {
                   const subtotal = denom * quantity
                   return (
                     <tr key={key}>
-                      <td style={{ padding: '6px 4px' }}>GHS {denom.toFixed(denom % 1 === 0 ? 0 : 2)}</td>
+                      <td style={{ padding: '6px 4px' }}>{formatDenomination(denom)}</td>
                       <td style={{ padding: '6px 4px' }}>
                         <input
                           type="number"
@@ -251,7 +283,7 @@ export default function CloseDay() {
                           style={{ width: '100%' }}
                         />
                       </td>
-                      <td style={{ padding: '6px 4px', textAlign: 'right' }}>GHS {subtotal.toFixed(2)}</td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right' }}>{formatCurrency(subtotal)}</td>
                     </tr>
                   )
                 })}
@@ -282,16 +314,16 @@ export default function CloseDay() {
           <div style={{ display: 'grid', gap: 6, maxWidth: 360 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Expected cash</span>
-              <strong>GHS {expectedCash.toFixed(2)}</strong>
+              <strong>{formatCurrency(expectedCash)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Counted cash</span>
-              <strong>GHS {countedCash.toFixed(2)}</strong>
+              <strong>{formatCurrency(countedCash)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Variance</span>
               <strong style={{ color: Math.abs(variance) > 0.009 ? '#b91c1c' : '#047857' }}>
-                GHS {variance.toFixed(2)}
+                {formatCurrency(variance)}
               </strong>
             </div>
           </div>
