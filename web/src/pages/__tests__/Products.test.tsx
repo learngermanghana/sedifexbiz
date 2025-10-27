@@ -74,6 +74,7 @@ const onSnapshotMock = vi.fn(
 )
 const addDocMock = vi.fn()
 const updateDocMock = vi.fn(async () => {})
+const deleteDocMock = vi.fn(async () => {})
 const serverTimestampMock = vi.fn(() => 'server-timestamp')
 const setDocMock = vi.fn(async () => {})
 const docMock = vi.fn((...args: unknown[]) => {
@@ -100,6 +101,7 @@ vi.mock('../../lib/db', () => ({
   ) => onSnapshotMock(...args),
   addDoc: (...args: Parameters<typeof addDocMock>) => addDocMock(...args),
   updateDoc: (...args: Parameters<typeof updateDocMock>) => updateDocMock(...args),
+  deleteDoc: (...args: Parameters<typeof deleteDocMock>) => deleteDocMock(...args),
   serverTimestamp: (...args: Parameters<typeof serverTimestampMock>) => serverTimestampMock(...args),
   setDoc: (...args: Parameters<typeof setDocMock>) => setDocMock(...args),
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
@@ -123,6 +125,7 @@ describe('Products page', () => {
     onSnapshotMock.mockClear()
     addDocMock.mockClear()
     updateDocMock.mockClear()
+    deleteDocMock.mockClear()
     serverTimestampMock.mockClear()
     setDocMock.mockClear()
     docMock.mockClear()
@@ -423,6 +426,55 @@ describe('Products page', () => {
       expect.objectContaining({ path: 'products/product-9' }),
       expect.objectContaining({ price: 20 }),
     )
+  })
+
+  it('deletes a product from the edit dialog when confirmed', async () => {
+    const user = userEvent.setup()
+    let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null
+    onSnapshotMock.mockImplementation((queryRef, onNext) => {
+      snapshotHandler = onNext
+      return () => {}
+    })
+
+    render(
+      <MemoryRouter>
+        <Products />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      snapshotHandler?.({
+        docs: [
+          {
+            id: 'product-42',
+            data: () => ({
+              name: 'Disposable Item',
+              sku: 'DISP-01',
+              price: 8,
+              stockCount: 3,
+            }),
+          },
+        ],
+      })
+    })
+
+    const editButton = await screen.findByRole('button', { name: /edit/i })
+    await user.click(editButton)
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const deleteButton = await screen.findByRole('button', { name: /delete product/i })
+    await user.click(deleteButton)
+
+    await waitFor(() => expect(deleteDocMock).toHaveBeenCalledTimes(1))
+    expect(deleteDocMock).toHaveBeenCalledWith(expect.objectContaining({ path: 'products/product-42' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByTestId('product-row-product-42')).not.toBeInTheDocument())
+
+    confirmSpy.mockRestore()
   })
 })
 

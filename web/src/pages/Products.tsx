@@ -4,6 +4,7 @@ import {
   collection,
   db,
   doc,
+  deleteDoc,
   limit,
   onSnapshot,
   orderBy,
@@ -184,6 +185,7 @@ export default function Products() {
   const [editStatus, setEditStatus] = useState<StatusState | null>(null)
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const persistRosterSnapshot = useCallback(
     async (storeId: string, snapshotProducts: ProductRecord[]) => {
@@ -663,6 +665,36 @@ export default function Products() {
     }
   }
 
+  async function handleDeleteProduct() {
+    if (!editingProductId) {
+      setEditStatus({ tone: 'error', message: 'Select a product to delete before removing.' })
+      return
+    }
+
+    const product = products.find(item => item.id === editingProductId)
+    if (!product) {
+      setEditStatus({ tone: 'error', message: 'We could not find this product to delete.' })
+      return
+    }
+
+    const confirmed = typeof window !== 'undefined' ? window.confirm('Delete this product?') : true
+    if (!confirmed) return
+
+    setIsDeleting(true)
+    setEditStatus(null)
+
+    try {
+      await deleteDoc(doc(collection(db, 'products'), editingProductId))
+      setProducts(prev => prev.filter(item => item.id !== editingProductId))
+      setEditingProductId(null)
+    } catch (error) {
+      console.error('[products] Failed to delete product', error)
+      setEditStatus({ tone: 'error', message: 'Unable to delete product. Please try again.' })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   useEffect(() => {
     rosterSyncSignatureRef.current = null
   }, [activeStoreId])
@@ -1089,13 +1121,25 @@ export default function Products() {
               <div className="products-page__dialog-actions">
                 <button
                   type="button"
+                  className="products-page__delete"
+                  onClick={handleDeleteProduct}
+                  disabled={isUpdating || isDeleting}
+                >
+                  {isDeleting ? 'Deleting…' : 'Delete product'}
+                </button>
+                <button
+                  type="button"
                   className="products-page__cancel"
                   onClick={() => setEditingProductId(null)}
-                  disabled={isUpdating}
+                  disabled={isUpdating || isDeleting}
                 >
                   Cancel
                 </button>
-                <button type="submit" className="products-page__submit" disabled={isUpdating}>
+                <button
+                  type="submit"
+                  className="products-page__submit"
+                  disabled={isUpdating || isDeleting}
+                >
                   {isUpdating ? 'Saving…' : 'Save changes'}
                 </button>
               </div>

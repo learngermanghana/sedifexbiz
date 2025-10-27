@@ -183,6 +183,24 @@
   gap: 12px;
 }
 
+.products-page__delete {
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: none;
+  background-color: #dc2626;
+  color: #fff;
+  cursor: pointer;
+}
+
+.products-page__delete:hover {
+  background-color: #b91c1c;
+}
+
+.products-page__delete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .products-page__cancel {
   padding: 10px 18px;
   border-radius: 6px;
