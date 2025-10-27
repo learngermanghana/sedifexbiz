@@ -25,21 +25,12 @@ vi.mock('./lib/db', () => ({
   rosterDb: mockRosterDb,
 }))
 
-const signOutMock = vi.fn().mockResolvedValue(undefined)
-
 const mockRosterDb = { name: 'roster-db' }
-vi.mock('./firebase', () => ({
-  auth: { signOut: signOutMock },
-}))
-
 const persistActiveStoreMock = vi.fn()
-const clearActiveStoreMock = vi.fn()
 
 vi.mock('./utils/activeStoreStorage', () => ({
   persistActiveStoreIdForUser: (...args: Parameters<typeof persistActiveStoreMock>) =>
     persistActiveStoreMock(...args),
-  clearActiveStoreIdForUser: (...args: Parameters<typeof clearActiveStoreMock>) =>
-    clearActiveStoreMock(...args),
 }))
 
 describe('SheetAccessGuard', () => {
@@ -51,25 +42,20 @@ describe('SheetAccessGuard', () => {
     getDocsMock.mockReset()
     queryMock.mockReset()
     whereMock.mockReset()
-    signOutMock.mockClear()
     persistActiveStoreMock.mockClear()
-    clearActiveStoreMock.mockClear()
   })
 
   it.each([
     {
       status: 'expired',
-      expected: 'Access denied: expired. Your Sedifex workspace subscription has expired. Contact your Sedifex administrator to restore access.',
     },
     {
       status: 'payment due',
-      expected: 'Access denied: payment due. Complete payment with your Sedifex administrator to restore access.',
     },
     {
       status: 'assignment mismatch',
-      expected: 'Access denied: mismatch. Your Sedifex account is assigned to a different workspace. Confirm your invitation details with your Sedifex administrator.',
     },
-  ])('denies access with message for %s status', async ({ status, expected }) => {
+  ])('allows access for %s status', async ({ status }) => {
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'user@example.com' })
     docMock.mockReturnValue({ type: 'doc', path: 'teamMembers/user-1' })
     getDocMock.mockResolvedValue({
@@ -83,9 +69,8 @@ describe('SheetAccessGuard', () => {
       </SheetAccessGuard>,
     )
 
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(expected))
-    expect(signOutMock).toHaveBeenCalledTimes(1)
-    expect(clearActiveStoreMock).toHaveBeenCalledWith('user-1')
-    expect(persistActiveStoreMock).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByText('Protected content')).toBeInTheDocument())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(persistActiveStoreMock).toHaveBeenCalledWith('user-1', 'store-123')
   })
 })
