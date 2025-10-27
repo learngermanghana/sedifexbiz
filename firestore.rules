@@ -93,12 +93,17 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /teamMembers/{memberId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if false;
+    }
+
     // All other collections remain readable/writable to signed-in users.
     match /{collection}/{documentId} {
-      allow read, write: if isSignedIn() && collection != 'workspaces';
+      allow read, write: if isSignedIn() && collection != 'workspaces' && collection != 'teamMembers';
 
       match /{subcollection=**} {
-        allow read, write: if isSignedIn() && collection != 'workspaces';
+        allow read, write: if isSignedIn() && collection != 'workspaces' && collection != 'teamMembers';
       }
     }
   }
