@@ -513,6 +513,7 @@ export default function Products() {
     } catch (error) {
       console.error('[products] Failed to create product', error)
       if (isOfflineError(error)) {
+        let queued = false
         try {
           await queuePendingProductCreate({
             clientId: optimisticProduct.id,
@@ -523,19 +524,28 @@ export default function Products() {
             reorderThreshold: reorderThreshold ?? null,
             stockCount: initialStock ?? 0,
           })
+          queued = true
         } catch (queueError) {
           console.warn('[products] Failed to queue product create for retry', queueError)
         }
-        setProducts(prev =>
-          prev.map(product =>
-            product.id === optimisticProduct.id
-              ? { ...product, __optimistic: true, storeId: activeStoreId }
-              : product,
-          ),
-        )
+        if (queued) {
+          setProducts(prev =>
+            prev.map(product =>
+              product.id === optimisticProduct.id
+                ? { ...product, __optimistic: true, storeId: activeStoreId }
+                : product,
+            ),
+          )
+          setCreateStatus({
+            tone: 'success',
+            message: 'Offline — product saved locally and will sync when you reconnect.',
+          })
+          return
+        }
+        setProducts(prev => prev.filter(product => product.id !== optimisticProduct.id))
         setCreateStatus({
-          tone: 'success',
-          message: 'Offline — product saved locally and will sync when you reconnect.',
+          tone: 'error',
+          message: 'Unable to create product while offline. Please try again when you reconnect.',
         })
         return
       }
@@ -630,6 +640,7 @@ export default function Products() {
     } catch (error) {
       console.error('[products] Failed to update product', error)
       if (isOfflineError(error)) {
+        let queued = false
         try {
           await queuePendingProductUpdate({
             productId: editingProductId,
@@ -645,14 +656,27 @@ export default function Products() {
               reorderThreshold: sanitizeOptionalNumber(previous.reorderThreshold),
             },
           })
+          queued = true
         } catch (queueError) {
           console.warn('[products] Failed to queue product update for retry', queueError)
         }
+        if (queued) {
+          setEditStatus({
+            tone: 'success',
+            message: 'Offline — product edits saved and will sync when you reconnect.',
+          })
+          setEditingProductId(null)
+          return
+        }
+        setProducts(prev =>
+          prev.map(product =>
+            product.id === editingProductId ? previous : product,
+          ),
+        )
         setEditStatus({
-          tone: 'success',
-          message: 'Offline — product edits saved and will sync when you reconnect.',
+          tone: 'error',
+          message: 'Unable to update product while offline. Please try again when you reconnect.',
         })
-        setEditingProductId(null)
         return
       }
       setProducts(prev =>

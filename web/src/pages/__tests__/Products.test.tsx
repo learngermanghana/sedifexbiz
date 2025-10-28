@@ -429,6 +429,129 @@ describe('Products page', () => {
     )
   })
 
+  it('shows an error when an offline create cannot be queued', async () => {
+    const user = userEvent.setup()
+    let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null
+    onSnapshotMock.mockImplementation((queryRef, onNext) => {
+      snapshotHandler = onNext
+      return () => {}
+    })
+
+    const originalOnline = navigator.onLine
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false })
+
+    try {
+      addDocMock.mockRejectedValueOnce(new TypeError('Network request failed'))
+      mockQueuePendingProductCreate.mockRejectedValueOnce(new Error('queue failed'))
+
+      render(
+        <MemoryRouter>
+          <Products />
+        </MemoryRouter>,
+      )
+
+      await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
+
+      await act(async () => {
+        snapshotHandler?.({ docs: [] })
+      })
+
+      await user.type(screen.getByLabelText('Name'), 'Offline Only')
+      await user.type(screen.getByLabelText('SKU'), 'OFF-01')
+      await user.type(screen.getByLabelText('Price'), '12')
+
+      await user.click(screen.getByRole('button', { name: /add product/i }))
+
+      expect(addDocMock).toHaveBeenCalled()
+      expect(mockQueuePendingProductCreate).toHaveBeenCalled()
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            /unable to create product while offline\. please try again when you reconnect\./i,
+          ),
+        ).toBeInTheDocument()
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByText('Syncing…')).not.toBeInTheDocument()
+      })
+    } finally {
+      Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: originalOnline })
+    }
+  })
+
+  it('restores previous values when an offline update cannot be queued', async () => {
+    const user = userEvent.setup()
+    let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null
+    onSnapshotMock.mockImplementation((queryRef, onNext) => {
+      snapshotHandler = onNext
+      return () => {}
+    })
+
+    const originalOnline = navigator.onLine
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false })
+
+    try {
+      updateDocMock.mockRejectedValueOnce(new TypeError('Network request failed'))
+      mockQueuePendingProductUpdate.mockRejectedValueOnce(new Error('queue failed'))
+
+      render(
+        <MemoryRouter>
+          <Products />
+        </MemoryRouter>,
+      )
+
+      await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
+
+      await act(async () => {
+        snapshotHandler?.({
+          docs: [
+            {
+              id: 'product-27',
+              data: () => ({
+                name: 'Queued Item',
+                sku: 'QUE-01',
+                price: 10,
+                stockCount: 4,
+              }),
+            },
+          ],
+        })
+      })
+
+      const row = await screen.findByTestId('product-row-product-27')
+      const editButton = within(row).getByRole('button', { name: /edit/i })
+      await user.click(editButton)
+
+      const dialog = await screen.findByRole('dialog')
+      const priceInput = within(dialog).getByLabelText('Price')
+      await user.clear(priceInput)
+      await user.type(priceInput, '25')
+
+      const saveButton = within(dialog).getByRole('button', { name: /save changes/i })
+      await user.click(saveButton)
+
+      expect(updateDocMock).toHaveBeenCalled()
+      expect(mockQueuePendingProductUpdate).toHaveBeenCalled()
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            /unable to update product while offline\. please try again when you reconnect\./i,
+          ),
+        ).toBeInTheDocument()
+      })
+
+      await waitFor(() => {
+        expect(within(dialog).getByLabelText('Price')).toHaveValue('10')
+      })
+      expect(screen.queryByText('Syncing…')).not.toBeInTheDocument()
+    } finally {
+      Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: originalOnline })
+    }
+  })
+
   it('deletes a product from the edit dialog when confirmed', async () => {
     const user = userEvent.setup()
     let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null
