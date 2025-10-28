@@ -436,7 +436,13 @@ function buildDailyMetricSeries(
 
 export function useStoreMetrics(): UseStoreMetricsResult {
   const authUser = useAuthUser()
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore()
+  const activeWorkspaceId = useMemo(() => {
+    const slug = activeWorkspaceSlug?.trim()
+    if (slug) return slug
+    const store = activeStoreId?.trim()
+    return store || null
+  }, [activeStoreId, activeWorkspaceSlug])
   const { publish } = useToast()
 
   const [sales, setSales] = useState<SaleRecord[]>([])
@@ -463,7 +469,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   useEffect(() => {
     let cancelled = false
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setSales([])
       return () => {
         cancelled = true
@@ -481,8 +487,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       })
 
     const q = query(
-      collection(db, 'sales'),
-      where('storeId', '==', activeStoreId),
+      collection(db, 'workspaces', activeWorkspaceId, 'sales'),
       orderBy('createdAt', 'desc'),
       limit(SALES_CACHE_LIMIT),
     )
@@ -502,12 +507,12 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
     let cancelled = false
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setProducts([])
       return () => {
         cancelled = true
@@ -525,8 +530,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       })
 
     const q = query(
-      collection(db, 'products'),
-      where('storeId', '==', activeStoreId),
+      collection(db, 'workspaces', activeWorkspaceId, 'products'),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -547,12 +551,12 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
     let cancelled = false
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setCustomers([])
       return () => {
         cancelled = true
@@ -570,8 +574,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       })
 
     const q = query(
-      collection(db, 'customers'),
-      where('storeId', '==', activeStoreId),
+      collection(db, 'workspaces', activeWorkspaceId, 'customers'),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(CUSTOMER_CACHE_LIMIT),
@@ -592,17 +595,16 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setReceipts([])
       return () => {}
     }
 
     const q = query(
-      collection(db, 'receipts'),
-      where('storeId', '==', activeStoreId),
+      collection(db, 'workspaces', activeWorkspaceId, 'receipts'),
       orderBy('createdAt', 'desc'),
       limit(RECEIPT_CACHE_LIMIT),
     )
@@ -614,16 +616,16 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       }))
       setReceipts(rows)
     })
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setLedgerEntries([])
       return () => {}
     }
 
     const q = query(
-      collection(db, 'ledger'),
+      collection(db, 'workspaces', activeWorkspaceId, 'ledger'),
       where('storeId', '==', activeStoreId),
       orderBy('createdAt', 'desc'),
       limit(LEDGER_CACHE_LIMIT),
@@ -636,7 +638,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       }))
       setLedgerEntries(rows)
     })
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
     if (!activeStoreId) {

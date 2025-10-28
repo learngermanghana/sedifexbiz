@@ -12,7 +12,6 @@ import {
   query,
   serverTimestamp,
   updateDoc,
-  where,
 } from '../lib/db'
 import { Link } from 'react-router-dom'
 
@@ -191,7 +190,13 @@ function buildCsvValue(value: string): string {
 }
 
 export default function Customers() {
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore()
+  const activeWorkspaceId = useMemo(() => {
+    const slug = activeWorkspaceSlug?.trim()
+    if (slug) return slug
+    const store = activeStoreId?.trim()
+    return store || null
+  }, [activeStoreId, activeWorkspaceSlug])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -260,7 +265,7 @@ export default function Customers() {
   useEffect(() => {
     let cancelled = false
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setCustomers([])
       return () => {
         cancelled = true
@@ -283,9 +288,9 @@ export default function Customers() {
         console.warn('[customers] Failed to load cached customers', error)
       })
 
+    const customersCollection = collection(db, 'workspaces', activeWorkspaceId, 'customers')
     const q = query(
-      collection(db, 'customers'),
-      where('storeId', '==', activeStoreId),
+      customersCollection,
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(CUSTOMER_CACHE_LIMIT),
@@ -314,7 +319,7 @@ export default function Customers() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   function normalizeSaleDate(value: unknown): Date | null {
     if (!value) return null
@@ -408,7 +413,7 @@ export default function Customers() {
   useEffect(() => {
     let cancelled = false
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setCustomerStats({})
       setSalesHistory({})
       return () => {
@@ -426,9 +431,9 @@ export default function Customers() {
         console.warn('[customers] Failed to load cached sales', error)
       })
 
+    const salesCollection = collection(db, 'workspaces', activeWorkspaceId, 'sales')
     const q = query(
-      collection(db, 'sales'),
-      where('storeId', '==', activeStoreId),
+      salesCollection,
       orderBy('createdAt', 'desc'),
       limit(SALES_CACHE_LIMIT),
     )
@@ -445,7 +450,7 @@ export default function Customers() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
     if (!selectedCustomerId) return
@@ -562,7 +567,7 @@ export default function Customers() {
       setError('Customer name is required to save a record.')
       return
     }
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setError('Select a workspace before saving customers.')
       return
     }
@@ -575,18 +580,23 @@ export default function Customers() {
           name: trimmedName,
           updatedAt: serverTimestamp(),
           storeId: activeStoreId,
+          workspaceId: activeWorkspaceId,
         }
         updatePayload.phone = phone.trim() ? phone.trim() : null
         updatePayload.email = email.trim() ? email.trim() : null
         updatePayload.notes = notes.trim() ? notes.trim() : null
         updatePayload.tags = parsedTags
-        await updateDoc(doc(db, 'customers', editingCustomerId), updatePayload)
+        await updateDoc(
+          doc(db, 'workspaces', activeWorkspaceId, 'customers', editingCustomerId),
+          updatePayload,
+        )
         setSelectedCustomerId(editingCustomerId)
         showSuccess('Customer updated successfully.')
       } else {
-        await addDoc(collection(db, 'customers'), {
+        await addDoc(collection(db, 'workspaces', activeWorkspaceId, 'customers'), {
           name: trimmedName,
           storeId: activeStoreId,
+          workspaceId: activeWorkspaceId,
           ...(phone.trim() ? { phone: phone.trim() } : {}),
           ...(email.trim() ? { email: email.trim() } : {}),
           ...(notes.trim() ? { notes: notes.trim() } : {}),
@@ -612,7 +622,10 @@ export default function Customers() {
     if (!confirmation) return
     setBusy(true)
     try {
-      await deleteDoc(doc(db, 'customers', id))
+      if (!activeWorkspaceId) {
+        throw new Error('Missing workspace context for delete')
+      }
+      await deleteDoc(doc(db, 'workspaces', activeWorkspaceId, 'customers', id))
       showSuccess('Customer removed.')
       if (selectedCustomerId === id) {
         setSelectedCustomerId(null)
@@ -635,7 +648,7 @@ export default function Customers() {
     setIsImporting(true)
     setError(null)
     try {
-      if (!activeStoreId) {
+      if (!activeStoreId || !activeWorkspaceId) {
         throw new Error('Select a workspace before importing customers.')
       }
 
@@ -694,6 +707,7 @@ export default function Customers() {
             name: rawName,
             updatedAt: serverTimestamp(),
             storeId: activeStoreId,
+            workspaceId: activeWorkspaceId,
           }
           if (phoneIndex >= 0) {
             payload.phone = rawPhone ? rawPhone : null
@@ -707,13 +721,14 @@ export default function Customers() {
           if (parsedTags) {
             payload.tags = parsedTags
           }
-          await updateDoc(doc(db, 'customers', existingId), payload)
+          await updateDoc(doc(db, 'workspaces', activeWorkspaceId, 'customers', existingId), payload)
           updatedCount += 1
         } else {
           const payload: Record<string, unknown> = {
             name: rawName,
             createdAt: serverTimestamp(),
             storeId: activeStoreId,
+            workspaceId: activeWorkspaceId,
           }
           if (rawPhone) {
             payload.phone = rawPhone
@@ -727,7 +742,7 @@ export default function Customers() {
           if (parsedTags && parsedTags.length) {
             payload.tags = parsedTags
           }
-          await addDoc(collection(db, 'customers'), payload)
+          await addDoc(collection(db, 'workspaces', activeWorkspaceId, 'customers'), payload)
           newCount += 1
         }
       }

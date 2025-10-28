@@ -43,7 +43,12 @@ vi.mock('../../utils/pendingProductQueue', () => ({
   ) => mockReplacePendingProductUpdateId(...args),
 }))
 
-const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
+const mockUseActiveStore = vi.fn(() => ({
+  storeId: 'store-1',
+  workspaceSlug: 'workspace-1',
+  isLoading: false,
+  error: null,
+}))
 vi.mock('../../hooks/useActiveStore', () => ({
   useActiveStore: () => mockUseActiveStore(),
 }))
@@ -131,7 +136,12 @@ describe('Products page', () => {
     docMock.mockClear()
     whereMock.mockClear()
     mockUseActiveStore.mockReset()
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockUseActiveStore.mockReturnValue({
+      storeId: 'store-1',
+      workspaceSlug: 'workspace-1',
+      isLoading: false,
+      error: null,
+    })
 
 
 

@@ -79,7 +79,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const storeIds = useMemo(
     () =>
       memberships
-        .map(membership => membership.storeId)
+        .map(membership => membership.storeId ?? membership.workspaceSlug)
         .filter((storeId): storeId is string => Boolean(storeId && storeId.trim())),
     [memberships],
   )

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, query, orderBy, limit, onSnapshot, where, db } from '../lib/db'
+import { collection, query, orderBy, limit, onSnapshot, db } from '../lib/db'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 
@@ -36,7 +36,13 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Receive() {
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore()
+  const activeWorkspaceId = useMemo(() => {
+    const slug = activeWorkspaceSlug?.trim()
+    if (slug) return slug
+    const store = activeStoreId?.trim()
+    return store || null
+  }, [activeStoreId, activeWorkspaceSlug])
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string>('')
   const [qty, setQty] = useState<string>('')
@@ -70,7 +76,7 @@ export default function Receive() {
   useEffect(() => {
     let cancelled = false
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setProducts([])
       return () => {
         cancelled = true
@@ -89,9 +95,9 @@ export default function Receive() {
         console.warn('[receive] Failed to load cached products', error)
       })
 
+    const productsCollection = collection(db, 'workspaces', activeWorkspaceId, 'products')
     const q = query(
-      collection(db, 'products'),
-      where('storeId', '==', activeStoreId),
+      productsCollection,
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -112,11 +118,11 @@ export default function Receive() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   async function receive() {
     if (!selected || qty === '') return
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       showStatus('error', 'Select a workspace before receiving stock.')
       return
     }

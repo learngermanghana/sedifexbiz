@@ -13,7 +13,6 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
-  where,
 } from '../lib/db'
 import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
@@ -51,6 +50,7 @@ export type ProductRecord = {
   createdAt?: unknown
   updatedAt?: unknown
   storeId?: string | null
+  workspaceId?: string | null
   __optimistic?: boolean
 }
 
@@ -169,7 +169,16 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Products() {
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore()
+  const activeWorkspaceId = useMemo(
+    () => {
+      const slug = activeWorkspaceSlug?.trim()
+      if (slug) return slug
+      const store = activeStoreId?.trim()
+      return store || null
+    },
+    [activeStoreId, activeWorkspaceSlug],
+  )
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -282,7 +291,7 @@ export default function Products() {
     let cancelled = false
     setLoadError(null)
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setProducts([])
       setIsLoadingProducts(false)
       return () => {
@@ -304,6 +313,7 @@ export default function Products() {
               price: sanitizePrice((item as ProductRecord).price),
               __optimistic: false,
               storeId: activeStoreId,
+              workspaceId: activeWorkspaceId,
             }))
             return sortProducts([...sanitized, ...optimistic])
           })
@@ -314,9 +324,9 @@ export default function Products() {
         console.warn('[products] Failed to load cached products', error)
       })
 
+    const productsCollection = collection(db, 'workspaces', activeWorkspaceId, 'products')
     const q = query(
-      collection(db, 'products'),
-      where('storeId', '==', activeStoreId),
+      productsCollection,
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -334,6 +344,7 @@ export default function Products() {
           ...(row as ProductRecord),
           price: sanitizePrice((row as ProductRecord).price),
           storeId: activeStoreId,
+          workspaceId: activeWorkspaceId,
           __optimistic: false,
         }))
         saveCachedProducts(sanitizedRows, { storeId: activeStoreId }).catch(error => {
@@ -363,7 +374,7 @@ export default function Products() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
     if (!editingProductId) {
@@ -464,7 +475,7 @@ export default function Products() {
       return
     }
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setCreateStatus({ tone: 'error', message: 'Select a workspace before adding products.' })
       return
     }
@@ -480,6 +491,7 @@ export default function Products() {
       createdAt: new Date(),
       updatedAt: new Date(),
       storeId: activeStoreId,
+      workspaceId: activeWorkspaceId,
       __optimistic: true,
     }
 
@@ -489,14 +501,14 @@ export default function Products() {
     void persistRosterSnapshot(activeStoreId, [optimisticProduct])
 
     try {
-      const ref = await addDoc(collection(db, 'products'), {
+      const ref = await addDoc(collection(db, 'workspaces', activeWorkspaceId, 'products'), {
         name,
         price,
         sku,
         reorderThreshold: reorderThreshold ?? null,
         stockCount: initialStock ?? 0,
         storeId: activeStoreId,
-        workspaceId: activeStoreId,
+        workspaceId: activeWorkspaceId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
@@ -587,7 +599,7 @@ export default function Products() {
       return
     }
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setEditStatus({ tone: 'error', message: 'Select a workspace before updating products.' })
       return
     }
@@ -620,12 +632,13 @@ export default function Products() {
     )
 
     try {
-      await updateDoc(doc(collection(db, 'products'), editingProductId), {
+      await updateDoc(doc(collection(db, 'workspaces', activeWorkspaceId, 'products'), editingProductId), {
         name,
         price,
         sku,
         reorderThreshold: reorderThreshold ?? null,
         storeId: activeStoreId,
+        workspaceId: activeWorkspaceId,
         updatedAt: serverTimestamp(),
       })
       setEditStatus({ tone: 'success', message: 'Product details updated.' })
@@ -709,7 +722,10 @@ export default function Products() {
     setEditStatus(null)
 
     try {
-      await deleteDoc(doc(collection(db, 'products'), editingProductId))
+      if (!activeWorkspaceId) {
+        throw new Error('Missing workspace context for delete')
+      }
+      await deleteDoc(doc(collection(db, 'workspaces', activeWorkspaceId, 'products'), editingProductId))
       setProducts(prev => prev.filter(item => item.id !== editingProductId))
       setEditingProductId(null)
     } catch (error) {
@@ -722,10 +738,10 @@ export default function Products() {
 
   useEffect(() => {
     rosterSyncSignatureRef.current = null
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
-    if (!activeStoreId) return
+    if (!activeStoreId || !activeWorkspaceId) return
     if (typeof window === 'undefined') return
 
     let cancelled = false
@@ -748,14 +764,14 @@ export default function Products() {
           if (cancelled) break
           if (operation.kind === 'create') {
             try {
-              const ref = await addDoc(collection(db, 'products'), {
+              const ref = await addDoc(collection(db, 'workspaces', activeWorkspaceId, 'products'), {
                 name: operation.name,
                 price: operation.price,
                 sku: operation.sku,
                 reorderThreshold: operation.reorderThreshold,
                 stockCount: operation.stockCount ?? 0,
                 storeId: operation.storeId,
-                workspaceId: operation.storeId,
+                workspaceId: activeWorkspaceId,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
               })
@@ -792,6 +808,7 @@ export default function Products() {
                             : 0,
                       storeId: operation.storeId,
                       __optimistic: false,
+                      workspaceId: activeWorkspaceId,
                       updatedAt: new Date(),
                     } as ProductRecord
                     syncedProduct = updatedProduct
@@ -813,6 +830,7 @@ export default function Products() {
                   reorderThreshold: operation.reorderThreshold,
                   stockCount: typeof operation.stockCount === 'number' ? operation.stockCount : 0,
                   storeId: operation.storeId,
+                  workspaceId: activeWorkspaceId,
                   createdAt: new Date(),
                   updatedAt: new Date(),
                   lastReceipt: null,
@@ -835,12 +853,13 @@ export default function Products() {
 
           if (operation.kind === 'update') {
             try {
-              await updateDoc(doc(collection(db, 'products'), operation.productId), {
+              await updateDoc(doc(collection(db, 'workspaces', activeWorkspaceId, 'products'), operation.productId), {
                 name: operation.name,
                 price: operation.price,
                 sku: operation.sku,
                 reorderThreshold: operation.reorderThreshold,
                 storeId: operation.storeId,
+                workspaceId: activeWorkspaceId,
                 updatedAt: serverTimestamp(),
               })
               if (cancelled) return

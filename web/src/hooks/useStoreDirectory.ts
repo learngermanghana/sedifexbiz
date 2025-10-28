@@ -74,7 +74,7 @@ export function useStoreDirectory(storeIds: string[]): StoreDirectoryState {
         const entries = await Promise.all(
           normalizedIds.map(async storeId => {
             try {
-              const workspace = await loadWorkspaceProfile({ storeId })
+              const workspace = await loadWorkspaceProfile({ slug: storeId, storeId })
               if (!workspace) {
                 return fallbackOption(storeId)
               }
