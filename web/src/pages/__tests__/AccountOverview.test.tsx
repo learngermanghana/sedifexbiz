@@ -125,7 +125,12 @@ describe('AccountOverview', () => {
     autoRerunTrigger = vi.fn()
     mockUseAutoRerun.mockReturnValue({ token: 0, trigger: autoRerunTrigger })
 
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
+    mockUseActiveStore.mockReturnValue({
+      storeId: 'store-123',
+      workspaceSlug: 'workspace-123',
+      isLoading: false,
+      error: null,
+    })
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'owner@example.com' })
     mockUseMemberships.mockReturnValue({
       memberships: [
@@ -217,7 +222,12 @@ describe('AccountOverview', () => {
   })
 
   it('fetches the active storeId from roster when no store is selected', async () => {
-    mockUseActiveStore.mockReturnValue({ storeId: null, isLoading: false, error: null })
+    mockUseActiveStore.mockReturnValue({
+      storeId: null,
+      workspaceSlug: null,
+      isLoading: false,
+      error: null,
+    })
     mockGetActiveStoreId.mockResolvedValue('store-456')
 
     render(<AccountOverview />)

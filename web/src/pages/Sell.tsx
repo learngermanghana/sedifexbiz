@@ -177,7 +177,13 @@ function sanitizePrice(value: unknown): number | null {
 
 export default function Sell() {
   const user = useAuthUser();
-  const { storeId: activeStoreId } = useActiveStore();
+  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore();
+  const activeWorkspaceId = useMemo(() => {
+    const slug = activeWorkspaceSlug?.trim();
+    if (slug) return slug;
+    const store = activeStoreId?.trim();
+    return store || null;
+  }, [activeStoreId, activeWorkspaceSlug]);
 
   // 🔒 Ensure claims are fresh for this store (prevents false access-denied)
   useEffect(() => {
@@ -229,7 +235,7 @@ export default function Sell() {
   // PRODUCTS listener (subcollection)
   useEffect(() => {
     let cancelled = false;
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setProducts([]);
       return () => { cancelled = true; };
     }
@@ -244,7 +250,7 @@ export default function Sell() {
       .catch(err => console.warn('[sell] Failed to load cached products', err));
 
     const q = query(
-      collection(db, 'stores', activeStoreId, 'products'),
+      collection(db, 'workspaces', activeWorkspaceId, 'products'),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -263,12 +269,12 @@ export default function Sell() {
     );
 
     return () => { cancelled = true; unsubscribe(); };
-  }, [activeStoreId]);
+  }, [activeStoreId, activeWorkspaceId]);
 
   // CUSTOMERS listener (subcollection)
   useEffect(() => {
     let cancelled = false;
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setCustomers([]);
       return () => { cancelled = true; };
     }
@@ -282,7 +288,7 @@ export default function Sell() {
       .catch(err => console.warn('[sell] Failed to load cached customers', err));
 
     const q = query(
-      collection(db, 'stores', activeStoreId, 'customers'),
+      collection(db, 'workspaces', activeWorkspaceId, 'customers'),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(CUSTOMER_CACHE_LIMIT),
@@ -300,7 +306,7 @@ export default function Sell() {
     );
 
     return () => { cancelled = true; unsubscribe(); };
-  }, [activeStoreId]);
+  }, [activeStoreId, activeWorkspaceId]);
 
   // Printing hook
   useEffect(() => {
@@ -528,14 +534,14 @@ export default function Sell() {
 
   async function recordSale() {
     if (cart.length === 0) return;
-    if (!activeStoreId) { setSaleError('Select a workspace before recording a sale.'); return; }
+    if (!activeStoreId || !activeWorkspaceId) { setSaleError('Select a workspace before recording a sale.'); return; }
     if (!user) { setSaleError('You must be signed in to record a sale.'); return; }
     if (isCashShort) { setSaleError('Cash received is less than the total due.'); return; }
 
     setSaleError(null); setSaleSuccess(null); setReceipt(null); setIsRecording(true);
 
     // Sale doc ID within store subcollection
-    const saleId = doc(collection(db, 'stores', activeStoreId, 'sales')).id;
+    const saleId = doc(collection(db, 'workspaces', activeWorkspaceId, 'sales')).id;
     const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale');
 
     const payload: CommitSalePayload = {

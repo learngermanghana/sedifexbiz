@@ -5,6 +5,7 @@ import { persistActiveStoreIdForUser, readActiveStoreId } from '../utils/activeS
 
 interface ActiveStoreState {
   storeId: string | null
+  workspaceSlug: string | null
   isLoading: boolean
   error: string | null
   memberships: Membership[]
@@ -100,14 +101,48 @@ export function useActiveStore(): ActiveStoreState {
 
   const hasError = error != null
 
+  const activeWorkspaceSlug = useMemo(() => {
+    if (!activeStoreId) return null
+
+    const normalizedActiveStoreId = activeStoreId.trim()
+    if (!normalizedActiveStoreId) {
+      return null
+    }
+
+    const matchByStoreId = memberships.find(membership => {
+      const candidate = (membership.storeId ?? '').trim()
+      return candidate !== '' && candidate === normalizedActiveStoreId
+    })
+
+    if (matchByStoreId?.workspaceSlug && matchByStoreId.workspaceSlug.trim()) {
+      return matchByStoreId.workspaceSlug.trim()
+    }
+
+    const matchBySlug = memberships.find(membership => {
+      const candidate = (membership.workspaceSlug ?? '').trim()
+      return candidate !== '' && candidate === normalizedActiveStoreId
+    })
+
+    if (matchBySlug?.workspaceSlug && matchBySlug.workspaceSlug.trim()) {
+      return matchBySlug.workspaceSlug.trim()
+    }
+
+    if (matchByStoreId?.storeId && matchByStoreId.storeId.trim()) {
+      return matchByStoreId.storeId.trim()
+    }
+
+    return normalizedActiveStoreId
+  }, [activeStoreId, memberships])
+
   return useMemo(
     () => ({
       storeId: activeStoreId,
+      workspaceSlug: activeWorkspaceSlug,
       isLoading: loading,
       error: hasError ? STORE_ERROR_MESSAGE : null,
       memberships,
       setActiveStoreId,
     }),
-    [activeStoreId, hasError, loading, memberships, setActiveStoreId],
+    [activeStoreId, activeWorkspaceSlug, hasError, loading, memberships, setActiveStoreId],
   )
 }

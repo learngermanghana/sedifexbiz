@@ -13,7 +13,6 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
-  where,
 } from '../lib/db'
 import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
@@ -170,7 +169,16 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Products() {
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore()
+  const activeWorkspaceId = useMemo(
+    () => {
+      const slug = activeWorkspaceSlug?.trim()
+      if (slug) return slug
+      const store = activeStoreId?.trim()
+      return store || null
+    },
+    [activeStoreId, activeWorkspaceSlug],
+  )
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -283,7 +291,7 @@ export default function Products() {
     let cancelled = false
     setLoadError(null)
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setProducts([])
       setIsLoadingProducts(false)
       return () => {
@@ -305,6 +313,7 @@ export default function Products() {
               price: sanitizePrice((item as ProductRecord).price),
               __optimistic: false,
               storeId: activeStoreId,
+              workspaceId: activeWorkspaceId,
             }))
             return sortProducts([...sanitized, ...optimistic])
           })
@@ -315,9 +324,11 @@ export default function Products() {
         console.warn('[products] Failed to load cached products', error)
       })
 
-    // WORKSPACE-SCOPED LISTENER
+
+    const productsCollection = collection(db, 'workspaces', activeWorkspaceId, 'products')
     const q = query(
-      collection(db, 'workspaces', activeStoreId, 'products'),
+      productsCollection,
+
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -337,6 +348,10 @@ export default function Products() {
           ...(row as ProductRecord),
           price: sanitizePrice((row as ProductRecord).price),
           storeId: activeStoreId,
+
+          workspaceId: activeWorkspaceId,
+          __optimistic: false,
+
         }))
         saveCachedProducts(sanitizedRows, { storeId: activeStoreId }).catch(error => {
           console.warn('[products] Failed to cache products', error)
@@ -365,7 +380,7 @@ export default function Products() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
     if (!editingProductId) {
@@ -466,7 +481,7 @@ export default function Products() {
       return
     }
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setCreateStatus({ tone: 'error', message: 'Select a workspace before adding products.' })
       return
     }
@@ -482,7 +497,9 @@ export default function Products() {
       createdAt: new Date(),
       updatedAt: new Date(),
       storeId: activeStoreId,
-      workspaceId: activeStoreId,
+
+      workspaceId: activeWorkspaceId,
+
       __optimistic: true,
     }
 
@@ -492,14 +509,16 @@ export default function Products() {
     void persistRosterSnapshot(activeStoreId, [optimisticProduct])
 
     try {
-      const ref = await addDoc(collection(db, 'workspaces', activeStoreId, 'products'), {
+
+      const ref = await addDoc(collection(db, 'workspaces', activeWorkspaceId, 'products'), {
+
         name,
         price,
         sku,
         reorderThreshold: reorderThreshold ?? null,
         stockCount: initialStock ?? 0,
         storeId: activeStoreId,
-        workspaceId: activeStoreId,
+        workspaceId: activeWorkspaceId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
@@ -590,7 +609,7 @@ export default function Products() {
       return
     }
 
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setEditStatus({ tone: 'error', message: 'Select a workspace before updating products.' })
       return
     }
@@ -624,12 +643,15 @@ export default function Products() {
     )
 
     try {
-      await updateDoc(doc(collection(db, 'workspaces', activeStoreId, 'products'), editingProductId), {
+
+      await updateDoc(doc(collection(db, 'workspaces', activeWorkspaceId, 'products'), editingProductId), {
+
         name,
         price,
         sku,
         reorderThreshold: reorderThreshold ?? null,
         storeId: activeStoreId,
+        workspaceId: activeWorkspaceId,
         updatedAt: serverTimestamp(),
       })
       setEditStatus({ tone: 'success', message: 'Product details updated.' })
@@ -707,45 +729,6 @@ export default function Products() {
     setEditStatus(null)
 
     try {
-      await deleteDoc(doc(collection(db, 'workspaces', activeStoreId, 'products'), editingProductId))
-      setProducts(prev => prev.filter(item => item.id !== editingProductId))
-      setEditingProductId(null)
-    } catch (error) {
-      console.error('[products] Failed to delete product', error)
-      setEditStatus({ tone: 'error', message: 'Unable to delete product. Please try again.' })
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-
-  useEffect(() => {
-    rosterSyncSignatureRef.current = null
-  }, [activeStoreId])
-
-  useEffect(() => {
-    if (!activeStoreId) return
-    if (typeof window === 'undefined') return
-
-    let cancelled = false
-
-    async function syncPendingOperations() {
-      if (cancelled) return
-      if (isSyncingPendingRef.current) return
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return
-
-      isSyncingPendingRef.current = true
-      try {
-        const pending = await listPendingProductOperations(activeStoreId)
-        if (!pending.length || cancelled) {
-          return
-        }
-
-        const ordered = [...pending].sort((a, b) => a.createdAt - b.createdAt)
-
-        for (const operation of ordered) {
-          if (cancelled) break
-          if (operation.kind === 'create') {
-            try {
               const ref = await addDoc(
                 collection(db, 'workspaces', operation.storeId, 'products'),
                 {
@@ -794,6 +777,7 @@ export default function Products() {
                       storeId: operation.storeId,
                       workspaceId: operation.storeId,
                       __optimistic: false,
+                      workspaceId: activeWorkspaceId,
                       updatedAt: new Date(),
                     } as ProductRecord
                     syncedProduct = updatedProduct
@@ -916,7 +900,7 @@ export default function Products() {
       cancelled = true
       window.removeEventListener('online', handleOnline)
     }
-  }, [activeStoreId, optimisticSignature, persistRosterSnapshot, products])
+  }, [activeStoreId, activeWorkspaceId, optimisticSignature, persistRosterSnapshot, products])
 
   useEffect(() => {
     if (!activeStoreId) return

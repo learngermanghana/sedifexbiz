@@ -40,7 +40,13 @@ function parseQuantity(input: string): number {
 
 export default function CloseDay() {
   const user = useAuthUser()
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore()
+  const activeWorkspaceId = useMemo(() => {
+    const slug = activeWorkspaceSlug?.trim()
+    if (slug) return slug
+    const store = activeStoreId?.trim()
+    return store || null
+  }, [activeStoreId, activeWorkspaceSlug])
 
   const [total, setTotal] = useState(0)
   const [cashCounts, setCashCounts] = useState<CashCountState>(() => createInitialCashCountState())
@@ -57,7 +63,7 @@ export default function CloseDay() {
   useEffect(() => {
     const start = new Date()
     start.setHours(0, 0, 0, 0)
-    if (!activeStoreId) {
+    if (!activeStoreId || !activeWorkspaceId) {
       setTotal(0)
       return () => {
         /* noop */
@@ -65,8 +71,7 @@ export default function CloseDay() {
     }
 
     const q = query(
-      collection(db, 'sales'),
-      where('storeId', '==', activeStoreId),
+      collection(db, 'workspaces', activeWorkspaceId, 'sales'),
       where('createdAt', '>=', Timestamp.fromDate(start)),
       orderBy('createdAt', 'desc')
     )
@@ -75,7 +80,7 @@ export default function CloseDay() {
       snap.forEach(d => sum += (d.data().total || 0))
       setTotal(sum)
     })
-  }, [activeStoreId])
+  }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
     const style = document.createElement('style')
@@ -141,7 +146,7 @@ export default function CloseDay() {
     setIsSubmitting(true)
 
     try {
-      if (!activeStoreId) {
+      if (!activeStoreId || !activeWorkspaceId) {
         throw new Error('Select a workspace before recording a close-out.')
       }
       const start = new Date(); start.setHours(0, 0, 0, 0)
@@ -173,9 +178,10 @@ export default function CloseDay() {
           : null,
         closedAt: serverTimestamp(),
         storeId: activeStoreId,
+        workspaceId: activeWorkspaceId,
       }
 
-      await addDoc(collection(db, 'closeouts'), closePayload)
+      await addDoc(collection(db, 'workspaces', activeWorkspaceId, 'closeDays'), closePayload)
       setSubmitSuccess(true)
       setCashCounts(createInitialCashCountState())
       setLooseCash('')

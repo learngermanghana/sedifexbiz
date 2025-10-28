@@ -62,6 +62,7 @@ describe('Shell', () => {
 
     mockUseActiveStore.mockReturnValue({
       storeId: 'store-1',
+      workspaceSlug: 'workspace-1',
       isLoading: false,
       error: null,
       memberships: [
@@ -70,6 +71,7 @@ describe('Shell', () => {
           uid: 'user-1',
           role: 'owner',
           storeId: 'store-1',
+          workspaceSlug: 'workspace-1',
           email: null,
           phone: null,
           invitedBy: null,
@@ -103,6 +105,7 @@ describe('Shell', () => {
     const setActiveStoreId = vi.fn()
     mockUseActiveStore.mockReturnValue({
       storeId: 'store-1',
+      workspaceSlug: 'workspace-1',
       isLoading: false,
       error: null,
       memberships: [
@@ -111,6 +114,7 @@ describe('Shell', () => {
           uid: 'user-1',
           role: 'owner',
           storeId: 'store-1',
+          workspaceSlug: 'workspace-1',
           email: null,
           phone: null,
           invitedBy: null,
