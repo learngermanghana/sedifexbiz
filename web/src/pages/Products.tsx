@@ -722,6 +722,11 @@ export default function Products() {
       return
     }
 
+    if (!activeStoreId || !activeWorkspaceId) {
+      setEditStatus({ tone: 'error', message: 'Select a workspace before deleting products.' })
+      return
+    }
+
     const confirmed = typeof window !== 'undefined' ? window.confirm('Delete this product?') : true
     if (!confirmed) return
 
@@ -729,6 +734,51 @@ export default function Products() {
     setEditStatus(null)
 
     try {
+      await deleteDoc(
+        doc(collection(db, 'workspaces', activeWorkspaceId, 'products'), editingProductId),
+      )
+      setProducts(prev => {
+        const next = prev.filter(item => item.id !== editingProductId)
+        void persistRosterSnapshot(activeStoreId, next)
+        return next
+      })
+      setEditStatus({ tone: 'success', message: 'Product deleted.' })
+      setEditingProductId(null)
+    } catch (error) {
+      console.error('[products] Failed to delete product', error)
+      if (isOfflineError(error)) {
+        setEditStatus({
+          tone: 'error',
+          message: 'Unable to delete product while offline. Please try again when you reconnect.',
+        })
+        return
+      }
+      setEditStatus({ tone: 'error', message: 'Unable to delete product. Please try again.' })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!activeStoreId || !activeWorkspaceId) return
+
+    let cancelled = false
+
+    const syncPendingOperations = async () => {
+      if (isSyncingPendingRef.current) return
+      isSyncingPendingRef.current = true
+
+      try {
+        const operations = await listPendingProductOperations(activeStoreId)
+        if (cancelled || operations.length === 0) return
+
+        const ordered = [...operations].sort((a, b) => a.createdAt - b.createdAt)
+
+        for (const operation of ordered) {
+          if (cancelled) return
+
+          if (operation.kind === 'create') {
+            try {
               const ref = await addDoc(
                 collection(db, 'workspaces', operation.storeId, 'products'),
                 {
