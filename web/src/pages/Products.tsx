@@ -51,6 +51,7 @@ export type ProductRecord = {
   createdAt?: unknown
   updatedAt?: unknown
   storeId?: string | null
+  workspaceId?: string | null
   __optimistic?: boolean
 }
 
@@ -314,9 +315,9 @@ export default function Products() {
         console.warn('[products] Failed to load cached products', error)
       })
 
+    // WORKSPACE-SCOPED LISTENER
     const q = query(
-      collection(db, 'products'),
-      where('storeId', '==', activeStoreId),
+      collection(db, 'workspaces', activeStoreId, 'products'),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -324,17 +325,18 @@ export default function Products() {
 
     const unsubscribe = onSnapshot(
       q,
+      { includeMetadataChanges: true },
       snapshot => {
         if (cancelled) return
         const rows = snapshot.docs.map(docSnap => ({
           id: docSnap.id,
           ...(docSnap.data() as Record<string, unknown>),
+          __optimistic: docSnap.metadata.hasPendingWrites,
         }))
         const sanitizedRows = rows.map(row => ({
           ...(row as ProductRecord),
           price: sanitizePrice((row as ProductRecord).price),
           storeId: activeStoreId,
-          __optimistic: false,
         }))
         saveCachedProducts(sanitizedRows, { storeId: activeStoreId }).catch(error => {
           console.warn('[products] Failed to cache products', error)
@@ -480,6 +482,7 @@ export default function Products() {
       createdAt: new Date(),
       updatedAt: new Date(),
       storeId: activeStoreId,
+      workspaceId: activeStoreId,
       __optimistic: true,
     }
 
@@ -489,7 +492,7 @@ export default function Products() {
     void persistRosterSnapshot(activeStoreId, [optimisticProduct])
 
     try {
-      const ref = await addDoc(collection(db, 'products'), {
+      const ref = await addDoc(collection(db, 'workspaces', activeStoreId, 'products'), {
         name,
         price,
         sku,
@@ -605,6 +608,7 @@ export default function Products() {
       reorderThreshold: reorderThreshold ?? null,
       updatedAt: new Date(),
       storeId: activeStoreId,
+      workspaceId: activeStoreId,
     }
 
     setIsUpdating(true)
@@ -620,7 +624,7 @@ export default function Products() {
     )
 
     try {
-      await updateDoc(doc(collection(db, 'products'), editingProductId), {
+      await updateDoc(doc(collection(db, 'workspaces', activeStoreId, 'products'), editingProductId), {
         name,
         price,
         sku,
@@ -669,9 +673,7 @@ export default function Products() {
           return
         }
         setProducts(prev =>
-          prev.map(product =>
-            product.id === editingProductId ? previous : product,
-          ),
+          prev.map(product => (product.id === editingProductId ? previous : product)),
         )
         setEditStatus({
           tone: 'error',
@@ -679,11 +681,7 @@ export default function Products() {
         })
         return
       }
-      setProducts(prev =>
-        prev.map(product =>
-          product.id === editingProductId ? previous : product,
-        ),
-      )
+      setProducts(prev => prev.map(product => (product.id === editingProductId ? previous : product)))
       setEditStatus({ tone: 'error', message: 'Unable to update product. Please try again.' })
     } finally {
       setIsUpdating(false)
@@ -709,7 +707,7 @@ export default function Products() {
     setEditStatus(null)
 
     try {
-      await deleteDoc(doc(collection(db, 'products'), editingProductId))
+      await deleteDoc(doc(collection(db, 'workspaces', activeStoreId, 'products'), editingProductId))
       setProducts(prev => prev.filter(item => item.id !== editingProductId))
       setEditingProductId(null)
     } catch (error) {
@@ -748,17 +746,20 @@ export default function Products() {
           if (cancelled) break
           if (operation.kind === 'create') {
             try {
-              const ref = await addDoc(collection(db, 'products'), {
-                name: operation.name,
-                price: operation.price,
-                sku: operation.sku,
-                reorderThreshold: operation.reorderThreshold,
-                stockCount: operation.stockCount ?? 0,
-                storeId: operation.storeId,
-                workspaceId: operation.storeId,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              })
+              const ref = await addDoc(
+                collection(db, 'workspaces', operation.storeId, 'products'),
+                {
+                  name: operation.name,
+                  price: operation.price,
+                  sku: operation.sku,
+                  reorderThreshold: operation.reorderThreshold,
+                  stockCount: operation.stockCount ?? 0,
+                  storeId: operation.storeId,
+                  workspaceId: operation.storeId,
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                },
+              )
               if (cancelled) return
               await removePendingProductCreate(operation.clientId, operation.storeId)
               await replacePendingProductUpdateId(operation.clientId, ref.id, operation.storeId)
@@ -791,6 +792,7 @@ export default function Products() {
                             ? product.stockCount
                             : 0,
                       storeId: operation.storeId,
+                      workspaceId: operation.storeId,
                       __optimistic: false,
                       updatedAt: new Date(),
                     } as ProductRecord
@@ -813,6 +815,7 @@ export default function Products() {
                   reorderThreshold: operation.reorderThreshold,
                   stockCount: typeof operation.stockCount === 'number' ? operation.stockCount : 0,
                   storeId: operation.storeId,
+                  workspaceId: operation.storeId,
                   createdAt: new Date(),
                   updatedAt: new Date(),
                   lastReceipt: null,
@@ -835,14 +838,17 @@ export default function Products() {
 
           if (operation.kind === 'update') {
             try {
-              await updateDoc(doc(collection(db, 'products'), operation.productId), {
-                name: operation.name,
-                price: operation.price,
-                sku: operation.sku,
-                reorderThreshold: operation.reorderThreshold,
-                storeId: operation.storeId,
-                updatedAt: serverTimestamp(),
-              })
+              await updateDoc(
+                doc(collection(db, 'workspaces', operation.storeId, 'products'), operation.productId),
+                {
+                  name: operation.name,
+                  price: operation.price,
+                  sku: operation.sku,
+                  reorderThreshold: operation.reorderThreshold,
+                  storeId: operation.storeId,
+                  updatedAt: serverTimestamp(),
+                },
+              )
               if (cancelled) return
               await removePendingProductUpdate(operation.productId, operation.storeId)
               let syncedProduct: ProductRecord | null = null
@@ -925,7 +931,6 @@ export default function Products() {
       </div>
     )
   }
-
 
   return (
     <div className="page products-page">
@@ -1177,4 +1182,3 @@ export default function Products() {
     </div>
   )
 }
-
