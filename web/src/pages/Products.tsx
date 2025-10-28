@@ -900,7 +900,7 @@ export default function Products() {
       cancelled = true
       window.removeEventListener('online', handleOnline)
     }
-  }, [activeStoreId, optimisticSignature, persistRosterSnapshot, products])
+  }, [activeStoreId, activeWorkspaceId, optimisticSignature, persistRosterSnapshot, products])
 
   useEffect(() => {
     if (!activeStoreId) return
