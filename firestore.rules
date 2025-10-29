@@ -80,6 +80,44 @@ service cloud.firestore {
              roles.hasAny([normalizeRole(memberDoc.data.role)]);
     }
 
+    function rosterStoreIdFromData(data) {
+      if (!(data is map) || !(data.storeId is string)) {
+        return null;
+      }
+
+      return normalizeStoreId(data.storeId);
+    }
+
+    function rosterExistingStoreId() {
+      return (resource == null) ? null : rosterStoreIdFromData(resource.data);
+    }
+
+    function rosterRequestedStoreId() {
+      let requested = rosterStoreIdFromData(request.resource.data);
+      return requested != null ? requested : rosterExistingStoreId();
+    }
+
+    function rosterStoreIdUnchanged() {
+      let existing = rosterExistingStoreId();
+      let requested = rosterStoreIdFromData(request.resource.data);
+
+      return requested == null || requested == existing || existing == null;
+    }
+
+    function isRosterAdminForStore(normalizedStoreId) {
+      if (!(isSignedIn() && normalizedStoreId != null)) {
+        return false;
+      }
+
+      return rosterMemberHasRole(normalizeKey(request.auth.uid), normalizedStoreId, ['owner', 'admin']) ||
+             rosterMemberHasRole(rosterEmailKey(), normalizedStoreId, ['owner', 'admin']);
+    }
+
+    function canManageRosterEntry() {
+      let normalizedStoreId = rosterRequestedStoreId();
+      return isRosterAdminForStore(normalizedStoreId);
+    }
+
     // Caller is a member of this workspace when roster storeId matches
     function isMember(wid) {
       if (!isSignedIn()) {
@@ -286,7 +324,10 @@ service cloud.firestore {
 
     // Legacy path you had
     match /teamMembers/{id} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow create: if canManageRosterEntry() && rosterStoreIdFromData(request.resource.data) != null;
+      allow update: if canManageRosterEntry() && rosterStoreIdFromData(request.resource.data) != null && rosterStoreIdUnchanged();
+      allow delete: if canManageRosterEntry();
     }
 
     // Default deny
