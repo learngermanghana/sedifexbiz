@@ -12,20 +12,102 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/workspaces/$(wid));
     }
 
-    // Caller is a member of this workspace
-    function isMember(wid) {
-      return isSignedIn() &&
-             exists(/databases/$(database)/documents/workspaces/$(wid)/members/$(request.auth.uid));
+    function normalizeKey(value) {
+      return (value is string && value.size() > 0) ? value : null;
     }
 
-    // Read the caller's membership (assumes it exists)
-    function member(wid) {
-      return get(/databases/$(database)/documents/workspaces/$(wid)/members/$(request.auth.uid));
+    function normalizeStoreId(value) {
+      return (value is string && value.size() > 0) ? value.lower() : null;
+    }
+
+    function normalizeRole(value) {
+      return (value is string && value.size() > 0) ? value.lower() : null;
+    }
+
+    function workspaceStoreId(wid) {
+      let data = workspace(wid).data;
+      if (data == null) {
+        return normalizeStoreId(wid);
+      }
+
+      let storeId = normalizeStoreId(data.storeId);
+      if (storeId != null) {
+        return storeId;
+      }
+
+      storeId = normalizeStoreId(data.workspaceSlug);
+      if (storeId != null) {
+        return storeId;
+      }
+
+      storeId = normalizeStoreId(data.slug);
+      if (storeId != null) {
+        return storeId;
+      }
+
+      return normalizeStoreId(wid);
+    }
+
+    function rosterEmailKey() {
+      return (request.auth.token.email is string) ? request.auth.token.email.lower() : null;
+    }
+
+    function teamMemberExists(key) {
+      return key != null &&
+             exists(/databases/$(database)/documents/teamMembers/$(key));
+    }
+
+    function teamMemberDoc(key) {
+      return get(/databases/$(database)/documents/teamMembers/$(key));
+    }
+
+    function rosterMemberMatchesStore(key, normalizedStoreId) {
+      if (!(key != null && teamMemberExists(key))) {
+        return false;
+      }
+
+      let memberDoc = teamMemberDoc(key);
+      return normalizeStoreId(memberDoc.data.storeId) == normalizedStoreId;
+    }
+
+    function rosterMemberHasRole(key, normalizedStoreId, roles) {
+      if (!(key != null && teamMemberExists(key))) {
+        return false;
+      }
+
+      let memberDoc = teamMemberDoc(key);
+      return normalizeStoreId(memberDoc.data.storeId) == normalizedStoreId &&
+             roles.hasAny([normalizeRole(memberDoc.data.role)]);
+    }
+
+    // Caller is a member of this workspace when roster storeId matches
+    function isMember(wid) {
+      if (!isSignedIn()) {
+        return false;
+      }
+
+      let normalizedStoreId = workspaceStoreId(wid);
+      if (normalizedStoreId == null) {
+        return false;
+      }
+
+      return rosterMemberMatchesStore(normalizeKey(request.auth.uid), normalizedStoreId) ||
+             rosterMemberMatchesStore(rosterEmailKey(), normalizedStoreId);
     }
 
     // Role checks (membership doc should have { role: 'owner'|'admin'|'clerk' })
     function isAdmin(wid) {
-      return isMember(wid) && ['owner','admin'].hasAny([member(wid).data.role]);
+      if (!isMember(wid)) {
+        return false;
+      }
+
+      let normalizedStoreId = workspaceStoreId(wid);
+      if (normalizedStoreId == null) {
+        return false;
+      }
+
+      return rosterMemberHasRole(normalizeKey(request.auth.uid), normalizedStoreId, ['owner','admin']) ||
+             rosterMemberHasRole(rosterEmailKey(), normalizedStoreId, ['owner','admin']);
     }
     function isOwnerOfWorkspace(wid) {
       return isSignedIn() &&
