@@ -134,6 +134,8 @@ type CommitSalePayload = {
   items: Array<{ productId: string; name: string; price: number; qty: number; taxRate?: number }>;
 };
 type CommitSaleResponse = { ok: boolean; saleId: string };
+type ResolveStoreAccessPayload = { storeId?: string | null };
+type ResolveStoreAccessResponse = Record<string, unknown> | void;
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
   const displayName = customer.displayName?.trim();
@@ -185,6 +187,31 @@ export default function Sell() {
     return store || null;
   }, [activeStoreId, activeWorkspaceSlug]);
 
+  const resolveAccessCallable = useMemo(
+    () =>
+      httpsCallable<ResolveStoreAccessPayload, ResolveStoreAccessResponse>(
+        cloudFunctions,
+        'resolveStoreAccess'
+      ),
+    []
+  );
+
+  const refreshWorkspaceAccess = useCallback(
+    async (selector: string | null) => {
+      const normalized = selector?.trim();
+      if (!normalized) return false;
+      try {
+        await resolveAccessCallable({ storeId: normalized });
+        await getAuth().currentUser?.getIdToken(true);
+        return true;
+      } catch (error) {
+        console.warn('[sell] access refresh failed', (error as any)?.code, (error as any)?.message);
+        return false;
+      }
+    },
+    [resolveAccessCallable]
+  );
+
   // 🔒 Ensure claims are fresh for this store (prevents false access-denied)
   useEffect(() => {
     (async () => {
@@ -194,14 +221,12 @@ export default function Sell() {
       if (!selector) return;
 
       try {
-        const resolveAccess = httpsCallable(cloudFunctions, 'resolveStoreAccess');
-        await resolveAccess({ storeId: selector });
-        await getAuth().currentUser?.getIdToken(true);
+        await refreshWorkspaceAccess(selector);
       } catch (e: any) {
         console.warn('[sell] access refresh failed', e?.code, e?.message, e?.details);
       }
     })();
-  }, [user?.uid, activeStoreId, activeWorkspaceId]);
+  }, [refreshWorkspaceAccess, user?.uid, activeStoreId, activeWorkspaceId]);
 
   const prepareReceiptShareCallable = useMemo(
     () => httpsCallable<PrepareReceiptShareRequest, PrepareReceiptShareResponse>(cloudFunctions, 'prepareReceiptShare'),
@@ -575,75 +600,105 @@ export default function Sell() {
     const receiptItems = cart.map(l => ({ ...l }));
 
     try {
-      const { data } = await commitSale(payload);
-      if (!data?.ok) throw new Error('Sale was not recorded');
+      const accessSelector = activeStoreId?.trim() || activeWorkspaceId?.trim() || null;
+      let lastError: any = null;
+      let response: CommitSaleResponse | null = null;
+      let attempts = 0;
 
-      setReceipt({
-        saleId: data.saleId,
-        createdAt: new Date(),
-        items: receiptItems,
-        subtotal,
-        payment: {
-          method: paymentMethod,
-          amountPaid,
-          changeDue,
-          provider: paymentProviderMeta?.provider ?? null,
-          providerRef: paymentProviderMeta?.providerRef ?? null,
-          status: paymentProviderMeta?.status ?? null,
-        },
-        customer: selectedCustomer
-          ? {
-              name: selectedCustomerDataName || selectedCustomer.id,
-              phone: selectedCustomer.phone,
-              email: selectedCustomer.email,
+      while (attempts < 2 && !response) {
+        try {
+          const { data } = await commitSale(payload);
+          if (!data?.ok) throw new Error('Sale was not recorded');
+          response = data;
+          break;
+        } catch (error) {
+          lastError = error;
+          const code = (error as any)?.code;
+          const permissionDenied = code === 'permission-denied' || code === 'functions/permission-denied';
+          if (permissionDenied && attempts === 0) {
+            const refreshed = await refreshWorkspaceAccess(accessSelector);
+            if (refreshed) {
+              attempts += 1;
+              continue;
             }
-          : undefined,
-      });
-      setCart([]); setSelectedCustomerId(''); setAmountTendered(''); setPaymentProviderMeta(null);
-      setSaleSuccess(`Sale recorded #${data.saleId}. Receipt sent to printer.`);
-    } catch (err: any) {
-      console.error('[sell] Unable to record sale', err);
-      // More helpful errors:
-      if (err?.code === 'permission-denied' || err?.code === 'functions/permission-denied') {
-        const detail = err?.details?.reason || 'Access denied for this workspace.';
-        setSaleError(detail);
-        setIsRecording(false);
-        return;
-      }
-      if (isOfflineError(err)) {
-        const queued = await queueCallableRequest('commitSale', payload, 'sale');
-        if (queued) {
-          setReceipt({
-            saleId,
-            createdAt: new Date(),
-            items: receiptItems,
-            subtotal,
-            payment: {
-              method: paymentMethod,
-              amountPaid,
-              changeDue,
-              provider: paymentProviderMeta?.provider ?? null,
-              providerRef: paymentProviderMeta?.providerRef ?? null,
-              status: paymentProviderMeta?.status ?? null,
-            },
-            customer: selectedCustomer
-              ? {
-                  name: selectedCustomerDataName || selectedCustomer.id,
-                  phone: selectedCustomer.phone,
-                  email: selectedCustomer.email,
-                }
-              : undefined,
-          });
-          setCart([]); setSelectedCustomerId(''); setAmountTendered(''); setPaymentProviderMeta(null);
-          setSaleSuccess(`Sale queued offline #${saleId}. We'll sync it once you're back online.`);
-          setIsRecording(false);
-          return;
+          }
+          break;
         }
       }
-      const message = err instanceof Error ? err.message : null;
-      setSaleError(message && message !== 'Sale was not recorded'
-        ? message
-        : 'We were unable to record this sale. Please try again.');
+
+      if (response) {
+        setReceipt({
+          saleId: response.saleId,
+          createdAt: new Date(),
+          items: receiptItems,
+          subtotal,
+          payment: {
+            method: paymentMethod,
+            amountPaid,
+            changeDue,
+            provider: paymentProviderMeta?.provider ?? null,
+            providerRef: paymentProviderMeta?.providerRef ?? null,
+            status: paymentProviderMeta?.status ?? null,
+          },
+          customer: selectedCustomer
+            ? {
+                name: selectedCustomerDataName || selectedCustomer.id,
+                phone: selectedCustomer.phone,
+                email: selectedCustomer.email,
+              }
+            : undefined,
+        });
+        setCart([]); setSelectedCustomerId(''); setAmountTendered(''); setPaymentProviderMeta(null);
+        setSaleSuccess(`Sale recorded #${response.saleId}. Receipt sent to printer.`);
+        return;
+      }
+
+      if (lastError) {
+        console.error('[sell] Unable to record sale', lastError);
+        const code = lastError?.code;
+        if (code === 'permission-denied' || code === 'functions/permission-denied') {
+          const detail = lastError?.details?.reason || lastError?.message || 'Access denied for this workspace.';
+          setSaleError(detail);
+          return;
+        }
+
+        if (isOfflineError(lastError)) {
+          const queued = await queueCallableRequest('commitSale', payload, 'sale');
+          if (queued) {
+            setReceipt({
+              saleId,
+              createdAt: new Date(),
+              items: receiptItems,
+              subtotal,
+              payment: {
+                method: paymentMethod,
+                amountPaid,
+                changeDue,
+                provider: paymentProviderMeta?.provider ?? null,
+                providerRef: paymentProviderMeta?.providerRef ?? null,
+                status: paymentProviderMeta?.status ?? null,
+              },
+              customer: selectedCustomer
+                ? {
+                    name: selectedCustomerDataName || selectedCustomer.id,
+                    phone: selectedCustomer.phone,
+                    email: selectedCustomer.email,
+                  }
+                : undefined,
+            });
+            setCart([]); setSelectedCustomerId(''); setAmountTendered(''); setPaymentProviderMeta(null);
+            setSaleSuccess(`Sale queued offline #${saleId}. We'll sync it once you're back online.`);
+            return;
+          }
+        }
+
+        const message = lastError instanceof Error ? lastError.message : null;
+        setSaleError(
+          message && message !== 'Sale was not recorded'
+            ? message
+            : 'We were unable to record this sale. Please try again.'
+        );
+      }
     } finally {
       setIsRecording(false);
     }
