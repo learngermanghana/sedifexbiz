@@ -188,16 +188,20 @@ export default function Sell() {
   // 🔒 Ensure claims are fresh for this store (prevents false access-denied)
   useEffect(() => {
     (async () => {
-      if (!user || !activeStoreId) return;
+      if (!user) return;
+
+      const selector = activeStoreId?.trim() || activeWorkspaceId?.trim();
+      if (!selector) return;
+
       try {
         const resolveAccess = httpsCallable(cloudFunctions, 'resolveStoreAccess');
-        await resolveAccess({ selector: { storeId: activeStoreId } });
+        await resolveAccess({ storeId: selector });
         await getAuth().currentUser?.getIdToken(true);
       } catch (e: any) {
         console.warn('[sell] access refresh failed', e?.code, e?.message, e?.details);
       }
     })();
-  }, [user?.uid, activeStoreId]);
+  }, [user?.uid, activeStoreId, activeWorkspaceId]);
 
   const prepareReceiptShareCallable = useMemo(
     () => httpsCallable<PrepareReceiptShareRequest, PrepareReceiptShareResponse>(cloudFunctions, 'prepareReceiptShare'),
