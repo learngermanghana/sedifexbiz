@@ -117,12 +117,12 @@ async function createStoreMember(storeId: string, role: 'owner' | 'staff' = 'own
   if (!user) throw new Error('Anonymous sign-in failed for store member test context')
 
   if (role === 'owner') {
-    await setDoc(doc(context.db, 'teamMembers', user.uid), {
+    await seedDocument(`teamMembers/${user.uid}`, {
       uid: user.uid,
       storeId,
       role,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
     })
   } else {
     const ownerContext = await createStoreMember(storeId, 'owner')
@@ -294,6 +294,67 @@ describeOrSkip('Firestore rules - multi-tenant store access', () => {
       )
     } finally {
       await destroyContext(context)
+      await destroyContext(outsider)
+    }
+  })
+
+  test('roster writes require owner or admin privileges', async () => {
+    const owner = await createStoreMember('store-1', 'owner')
+    const staff = await createStoreMember('store-1', 'staff')
+    const outsider = await createStoreMember('store-2', 'staff')
+
+    try {
+      const newMemberId = `staff-${Math.random().toString(36).slice(2)}`
+      await expectSucceeds(
+        setDoc(doc(owner.db, 'teamMembers', newMemberId), {
+          uid: newMemberId,
+          storeId: 'store-1',
+          role: 'staff',
+        }),
+        'owners should create roster entries for their store',
+      )
+
+      const staffUid = staff.auth?.currentUser?.uid
+      if (!staffUid) throw new Error('Staff context missing uid for roster test')
+
+      await expectSucceeds(
+        setDoc(
+          doc(owner.db, 'teamMembers', staffUid),
+          { role: 'admin', storeId: 'store-1' },
+          { merge: true },
+        ),
+        'owners should update roster entries for their store',
+      )
+
+      await expectFails(
+        setDoc(doc(staff.db, 'teamMembers', `self-${Math.random().toString(36).slice(2)}`), {
+          uid: 'self-edit',
+          storeId: 'store-1',
+          role: 'owner',
+        }),
+        'non-admin staff should not create roster entries',
+      )
+
+      await expectFails(
+        setDoc(
+          doc(staff.db, 'teamMembers', staffUid),
+          { role: 'owner', storeId: 'store-1' },
+          { merge: true },
+        ),
+        'non-admin staff should not escalate their roster role',
+      )
+
+      await expectFails(
+        setDoc(doc(outsider.db, 'teamMembers', `intruder-${Math.random().toString(36).slice(2)}`), {
+          uid: 'intruder',
+          storeId: 'store-1',
+          role: 'owner',
+        }),
+        'other store staff should not create roster entries for store-1',
+      )
+    } finally {
+      await destroyContext(owner)
+      await destroyContext(staff)
       await destroyContext(outsider)
     }
   })
