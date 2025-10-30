@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest'
+import { FirebaseError } from 'firebase/app'
 
 import { getActiveStoreId, loadWorkspaceProfile, mapAccount } from './loadWorkspace'
 
@@ -164,5 +165,16 @@ describe('getActiveStoreId', () => {
 
     expect(docMock).toHaveBeenCalledWith(mockRosterDb, 'teamMembers', 'user-1')
     expect(storeId).toBe('store-789')
+  })
+
+  it('returns null when the roster document cannot be fetched because the client is offline', async () => {
+    docMock.mockReturnValue({ type: 'doc', path: 'teamMembers/user-1' })
+    getDocMock.mockRejectedValue(
+      new FirebaseError('unavailable', 'Failed to get document because the client is offline.'),
+    )
+
+    const storeId = await getActiveStoreId('user-1')
+
+    expect(storeId).toBeNull()
   })
 })
