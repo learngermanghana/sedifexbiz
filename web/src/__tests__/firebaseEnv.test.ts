@@ -7,7 +7,7 @@ const baseEnv = {
   VITE_FB_PROJECT_ID: 'demo-project',
   VITE_FB_STORAGE_BUCKET: 'demo.appspot.com',
   VITE_FB_APP_ID: 'app-id',
-} satisfies Record<string, string | undefined>
+} as Record<string, string | undefined>
 
 describe('firebaseEnv', () => {
   it('trims whitespace when reading values', () => {
