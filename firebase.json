@@ -2,24 +2,54 @@
   "functions": {
     "source": "functions"
   },
+
   "hosting": {
     "public": "web/dist",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
+    ],
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "headers": [
+      {
+        "source": "**/*.@(js|css)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        ]
+      },
+      {
+        "source": "**/*.@(png|jpg|jpeg|gif|webp|svg|ico|woff|woff2|ttf|otf)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+        ]
+      }
+    ],
+    "rewrites": [
+      { "source": "**", "destination": "/index.html" }
     ]
   },
+
   "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+    "rules": [
+      { "rules": "firestore.default.rules", "database": "(default)" },
+      { "rules": "firestore.roster.rules",  "database": "roster" }
+    ],
+    "indexes": [
+      { "indexes": "firestore.indexes.json",        "database": "(default)" }
+      /* If you ever add custom indexes for roster, uncomment and point to the file:
+      ,{ "indexes": "firestore.roster.indexes.json", "database": "roster" }
+      */
+    ]
   },
+
   "emulators": {
-    "functions": {
-      "port": 5001
-    },
-    "firestore": {
-      "port": 8080
-    }
+    "ui": { "enabled": true, "port": 4000 },
+    "hosting": { "port": 5000 },
+    "functions": { "port": 5001 },
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8080 },
+    "singleProjectMode": true
   }
 }
