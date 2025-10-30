@@ -28,22 +28,31 @@ type StoreDocument = {
 
 type StoreDetails = StoreDocument & { id: string }
 
+function hasToDate(value: unknown): value is { toDate: () => Date } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { toDate?: unknown }).toDate === 'function'
+  )
+}
+
 function formatTimestamp(value: unknown): string | null {
   if (!value) {
     return null
   }
 
   if (value instanceof Timestamp) {
-    return value.toDate().toLocaleString()
+    const date = value.toDate()
+    return date.toLocaleString()
   }
 
   if (value instanceof Date) {
     return value.toLocaleString()
   }
 
-  if (typeof value === 'object' && value !== null && 'toDate' in value) {
+  if (hasToDate(value)) {
     try {
-      const date = (value as { toDate: () => Date }).toDate()
+      const date = value.toDate()
       return date.toLocaleString()
     } catch (error) {
       console.warn('[onboarding] Unable to format timestamp value', error)
