@@ -3,6 +3,7 @@ import { getAuth } from 'firebase/auth'
 import { getFunctions } from 'firebase/functions'
 import {
   initializeFirestore,
+  memoryLocalCache,
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore'
@@ -23,22 +24,27 @@ export const auth = getAuth(app)
 
 export const functions = getFunctions(app, firebaseEnv.functionsRegion)
 
-export const db = initializeFirestore(app, {
+const supportsPersistentCache = (() => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const indexedDbAvailable = 'indexedDB' in window && window.indexedDB !== null
+  const documentAvailable = typeof document !== 'undefined'
+
+  return indexedDbAvailable && documentAvailable
+})()
+
+const buildFirestoreOptions = () => ({
   experimentalAutoDetectLongPolling: true,
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager(),
-  }),
   ignoreUndefinedProperties: true,
+  localCache: supportsPersistentCache
+    ? persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      })
+    : memoryLocalCache(),
 })
 
-export const rosterDb = initializeFirestore(
-  app,
-  {
-    experimentalAutoDetectLongPolling: true,
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-    ignoreUndefinedProperties: true,
-  },
-  'roster'
-)
+export const db = initializeFirestore(app, buildFirestoreOptions())
+
+export const rosterDb = initializeFirestore(app, buildFirestoreOptions(), 'roster')
