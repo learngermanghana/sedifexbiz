@@ -1,7 +1,7 @@
 // web/src/firebase.ts
 import { initializeApp } from 'firebase/app'
 import { getAuth, RecaptchaVerifier } from 'firebase/auth'
-import { enableIndexedDbPersistence, getFirestore, initializeFirestore } from 'firebase/firestore'
+import { enableIndexedDbPersistence, initializeFirestore } from 'firebase/firestore'
 import { getFunctions } from 'firebase/functions'
 import { getStorage } from 'firebase/storage'
 import { firebaseEnv } from './config/firebaseEnv'
@@ -24,13 +24,11 @@ export const functions = getFunctions(app, firebaseEnv.functionsRegion)
 const FIRESTORE_SETTINGS = {
   ignoreUndefinedProperties: true,
   experimentalAutoDetectLongPolling: true,
+  useFetchStreams: false,
 }
 
-initializeFirestore(app, FIRESTORE_SETTINGS)
-initializeFirestore(app, FIRESTORE_SETTINGS, 'roster')
-
-const primaryDb = getFirestore(app)
-const rosterDbInstance = getFirestore(app, 'roster')
+const primaryDb = initializeFirestore(app, FIRESTORE_SETTINGS)
+const rosterDbInstance = initializeFirestore(app, FIRESTORE_SETTINGS, 'roster')
 
 export const db = primaryDb
 export const rosterDb = rosterDbInstance
