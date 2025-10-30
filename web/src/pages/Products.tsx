@@ -14,7 +14,7 @@ import {
   setDoc,
   updateDoc,
 } from '../lib/db'
-import { FirebaseError } from 'firebase/app'
+import type { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
 
 import { useActiveStore } from '../hooks/useActiveStore'
@@ -150,10 +150,18 @@ function sortProducts(products: ProductRecord[]): ProductRecord[] {
   return [...products].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 }
 
+function isFirebaseError(error: unknown): error is FirebaseError & { code: string } {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+  const candidate = error as { code?: unknown }
+  return typeof candidate.code === 'string'
+}
+
 function isOfflineError(error: unknown) {
-  if (!navigator.onLine) return true
-  if (error instanceof FirebaseError) {
-    const code = (error.code || '').toLowerCase()
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return true
+  if (isFirebaseError(error)) {
+    const code = error.code.toLowerCase()
     return (
       code === 'unavailable' ||
       code === 'internal' ||
@@ -780,7 +788,7 @@ export default function Products() {
           if (operation.kind === 'create') {
             try {
               const ref = await addDoc(
-                collection(db, 'workspaces', operation.storeId, 'products'),
+                collection(db, 'workspaces', activeWorkspaceId, 'products'),
                 {
                   name: operation.name,
                   price: operation.price,
@@ -788,7 +796,7 @@ export default function Products() {
                   reorderThreshold: operation.reorderThreshold,
                   stockCount: operation.stockCount ?? 0,
                   storeId: operation.storeId,
-                  workspaceId: operation.storeId,
+                  workspaceId: activeWorkspaceId,
                   createdAt: serverTimestamp(),
                   updatedAt: serverTimestamp(),
                 },
@@ -825,9 +833,8 @@ export default function Products() {
                             ? product.stockCount
                             : 0,
                       storeId: operation.storeId,
-                      workspaceId: operation.storeId,
-                      __optimistic: false,
                       workspaceId: activeWorkspaceId,
+                      __optimistic: false,
                       updatedAt: new Date(),
                     } as ProductRecord
                     syncedProduct = updatedProduct
@@ -849,7 +856,7 @@ export default function Products() {
                   reorderThreshold: operation.reorderThreshold,
                   stockCount: typeof operation.stockCount === 'number' ? operation.stockCount : 0,
                   storeId: operation.storeId,
-                  workspaceId: operation.storeId,
+                  workspaceId: activeWorkspaceId,
                   createdAt: new Date(),
                   updatedAt: new Date(),
                   lastReceipt: null,
@@ -873,7 +880,7 @@ export default function Products() {
           if (operation.kind === 'update') {
             try {
               await updateDoc(
-                doc(collection(db, 'workspaces', operation.storeId, 'products'), operation.productId),
+                doc(collection(db, 'workspaces', activeWorkspaceId, 'products'), operation.productId),
                 {
                   name: operation.name,
                   price: operation.price,
