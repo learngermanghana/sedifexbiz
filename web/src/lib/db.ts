@@ -1,8 +1,2 @@
-import { getFirestore } from 'firebase/firestore'
-
-import { app } from '../firebase'
-
-export const db = getFirestore(app)
-export const rosterDb = getFirestore(app, 'roster')
-
+export { db, rosterDb } from '../firebase'
 export * from 'firebase/firestore'
