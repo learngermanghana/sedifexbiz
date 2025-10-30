@@ -289,5 +289,19 @@ function toDate(value: unknown): Date | null {
 }
 
 function isOfflineError(error: unknown): boolean {
-  return error instanceof FirebaseError && error.code === 'unavailable'
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return true
+  if (error instanceof FirebaseError) {
+    const code = (error.code || '').toLowerCase()
+    return (
+      code === 'unavailable' ||
+      code === 'internal' ||
+      code.endsWith('/unavailable') ||
+      code.endsWith('/internal')
+    )
+  }
+  if (error instanceof TypeError) {
+    const message = error.message.toLowerCase()
+    return message.includes('network') || message.includes('fetch')
+  }
+  return false
 }
