@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  requestQueueStatus,
   subscribeToQueue,
   type QueueEvent,
   type QueueStatusEvent,
@@ -182,17 +181,33 @@ export function useConnectivityStatus(intervalMs = DEFAULT_HEARTBEAT_INTERVAL): 
         return
       }
 
-      setState(prev => ({
-        ...prev,
-        queue: {
-          ...prev.queue,
-          lastError:
-            event.type === 'request-failed'
-              ? event.error ?? prev.queue.lastError
-              : prev.queue.lastError,
-          updatedAt: event.timestamp,
-        },
-      }))
+      setState(prev => {
+        const prevQueue = prev.queue
+        const shouldAdjustPending =
+          event.type === 'request-complete' || event.type === 'request-failed'
+        const pending = shouldAdjustPending
+          ? Math.max(0, prevQueue.pending - 1)
+          : prevQueue.pending
+
+        let status = prevQueue.status
+        if (shouldAdjustPending && status !== 'error') {
+          status = pending === 0 ? 'idle' : status === 'idle' ? 'processing' : status
+        }
+
+        return {
+          ...prev,
+          queue: {
+            ...prevQueue,
+            status,
+            pending,
+            lastError:
+              event.type === 'request-failed'
+                ? event.error ?? prevQueue.lastError
+                : prevQueue.lastError,
+            updatedAt: event.timestamp,
+          },
+        }
+      })
     }
 
     const unsubscribe = subscribeToQueue(handleQueueEvent)
