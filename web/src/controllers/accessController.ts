@@ -1,6 +1,7 @@
 // web/src/controllers/accessController.ts
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
+import { getAuth } from 'firebase/auth'
 import { functions } from '../firebase'
 import { INACTIVE_WORKSPACE_MESSAGE } from '@functions/constants/access'
 
@@ -246,6 +247,17 @@ export async function resolveStoreAccess(storeId?: string): Promise<ResolveStore
 
   if (!ok || !resolvedStoreId) {
     throw new Error('Unable to resolve store access for this account.')
+  }
+
+  const auth = getAuth()
+  const currentUser = auth.currentUser
+
+  if (currentUser) {
+    try {
+      await currentUser.getIdToken(true)
+    } catch (error) {
+      console.warn('[access] Unable to refresh ID token after resolving store access', error)
+    }
   }
 
   return {
