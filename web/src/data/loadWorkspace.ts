@@ -48,11 +48,19 @@ export async function getActiveStoreId(uid: string | null | undefined): Promise<
   if (!normalizedUid) return null
 
   const memberRef = doc(rosterDb, 'teamMembers', normalizedUid)
-  const snapshot = await getDoc(memberRef)
-  if (!snapshot.exists()) return null
+  try {
+    const snapshot = await getDoc(memberRef)
+    if (!snapshot.exists()) return null
 
-  const data = snapshot.data()
-  return normalizeString(data?.storeId)
+    const data = snapshot.data()
+    return normalizeString(data?.storeId)
+  } catch (error) {
+    if (isOfflineError(error)) {
+      return null
+    }
+
+    throw error
+  }
 }
 
 export async function loadWorkspaceProfile({
@@ -289,5 +297,17 @@ function toDate(value: unknown): Date | null {
 }
 
 function isOfflineError(error: unknown): boolean {
-  return error instanceof FirebaseError && error.code === 'unavailable'
+  if (!(error instanceof FirebaseError)) {
+    return false
+  }
+
+  if (error.code === 'unavailable') {
+    return true
+  }
+
+  if (/offline/i.test(error.message)) {
+    return true
+  }
+
+  return false
 }
