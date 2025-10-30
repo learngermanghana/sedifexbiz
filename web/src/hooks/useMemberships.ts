@@ -64,11 +64,56 @@ function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): M
   }
 }
 
+function getMembershipSortKey(membership: Membership): number {
+  try {
+    if (membership.createdAt instanceof Timestamp) {
+      const millis = membership.createdAt.toMillis()
+      if (Number.isFinite(millis)) {
+        return millis
+      }
+    }
+  } catch (error) {
+    console.warn('[useMemberships] Failed to derive createdAt sort key', error)
+  }
+
+  try {
+    if (membership.updatedAt instanceof Timestamp) {
+      const millis = membership.updatedAt.toMillis()
+      if (Number.isFinite(millis)) {
+        return millis
+      }
+    }
+  } catch (error) {
+    console.warn('[useMemberships] Failed to derive updatedAt sort key', error)
+  }
+
+  return 0
+}
+
+function compareMemberships(a: Membership, b: Membership): number {
+  const aTime = getMembershipSortKey(a)
+  const bTime = getMembershipSortKey(b)
+  if (aTime !== bTime) {
+    return aTime - bTime
+  }
+
+  const aLabel = (a.storeId ?? a.workspaceSlug ?? a.id ?? '').toLowerCase()
+  const bLabel = (b.storeId ?? b.workspaceSlug ?? b.id ?? '').toLowerCase()
+  if (aLabel && bLabel) {
+    const comparison = aLabel.localeCompare(bLabel)
+    if (comparison !== 0) {
+      return comparison
+    }
+  }
+
+  return a.id.localeCompare(b.id)
+}
+
 async function loadMembershipsFromDb(firestore: Firestore, uid: string): Promise<Membership[]> {
   const membersRef = collection(firestore, 'teamMembers')
   const membershipsQuery = query(membersRef, where('uid', '==', uid))
   const snapshot = await getDocs(membershipsQuery)
-  return snapshot.docs.map(mapMembershipSnapshot)
+  return snapshot.docs.map(mapMembershipSnapshot).sort(compareMemberships)
 }
 
 async function loadMembershipsForUser(uid: string): Promise<Membership[]> {
