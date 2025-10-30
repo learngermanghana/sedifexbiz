@@ -317,10 +317,10 @@ export async function queueCallableRequest(
         await syncManager.register(SYNC_TAG)
       } catch (error) {
         console.warn('[offline-queue] Background sync registration failed', error)
-        controller.postMessage({ type: 'PROCESS_QUEUE_NOW' } satisfies ProcessMessage)
+        controller.postMessage({ type: 'PROCESS_QUEUE_NOW' } as ProcessMessage)
       }
     } else {
-      controller.postMessage({ type: 'PROCESS_QUEUE_NOW' } satisfies ProcessMessage)
+      controller.postMessage({ type: 'PROCESS_QUEUE_NOW' } as ProcessMessage)
     }
 
     return true
@@ -335,7 +335,7 @@ export async function triggerQueueProcessing() {
   try {
     const registration = await navigator.serviceWorker.ready
     const controller = getController(registration)
-    controller?.postMessage({ type: 'PROCESS_QUEUE_NOW' } satisfies ProcessMessage)
+    controller?.postMessage({ type: 'PROCESS_QUEUE_NOW' } as ProcessMessage)
     const syncManager = (registration as ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }).sync
     if (syncManager) {
       try {
