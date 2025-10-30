@@ -193,6 +193,10 @@ export function useConnectivityStatus(intervalMs = DEFAULT_HEARTBEAT_INTERVAL): 
           updatedAt: event.timestamp,
         },
       }))
+
+      if (event.type === 'request-complete' || event.type === 'request-failed') {
+        void requestQueueStatus()
+      }
     }
 
     const unsubscribe = subscribeToQueue(handleQueueEvent)
