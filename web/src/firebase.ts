@@ -31,11 +31,14 @@ export const db = initializeFirestore(app, {
   ignoreUndefinedProperties: true,
 })
 
-export const rosterDb = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager(),
-  }),
-  ignoreUndefinedProperties: true,
-  databaseId: 'roster',
-})
+export const rosterDb = initializeFirestore(
+  app,
+  {
+    experimentalAutoDetectLongPolling: true,
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+    ignoreUndefinedProperties: true,
+  },
+  'roster'
+)
