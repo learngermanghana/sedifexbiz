@@ -12,6 +12,7 @@ import {
   type DocumentSnapshot,
   type QueryDocumentSnapshot,
 } from '../lib/db'
+import { FirebaseError } from 'firebase/app'
 
 export type WorkspaceRecord = Record<string, unknown> & { id: string }
 
@@ -63,20 +64,33 @@ export async function loadWorkspaceProfile({
 }): Promise<WorkspaceRecord | null> {
   const normalizedSlug = normalizeString(slug)
   if (normalizedSlug) {
-    const workspaceRef = doc(db, 'workspaces', normalizedSlug)
-    const workspaceSnapshot = await getDoc(workspaceRef)
-    if (workspaceSnapshot.exists()) {
-      return snapshotToRecord(workspaceSnapshot)
+    try {
+      const workspaceRef = doc(db, 'workspaces', normalizedSlug)
+      const workspaceSnapshot = await getDoc(workspaceRef)
+      if (workspaceSnapshot.exists()) {
+        return snapshotToRecord(workspaceSnapshot)
+      }
+    } catch (error) {
+      if (!isOfflineError(error)) {
+        throw error
+      }
     }
   }
 
   const normalizedStoreId = normalizeString(storeId)
   if (normalizedStoreId) {
-    const workspacesRef = collection(db, 'workspaces')
-    const workspaceQuery = query(workspacesRef, where('storeId', '==', normalizedStoreId), limit(1))
-    const matches = await getDocs(workspaceQuery)
-    const first = matches.docs[0] ?? null
-    return first ? snapshotToRecord(first) : null
+    try {
+      const workspacesRef = collection(db, 'workspaces')
+      const workspaceQuery = query(workspacesRef, where('storeId', '==', normalizedStoreId), limit(1))
+      const matches = await getDocs(workspaceQuery)
+      const first = matches.docs[0] ?? null
+      return first ? snapshotToRecord(first) : null
+    } catch (error) {
+      if (isOfflineError(error)) {
+        return null
+      }
+      throw error
+    }
   }
 
   return null
@@ -272,4 +286,8 @@ function toDate(value: unknown): Date | null {
   }
 
   return null
+}
+
+function isOfflineError(error: unknown): boolean {
+  return error instanceof FirebaseError && error.code === 'unavailable'
 }
