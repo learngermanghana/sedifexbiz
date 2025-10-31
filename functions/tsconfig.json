@@ -7,12 +7,20 @@
     "rootDir": "src",
     "outDir": "lib",
 
+    "types": ["node"],
+
     "strict": true,
     "noImplicitReturns": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "exactOptionalPropertyTypes": true,
 
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+
+    "incremental": true,
     "sourceMap": false
   },
   "compileOnSave": true,
