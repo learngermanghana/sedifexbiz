@@ -42,52 +42,47 @@ import { clearPaidMarker, getPaidMarker } from './lib/paid'
 import { clearActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { PLAN_LIST, type PlanId } from '@catalog/plans'
 
-function getErrorMessage(err: unknown): string {
-  if (err instanceof FirebaseError) return err.message;
-  if (err instanceof Error) return err.message;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
-}
-
-const [authReady, setAuthReady] = useState(false);
-
-useEffect(() => {
-  let unsub: (() => void) | undefined;
-
-  (async () => {
-    // Ensure persistence (you already have this util)
-    await configureAuthPersistence();
-
-    // Wait for the first auth state emission, then mark ready
-    unsub = onAuthStateChanged(auth, async (user) => {
-      try {
-        if (user) {
-          // Keep your existing session wiring
-          await persistSession(user).catch(() => {});
-          refreshSessionHeartbeat(user);
-        }
-      } finally {
-        setAuthReady(true);
+function getErrorMessage(error: unknown): string {
+  if (error instanceof FirebaseError) {
+    const code = error.code || ''
+    switch (code) {
+      case 'auth/invalid-credential':
+      case 'auth/wrong-password':
+      case 'auth/user-not-found':
+        return 'Incorrect email or password.'
+      case 'auth/too-many-requests':
+        return 'Too many attempts. Please wait a moment and try again.'
+      case 'auth/network-request-failed':
+        return 'Network error. Please check your connection and try again.'
+      case 'auth/email-already-in-use':
+        return 'An account already exists with this email.'
+      case 'auth/weak-password':
+        return 'Please choose a stronger password. It must be at least 8 characters and include uppercase, lowercase, number, and symbol.'
+      case 'functions/permission-denied': {
+        const callableMessage = extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
+        return callableMessage
       }
-    });
-  })();
+      default:
+        return (error as any).message || 'Something went wrong. Please try again.'
+    }
+  }
 
-  return () => {
-    if (unsub) unsub();
-  };
-}, []);
+  if (error instanceof Error) {
+    return error.message || 'Something went wrong. Please try again.'
+  }
 
-if (!authReady) {
-  return (
-    <div style={{ padding: 16 }}>
-      Connecting to Sedifex…
-    </div>
-  );
+  if (typeof error === 'string') {
+    return error
+  }
+
+  try {
+    return JSON.stringify(error)
+  } catch (jsonError) {
+    console.warn('[error] Unable to stringify error', jsonError)
+  }
+
+  return 'Something went wrong. Please try again.'
 }
-
 /* -------------------------------------------------------------------------- */
 /*                              Paystack helpers                              */
 /* -------------------------------------------------------------------------- */
@@ -612,16 +607,29 @@ export default function App() {
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
 
   useEffect(() => {
-    // Ensure persistence is configured before we react to auth changes
-    configureAuthPersistence(auth).catch(error => {
-      console.warn('[auth] Unable to configure persistence', error)
-    })
+    let isMounted = true
+    let unsubscribe: (() => void) | undefined
 
-    const unsubscribe = onAuthStateChanged(auth, nextUser => {
-      setUser(nextUser)
-      setIsAuthReady(true)
-    })
-    return unsubscribe
+    ;(async () => {
+      try {
+        await configureAuthPersistence(auth)
+      } catch (error) {
+        console.warn('[auth] Unable to configure persistence', error)
+      }
+
+      unsubscribe = onAuthStateChanged(auth, nextUser => {
+        if (!isMounted) return
+        setUser(nextUser)
+        setIsAuthReady(true)
+      })
+    })()
+
+    return () => {
+      isMounted = false
+      if (unsubscribe) {
+        unsubscribe()
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -1495,41 +1503,4 @@ export default function App() {
       <Outlet />
     </AuthUserContext.Provider>
   )
-}
-
-function getErrorMessage(error: unknown): string {
-  // Friendlier Firebase Auth errors
-  if (error instanceof FirebaseError) {
-    const code = error.code || ''
-    switch (code) {
-      case 'auth/invalid-credential':
-      case 'auth/wrong-password':
-      case 'auth/user-not-found':
-        return 'Incorrect email or password.'
-      case 'auth/too-many-requests':
-        return 'Too many attempts. Please wait a moment and try again.'
-      case 'auth/network-request-failed':
-        return 'Network error. Please check your connection and try again.'
-      case 'auth/email-already-in-use':
-        return 'An account already exists with this email.'
-      case 'auth/weak-password':
-        return 'Please choose a stronger password. It must be at least 8 characters and include uppercase, lowercase, number, and symbol.'
-      case 'functions/permission-denied': {
-        const callableMessage = extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
-        return callableMessage
-      }
-      default:
-        return (error as any).message || 'Something went wrong. Please try again.'
-    }
-  }
-
-  if (error instanceof Error) {
-    return error.message || 'Something went wrong. Please try again.'
-  }
-
-  if (typeof error === 'string') {
-    return error
-  }
-
-  return 'Something went wrong. Please try again.'
 }
