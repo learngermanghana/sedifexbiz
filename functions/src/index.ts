@@ -1440,7 +1440,16 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
 export const commitSale = functions.https.onCall(async (data, context) => {
   assertStaffAccess(context)
 
-  const { branchId, items, totals, cashierId, saleId: saleIdRaw, payment, customer } = data || {}
+  const {
+    branchId,
+    workspaceId: workspaceIdRaw,
+    items,
+    totals,
+    cashierId,
+    saleId: saleIdRaw,
+    payment,
+    customer,
+  } = data || {}
 
   const saleId = typeof saleIdRaw === 'string' ? saleIdRaw.trim() : ''
   if (!saleId) throw new functions.https.HttpsError('invalid-argument', 'A valid saleId is required')
@@ -1451,8 +1460,18 @@ export const commitSale = functions.https.onCall(async (data, context) => {
   }
   const normalizedBranchId = normalizedBranchIdRaw
 
-  const saleRef = db.collection('sales').doc(saleId)
-  const saleItemsRef = db.collection('saleItems')
+  const workspaceIdCandidate = typeof workspaceIdRaw === 'string' ? workspaceIdRaw.trim() : ''
+  const lookupSelector = workspaceIdCandidate || normalizedBranchId
+  const workspaceLookup = lookupSelector ? await lookupWorkspaceBySelector(lookupSelector) : null
+  const resolvedWorkspaceId =
+    workspaceLookup?.slug ?? (workspaceIdCandidate ? workspaceIdCandidate : normalizedBranchId)
+  const resolvedStoreId = workspaceLookup?.storeId ?? normalizedBranchId
+
+  const workspaceRef = db.collection('workspaces').doc(resolvedWorkspaceId)
+  const productsCollection = workspaceRef.collection('products')
+  const saleRef = workspaceRef.collection('sales').doc(saleId)
+  const saleItemsCollection = workspaceRef.collection('saleItems')
+  const ledgerCollection = workspaceRef.collection('ledger')
 
   await db.runTransaction(async tx => {
     const existingSale = await tx.get(saleRef)
@@ -1472,8 +1491,9 @@ export const commitSale = functions.https.onCall(async (data, context) => {
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
     tx.set(saleRef, {
-      branchId: normalizedBranchId,
-      storeId: normalizedBranchId,
+      workspaceId: resolvedWorkspaceId,
+      branchId: resolvedStoreId,
+      storeId: resolvedStoreId,
       cashierId,
       total: totals?.total ?? 0,
       taxTotal: totals?.taxTotal ?? 0,
@@ -1489,17 +1509,18 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError('failed-precondition', 'Bad product')
       }
       const itemId = db.collection('_').doc().id
-      tx.set(saleItemsRef.doc(itemId), {
+      tx.set(saleItemsCollection.doc(itemId), {
         saleId,
         productId: it.productId,
         qty: it.qty,
         price: it.price,
         taxRate: it.taxRate,
-        storeId: normalizedBranchId,
+        storeId: resolvedStoreId,
+        workspaceId: resolvedWorkspaceId,
         createdAt: timestamp,
       })
 
-      const pRef = db.collection('products').doc(it.productId)
+      const pRef = productsCollection.doc(it.productId)
       const pSnap = await tx.get(pRef)
       if (!pSnap.exists) {
         throw new functions.https.HttpsError('failed-precondition', 'Bad product')
@@ -1509,12 +1530,13 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       tx.update(pRef, { stockCount: next, updatedAt: timestamp })
 
       const ledgerId = db.collection('_').doc().id
-      tx.set(db.collection('ledger').doc(ledgerId), {
+      tx.set(ledgerCollection.doc(ledgerId), {
         productId: it.productId,
         qtyChange: -Math.abs(it.qty || 0),
         type: 'sale',
         refId: saleId,
-        storeId: normalizedBranchId,
+        storeId: resolvedStoreId,
+        workspaceId: resolvedWorkspaceId,
         createdAt: timestamp,
       })
     }
@@ -1526,7 +1548,16 @@ export const commitSale = functions.https.onCall(async (data, context) => {
 export const receiveStock = functions.https.onCall(async (data, context) => {
   assertStaffAccess(context)
 
-  const { productId, qty, supplier, reference, unitCost } = data || {}
+  const {
+    productId,
+    qty,
+    supplier,
+    reference,
+    unitCost,
+    workspaceId: workspaceIdRaw,
+    storeId: storeIdRaw,
+    branchId: branchIdRaw,
+  } = data || {}
 
   const productIdStr = typeof productId === 'string' ? productId : null
   if (!productIdStr) throw new functions.https.HttpsError('invalid-argument', 'A product must be selected')
@@ -1551,9 +1582,25 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
     normalizedUnitCost = parsedCost
   }
 
-  const productRef = db.collection('products').doc(productIdStr)
-  const receiptRef = db.collection('receipts').doc()
-  const ledgerRef = db.collection('ledger').doc()
+  const workspaceIdCandidate = typeof workspaceIdRaw === 'string' ? workspaceIdRaw.trim() : ''
+  const storeIdCandidate = typeof storeIdRaw === 'string' ? storeIdRaw.trim() : ''
+  const branchIdCandidate = typeof branchIdRaw === 'string' ? branchIdRaw.trim() : ''
+  const selector = workspaceIdCandidate || storeIdCandidate || branchIdCandidate
+  const workspaceLookup = selector ? await lookupWorkspaceBySelector(selector) : null
+  const resolvedWorkspaceId =
+    workspaceLookup?.slug ?? (workspaceIdCandidate ? workspaceIdCandidate : selector)
+  if (!resolvedWorkspaceId) {
+    throw new functions.https.HttpsError('invalid-argument', 'A valid workspace identifier is required')
+  }
+  let resolvedStoreId = workspaceLookup?.storeId ?? storeIdCandidate
+  if (!resolvedStoreId) {
+    resolvedStoreId = branchIdCandidate || resolvedWorkspaceId
+  }
+
+  const workspaceRef = db.collection('workspaces').doc(resolvedWorkspaceId)
+  const productRef = workspaceRef.collection('products').doc(productIdStr)
+  const receiptRef = workspaceRef.collection('receipts').doc()
+  const ledgerRef = workspaceRef.collection('ledger').doc()
 
   await db.runTransaction(async tx => {
     const pSnap = await tx.get(productRef)
@@ -1588,7 +1635,8 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
       totalCost,
       receivedBy: context.auth?.uid ?? null,
       createdAt: timestamp,
-      storeId: productStoreId,
+      storeId: productStoreId || resolvedStoreId,
+      workspaceId: resolvedWorkspaceId,
     })
 
     tx.set(ledgerRef, {
@@ -1596,7 +1644,8 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
       qtyChange: amount,
       type: 'receipt',
       refId: receiptRef.id,
-      storeId: productStoreId,
+      storeId: productStoreId || resolvedStoreId,
+      workspaceId: resolvedWorkspaceId,
       createdAt: timestamp,
     })
   })
