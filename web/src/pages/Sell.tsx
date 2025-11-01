@@ -119,6 +119,7 @@ type LogReceiptShareAttemptResponse = { ok: boolean; attemptId: string };
 
 type CommitSalePayload = {
   branchId: string | null;
+  workspaceId: string | null;
   saleId: string;
   cashierId: string;
   totals: { total: number; taxTotal: number };
@@ -575,6 +576,7 @@ export default function Sell() {
 
     const payload: CommitSalePayload = {
       branchId: activeStoreId,
+      workspaceId: activeWorkspaceId,
       saleId,
       cashierId: user.uid,
       totals: { total: subtotal, taxTotal: 0 },

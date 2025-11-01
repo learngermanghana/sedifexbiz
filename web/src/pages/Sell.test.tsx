@@ -209,6 +209,7 @@ describe('Sell page', () => {
     expect(mockCommitSale).toHaveBeenCalledWith(
       expect.objectContaining({
         branchId: 'store-1',
+        workspaceId: 'workspace-1',
         totals: expect.objectContaining({ total: 12 }),
         payment: expect.objectContaining({
           method: 'cash',

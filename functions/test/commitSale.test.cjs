@@ -45,7 +45,12 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
 async function run() {
   currentDb = new MockFirestore({
-    'products/prod-1': { stockCount: 5 },
+    'workspaces/demo-store': { storeId: 'branch-1' },
+    'workspaces/demo-store/products/prod-1': {
+      stockCount: 5,
+      storeId: 'branch-1',
+      workspaceId: 'demo-store',
+    },
   })
 
   delete require.cache[require.resolve('../lib/index.js')]
@@ -60,6 +65,7 @@ async function run() {
 
   const payload = {
     branchId: 'branch-1',
+    workspaceId: 'demo-store',
     cashierId: 'cashier-1',
     saleId: 'sale-123',
     totals: { total: 100, taxTotal: 10 },
@@ -72,15 +78,16 @@ async function run() {
   assert.strictEqual(result.ok, true)
   assert.strictEqual(result.saleId, 'sale-123')
 
-  const saleDoc = currentDb.getDoc('sales/sale-123')
+  const saleDoc = currentDb.getDoc('workspaces/demo-store/sales/sale-123')
   assert.ok(saleDoc)
   assert.strictEqual(saleDoc.branchId, 'branch-1')
+  assert.strictEqual(saleDoc.workspaceId, 'demo-store')
 
-  const saleItems = currentDb.listCollection('saleItems')
+  const saleItems = currentDb.listCollection('workspaces/demo-store/saleItems')
   assert.strictEqual(saleItems.length, 1)
   assert.strictEqual(saleItems[0].data.saleId, 'sale-123')
 
-  const productDoc = currentDb.getDoc('products/prod-1')
+  const productDoc = currentDb.getDoc('workspaces/demo-store/products/prod-1')
   assert.strictEqual(productDoc.stockCount, 4)
 
   let error
@@ -93,7 +100,7 @@ async function run() {
   assert.ok(error, 'Expected duplicate sale to throw')
   assert.strictEqual(error.code, 'already-exists')
 
-  const ledgerEntries = currentDb.listCollection('ledger')
+  const ledgerEntries = currentDb.listCollection('workspaces/demo-store/ledger')
   assert.strictEqual(ledgerEntries.length, 1)
   assert.strictEqual(ledgerEntries[0].data.refId, 'sale-123')
 
