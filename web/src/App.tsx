@@ -42,6 +42,52 @@ import { clearPaidMarker, getPaidMarker } from './lib/paid'
 import { clearActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { PLAN_LIST, type PlanId } from '@catalog/plans'
 
+function getErrorMessage(err: unknown): string {
+  if (err instanceof FirebaseError) return err.message;
+  if (err instanceof Error) return err.message;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
+const [authReady, setAuthReady] = useState(false);
+
+useEffect(() => {
+  let unsub: (() => void) | undefined;
+
+  (async () => {
+    // Ensure persistence (you already have this util)
+    await configureAuthPersistence();
+
+    // Wait for the first auth state emission, then mark ready
+    unsub = onAuthStateChanged(auth, async (user) => {
+      try {
+        if (user) {
+          // Keep your existing session wiring
+          await persistSession(user).catch(() => {});
+          refreshSessionHeartbeat(user);
+        }
+      } finally {
+        setAuthReady(true);
+      }
+    });
+  })();
+
+  return () => {
+    if (unsub) unsub();
+  };
+}, []);
+
+if (!authReady) {
+  return (
+    <div style={{ padding: 16 }}>
+      Connecting to Sedifex…
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /*                              Paystack helpers                              */
 /* -------------------------------------------------------------------------- */
