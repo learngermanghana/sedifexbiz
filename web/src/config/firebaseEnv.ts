@@ -90,9 +90,18 @@ function getRequiredEnvOneOf(
 ): string {
   const allowDefaults = options.allowDefaults
   for (const key of keys) {
-    const value = allowDefaults ? env[key] ?? defaultFirebaseEnv[key] : env[key]
+    const value = env[key]
     if (typeof value === 'string' && value.trim() !== '') {
       return value.trim()
+    }
+  }
+
+  if (allowDefaults) {
+    for (const key of keys) {
+      const value = defaultFirebaseEnv[key]
+      if (typeof value === 'string' && value.trim() !== '') {
+        return value.trim()
+      }
     }
   }
 
