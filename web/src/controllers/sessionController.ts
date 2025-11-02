@@ -73,11 +73,43 @@ const DEFAULT_INVENTORY_SUMMARY: StoreInventorySummary = {
   incomingShipments: 0,
 }
 
+function toTitleCase(value: string): string {
+  return value
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+}
+
+function deriveWorkspaceName(user: User): string {
+  const directName = user.displayName?.trim()
+  if (directName) {
+    return directName
+  }
+
+  const emailLocalPart = user.email?.split('@')[0]?.replace(/[-_.]+/g, ' ').trim()
+  if (emailLocalPart) {
+    return toTitleCase(emailLocalPart)
+  }
+
+  const phone = user.phoneNumber?.trim()
+  if (phone) {
+    return phone
+  }
+
+  return 'New Sedifex Workspace'
+}
+
 /**
  * Ensures a store doc exists and matches the schema that access checks expect.
- * This is a safety net if the auth trigger hasn't run yet.
+ * Also seeds a matching workspace document so new accounts can sign in
+ * immediately without manual setup.
  */
 export async function ensureStoreDocument(user: User) {
+  const workspaceSlug = user.uid
+  const workspaceName = deriveWorkspaceName(user)
+  const ownerName = user.displayName?.trim() || workspaceName
+
   try {
     await setDoc(
       doc(db, 'stores', user.uid),
@@ -85,9 +117,16 @@ export async function ensureStoreDocument(user: User) {
         // Access-related fields
         storeId: user.uid,                // stable ID used by access resolution
         ownerUid: user.uid,               // link back to the creator/owner
+        workspaceSlug,                    // workspace key used across services
         paymentStatus: 'trial',           // 'trial' | 'active' | 'suspended'
+        contractStatus: 'active',         // keep workspace accessible by default
         contractStart: serverTimestamp(), // good default
         contractEnd: null,                // set later if you time-box trials
+
+        // Owner contact metadata
+        ownerEmail: user.email ?? null,
+        ownerPhone: user.phoneNumber ?? null,
+        ownerName,
 
         // Inventory snapshot
         inventorySummary: { ...DEFAULT_INVENTORY_SUMMARY },
@@ -103,6 +142,30 @@ export async function ensureStoreDocument(user: User) {
     )
   } catch (error) {
     console.warn('[store] Failed to ensure store metadata for user', user.uid, error)
+  }
+
+  try {
+    await setDoc(
+      doc(db, 'workspaces', workspaceSlug),
+      {
+        slug: workspaceSlug,
+        storeId: user.uid,
+        ownerId: user.uid,
+        ownerEmail: user.email ?? null,
+        ownerPhone: user.phoneNumber ?? null,
+        ownerName,
+        company: workspaceName,
+        displayName: workspaceName,
+        status: 'active',
+        contractStatus: 'active',
+        paymentStatus: 'trial',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    )
+  } catch (error) {
+    console.warn('[workspace] Failed to ensure workspace metadata for user', user.uid, error)
   }
 }
 
