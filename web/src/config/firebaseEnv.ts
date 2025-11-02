@@ -4,7 +4,16 @@ const requiredEnvKeys = [
   'VITE_FB_PROJECT_ID',
   'VITE_FB_STORAGE_BUCKET',
   'VITE_FB_APP_ID',
+] as const
+
+const appCheckSiteKeyEnvKeys = [
   'VITE_FB_APP_CHECK_SITE_KEY',
+  'VITE_RECAPTCHA_SITE_KEY',
+] as const
+
+const appCheckDebugTokenEnvKeys = [
+  'VITE_FB_APP_CHECK_DEBUG_TOKEN',
+  'VITE_APPCHECK_DEBUG_TOKEN',
 ] as const
 
 const defaultFirebaseEnv: Record<string, string | undefined> = {
@@ -16,7 +25,9 @@ const defaultFirebaseEnv: Record<string, string | undefined> = {
   VITE_FB_FUNCTIONS_REGION: 'us-central1',
   // Public test site key provided by Google for non-production use.
   VITE_FB_APP_CHECK_SITE_KEY: '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI',
+  VITE_RECAPTCHA_SITE_KEY: '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI',
   VITE_FB_APP_CHECK_DEBUG_TOKEN: undefined,
+  VITE_APPCHECK_DEBUG_TOKEN: undefined,
 }
 
 type RequiredFirebaseEnvKey = (typeof requiredEnvKeys)[number]
@@ -72,6 +83,40 @@ function getOptionalEnv(
   return fallback
 }
 
+function getRequiredEnvOneOf(
+  env: EnvSource,
+  keys: readonly string[],
+  options: GetRequiredEnvOptions,
+): string {
+  const allowDefaults = options.allowDefaults
+  for (const key of keys) {
+    const value = allowDefaults ? env[key] ?? defaultFirebaseEnv[key] : env[key]
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value.trim()
+    }
+  }
+
+  throw new Error(
+    `[firebase-env] Missing required environment variable. ` +
+      `Ensure one of the following keys is provided: ${keys.join(', ')}`,
+  )
+}
+
+function getOptionalEnvOneOf(
+  env: EnvSource,
+  keys: readonly string[],
+  allowDefaults: boolean,
+): string | undefined {
+  for (const key of keys) {
+    const value = getOptionalEnv(env, key, '', allowDefaults).trim()
+    if (value !== '') {
+      return value
+    }
+  }
+
+  return undefined
+}
+
 type CreateFirebaseEnvOptions = {
   allowDefaults?: boolean
 }
@@ -89,7 +134,7 @@ export function createFirebaseEnv(
       allowDefaults,
     }),
     appId: getRequiredEnv(env, 'VITE_FB_APP_ID', { allowDefaults }),
-    appCheckSiteKey: getRequiredEnv(env, 'VITE_FB_APP_CHECK_SITE_KEY', {
+    appCheckSiteKey: getRequiredEnvOneOf(env, appCheckSiteKeyEnvKeys, {
       allowDefaults,
     }),
     functionsRegion: getOptionalEnv(
@@ -98,16 +143,11 @@ export function createFirebaseEnv(
       'us-central1',
       allowDefaults,
     ),
-    appCheckDebugToken: (() => {
-      const value = getOptionalEnv(
-        env,
-        'VITE_FB_APP_CHECK_DEBUG_TOKEN',
-        '',
-        allowDefaults,
-      )
-      const trimmed = value.trim()
-      return trimmed === '' ? undefined : trimmed
-    })(),
+    appCheckDebugToken: getOptionalEnvOneOf(
+      env,
+      appCheckDebugTokenEnvKeys,
+      allowDefaults,
+    ),
   }
 }
 

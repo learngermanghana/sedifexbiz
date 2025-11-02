@@ -46,7 +46,8 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 - Enable **Firestore** and publish `firestore.rules`.
 - Create a second project for production later (e.g., `sedifex-prod`).
 - Enable **Firebase App Check** with the reCAPTCHA v3 provider, make sure `https://sedifexbiz.vercel.app` is listed as an
-  allowed domain on the site key, and surface that key via `VITE_FB_APP_CHECK_SITE_KEY` in your deployment environment.
+  allowed domain on the site key, and surface that key via `VITE_FB_APP_CHECK_SITE_KEY` (or `VITE_RECAPTCHA_SITE_KEY`) in your
+  deployment environment.
 
 ### Workspace access records (Firestore)
 - Store workspace metadata in the `workspaces` collection inside your **primary** Firestore database. Each document ID should match the workspace slug used by the app.

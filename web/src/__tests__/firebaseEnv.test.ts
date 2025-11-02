@@ -33,6 +33,19 @@ describe('firebaseEnv', () => {
     expect(env.appCheckDebugToken).toBeUndefined()
   })
 
+  it('reads the app check site key from VITE_RECAPTCHA_SITE_KEY when provided', () => {
+    const env = createFirebaseEnv(
+      {
+        ...baseEnv,
+        VITE_FB_APP_CHECK_SITE_KEY: undefined,
+        VITE_RECAPTCHA_SITE_KEY: 'enterprise-site-key',
+      },
+      { allowDefaults: false },
+    )
+
+    expect(env.appCheckSiteKey).toBe('enterprise-site-key')
+  })
+
   it('throws when a required value is missing', () => {
     expect(() =>
       createFirebaseEnv(
@@ -66,5 +79,18 @@ describe('firebaseEnv', () => {
     )
 
     expect(env.appCheckDebugToken).toBe('debug-token')
+  })
+
+  it('reads the optional app check debug token from VITE_APPCHECK_DEBUG_TOKEN when provided', () => {
+    const env = createFirebaseEnv(
+      {
+        ...baseEnv,
+        VITE_FB_APP_CHECK_DEBUG_TOKEN: undefined,
+        VITE_APPCHECK_DEBUG_TOKEN: ' alt-debug-token ',
+      },
+      { allowDefaults: false },
+    )
+
+    expect(env.appCheckDebugToken).toBe('alt-debug-token')
   })
 })
