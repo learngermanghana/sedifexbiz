@@ -7,6 +7,7 @@ const baseEnv = {
   VITE_FB_PROJECT_ID: 'demo-project',
   VITE_FB_STORAGE_BUCKET: 'demo.appspot.com',
   VITE_FB_APP_ID: 'app-id',
+  VITE_FB_APP_CHECK_SITE_KEY: 'recaptcha-key',
 } as Record<string, string | undefined>
 
 describe('firebaseEnv', () => {
@@ -28,6 +29,8 @@ describe('firebaseEnv', () => {
     const env = createFirebaseEnv(baseEnv, { allowDefaults: false })
 
     expect(env.functionsRegion).toBe('us-central1')
+    expect(env.appCheckSiteKey).toBe('recaptcha-key')
+    expect(env.appCheckDebugToken).toBeUndefined()
   })
 
   it('throws when a required value is missing', () => {
@@ -52,6 +55,16 @@ describe('firebaseEnv', () => {
       storageBucket: 'sedifex-ac2b0.appspot.com',
       appId: '1:519571382805:web:d0f4653d62a71dfa58a41c',
       functionsRegion: 'us-central1',
+      appCheckSiteKey: '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI',
     })
+  })
+
+  it('reads the optional app check debug token when provided', () => {
+    const env = createFirebaseEnv(
+      { ...baseEnv, VITE_FB_APP_CHECK_DEBUG_TOKEN: ' debug-token ' },
+      { allowDefaults: false },
+    )
+
+    expect(env.appCheckDebugToken).toBe('debug-token')
   })
 })

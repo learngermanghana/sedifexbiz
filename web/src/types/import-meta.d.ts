@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   readonly VITE_FB_STORAGE_BUCKET: string
   readonly VITE_FB_APP_ID: string
   readonly VITE_FB_FUNCTIONS_REGION?: string
+  readonly VITE_FB_APP_CHECK_SITE_KEY: string
+  readonly VITE_FB_APP_CHECK_DEBUG_TOKEN?: string
   readonly VITE_HEARTBEAT_URL?: string
   readonly VITE_PAYSTACK_PUBLIC_KEY?: string
   readonly VITE_SUPABASE_URL: string
