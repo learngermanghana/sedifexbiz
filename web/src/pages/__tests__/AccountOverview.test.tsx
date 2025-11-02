@@ -127,6 +127,7 @@ describe('AccountOverview', () => {
 
     mockUseActiveStore.mockReturnValue({
       storeId: 'store-123',
+      workspaceId: 'store-123',
       workspaceSlug: 'workspace-123',
       isLoading: false,
       error: null,
@@ -224,6 +225,7 @@ describe('AccountOverview', () => {
   it('fetches the active storeId from roster when no store is selected', async () => {
     mockUseActiveStore.mockReturnValue({
       storeId: null,
+      workspaceId: null,
       workspaceSlug: null,
       isLoading: false,
       error: null,

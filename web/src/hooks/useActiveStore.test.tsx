@@ -60,6 +60,7 @@ describe('useActiveStore', () => {
     })
 
     expect(result.current.storeId).toBe('matching-store')
+    expect(result.current.workspaceId).toBe('matching-store')
     expect(result.current.workspaceSlug).toBe('matching-store')
     expect(result.current.error).toBeNull()
   })
@@ -83,6 +84,7 @@ describe('useActiveStore', () => {
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
       expect(result.current.storeId).toBe('membership-store')
+      expect(result.current.workspaceId).toBe('membership-store')
       expect(result.current.workspaceSlug).toBe('membership-store')
     })
 
@@ -110,6 +112,7 @@ describe('useActiveStore', () => {
     })
 
     expect(result.current.storeId).toBe('membership-store')
+    expect(result.current.workspaceId).toBe('membership-store')
     expect(result.current.workspaceSlug).toBe('membership-store')
   })
 
@@ -145,6 +148,7 @@ describe('useActiveStore', () => {
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
       expect(result.current.storeId).toBe('user-1-store')
+      expect(result.current.workspaceId).toBe('user-1-store')
       expect(result.current.workspaceSlug).toBe('user-1-store')
     })
 
@@ -156,6 +160,7 @@ describe('useActiveStore', () => {
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
       expect(result.current.storeId).toBe('user-2-store')
+      expect(result.current.workspaceId).toBe('user-2-store')
       expect(result.current.workspaceSlug).toBe('user-2-store')
     })
 
@@ -183,6 +188,7 @@ describe('useActiveStore', () => {
     })
 
     expect(result.current.storeId).toBe('store-a')
+    expect(result.current.workspaceId).toBe('store-a')
     expect(result.current.workspaceSlug).toBe('store-a')
 
     act(() => {
@@ -191,6 +197,7 @@ describe('useActiveStore', () => {
 
     await waitFor(() => {
       expect(result.current.storeId).toBe('store-b')
+      expect(result.current.workspaceId).toBe('store-b')
       expect(result.current.workspaceSlug).toBe('store-b')
     })
 
@@ -213,6 +220,7 @@ describe('useActiveStore', () => {
     await waitFor(() => {
       expect(result.current.isLoading).toBe(false)
       expect(result.current.storeId).toBe('store-id')
+      expect(result.current.workspaceId).toBe('store-id')
       expect(result.current.workspaceSlug).toBe('workspace-slug')
     })
   })

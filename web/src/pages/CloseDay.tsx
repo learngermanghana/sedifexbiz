@@ -40,13 +40,7 @@ function parseQuantity(input: string): number {
 
 export default function CloseDay() {
   const user = useAuthUser()
-  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore()
-  const activeWorkspaceId = useMemo(() => {
-    const slug = activeWorkspaceSlug?.trim()
-    if (slug) return slug
-    const store = activeStoreId?.trim()
-    return store || null
-  }, [activeStoreId, activeWorkspaceSlug])
+  const { storeId: activeStoreId, workspaceId: activeWorkspaceId } = useActiveStore()
 
   const [total, setTotal] = useState(0)
   const [cashCounts, setCashCounts] = useState<CashCountState>(() => createInitialCashCountState())

@@ -180,13 +180,7 @@ function sanitizePrice(value: unknown): number | null {
 
 export default function Sell() {
   const user = useAuthUser();
-  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore();
-  const activeWorkspaceId = useMemo(() => {
-    const slug = activeWorkspaceSlug?.trim();
-    if (slug) return slug;
-    const store = activeStoreId?.trim();
-    return store || null;
-  }, [activeStoreId, activeWorkspaceSlug]);
+  const { storeId: activeStoreId, workspaceId: activeWorkspaceId } = useActiveStore();
 
   const resolveAccessCallable = useMemo(
     () =>

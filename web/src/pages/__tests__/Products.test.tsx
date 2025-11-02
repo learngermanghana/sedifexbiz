@@ -45,6 +45,7 @@ vi.mock('../../utils/pendingProductQueue', () => ({
 
 const mockUseActiveStore = vi.fn(() => ({
   storeId: 'store-1',
+  workspaceId: 'store-1',
   workspaceSlug: 'workspace-1',
   isLoading: false,
   error: null,
@@ -138,6 +139,7 @@ describe('Products page', () => {
     mockUseActiveStore.mockReset()
     mockUseActiveStore.mockReturnValue({
       storeId: 'store-1',
+      workspaceId: 'store-1',
       workspaceSlug: 'workspace-1',
       isLoading: false,
       error: null,

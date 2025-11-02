@@ -14,6 +14,7 @@ vi.mock('../hooks/useAuthUser', () => ({
 
 const mockUseActiveStore = vi.fn(() => ({
   storeId: 'store-1',
+  workspaceId: 'store-1',
   workspaceSlug: 'workspace-1',
   isLoading: false,
   error: null,
@@ -158,6 +159,7 @@ describe('Sell page', () => {
     })
     mockUseActiveStore.mockReturnValue({
       storeId: 'store-1',
+      workspaceId: 'store-1',
       workspaceSlug: 'workspace-1',
       isLoading: false,
       error: null,
