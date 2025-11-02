@@ -10,6 +10,7 @@ vi.mock('../../config/firebaseEnv', () => ({
     storageBucket: 'demo.appspot.com',
     appId: 'demo-app-id',
     functionsRegion: 'us-central1',
+    appCheckSiteKey: 'recaptcha-key',
   },
 }))
 

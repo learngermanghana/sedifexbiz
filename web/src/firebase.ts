@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app'
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
 import { getAuth } from 'firebase/auth'
 import { getFunctions } from 'firebase/functions'
 import {
@@ -19,6 +20,26 @@ const firebaseConfig = {
 }
 
 export const app = initializeApp(firebaseConfig)
+
+const shouldInitializeAppCheck =
+  typeof window !== 'undefined' &&
+  typeof document !== 'undefined' &&
+  import.meta.env.MODE !== 'test'
+
+if (shouldInitializeAppCheck) {
+  const globalScope = globalThis as typeof globalThis & {
+    FIREBASE_APPCHECK_DEBUG_TOKEN?: string
+  }
+
+  if (firebaseEnv.appCheckDebugToken) {
+    globalScope.FIREBASE_APPCHECK_DEBUG_TOKEN = firebaseEnv.appCheckDebugToken
+  }
+
+  initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider(firebaseEnv.appCheckSiteKey),
+    isTokenAutoRefreshEnabled: true,
+  })
+}
 
 export const auth = getAuth(app)
 

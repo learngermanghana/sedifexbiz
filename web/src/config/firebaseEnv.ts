@@ -4,6 +4,7 @@ const requiredEnvKeys = [
   'VITE_FB_PROJECT_ID',
   'VITE_FB_STORAGE_BUCKET',
   'VITE_FB_APP_ID',
+  'VITE_FB_APP_CHECK_SITE_KEY',
 ] as const
 
 const defaultFirebaseEnv: Record<string, string | undefined> = {
@@ -13,6 +14,9 @@ const defaultFirebaseEnv: Record<string, string | undefined> = {
   VITE_FB_STORAGE_BUCKET: 'sedifex-ac2b0.appspot.com',
   VITE_FB_APP_ID: '1:519571382805:web:d0f4653d62a71dfa58a41c',
   VITE_FB_FUNCTIONS_REGION: 'us-central1',
+  // Public test site key provided by Google for non-production use.
+  VITE_FB_APP_CHECK_SITE_KEY: '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI',
+  VITE_FB_APP_CHECK_DEBUG_TOKEN: undefined,
 }
 
 type RequiredFirebaseEnvKey = (typeof requiredEnvKeys)[number]
@@ -24,6 +28,8 @@ export type FirebaseEnvConfig = {
   storageBucket: string
   appId: string
   functionsRegion: string
+  appCheckSiteKey: string
+  appCheckDebugToken?: string
 }
 
 type EnvSource = Record<string, string | undefined>
@@ -83,12 +89,25 @@ export function createFirebaseEnv(
       allowDefaults,
     }),
     appId: getRequiredEnv(env, 'VITE_FB_APP_ID', { allowDefaults }),
+    appCheckSiteKey: getRequiredEnv(env, 'VITE_FB_APP_CHECK_SITE_KEY', {
+      allowDefaults,
+    }),
     functionsRegion: getOptionalEnv(
       env,
       'VITE_FB_FUNCTIONS_REGION',
       'us-central1',
       allowDefaults,
     ),
+    appCheckDebugToken: (() => {
+      const value = getOptionalEnv(
+        env,
+        'VITE_FB_APP_CHECK_DEBUG_TOKEN',
+        '',
+        allowDefaults,
+      )
+      const trimmed = value.trim()
+      return trimmed === '' ? undefined : trimmed
+    })(),
   }
 }
 
