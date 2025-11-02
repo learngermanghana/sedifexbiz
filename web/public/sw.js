@@ -38,6 +38,18 @@ self.addEventListener('activate', event => {
 const HEARTBEAT_PATH = `${BASE_URL}heartbeat.json`
 const OFFLINE_FALLBACK = `${BASE_URL}index.html`
 
+async function refreshOfflineFallback() {
+  try {
+    const cache = await caches.open(CACHE_NAME)
+    const response = await fetch(OFFLINE_FALLBACK, { cache: 'reload' })
+    if (response && response.ok) {
+      await cache.put(OFFLINE_FALLBACK, response.clone())
+    }
+  } catch (error) {
+    console.warn('[sw] Failed to refresh offline fallback', error)
+  }
+}
+
 self.addEventListener('fetch', event => {
   const { request } = event
   if (request.method !== 'GET') return
@@ -53,7 +65,23 @@ self.addEventListener('fetch', event => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      caches.match(OFFLINE_FALLBACK).then(cached => cached || fetch(request).catch(() => cached))
+      (async () => {
+        try {
+          const response = await fetch(request)
+          if (response && response.ok) {
+            event.waitUntil(refreshOfflineFallback())
+            return response
+          }
+          throw new Error(`Navigation request failed with status ${response ? response.status : 'unknown'}`)
+        } catch (error) {
+          console.warn('[sw] Navigation request failed, falling back to cache', error)
+          const cached = await caches.match(OFFLINE_FALLBACK)
+          if (cached) {
+            return cached
+          }
+          throw error
+        }
+      })()
     )
     return
   }
