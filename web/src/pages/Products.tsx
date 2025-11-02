@@ -177,16 +177,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Products() {
-  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore()
-  const activeWorkspaceId = useMemo(
-    () => {
-      const slug = activeWorkspaceSlug?.trim()
-      if (slug) return slug
-      const store = activeStoreId?.trim()
-      return store || null
-    },
-    [activeStoreId, activeWorkspaceSlug],
-  )
+  const { storeId: activeStoreId, workspaceId: activeWorkspaceId } = useActiveStore()
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)

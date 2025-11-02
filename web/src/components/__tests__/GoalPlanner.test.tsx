@@ -13,6 +13,7 @@ vi.mock('../../hooks/useAuthUser', () => ({
 
 const mockUseActiveStore = vi.fn(() => ({
   storeId: 'store-1',
+  workspaceId: 'store-1',
   workspaceSlug: 'workspace-1',
   isLoading: false,
   error: null,
@@ -109,6 +110,7 @@ describe('Goal planner component', () => {
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'manager@example.com' })
     mockUseActiveStore.mockReturnValue({
       storeId: 'store-1',
+      workspaceId: 'store-1',
       workspaceSlug: 'workspace-1',
       isLoading: false,
       error: null,

@@ -5,6 +5,7 @@ import { persistActiveStoreIdForUser, readActiveStoreId } from '../utils/activeS
 
 interface ActiveStoreState {
   storeId: string | null
+  workspaceId: string | null
   workspaceSlug: string | null
   isLoading: boolean
   error: string | null
@@ -101,6 +102,30 @@ export function useActiveStore(): ActiveStoreState {
 
   const hasError = error != null
 
+  const matchByStoreId = useMemo(() => {
+    if (!activeStoreId) return null
+    const normalizedActiveStoreId = activeStoreId.trim()
+    if (!normalizedActiveStoreId) return null
+    return (
+      memberships.find(membership => {
+        const candidate = (membership.storeId ?? '').trim()
+        return candidate !== '' && candidate === normalizedActiveStoreId
+      }) ?? null
+    )
+  }, [activeStoreId, memberships])
+
+  const matchBySlug = useMemo(() => {
+    if (!activeStoreId) return null
+    const normalizedActiveStoreId = activeStoreId.trim()
+    if (!normalizedActiveStoreId) return null
+    return (
+      memberships.find(membership => {
+        const candidate = (membership.workspaceSlug ?? '').trim()
+        return candidate !== '' && candidate === normalizedActiveStoreId
+      }) ?? null
+    )
+  }, [activeStoreId, memberships])
+
   const activeWorkspaceSlug = useMemo(() => {
     if (!activeStoreId) return null
 
@@ -109,19 +134,9 @@ export function useActiveStore(): ActiveStoreState {
       return null
     }
 
-    const matchByStoreId = memberships.find(membership => {
-      const candidate = (membership.storeId ?? '').trim()
-      return candidate !== '' && candidate === normalizedActiveStoreId
-    })
-
     if (matchByStoreId?.workspaceSlug && matchByStoreId.workspaceSlug.trim()) {
       return matchByStoreId.workspaceSlug.trim()
     }
-
-    const matchBySlug = memberships.find(membership => {
-      const candidate = (membership.workspaceSlug ?? '').trim()
-      return candidate !== '' && candidate === normalizedActiveStoreId
-    })
 
     if (matchBySlug?.workspaceSlug && matchBySlug.workspaceSlug.trim()) {
       return matchBySlug.workspaceSlug.trim()
@@ -132,17 +147,53 @@ export function useActiveStore(): ActiveStoreState {
     }
 
     return normalizedActiveStoreId
-  }, [activeStoreId, memberships])
+  }, [activeStoreId, matchBySlug, matchByStoreId])
+
+  const activeWorkspaceId = useMemo(() => {
+    if (!activeStoreId) return null
+
+    const normalizedActiveStoreId = activeStoreId.trim()
+    if (!normalizedActiveStoreId) {
+      return null
+    }
+
+    if (matchByStoreId?.storeId && matchByStoreId.storeId.trim()) {
+      return matchByStoreId.storeId.trim()
+    }
+
+    if (matchBySlug?.storeId && matchBySlug.storeId.trim()) {
+      return matchBySlug.storeId.trim()
+    }
+
+    if (matchByStoreId?.workspaceSlug && matchByStoreId.workspaceSlug.trim()) {
+      return matchByStoreId.workspaceSlug.trim()
+    }
+
+    if (matchBySlug?.workspaceSlug && matchBySlug.workspaceSlug.trim()) {
+      return matchBySlug.workspaceSlug.trim()
+    }
+
+    return normalizedActiveStoreId
+  }, [activeStoreId, matchBySlug, matchByStoreId])
 
   return useMemo(
     () => ({
       storeId: activeStoreId,
+      workspaceId: activeWorkspaceId,
       workspaceSlug: activeWorkspaceSlug,
       isLoading: loading,
       error: hasError ? STORE_ERROR_MESSAGE : null,
       memberships,
       setActiveStoreId,
     }),
-    [activeStoreId, activeWorkspaceSlug, hasError, loading, memberships, setActiveStoreId],
+    [
+      activeStoreId,
+      activeWorkspaceId,
+      activeWorkspaceSlug,
+      hasError,
+      loading,
+      memberships,
+      setActiveStoreId,
+    ],
   )
 }

@@ -436,13 +436,7 @@ function buildDailyMetricSeries(
 
 export function useStoreMetrics(): UseStoreMetricsResult {
   const authUser = useAuthUser()
-  const { storeId: activeStoreId, workspaceSlug: activeWorkspaceSlug } = useActiveStore()
-  const activeWorkspaceId = useMemo(() => {
-    const slug = activeWorkspaceSlug?.trim()
-    if (slug) return slug
-    const store = activeStoreId?.trim()
-    return store || null
-  }, [activeStoreId, activeWorkspaceSlug])
+  const { storeId: activeStoreId, workspaceId: activeWorkspaceId } = useActiveStore()
   const { publish } = useToast()
 
   const [sales, setSales] = useState<SaleRecord[]>([])

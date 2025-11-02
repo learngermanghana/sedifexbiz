@@ -62,6 +62,7 @@ describe('Shell', () => {
 
     mockUseActiveStore.mockReturnValue({
       storeId: 'store-1',
+      workspaceId: 'store-1',
       workspaceSlug: 'workspace-1',
       isLoading: false,
       error: null,
@@ -105,6 +106,7 @@ describe('Shell', () => {
     const setActiveStoreId = vi.fn()
     mockUseActiveStore.mockReturnValue({
       storeId: 'store-1',
+      workspaceId: 'store-1',
       workspaceSlug: 'workspace-1',
       isLoading: false,
       error: null,
