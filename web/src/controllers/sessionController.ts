@@ -7,7 +7,7 @@ import {
   inMemoryPersistence,
   setPersistence,
 } from 'firebase/auth'
-import { doc, serverTimestamp, setDoc, updateDoc, db, rosterDb } from '../lib/db'
+import { doc, serverTimestamp, setDoc, updateDoc, getDoc, db, rosterDb } from '../lib/db'
 
 const SESSION_COOKIE = 'sedifex_session'
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 90 // 90 days
@@ -111,17 +111,28 @@ export async function ensureStoreDocument(user: User) {
   const ownerName = user.displayName?.trim() || workspaceName
 
   try {
-    await setDoc(
-      doc(db, 'stores', user.uid),
-      {
-        // Access-related fields
-        storeId: user.uid,                // stable ID used by access resolution
-        ownerUid: user.uid,               // link back to the creator/owner
-        workspaceSlug,                    // workspace key used across services
-        paymentStatus: 'trial',           // 'trial' | 'active' | 'suspended'
-        contractStatus: 'active',         // keep workspace accessible by default
+    const storeRef = doc(db, 'stores', user.uid)
+    const existingStore = await getDoc(storeRef)
+    const isNewStore = !existingStore.exists()
+
+    const storePayload: Record<string, unknown> = {
+      // Access-related fields
+      storeId: user.uid, // stable ID used by access resolution
+      ownerUid: user.uid, // link back to the creator/owner
+      workspaceSlug, // workspace key used across services
+
+      // Back-compat (optional): keep legacy aliases if older code references them
+      ownerId: user.uid,
+
+      updatedAt: serverTimestamp(),
+    }
+
+    if (isNewStore) {
+      Object.assign(storePayload, {
+        paymentStatus: 'trial', // 'trial' | 'active' | 'suspended'
+        contractStatus: 'active', // keep workspace accessible by default
         contractStart: serverTimestamp(), // good default
-        contractEnd: null,                // set later if you time-box trials
+        contractEnd: null, // set later if you time-box trials
 
         // Owner contact metadata
         ownerEmail: user.email ?? null,
@@ -131,26 +142,30 @@ export async function ensureStoreDocument(user: User) {
         // Inventory snapshot
         inventorySummary: { ...DEFAULT_INVENTORY_SUMMARY },
 
-        // Back-compat (optional): keep legacy aliases if older code references them
-        ownerId: user.uid,
         status: 'active',
-
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    )
+      })
+    }
+
+    await setDoc(storeRef, storePayload, { merge: true })
   } catch (error) {
     console.warn('[store] Failed to ensure store metadata for user', user.uid, error)
   }
 
   try {
-    await setDoc(
-      doc(db, 'workspaces', workspaceSlug),
-      {
-        slug: workspaceSlug,
-        storeId: user.uid,
-        ownerId: user.uid,
+    const workspaceRef = doc(db, 'workspaces', workspaceSlug)
+    const existingWorkspace = await getDoc(workspaceRef)
+    const isNewWorkspace = !existingWorkspace.exists()
+
+    const workspacePayload: Record<string, unknown> = {
+      slug: workspaceSlug,
+      storeId: user.uid,
+      ownerId: user.uid,
+      updatedAt: serverTimestamp(),
+    }
+
+    if (isNewWorkspace) {
+      Object.assign(workspacePayload, {
         ownerEmail: user.email ?? null,
         ownerPhone: user.phoneNumber ?? null,
         ownerName,
@@ -160,10 +175,10 @@ export async function ensureStoreDocument(user: User) {
         contractStatus: 'active',
         paymentStatus: 'trial',
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    )
+      })
+    }
+
+    await setDoc(workspaceRef, workspacePayload, { merge: true })
   } catch (error) {
     console.warn('[workspace] Failed to ensure workspace metadata for user', user.uid, error)
   }
