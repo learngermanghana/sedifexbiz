@@ -10,10 +10,9 @@ import {
 } from '../lib/db';
 import { where } from 'firebase/firestore'; // keep where only if you need it elsewhere
 import { FirebaseError } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 
-import { functions as cloudFunctions } from '../firebase'; // if you’ve centralized functions, import from that module instead
+import { auth, functions as cloudFunctions } from '../firebase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useActiveStore } from '../hooks/useActiveStore';
 import './Sell.css';
@@ -197,7 +196,7 @@ export default function Sell() {
       if (!normalized) return false;
       try {
         await resolveAccessCallable({ storeId: normalized });
-        await getAuth().currentUser?.getIdToken(true);
+        await auth.currentUser?.getIdToken(true);
         return true;
       } catch (error) {
         console.warn('[sell] access refresh failed', (error as any)?.code, (error as any)?.message);

@@ -1,8 +1,7 @@
 // web/src/controllers/accessController.ts
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
-import { getAuth } from 'firebase/auth'
-import { functions } from '../firebase'
+import { auth, functions } from '../firebase'
 import { INACTIVE_WORKSPACE_MESSAGE } from '@functions/constants/access'
 
 export { INACTIVE_WORKSPACE_MESSAGE } from '@functions/constants/access'
@@ -249,7 +248,6 @@ export async function resolveStoreAccess(storeId?: string): Promise<ResolveStore
     throw new Error('Unable to resolve store access for this account.')
   }
 
-  const auth = getAuth()
   const currentUser = auth.currentUser
 
   if (currentUser) {

@@ -12,11 +12,10 @@ import {
   type QueryDocumentSnapshot,
 } from '../lib/db'
 import { useAuthUser } from './useAuthUser'
-import { getAuth } from 'firebase/auth'
-import { getFunctions, httpsCallable } from 'firebase/functions'
-import { firebaseEnv } from '../config/firebaseEnv'
+import { httpsCallable } from 'firebase/functions'
 import { useAutoRerun } from './useAutoRerun'
 import { normalizeStaffRole } from '../utils/normalizeStaffRole'
+import { auth, functions } from '../firebase'
 
 export type Membership = {
   id: string
@@ -125,11 +124,8 @@ async function loadMembershipsForUser(uid: string): Promise<Membership[]> {
  * then force-refresh the ID token so callable functions see the correct role.
  */
 export async function refreshMembershipClaims() {
-  const auth = getAuth()
   const user = auth.currentUser
   if (!user) return
-
-  const functions = getFunctions(undefined, firebaseEnv.functionsRegion)
 
   await httpsCallable(functions, 'resolveStoreAccess')()
   await user.getIdToken(true)
@@ -139,7 +135,6 @@ export async function refreshMembershipClaims() {
  * Optional helper while debugging.
  */
 export async function debugClaims() {
-  const auth = getAuth()
   const user = auth.currentUser
   if (!user) {
     // eslint-disable-next-line no-console
