@@ -24,6 +24,10 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
    VITE_FB_STORAGE_BUCKET=sedifex-dev.appspot.com
    VITE_FB_APP_ID=REPLACE_ME
    ```
+   Local dev falls back to the sample Firebase project when these are missing, but **staging and production builds must define**
+   the `VITE_FB_*` variables (and optional `VITE_FB_FUNCTIONS_REGION`, `VITE_FB_APP_CHECK_SITE_KEY`, etc.). The build will throw
+   if a required key is absent when `import.meta.env.PROD` is `true`, preventing accidental connections to the wrong Firebase
+   project.
 4) (Optional) Deploy Functions:
    ```bash
    cd functions
