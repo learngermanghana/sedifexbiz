@@ -1,6 +1,6 @@
 // web/src/controllers/signupUnlockController.ts
-import { getFunctions, httpsCallable } from 'firebase/functions'
-import { firebaseEnv } from '../config/firebaseEnv'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../firebase'
 
 type RawCheckSignupUnlockResponse = {
   ok?: unknown
@@ -33,7 +33,6 @@ export type SignupUnlockResult = {
 }
 
 const checkSignupUnlockCallable = (() => {
-  const functions = getFunctions(undefined, firebaseEnv.functionsRegion)
   return httpsCallable<CheckSignupUnlockPayload, RawCheckSignupUnlockResponse>(
     functions,
     'checkSignupUnlock',
