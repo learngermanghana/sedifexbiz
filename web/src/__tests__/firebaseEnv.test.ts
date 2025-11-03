@@ -93,4 +93,14 @@ describe('firebaseEnv', () => {
 
     expect(env.appCheckDebugToken).toBe('alt-debug-token')
   })
+
+  it('requires explicit Firebase configuration when building for production', () => {
+    expect(() =>
+      createFirebaseEnv(
+        {
+          PROD: true,
+        } as Record<string, string | boolean | undefined>,
+      ),
+    ).toThrowError(/VITE_FB_API_KEY/)
+  })
 })

@@ -43,7 +43,7 @@ export type FirebaseEnvConfig = {
   appCheckDebugToken?: string
 }
 
-type EnvSource = Record<string, string | undefined>
+type EnvSource = Record<string, string | boolean | undefined>
 
 type GetRequiredEnvOptions = {
   allowDefaults: boolean
@@ -125,7 +125,14 @@ export function createFirebaseEnv(
   env: EnvSource,
   options?: CreateFirebaseEnvOptions,
 ): FirebaseEnvConfig {
-  const allowDefaults = options?.allowDefaults ?? true
+  const isProductionBuild =
+    typeof env.PROD === 'boolean'
+      ? env.PROD
+      : typeof env.MODE === 'string'
+        ? env.MODE.toLowerCase() === 'production'
+        : false
+
+  const allowDefaults = options?.allowDefaults ?? !isProductionBuild
   return {
     apiKey: getRequiredEnv(env, 'VITE_FB_API_KEY', { allowDefaults }),
     authDomain: getRequiredEnv(env, 'VITE_FB_AUTH_DOMAIN', { allowDefaults }),
