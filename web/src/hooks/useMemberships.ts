@@ -12,10 +12,10 @@ import {
   type QueryDocumentSnapshot,
 } from '../lib/db'
 import { useAuthUser } from './useAuthUser'
-import { httpsCallable } from 'firebase/functions'
 import { useAutoRerun } from './useAutoRerun'
 import { normalizeStaffRole } from '../utils/normalizeStaffRole'
-import { auth, functions } from '../firebase'
+import { auth } from '../firebase'
+import { resolveStoreAccess } from '../controllers/accessController'
 
 export type Membership = {
   id: string
@@ -120,15 +120,15 @@ async function loadMembershipsForUser(uid: string): Promise<Membership[]> {
 }
 
 /**
- * Call once after sign-in to ensure the backend sets role/storeId into custom claims,
- * then force-refresh the ID token so callable functions see the correct role.
+ * Call once after sign-in to ensure the backend sets role/storeId into custom claims.
+ * The shared resolveStoreAccess helper reuses our configured Functions instance and
+ * refreshes the ID token so callable functions see the correct role.
  */
 export async function refreshMembershipClaims() {
   const user = auth.currentUser
   if (!user) return
 
-  await httpsCallable(functions, 'resolveStoreAccess')()
-  await user.getIdToken(true)
+  await resolveStoreAccess()
 }
 
 /**
