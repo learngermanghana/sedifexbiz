@@ -25,11 +25,11 @@ const defaultFirebaseEnv: Record<string, string | undefined> = {
   VITE_FB_STORAGE_BUCKET: 'sedifex-ac2b0.appspot.com',
   VITE_FB_APP_ID: '1:519571382805:web:d0f4653d62a71dfa58a41c',
   VITE_FB_FUNCTIONS_REGION: 'us-central1',
-  // Public test site key provided by Google for non-production use.
-  VITE_FB_APP_CHECK_SITE_KEY: '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI',
-  VITE_RECAPTCHA_SITE_KEY: '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI',
+  // Public site key configured for the Sedifex deployment.
+  VITE_FB_APP_CHECK_SITE_KEY: '6LcVMf8rAAAAAOpbzgdKCikJB7glk7slfrfHvtum',
+  VITE_RECAPTCHA_SITE_KEY: '6LcVMf8rAAAAAOpbzgdKCikJB7glk7slfrfHvtum',
   VITE_FB_APP_CHECK_DEBUG_TOKEN: undefined,
-  VITE_APPCHECK_DEBUG_TOKEN: undefined,
+  VITE_APPCHECK_DEBUG_TOKEN: '967EB4EB-6354-494F-8C62-48F5B1F6B07F',
 }
 
 type RequiredFirebaseEnvKey = (typeof requiredEnvKeys)[number]

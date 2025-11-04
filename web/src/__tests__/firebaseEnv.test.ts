@@ -68,7 +68,8 @@ describe('firebaseEnv', () => {
       storageBucket: 'sedifex-ac2b0.appspot.com',
       appId: '1:519571382805:web:d0f4653d62a71dfa58a41c',
       functionsRegion: 'us-central1',
-      appCheckSiteKey: '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI',
+      appCheckSiteKey: '6LcVMf8rAAAAAOpbzgdKCikJB7glk7slfrfHvtum',
+      appCheckDebugToken: '967EB4EB-6354-494F-8C62-48F5B1F6B07F',
     })
   })
 
