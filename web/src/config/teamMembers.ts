@@ -1,4 +1,6 @@
-const rawOverride = import.meta.env?.VITE_OVERRIDE_TEAM_MEMBER_DOC_ID
+import runtimeEnv from './runtimeEnv'
+
+const rawOverride = runtimeEnv.VITE_OVERRIDE_TEAM_MEMBER_DOC_ID
 
 function normalizeOverride(value: unknown): string {
   if (typeof value !== 'string') return ''

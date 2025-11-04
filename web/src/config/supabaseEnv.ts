@@ -1,3 +1,5 @@
+import runtimeEnv from './runtimeEnv'
+
 const requiredEnvKeys = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'] as const
 const optionalEnvKeys = ['VITE_SUPABASE_FUNCTIONS_URL'] as const
 
@@ -11,7 +13,7 @@ export type SupabaseEnvConfig = {
 }
 
 function getRequiredEnv(key: SupabaseEnvKey): string {
-  const value = import.meta.env[key]
+  const value = runtimeEnv[key]
   if (typeof value === 'string' && value.trim() !== '') {
     return value.trim()
   }
@@ -27,7 +29,7 @@ function normalizeUrl(value: string): string {
 }
 
 function getOptionalEnv(key: OptionalSupabaseEnvKey): string | null {
-  const value = import.meta.env[key]
+  const value = runtimeEnv[key]
   if (typeof value !== 'string') {
     return null
   }

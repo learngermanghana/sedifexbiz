@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore'
 
 import { firebaseEnv } from './config/firebaseEnv'
+import runtimeEnv from './config/runtimeEnv'
 
 /**
  * firebaseEnv must provide:
@@ -31,7 +32,8 @@ const firebaseConfig = {
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
 
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined'
-const isTest = typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test'
+const envMode = typeof runtimeEnv.MODE === 'string' ? runtimeEnv.MODE : undefined
+const isTest = envMode === 'test'
 
 if (isBrowser && !isTest) {
   if (firebaseEnv.appCheckDebugToken) {
