@@ -38,6 +38,7 @@ import {
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 import { signupConfig } from './config/signup'
+import { firebaseEnvError } from './config/firebaseEnv'
 import { clearPaidMarker, getPaidMarker } from './lib/paid'
 import { clearActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { PLAN_LIST, type PlanId } from '@catalog/plans'
@@ -555,8 +556,11 @@ function normalizeQueueError(value: unknown): string | null {
 }
 
 export default function App() {
+  const firebaseConfigError = firebaseEnvError
+  const hasFirebaseConfig = !firebaseConfigError
+
   const [user, setUser] = useState<User | null>(null)
-  const [isAuthReady, setIsAuthReady] = useState(false)
+  const [isAuthReady, setIsAuthReady] = useState(() => (hasFirebaseConfig ? false : true))
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -607,6 +611,11 @@ export default function App() {
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
 
   useEffect(() => {
+    if (!hasFirebaseConfig) {
+      setIsAuthReady(true)
+      return
+    }
+
     let isMounted = true
     let unsubscribe: (() => void) | undefined
 
@@ -630,7 +639,7 @@ export default function App() {
         unsubscribe()
       }
     }
-  }, [])
+  }, [hasFirebaseConfig])
 
   useEffect(() => {
     if (!isAuthReady || user) return
@@ -689,6 +698,15 @@ export default function App() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!hasFirebaseConfig) {
+      setStatus({
+        tone: 'error',
+        message:
+          'Sedifex is temporarily unavailable while we finish configuring this workspace. Please contact your administrator.',
+      })
+      return
+    }
+
     const sanitizedEmail = email.trim()
     const sanitizedPassword = password.trim()
     const sanitizedConfirmPassword = confirmPassword.trim()
@@ -949,6 +967,33 @@ export default function App() {
 
   // Inline minHeight is just a safety net; CSS already uses dvh/svh.
   const appStyle: React.CSSProperties = { minHeight: '100dvh' }
+
+  if (!hasFirebaseConfig) {
+    return (
+      <main className="app" style={appStyle}>
+        <div className="app__card">
+          <div className="app__brand">
+            <span className="app__logo">Sx</span>
+            <div>
+              <h1 className="app__title">Sedifex is almost ready</h1>
+              <p className="app__tagline">Configuration is required before the workspace can load.</p>
+            </div>
+          </div>
+
+          <p className="form__hint">
+            We’re finishing the deployment setup for this workspace. Contact your administrator to provide the missing
+            Firebase environment values, then refresh to continue.
+          </p>
+
+          {firebaseConfigError && (
+            <p className="form__hint" role="status" data-testid="firebase-config-error">
+              {firebaseConfigError.message}
+            </p>
+          )}
+        </div>
+      </main>
+    )
+  }
 
   if (!isAuthReady) {
     return (

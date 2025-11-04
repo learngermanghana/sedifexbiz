@@ -158,4 +158,39 @@ export function createFirebaseEnv(
   }
 }
 
-export const firebaseEnv = createFirebaseEnv(import.meta.env)
+export type FirebaseEnvLoadResult =
+  | { ok: true; config: FirebaseEnvConfig }
+  | { ok: false; error: Error }
+
+function normalizeFirebaseEnvError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error
+  }
+
+  try {
+    return new Error(typeof error === 'string' ? error : JSON.stringify(error))
+  } catch {
+    return new Error('Unknown Firebase configuration error')
+  }
+}
+
+export function loadFirebaseEnv(
+  env: EnvSource,
+  options?: CreateFirebaseEnvOptions,
+): FirebaseEnvLoadResult {
+  try {
+    return { ok: true, config: createFirebaseEnv(env, options) }
+  } catch (error) {
+    return { ok: false, error: normalizeFirebaseEnvError(error) }
+  }
+}
+
+const firebaseEnvResult = loadFirebaseEnv(import.meta.env)
+
+const fallbackFirebaseEnv = createFirebaseEnv(defaultFirebaseEnv, { allowDefaults: true })
+
+export const firebaseEnv = firebaseEnvResult.ok ? firebaseEnvResult.config : fallbackFirebaseEnv
+
+export const firebaseEnvError = firebaseEnvResult.ok ? null : firebaseEnvResult.error
+
+export { firebaseEnvResult }
