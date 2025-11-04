@@ -1,10 +1,10 @@
 import { triggerQueueProcessing } from './utils/offlineQueue'
+import runtimeEnv from './config/runtimeEnv'
 
 // Simple service worker registration with offline queue support hooks
 if ('serviceWorker' in navigator) {
-  const baseUrl = import.meta.env.BASE_URL.endsWith('/')
-    ? import.meta.env.BASE_URL
-    : `${import.meta.env.BASE_URL}/`
+  const rawBaseUrl = typeof runtimeEnv.BASE_URL === 'string' ? runtimeEnv.BASE_URL : '/'
+  const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl : `${rawBaseUrl}/`
 
   let hasScheduledReload = false
   const monitoredRegistrations = new WeakSet<ServiceWorkerRegistration>()

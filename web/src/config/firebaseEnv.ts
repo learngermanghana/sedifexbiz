@@ -1,3 +1,5 @@
+import runtimeEnv from './runtimeEnv'
+
 const requiredEnvKeys = [
   'VITE_FB_API_KEY',
   'VITE_FB_AUTH_DOMAIN',
@@ -185,7 +187,7 @@ export function loadFirebaseEnv(
   }
 }
 
-const firebaseEnvResult = loadFirebaseEnv(import.meta.env)
+const firebaseEnvResult = loadFirebaseEnv(runtimeEnv)
 
 const fallbackFirebaseEnv = createFirebaseEnv(defaultFirebaseEnv, { allowDefaults: true })
 

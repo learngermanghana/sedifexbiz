@@ -7,7 +7,9 @@ import {
   type QueueStatusValue,
 } from '../utils/offlineQueue'
 
-const HEARTBEAT_URL = import.meta.env.VITE_HEARTBEAT_URL ?? '/heartbeat.json'
+import runtimeEnv from '../config/runtimeEnv'
+
+const HEARTBEAT_URL = runtimeEnv.VITE_HEARTBEAT_URL ?? '/heartbeat.json'
 const DEFAULT_HEARTBEAT_INTERVAL = 30_000
 
 type QueueState = {

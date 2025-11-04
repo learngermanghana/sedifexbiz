@@ -39,6 +39,7 @@ import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 import { signupConfig } from './config/signup'
 import { firebaseEnvError } from './config/firebaseEnv'
+import runtimeEnv from './config/runtimeEnv'
 import { clearPaidMarker, getPaidMarker } from './lib/paid'
 import { clearActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { PLAN_LIST, type PlanId } from '@catalog/plans'
@@ -88,7 +89,7 @@ function getErrorMessage(error: unknown): string {
 /*                              Paystack helpers                              */
 /* -------------------------------------------------------------------------- */
 
-const PAYSTACK_PK = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string
+const PAYSTACK_PK = runtimeEnv.VITE_PAYSTACK_PUBLIC_KEY as string
 const PAYSTACK_SCRIPT_URL = 'https://js.paystack.co/v1/inline.js'
 
 type PaystackPaymentSuccess = {
