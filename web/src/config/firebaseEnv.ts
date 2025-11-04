@@ -1,3 +1,4 @@
+// web/src/config/firebaseEnv.ts
 import runtimeEnv from './runtimeEnv'
 
 const requiredEnvKeys = [
@@ -25,11 +26,11 @@ const defaultFirebaseEnv: Record<string, string | undefined> = {
   VITE_FB_STORAGE_BUCKET: 'sedifex-ac2b0.appspot.com',
   VITE_FB_APP_ID: '1:519571382805:web:d0f4653d62a71dfa58a41c',
   VITE_FB_FUNCTIONS_REGION: 'us-central1',
-  // Public site key configured for the Sedifex deployment.
-  VITE_FB_APP_CHECK_SITE_KEY: '6LcVMf8rAAAAAOpbzgdKCikJB7glk7slfrfHvtum',
-  VITE_RECAPTCHA_SITE_KEY: '6LcVMf8rAAAAAOpbzgdKCikJB7glk7slfrfHvtum',
+  // Default to your Enterprise site key
+  VITE_FB_APP_CHECK_SITE_KEY: '6LcVMf8rAAAAAOpbzgdKCikJB7glk7sIfrfHvtum',
+  VITE_RECAPTCHA_SITE_KEY: '6LcVMf8rAAAAAOpbzgdKCikJB7glk7sIfrfHvtum',
   VITE_FB_APP_CHECK_DEBUG_TOKEN: undefined,
-  VITE_APPCHECK_DEBUG_TOKEN: '967EB4EB-6354-494F-8C62-48F5B1F6B07F',
+  VITE_APPCHECK_DEBUG_TOKEN: undefined,
 }
 
 type RequiredFirebaseEnvKey = (typeof requiredEnvKeys)[number]
@@ -46,153 +47,7 @@ export type FirebaseEnvConfig = {
 }
 
 type EnvSource = Record<string, string | boolean | undefined>
+type GetRequiredEnvOptions = { allowDefaults: boolean }
 
-type GetRequiredEnvOptions = {
-  allowDefaults: boolean
-}
-
-function getRequiredEnv(
-  env: EnvSource,
-  key: RequiredFirebaseEnvKey,
-  options: GetRequiredEnvOptions,
-): string {
-  const value = options.allowDefaults
-    ? env[key] ?? defaultFirebaseEnv[key]
-    : env[key]
-  if (typeof value === 'string' && value.trim() !== '') {
-    return value.trim()
-  }
-
-  throw new Error(
-    `[firebase-env] Missing required environment variable "${key}". ` +
-      'Ensure this value is provided in your deployment configuration.'
-  )
-}
-
-function getOptionalEnv(
-  env: EnvSource,
-  key: string,
-  fallback: string,
-  allowDefaults: boolean,
-): string {
-  const value = allowDefaults
-    ? env[key] ?? defaultFirebaseEnv[key] ?? fallback
-    : env[key]
-  if (typeof value === 'string' && value.trim() !== '') {
-    return value.trim()
-  }
-
-  return fallback
-}
-
-function getRequiredEnvOneOf(
-  env: EnvSource,
-  keys: readonly string[],
-  options: GetRequiredEnvOptions,
-): string {
-  const allowDefaults = options.allowDefaults
-  for (const key of keys) {
-    const value = allowDefaults ? env[key] ?? defaultFirebaseEnv[key] : env[key]
-    if (typeof value === 'string' && value.trim() !== '') {
-      return value.trim()
-    }
-  }
-
-  throw new Error(
-    `[firebase-env] Missing required environment variable. ` +
-      `Ensure one of the following keys is provided: ${keys.join(', ')}`,
-  )
-}
-
-function getOptionalEnvOneOf(
-  env: EnvSource,
-  keys: readonly string[],
-  allowDefaults: boolean,
-): string | undefined {
-  for (const key of keys) {
-    const value = getOptionalEnv(env, key, '', allowDefaults).trim()
-    if (value !== '') {
-      return value
-    }
-  }
-
-  return undefined
-}
-
-type CreateFirebaseEnvOptions = {
-  allowDefaults?: boolean
-}
-
-export function createFirebaseEnv(
-  env: EnvSource,
-  options?: CreateFirebaseEnvOptions,
-): FirebaseEnvConfig {
-  const isProductionBuild =
-    typeof env.PROD === 'boolean'
-      ? env.PROD
-      : typeof env.MODE === 'string'
-        ? env.MODE.toLowerCase() === 'production'
-        : false
-
-  const allowDefaults = options?.allowDefaults ?? !isProductionBuild
-  return {
-    apiKey: getRequiredEnv(env, 'VITE_FB_API_KEY', { allowDefaults }),
-    authDomain: getRequiredEnv(env, 'VITE_FB_AUTH_DOMAIN', { allowDefaults }),
-    projectId: getRequiredEnv(env, 'VITE_FB_PROJECT_ID', { allowDefaults }),
-    storageBucket: getRequiredEnv(env, 'VITE_FB_STORAGE_BUCKET', {
-      allowDefaults,
-    }),
-    appId: getRequiredEnv(env, 'VITE_FB_APP_ID', { allowDefaults }),
-    appCheckSiteKey: getRequiredEnvOneOf(env, appCheckSiteKeyEnvKeys, {
-      allowDefaults,
-    }),
-    functionsRegion: getOptionalEnv(
-      env,
-      'VITE_FB_FUNCTIONS_REGION',
-      'us-central1',
-      allowDefaults,
-    ),
-    appCheckDebugToken: getOptionalEnvOneOf(
-      env,
-      appCheckDebugTokenEnvKeys,
-      allowDefaults,
-    ),
-  }
-}
-
-export type FirebaseEnvLoadResult =
-  | { ok: true; config: FirebaseEnvConfig }
-  | { ok: false; error: Error }
-
-function normalizeFirebaseEnvError(error: unknown): Error {
-  if (error instanceof Error) {
-    return error
-  }
-
-  try {
-    return new Error(typeof error === 'string' ? error : JSON.stringify(error))
-  } catch {
-    return new Error('Unknown Firebase configuration error')
-  }
-}
-
-export function loadFirebaseEnv(
-  env: EnvSource,
-  options?: CreateFirebaseEnvOptions,
-): FirebaseEnvLoadResult {
-  try {
-    return { ok: true, config: createFirebaseEnv(env, options) }
-  } catch (error) {
-    return { ok: false, error: normalizeFirebaseEnvError(error) }
-  }
-}
-
-const firebaseEnvResult = loadFirebaseEnv(runtimeEnv)
-
-const fallbackFirebaseEnv = createFirebaseEnv(defaultFirebaseEnv, { allowDefaults: true })
-
-export const firebaseEnv = firebaseEnvResult.ok ? firebaseEnvResult.config : fallbackFirebaseEnv
-
-export const firebaseEnvError = firebaseEnvResult.ok ? null : firebaseEnvResult.error
-
-export { firebaseEnvResult }
+// … keep your existing getRequiredEnv / createFirebaseEnv logic,
+// but ensure it picks the site key and debug token from those arrays:
