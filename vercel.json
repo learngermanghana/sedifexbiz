@@ -9,8 +9,8 @@
     "VITE_FB_STORAGE_BUCKET": "sedifex-ac2b0.appspot.com",
     "VITE_FB_APP_ID": "1:519571382805:web:d0f4653d62a71dfa58a41c",
     "VITE_FB_FUNCTIONS_REGION": "us-central1",
-    "VITE_FB_APP_CHECK_SITE_KEY": "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI",
-    "VITE_RECAPTCHA_SITE_KEY": "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
+    "VITE_FB_APP_CHECK_SITE_KEY": "6LcVMf8rAAAAAOpbzgdKCikJB7glk7slfrfHvtum",
+    "VITE_RECAPTCHA_SITE_KEY": "6LcVMf8rAAAAAOpbzgdKCikJB7glk7slfrfHvtum"
   },
   "rewrites": [
     {
