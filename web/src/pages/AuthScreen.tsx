@@ -1,5 +1,6 @@
 // web/src/pages/AuthScreen.tsx
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FirebaseError } from 'firebase/app'
 import { signInWithEmailAndPassword } from 'firebase/auth'
 import { useNavigate } from 'react-router-dom'
 
@@ -15,6 +16,50 @@ type Mode = 'signin'
 
 const INFO_TOAST_MESSAGE =
   'Sedifex requires an active subscription before we can create a workspace. Complete checkout to continue.'
+
+const APP_CHECK_GUIDANCE_MESSAGE =
+  [
+    'We could not verify your device with Firebase App Check.',
+    'Sedifex automatically registers App Check during startup, so you normally will not see a reCAPTCHA challenge.',
+    'Double-check that browser extensions or network filters allow https://www.google.com/recaptcha/enterprise to load, then refresh and try again.',
+  ].join(' ')
+
+function isAppCheckRelatedError(error: unknown): boolean {
+  const message =
+    error instanceof FirebaseError
+      ? error.message
+      : error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : null
+
+  if (!message) {
+    return false
+  }
+
+  return /app[\s-_]?check/i.test(message) || /recaptcha/i.test(message)
+}
+
+function resolveAuthError(error: unknown): { message: string; toastDuration?: number } {
+  if (isAppCheckRelatedError(error)) {
+    return { message: APP_CHECK_GUIDANCE_MESSAGE, toastDuration: 8000 }
+  }
+
+  if (error instanceof FirebaseError && error.message) {
+    return { message: error.message }
+  }
+
+  if (error instanceof Error && error.message) {
+    return { message: error.message }
+  }
+
+  if (typeof error === 'string' && error.trim().length > 0) {
+    return { message: error }
+  }
+
+  return { message: 'We could not sign you in with those credentials.' }
+}
 
 export default function AuthScreen() {
   const navigate = useNavigate()
@@ -63,12 +108,9 @@ export default function AuthScreen() {
         clearPaidMarker()
         navigate('/', { replace: true })
       } catch (err) {
-        const message =
-          err instanceof Error && err.message
-            ? err.message
-            : 'We could not sign you in with those credentials.'
+        const { message, toastDuration } = resolveAuthError(err)
         setError(message)
-        publish({ message, tone: 'error' })
+        publish({ message, tone: 'error', ...(toastDuration ? { duration: toastDuration } : {}) })
       } finally {
         setIsSubmitting(false)
       }
