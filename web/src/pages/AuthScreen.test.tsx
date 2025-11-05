@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { FirebaseError } from 'firebase/app'
 
 import AuthScreen from './AuthScreen'
 
@@ -141,6 +142,39 @@ describe('AuthScreen', () => {
     )
 
     openSpy.mockRestore()
+  })
+
+  it('guides the user to unblock reCAPTCHA when App Check fails', async () => {
+    const appCheckError = new FirebaseError(
+      'auth/internal-error',
+      'Firebase: Error (auth/internal-error). App Check token fetch failed for reCAPTCHA Enterprise.',
+    )
+
+    mockSignInWithEmailAndPassword.mockRejectedValue(appCheckError)
+
+    render(<AuthScreen />)
+    const user = userEvent.setup()
+
+    await user.type(screen.getByLabelText(/email/i), 'blocked@example.com')
+    await user.type(screen.getByLabelText(/password/i), 'password123')
+
+    const submitButton = screen
+      .getAllByRole('button', { name: /sign in/i })
+      .find(button => button.getAttribute('type') === 'submit')
+
+    if (!submitButton) {
+      throw new Error('Could not find submit button')
+    }
+
+    await user.click(submitButton)
+
+    const guidance = await screen.findByRole('alert')
+    expect(guidance.textContent).toContain('Double-check that browser extensions or network filters allow')
+    expect(guidance.textContent).toContain('https://www.google.com/recaptcha/enterprise')
+
+    const toastCall = mockPublish.mock.calls.find(([options]) => options.tone === 'error')
+    expect(toastCall?.[0].message).toContain('We could not verify your device with Firebase App Check.')
+    expect(toastCall?.[0].duration).toBe(8000)
   })
 })
 
