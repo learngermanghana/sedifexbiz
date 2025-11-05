@@ -1039,15 +1039,21 @@ async function lookupWorkspaceBySelector(selector: string): Promise<{
     return { slug: directRef.id, storeId, data }
   }
 
-  const fallbackQuery = await workspacesCollection.where('storeId', '==', normalized).limit(1).get()
-  const fallbackDoc = fallbackQuery.docs[0]
-  if (!fallbackDoc) {
-    return null
+  const fallbackFields = ['storeId', 'slug', 'workspaceSlug', 'storeSlug']
+
+  for (const field of fallbackFields) {
+    const fallbackQuery = await workspacesCollection.where(field, '==', normalized).limit(1).get()
+    const fallbackDoc = fallbackQuery.docs[0]
+    if (!fallbackDoc) {
+      continue
+    }
+
+    const fallbackData = (fallbackDoc.data() ?? {}) as admin.firestore.DocumentData
+    const fallbackStoreId = getOptionalString((fallbackData as any).storeId ?? undefined)
+    return { slug: fallbackDoc.id, storeId: fallbackStoreId, data: fallbackData }
   }
 
-  const fallbackData = (fallbackDoc.data() ?? {}) as admin.firestore.DocumentData
-  const fallbackStoreId = getOptionalString((fallbackData as any).storeId ?? undefined)
-  return { slug: fallbackDoc.id, storeId: fallbackStoreId, data: fallbackData }
+  return null
 }
 
 export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
