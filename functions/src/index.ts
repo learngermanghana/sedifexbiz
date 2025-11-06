@@ -1494,19 +1494,30 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         })
       : []
 
-    const productRefs: admin.firestore.DocumentReference<admin.firestore.DocumentData>[] = []
-    const productSnaps: admin.firestore.DocumentSnapshot<admin.firestore.DocumentData>[] = []
+    const productDocs = new Map<
+      string,
+      {
+        ref: admin.firestore.DocumentReference<admin.firestore.DocumentData>
+        snap: admin.firestore.DocumentSnapshot<admin.firestore.DocumentData>
+      }
+    >()
+
     for (const item of normalizedItems) {
       if (!item.productId) {
         throw new functions.https.HttpsError('failed-precondition', 'Bad product')
       }
+
+      if (productDocs.has(item.productId)) {
+        continue
+      }
+
       const productRef = productsCollection.doc(item.productId)
-      productRefs.push(productRef)
       const productSnap = await tx.get(productRef)
       if (!productSnap.exists) {
         throw new functions.https.HttpsError('failed-precondition', 'Bad product')
       }
-      productSnaps.push(productSnap)
+
+      productDocs.set(item.productId, { ref: productRef, snap: productSnap })
     }
 
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
@@ -1525,7 +1536,9 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       createdAt: timestamp,
     })
 
-    normalizedItems.forEach((it, index) => {
+    const productTotals = new Map<string, number>()
+
+    normalizedItems.forEach((it) => {
       if (!it.productId) {
         throw new functions.https.HttpsError('failed-precondition', 'Bad product')
       }
@@ -1542,11 +1555,12 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         createdAt: timestamp,
       })
 
-      const productSnap = productSnaps[index]
-      const productRef = productRefs[index]
-      const curr = Number(productSnap.get('stockCount') || 0)
-      const next = curr - Math.abs(it.qty || 0)
-      tx.update(productRef, { stockCount: next, updatedAt: timestamp })
+      const productDoc = productDocs.get(it.productId)
+      if (!productDoc) {
+        throw new functions.https.HttpsError('failed-precondition', 'Bad product')
+      }
+      const runningTotal = productTotals.get(it.productId) ?? 0
+      productTotals.set(it.productId, runningTotal + Math.abs(it.qty || 0))
 
       const ledgerId = db.collection('_').doc().id
       tx.set(ledgerCollection.doc(ledgerId), {
@@ -1558,6 +1572,16 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         workspaceId: resolvedWorkspaceId,
         createdAt: timestamp,
       })
+    })
+
+    productTotals.forEach((totalQty, productId) => {
+      const productDoc = productDocs.get(productId)
+      if (!productDoc) {
+        throw new functions.https.HttpsError('failed-precondition', 'Bad product')
+      }
+      const curr = Number(productDoc.snap.get('stockCount') || 0)
+      const next = curr - totalQty
+      tx.update(productDoc.ref, { stockCount: next, updatedAt: timestamp })
     })
   })
 
