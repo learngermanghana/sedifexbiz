@@ -1494,6 +1494,21 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         })
       : []
 
+    const productRefs: admin.firestore.DocumentReference<admin.firestore.DocumentData>[] = []
+    const productSnaps: admin.firestore.DocumentSnapshot<admin.firestore.DocumentData>[] = []
+    for (const item of normalizedItems) {
+      if (!item.productId) {
+        throw new functions.https.HttpsError('failed-precondition', 'Bad product')
+      }
+      const productRef = productsCollection.doc(item.productId)
+      productRefs.push(productRef)
+      const productSnap = await tx.get(productRef)
+      if (!productSnap.exists) {
+        throw new functions.https.HttpsError('failed-precondition', 'Bad product')
+      }
+      productSnaps.push(productSnap)
+    }
+
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
     tx.set(saleRef, {
@@ -1510,10 +1525,11 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       createdAt: timestamp,
     })
 
-    for (const it of normalizedItems) {
+    normalizedItems.forEach((it, index) => {
       if (!it.productId) {
         throw new functions.https.HttpsError('failed-precondition', 'Bad product')
       }
+
       const itemId = db.collection('_').doc().id
       tx.set(saleItemsCollection.doc(itemId), {
         saleId,
@@ -1526,14 +1542,11 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         createdAt: timestamp,
       })
 
-      const pRef = productsCollection.doc(it.productId)
-      const pSnap = await tx.get(pRef)
-      if (!pSnap.exists) {
-        throw new functions.https.HttpsError('failed-precondition', 'Bad product')
-      }
-      const curr = Number(pSnap.get('stockCount') || 0)
+      const productSnap = productSnaps[index]
+      const productRef = productRefs[index]
+      const curr = Number(productSnap.get('stockCount') || 0)
       const next = curr - Math.abs(it.qty || 0)
-      tx.update(pRef, { stockCount: next, updatedAt: timestamp })
+      tx.update(productRef, { stockCount: next, updatedAt: timestamp })
 
       const ledgerId = db.collection('_').doc().id
       tx.set(ledgerCollection.doc(ledgerId), {
@@ -1545,7 +1558,7 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         workspaceId: resolvedWorkspaceId,
         createdAt: timestamp,
       })
-    }
+    })
   })
 
   return { ok: true, saleId }
