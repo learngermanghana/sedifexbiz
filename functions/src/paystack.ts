@@ -1,321 +1,327 @@
-// functions/src/paystack.ts
-import * as functions from 'firebase-functions'
 import * as crypto from 'crypto'
+import * as functions from 'firebase-functions'
 import { admin, defaultDb } from './firestore'
-
-/**
- * Types for Paystack responses/events
- */
-type PaystackInitResponse = {
-  status: boolean
-  message?: string
-  data?: {
-    authorization_url: string
-    access_code?: string
-    reference: string
-  }
-}
-
-type PaystackCustomer = {
-  id?: number
-  email?: string
-  first_name?: string | null
-  last_name?: string | null
-}
-
-type PaystackEventData = {
-  reference?: string
-  amount?: number
-  currency?: string
-  status?: string
-  paid_at?: string
-  channel?: string
-  customer?: PaystackCustomer
-  metadata?: Record<string, any>
-  plan?: string | null
-  subscription?: string | null
-}
+import { mapPaystackPlanCodeToPlanId } from './plans'
 
 type PaystackEvent = {
-  event: string
-  data: PaystackEventData
+  event?: unknown
+  data?: Record<string, unknown> | null
 }
 
-/**
- * Config
- */
-const CFG = functions.config?.() || {}
-const PAYSTACK_SECRET = CFG.paystack?.secret || ''
-const PAYSTACK_PUBLIC = CFG.paystack?.public || ''
-const APP_BASE_URL = CFG.app?.base_url || ''
-
-if (!PAYSTACK_SECRET) {
-  functions.logger.warn(
-    'Paystack secret not set. Run: firebase functions:config:set paystack.secret="sk_live_xxx"',
-  )
+type PaystackChargeData = {
+  reference?: unknown
+  status?: unknown
+  amount?: unknown
+  currency?: unknown
+  paid_at?: unknown
+  paidAt?: unknown
+  customer?: { email?: unknown } | null
+  plan?: unknown
+  plan_code?: unknown
+  plan_object?: { plan_code?: unknown } | null
+  metadata?: Record<string, unknown> | null
 }
 
-/**
- * Util: kobo conversion (Paystack expects amounts in kobo)
- */
-const toKobo = (amountGhsOrNgn: number) => Math.round(Math.abs(amountGhsOrNgn) * 100)
-
-/**
- * Small helper: assert the user is logged in for callables
- */
-function assertAuthenticated(context: functions.https.CallableContext) {
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Sign in required')
-  }
+type SignupUnlockRecord = {
+  status?: unknown
+  locked?: unknown
+  expiresAt?: unknown
 }
 
-/**
- * Callable: initialize a Paystack checkout session
- */
-export const createCheckout = functions.https.onCall(async (data, context) => {
-  assertAuthenticated(context)
+const PAYSTACK_SECRET_ENV_KEYS = ['PAYSTACK_SECRET', 'PAYSTACK_WEBHOOK_SECRET'] as const
 
-  if (!PAYSTACK_SECRET) {
-    throw new functions.https.HttpsError('failed-precondition', 'Paystack secret is not configured')
+function getPaystackSecret(): string | null {
+  const configSecret = functions.config()?.paystack?.secret
+  if (typeof configSecret === 'string' && configSecret.trim() !== '') {
+    return configSecret.trim()
   }
 
-  const email = typeof data?.email === 'string' ? data.email.trim().toLowerCase() : ''
-  const amount = Number(data?.amount)
-  const storeId = typeof data?.storeId === 'string' ? data.storeId.trim() : ''
-  const plan = typeof data?.plan === 'string' ? data.plan.trim() : undefined
-  const redirectUrlRaw = typeof data?.redirectUrl === 'string' ? data.redirectUrl.trim() : ''
-  const redirectUrl = redirectUrlRaw || (APP_BASE_URL ? `${APP_BASE_URL}/billing/verify` : undefined)
-  const metadataIn =
-    data?.metadata && typeof data.metadata === 'object'
-      ? (data.metadata as Record<string, any>)
-      : {}
-
-  if (!email) {
-    throw new functions.https.HttpsError('invalid-argument', 'A valid email is required')
-  }
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new functions.https.HttpsError('invalid-argument', 'Amount must be greater than zero')
-  }
-  if (!storeId) {
-    throw new functions.https.HttpsError('invalid-argument', 'storeId is required')
+  for (const key of PAYSTACK_SECRET_ENV_KEYS) {
+    const raw = process.env[key]
+    if (typeof raw === 'string' && raw.trim() !== '') {
+      return raw.trim()
+    }
   }
 
-  const reference = `${storeId}_${Date.now()}`
+  return null
+}
 
-  const payload = {
+function verifySignature(payload: Buffer, signature: string, secret: string): boolean {
+  const expected = crypto.createHmac('sha512', secret).update(payload).digest('hex')
+  const providedBuffer = Buffer.from(signature)
+  const expectedBuffer = Buffer.from(expected)
+  if (providedBuffer.length !== expectedBuffer.length) {
+    return false
+  }
+  return crypto.timingSafeEqual(providedBuffer, expectedBuffer)
+}
+
+function normalizeString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed ? trimmed : null
+  }
+  return null
+}
+
+function extractPlanCode(data: PaystackChargeData | null | undefined): string | null {
+  if (!data) return null
+
+  const candidates: Array<unknown> = [
+    data.plan_code,
+    (data.plan as Record<string, unknown> | null)?.plan_code,
+    (data.plan as Record<string, unknown> | null)?.planCode,
+    (data.plan_object as Record<string, unknown> | null)?.plan_code,
+    data.metadata?.plan_code,
+    data.metadata?.planCode,
+    data.metadata?.plan,
+  ]
+
+  for (const candidate of candidates) {
+    const normalized = normalizeString(candidate)
+    if (normalized) {
+      return normalized
+    }
+  }
+
+  return null
+}
+
+function toTimestamp(value: unknown): admin.firestore.Timestamp | null {
+  if (value instanceof admin.firestore.Timestamp) {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const date = new Date(value)
+    if (!Number.isNaN(date.valueOf())) {
+      return admin.firestore.Timestamp.fromDate(date)
+    }
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return admin.firestore.Timestamp.fromMillis(value)
+  }
+
+  return null
+}
+
+function resolveAmountMajorUnits(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null
+  }
+
+  // Paystack sends amounts in minor units. Convert to major (e.g., pesewas -> cedis).
+  return Math.round((value / 100) * 100) / 100
+}
+
+function isUnlockRecordPaid(record: SignupUnlockRecord): boolean {
+  const status = normalizeString(record.status)
+  if (status && ['paid', 'active', 'unlocked'].includes(status.toLowerCase())) {
+    return true
+  }
+  return false
+}
+
+export const paystackWebhook = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.set('Allow', 'POST')
+    res.status(405).send('Method Not Allowed')
+    return
+  }
+
+  const secret = getPaystackSecret()
+  if (!secret) {
+    functions.logger.error('Paystack webhook rejected: missing secret configuration')
+    res.status(500).send('Paystack secret not configured')
+    return
+  }
+
+  const signatureHeader = normalizeString(req.get('x-paystack-signature'))
+  if (!signatureHeader) {
+    functions.logger.warn('Paystack webhook missing signature header')
+    res.status(401).send('Unauthorized')
+    return
+  }
+
+  const rawBody = req.rawBody ?? Buffer.from('')
+
+  try {
+    if (!verifySignature(rawBody, signatureHeader, secret)) {
+      functions.logger.warn('Paystack webhook signature mismatch')
+      res.status(401).send('Unauthorized')
+      return
+    }
+  } catch (error) {
+    functions.logger.error('Paystack webhook signature verification failed', error)
+    res.status(401).send('Unauthorized')
+    return
+  }
+
+  let payload: PaystackEvent
+  try {
+    payload = JSON.parse(rawBody.toString('utf8')) as PaystackEvent
+  } catch (error) {
+    functions.logger.warn('Paystack webhook received invalid JSON payload', error)
+    res.status(400).send('Invalid payload')
+    return
+  }
+
+  const eventType = normalizeString(payload.event)
+  if (!eventType) {
+    functions.logger.warn('Paystack webhook missing event type')
+    res.status(400).send('Missing event type')
+    return
+  }
+
+  if (eventType !== 'charge.success' && eventType !== 'invoice.payment_succeeded') {
+    functions.logger.info('Paystack webhook ignored unsupported event', { eventType })
+    res.status(200).json({ ok: true, ignored: true })
+    return
+  }
+
+  const data = (payload.data ?? {}) as PaystackChargeData
+  const reference = normalizeString(data.reference)
+  if (!reference) {
+    functions.logger.warn('Paystack webhook missing transaction reference', { eventType })
+    res.status(400).send('Missing reference')
+    return
+  }
+
+  const status = normalizeString(data.status) ?? 'pending'
+  const amount = resolveAmountMajorUnits(data.amount)
+  const currency = normalizeString(data.currency)
+  const paidAtTimestamp = toTimestamp(data.paid_at ?? data.paidAt)
+  const email = normalizeString(data.customer?.email)
+  const planCode = extractPlanCode(data)
+  const planId = planCode ? mapPaystackPlanCodeToPlanId(planCode) : null
+
+  const paymentStatus = status.toLowerCase() === 'success' ? 'paid' : status
+
+  const now = admin.firestore.FieldValue.serverTimestamp()
+
+  const paymentDoc = {
+    provider: 'paystack',
+    event: eventType,
+    status: paymentStatus,
+    rawStatus: status,
     email,
-    amount: toKobo(amount),
     reference,
-    callback_url: redirectUrl,
-    metadata: {
-      storeId,
-      plan,
-      createdBy: context.auth!.uid,
-      ...metadataIn,
-    },
+    planCode: planCode ?? null,
+    planId: planId ?? null,
+    amount,
+    currency: currency ?? null,
+    paidAt: paidAtTimestamp ?? null,
+    updatedAt: now,
   }
 
-  const resp = await fetch('https://api.paystack.co/transaction/initialize', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${PAYSTACK_SECRET}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
+  const writes: Array<Promise<unknown>> = []
+  writes.push(defaultDb.collection('payments').doc(reference).set(paymentDoc, { merge: true }))
+
+  if (email) {
+    const unlockRef = defaultDb.collection('signupUnlocks').doc(email.toLowerCase())
+    const unlockUpdate: Record<string, unknown> = {
+      email,
+      provider: 'paystack',
+      status: paymentStatus,
+      reference,
+      planCode: planCode ?? null,
+      planId: planId ?? null,
+      amount,
+      currency: currency ?? null,
+      updatedAt: now,
+    }
+
+    if (paidAtTimestamp) {
+      unlockUpdate.paidAt = paidAtTimestamp
+    }
+
+    if (paymentStatus === 'paid') {
+      unlockUpdate.unlockedAt = now
+      unlockUpdate.locked = false
+    }
+
+    writes.push(unlockRef.set(unlockUpdate, { merge: true }))
+  }
+
+  try {
+    await Promise.all(writes)
+  } catch (error) {
+    functions.logger.error('Paystack webhook failed to persist payment metadata', error)
+    res.status(500).send('Failed to persist payment metadata')
+    return
+  }
+
+  functions.logger.info('Paystack webhook processed', {
+    eventType,
+    reference,
+    email,
+    planCode,
+    planId,
+    status: paymentStatus,
   })
 
-  const json = (await resp.json()) as PaystackInitResponse
-
-  if (!json?.status) {
-    throw new functions.https.HttpsError('internal', json?.message || 'Paystack init failed')
-  }
-
-  const { authorization_url: authUrl } = json.data ?? {}
-
-  try {
-    await defaultDb
-      .collection('subscriptions')
-      .doc(storeId)
-      .set(
-        {
-          provider: 'paystack',
-          status: 'pending',
-          plan: plan || null,
-          reference,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          createdBy: context.auth!.uid,
-          email,
-          amount,
-        },
-        { merge: true },
-      )
-  } catch (e) {
-    functions.logger.warn('Failed to write pending subscription doc', { e })
-  }
-
-  return {
-    ok: true,
-    authorizationUrl: authUrl,
-    reference,
-    publicKey: PAYSTACK_PUBLIC || null,
-  }
+  res.status(200).json({ ok: true })
 })
 
-/**
- * Callable: check if signup/workspace is unlocked after Paystack payment
- */
-export const checkSignupUnlock = functions.https.onCall(async (data, context) => {
-  assertAuthenticated(context)
-
-  const storeId = typeof data?.storeId === 'string' ? data.storeId.trim() : ''
-  if (!storeId) {
-    throw new functions.https.HttpsError('invalid-argument', 'storeId is required')
+export const checkSignupUnlock = functions.https.onCall(async (data: unknown) => {
+  if (!data || typeof data !== 'object') {
+    throw new functions.https.HttpsError('invalid-argument', 'Enter the email you used during checkout.')
   }
 
-  const subRef = defaultDb.collection('subscriptions').doc(storeId)
-  const snap = await subRef.get()
+  const payload = data as { email?: unknown }
+  const email = normalizeString(payload.email)?.toLowerCase()
 
-  if (!snap.exists) {
+  if (!email) {
+    throw new functions.https.HttpsError('invalid-argument', 'Enter the email you used during checkout.')
+  }
+
+  const docRef = defaultDb.collection('signupUnlocks').doc(email)
+  const snapshot = await docRef.get()
+
+  if (!snapshot.exists) {
+    return { ok: false, status: 'missing', email }
+  }
+
+  const record = (snapshot.data() ?? {}) as SignupUnlockRecord & Record<string, unknown>
+  const locked = record.locked === true
+  if (locked) {
+    return { ok: false, status: 'locked', email }
+  }
+
+  const expiresAt = toTimestamp(record.expiresAt)
+  if (expiresAt && expiresAt.toMillis() < Date.now()) {
+    return { ok: false, status: 'expired', email, expiresAt: expiresAt.toMillis() }
+  }
+
+  if (!isUnlockRecordPaid(record)) {
     return {
-      ok: true,
-      unlocked: false,
-      status: 'pending' as const,
+      ok: false,
+      status: normalizeString(record.status) ?? 'unverified',
+      email,
     }
   }
 
-  const sub = snap.data() as any
-  const status = typeof sub.status === 'string' ? sub.status.toLowerCase() : 'pending'
-  const unlocked = status === 'active'
+  const planCode = normalizeString((record as Record<string, unknown>).planCode)
+  const planId = normalizeString((record as Record<string, unknown>).planId)
+  const reference = normalizeString((record as Record<string, unknown>).reference)
+  const amount = typeof (record as Record<string, unknown>).amount === 'number' ? (record as Record<string, unknown>).amount : null
+  const currency = normalizeString((record as Record<string, unknown>).currency)
+  const paidAt = toTimestamp((record as Record<string, unknown>).paidAt)
+  const unlockedAt = toTimestamp((record as Record<string, unknown>).unlockedAt)
+
+  await docRef.set({ lastCheckedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true })
 
   return {
     ok: true,
-    unlocked,
-    status,
-    plan: sub.plan ?? null,
-    provider: sub.provider ?? 'paystack',
-    reference: sub.reference ?? null,
-    lastEvent: sub.lastEvent ?? null,
-  }
-})
-
-/**
- * HTTP Webhook: Paystack event receiver
- */
-export const paystackWebhook = functions.https.onRequest(async (req, res): Promise<void> => {
-  try {
-    if (req.method !== 'POST') {
-      res.status(405).send('Method Not Allowed')
-      return
-    }
-
-    const signature = req.get('x-paystack-signature') || ''
-    const secret = PAYSTACK_SECRET
-    if (!secret) {
-      res.status(500).send('Paystack secret not configured')
-      return
-    }
-
-    const computed = crypto.createHmac('sha512', secret).update(req.rawBody).digest('hex')
-    const safeEqual =
-      signature.length === computed.length &&
-      crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computed))
-
-    if (!safeEqual) {
-      res.status(401).send('Invalid signature')
-      return
-    }
-
-    const event = req.body as PaystackEvent
-    const evtType = event?.event || 'unknown'
-    const data = event?.data || {}
-
-    functions.logger.info('Paystack webhook received', {
-      event: evtType,
-      reference: data.reference,
-      email: data.customer?.email,
-      amount: data.amount,
-      metadata: data.metadata,
-    })
-
-    switch (evtType) {
-      case 'charge.success': {
-        const storeId: string | undefined = data.metadata?.storeId
-        const plan: string | undefined = data.metadata?.plan || data.plan || undefined
-        const email = data.customer?.email || null
-        const amount = typeof data.amount === 'number' ? data.amount / 100 : null
-        const paidAt = data.paid_at || null
-        const reference = data.reference || null
-
-        if (!storeId) break
-
-        await defaultDb
-          .collection('subscriptions')
-          .doc(storeId)
-          .set(
-            {
-              provider: 'paystack',
-              status: 'active',
-              plan: plan || null,
-              customerEmail: email,
-              reference,
-              amount,
-              currency: data.currency || 'NGN',
-              channel: data.channel || null,
-              paidAt,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-              lastEvent: evtType,
-            },
-            { merge: true },
-          )
-        break
-      }
-
-      case 'charge.failed': {
-        const storeId: string | undefined = data.metadata?.storeId
-        const reference = data.reference || null
-        if (storeId) {
-          await defaultDb
-            .collection('subscriptions')
-            .doc(storeId)
-            .set(
-              {
-                provider: 'paystack',
-                status: 'failed',
-                reference,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                lastEvent: evtType,
-              },
-              { merge: true },
-            )
-        }
-        break
-      }
-
-      default: {
-        try {
-          const storeId: string | undefined = event.data?.metadata?.storeId
-          if (storeId) {
-            await defaultDb
-              .collection('subscriptions')
-              .doc(storeId)
-              .collection('events')
-              .doc(String(Date.now()))
-              .set({
-                event: evtType,
-                data,
-                receivedAt: admin.firestore.FieldValue.serverTimestamp(),
-              })
-          }
-        } catch (e) {
-          functions.logger.warn('Failed to store audit event', { e, evtType })
-        }
-        break
-      }
-    }
-
-    res.status(200).send('ok')
-  } catch (err) {
-    functions.logger.error('paystackWebhook error', { err })
-    res.status(500).send('error')
+    email,
+    status: 'paid',
+    planCode: planCode ?? null,
+    planId: planId ?? null,
+    reference: reference ?? null,
+    amount,
+    currency: currency ?? null,
+    paidAt: paidAt ? paidAt.toMillis() : null,
+    unlockedAt: unlockedAt ? unlockedAt.toMillis() : null,
   }
 })

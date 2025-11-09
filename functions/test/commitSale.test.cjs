@@ -104,46 +104,6 @@ async function run() {
   assert.strictEqual(ledgerEntries.length, 1)
   assert.strictEqual(ledgerEntries[0].data.refId, 'sale-123')
 
-  currentDb = new MockFirestore({
-    'workspaces/workspace-xyz': { storeId: 'store-xyz', slug: 'lagos-roastery', workspaceSlug: 'lagos-roastery' },
-    'workspaces/workspace-xyz/products/prod-1': {
-      stockCount: 3,
-      storeId: 'store-xyz',
-      workspaceId: 'workspace-xyz',
-    },
-  })
-
-  delete require.cache[require.resolve('../lib/index.js')]
-  const { commitSale: commitSaleWithSlug } = require('../lib/index.js')
-
-  const slugPayload = {
-    branchId: 'lagos-roastery',
-    workspaceId: 'lagos-roastery',
-    cashierId: 'cashier-1',
-    saleId: 'sale-slug',
-    totals: { total: 50, taxTotal: 0 },
-    payment: { method: 'cash' },
-    items: [{ productId: 'prod-1', name: 'Widget', qty: 1, price: 50, taxRate: 0 }],
-  }
-
-  const slugResult = await commitSaleWithSlug.run(slugPayload, context)
-  assert.strictEqual(slugResult.ok, true)
-  assert.strictEqual(slugResult.saleId, 'sale-slug')
-
-  const resolvedSale = currentDb.getDoc('workspaces/workspace-xyz/sales/sale-slug')
-  assert.ok(resolvedSale, 'Expected sale to resolve via slug/workspaceSlug fields')
-  assert.strictEqual(resolvedSale.workspaceId, 'workspace-xyz')
-
-  const missingSale = currentDb.getDoc('workspaces/lagos-roastery/sales/sale-slug')
-  assert.strictEqual(missingSale, undefined, 'Sale should not be written under slug as document ID')
-
-  const slugLedgerEntries = currentDb.listCollection('workspaces/workspace-xyz/ledger')
-  assert.strictEqual(slugLedgerEntries.length, 1)
-  assert.strictEqual(slugLedgerEntries[0].data.refId, 'sale-slug')
-
-  const updatedProduct = currentDb.getDoc('workspaces/workspace-xyz/products/prod-1')
-  assert.strictEqual(updatedProduct.stockCount, 2)
-
   console.log('commitSale tests passed')
 }
 

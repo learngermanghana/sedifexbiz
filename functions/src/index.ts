@@ -1039,21 +1039,15 @@ async function lookupWorkspaceBySelector(selector: string): Promise<{
     return { slug: directRef.id, storeId, data }
   }
 
-  const fallbackFields = ['storeId', 'slug', 'workspaceSlug', 'storeSlug']
-
-  for (const field of fallbackFields) {
-    const fallbackQuery = await workspacesCollection.where(field, '==', normalized).limit(1).get()
-    const fallbackDoc = fallbackQuery.docs[0]
-    if (!fallbackDoc) {
-      continue
-    }
-
-    const fallbackData = (fallbackDoc.data() ?? {}) as admin.firestore.DocumentData
-    const fallbackStoreId = getOptionalString((fallbackData as any).storeId ?? undefined)
-    return { slug: fallbackDoc.id, storeId: fallbackStoreId, data: fallbackData }
+  const fallbackQuery = await workspacesCollection.where('storeId', '==', normalized).limit(1).get()
+  const fallbackDoc = fallbackQuery.docs[0]
+  if (!fallbackDoc) {
+    return null
   }
 
-  return null
+  const fallbackData = (fallbackDoc.data() ?? {}) as admin.firestore.DocumentData
+  const fallbackStoreId = getOptionalString((fallbackData as any).storeId ?? undefined)
+  return { slug: fallbackDoc.id, storeId: fallbackStoreId, data: fallbackData }
 }
 
 export const resolveStoreAccess = functions.https.onCall(async (data, context) => {
@@ -1494,21 +1488,6 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         })
       : []
 
-    const productRefs: admin.firestore.DocumentReference<admin.firestore.DocumentData>[] = []
-    const productSnaps: admin.firestore.DocumentSnapshot<admin.firestore.DocumentData>[] = []
-    for (const item of normalizedItems) {
-      if (!item.productId) {
-        throw new functions.https.HttpsError('failed-precondition', 'Bad product')
-      }
-      const productRef = productsCollection.doc(item.productId)
-      productRefs.push(productRef)
-      const productSnap = await tx.get(productRef)
-      if (!productSnap.exists) {
-        throw new functions.https.HttpsError('failed-precondition', 'Bad product')
-      }
-      productSnaps.push(productSnap)
-    }
-
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
     tx.set(saleRef, {
@@ -1525,11 +1504,10 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       createdAt: timestamp,
     })
 
-    normalizedItems.forEach((it, index) => {
+    for (const it of normalizedItems) {
       if (!it.productId) {
         throw new functions.https.HttpsError('failed-precondition', 'Bad product')
       }
-
       const itemId = db.collection('_').doc().id
       tx.set(saleItemsCollection.doc(itemId), {
         saleId,
@@ -1542,11 +1520,14 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         createdAt: timestamp,
       })
 
-      const productSnap = productSnaps[index]
-      const productRef = productRefs[index]
-      const curr = Number(productSnap.get('stockCount') || 0)
+      const pRef = productsCollection.doc(it.productId)
+      const pSnap = await tx.get(pRef)
+      if (!pSnap.exists) {
+        throw new functions.https.HttpsError('failed-precondition', 'Bad product')
+      }
+      const curr = Number(pSnap.get('stockCount') || 0)
       const next = curr - Math.abs(it.qty || 0)
-      tx.update(productRef, { stockCount: next, updatedAt: timestamp })
+      tx.update(pRef, { stockCount: next, updatedAt: timestamp })
 
       const ledgerId = db.collection('_').doc().id
       tx.set(ledgerCollection.doc(ledgerId), {
@@ -1558,7 +1539,7 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         workspaceId: resolvedWorkspaceId,
         createdAt: timestamp,
       })
-    })
+    }
   })
 
   return { ok: true, saleId }
