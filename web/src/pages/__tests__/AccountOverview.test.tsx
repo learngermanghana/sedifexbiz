@@ -1,11 +1,12 @@
 import React from 'react'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { vi } from 'vitest'
 import AccountOverview from '../AccountOverview'
 import type { WorkspaceAccountProfile } from '../../data/loadWorkspace'
 
 const mockPublish = vi.fn()
+
 
 vi.mock('../../components/ToastProvider', () => ({
   useToast: () => ({ publish: mockPublish }),
