@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { vi } from 'vitest'
+import { expect, vi } from 'vitest'
 
 import GoalPlanner from '../GoalPlanner'
 import Shell from '../../layout/Shell'
