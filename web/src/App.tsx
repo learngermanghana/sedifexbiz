@@ -85,6 +85,7 @@ function getErrorMessage(error: unknown): string {
 
   return 'Something went wrong. Please try again.'
 }
+
 /* -------------------------------------------------------------------------- */
 /*                              Paystack helpers                              */
 /* -------------------------------------------------------------------------- */
@@ -127,35 +128,37 @@ function ensurePaystackScript(): Promise<void> {
     return Promise.resolve()
   }
 
-if (!paystackLoader) {
-  paystackLoader = new Promise<void>((resolve, reject) => {
-    const existingScript = document.querySelector(`script[src="${PAYSTACK_SCRIPT_URL}"]`)
-    if (existingScript) {
-      existingScript.addEventListener('load', () => resolve(undefined), { once: true })
-      existingScript.addEventListener(
-        'error',
-        () =>
-          reject(
-            new Error('Paystack checkout could not be loaded. Check your connection and try again.'),
-          ),
-        { once: true },
-      )
-      return
-    }
+  if (!paystackLoader) {
+    paystackLoader = new Promise<void>((resolve, reject) => {
+      const existingScript = document.querySelector(`script[src="${PAYSTACK_SCRIPT_URL}"]`)
+      if (existingScript) {
+        existingScript.addEventListener('load', () => resolve(undefined), { once: true })
+        existingScript.addEventListener(
+          'error',
+          () =>
+            reject(
+              new Error('Paystack checkout could not be loaded. Check your connection and try again.'),
+            ),
+          { once: true },
+        )
+        return
+      }
 
-    const script = document.createElement('script')
-    script.src = PAYSTACK_SCRIPT_URL
-    script.async = true
-    script.onload = () => resolve(undefined)
-    script.onerror = () =>
-      reject(new Error('Paystack checkout could not be loaded. Check your connection and try again.'))
-    document.head.appendChild(script)
-  }).catch(error => {
-    paystackLoader = null
-    throw error
-  })
+      const script = document.createElement('script')
+      script.src = PAYSTACK_SCRIPT_URL
+      script.async = true
+      script.onload = () => resolve(undefined)
+      script.onerror = () =>
+        reject(new Error('Paystack checkout could not be loaded. Check your connection and try again.'))
+      document.head.appendChild(script)
+    }).catch(error => {
+      paystackLoader = null
+      throw error
+    })
+  }
+
+  return paystackLoader
 }
-
 
 async function loadPaystackSdk() {
   await ensurePaystackScript()
@@ -168,7 +171,7 @@ async function loadPaystackSdk() {
 async function payWithPaystack(
   amountGhs: number,
   buyer?: { email?: string; phone?: string; name?: string },
-) {
+): Promise<PaystackPaymentResult> {
   if (!Number.isFinite(amountGhs) || amountGhs <= 0) {
     return {
       ok: false,
@@ -188,7 +191,7 @@ async function payWithPaystack(
 
   try {
     const sdk = await loadPaystackSdk()
-    return await new Promise<PaystackPaymentResult>((resolve) => {
+    return await new Promise<PaystackPaymentResult>(resolve => {
       try {
         const handler = sdk.setup({
           key: PAYSTACK_PK,
@@ -211,7 +214,12 @@ async function payWithPaystack(
               return
             }
 
-            resolve({ ok: true, provider: 'paystack', reference, status })
+            resolve({
+              ok: true,
+              provider: 'paystack',
+              reference,
+              status,
+            })
           },
           onClose: () =>
             resolve({
@@ -241,6 +249,7 @@ async function payWithPaystack(
     return { ok: false, provider: 'paystack', message }
   }
 }
+
 
 /* -------------------------------------------------------------------------- */
 
