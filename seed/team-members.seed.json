@@ -1,0 +1,22 @@
+{
+  "teamMembers": {
+    "owner-1": {
+      "uid": "owner-1",
+      "email": "owner@example.com",
+      "storeId": "store-demo",
+      "role": "owner",
+      "name": "Demo Owner",
+      "phone": "+1 (555) 010-0001",
+      "notes": "Sample roster record used to unblock login when no roster data exists."
+    },
+    "lagos-manager": {
+      "uid": "lagos-manager",
+      "email": "manager@lagosroastery.test",
+      "storeId": "store-lagos",
+      "role": "manager",
+      "name": "Lagos Manager",
+      "phone": "+234 810 000 5678",
+      "notes": "Manager assigned to the Lagos Roastery test workspace."
+    }
+  }
+}
