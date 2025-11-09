@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createSellSelectors } from './sell'
 
@@ -107,15 +107,11 @@ describe('Sell page selectors', () => {
       })
     }
 
-    vi.doMock(
-      '../../src/components/BarcodeScanner',
-      () => ({
-        __esModule: true,
-        default: vi.fn(() => null),
-        ScanResult: class MockScanResult {},
-      }),
-      { virtual: true },
-    )
+    vi.doMock('../../src/components/BarcodeScanner', () => ({
+      __esModule: true,
+      default: vi.fn(() => null),
+      ScanResult: class MockScanResult {},
+    }))
 
     vi.doMock('../../src/hooks/useAuthUser', () => ({
       useAuthUser: () => mockUseAuthUser(),
