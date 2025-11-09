@@ -1,6 +1,6 @@
 {
-  "installCommand": "if [ -f web/package.json ]; then npm install --prefix web; else npm install; fi",
-  "buildCommand": "if [ -f web/package.json ]; then npm run build --prefix web && rm -rf dist && mv web/dist dist; else npm run build; fi",
+  "installCommand": "if [ -f package.json ]; then npm install; elif [ -f web/package.json ]; then npm install --prefix web; else echo 'No package.json found for installation' && exit 1; fi",
+  "buildCommand": "if [ -f package.json ]; then npm run build; elif [ -f web/package.json ]; then npm run build --prefix web && rm -rf dist && mkdir -p dist && cp -R web/dist/. dist/; else echo 'No package.json found for build' && exit 1; fi",
   "outputDirectory": "dist",
 
   "headers": [
