@@ -5,6 +5,7 @@ import { expect, vi } from 'vitest'
 
 import GoalPlanner from '../GoalPlanner'
 import Shell from '../../layout/Shell'
+import type { GoalPlanDocument } from '../../hooks/useGoalPlanner'
 
 const mockUseAuthUser = vi.fn(() => ({ uid: 'user-1', email: 'manager@example.com' }))
 vi.mock('../../hooks/useAuthUser', () => ({
@@ -47,8 +48,10 @@ vi.mock('../../hooks/useConnectivityStatus', () => ({
 }))
 
 const docMock = vi.fn((_, collection: string, id: string) => ({ type: 'doc', path: `${collection}/${id}` }))
-const setDocMock = vi.fn(async () => {})
-const updateDocMock = vi.fn(async () => {})
+type GoalPlanUpdate = GoalPlanDocument
+
+const setDocMock = vi.fn<[unknown, GoalPlanUpdate, { merge: boolean }?], Promise<void>>(async () => {})
+const updateDocMock = vi.fn<[unknown, GoalPlanUpdate, { merge: boolean }?], Promise<void>>(async () => {})
 
 let snapshotData: any = null
 const onSnapshotMock = vi.fn((ref: { path: string }, onNext: (snapshot: any) => void) => {
@@ -190,7 +193,7 @@ describe('Goal planner component', () => {
     await waitFor(() => expect(setDocMock).toHaveBeenCalledTimes(1))
     const [, payload, options] = setDocMock.mock.calls[0]
 
-    expect(payload.daily[dayKey][0]).toMatchObject({
+    expect(payload.daily?.[dayKey]?.[0]).toMatchObject({
       id: 'goal-new-id',
       title: 'Launch checkout prompt',
       notes: 'Highlight bundles at POS',
@@ -209,7 +212,7 @@ describe('Goal planner component', () => {
     await waitFor(() => expect(updateDocMock).toHaveBeenCalledTimes(1))
     const [, togglePayload, toggleOptions] = updateDocMock.mock.calls[0]
 
-    expect(togglePayload.daily[dayKey][0].completed).toBe(true)
+    expect(togglePayload.daily?.[dayKey]?.[0]?.completed).toBe(true)
     expect(toggleOptions).toEqual({ merge: true })
 
     updateDocMock.mockClear()
@@ -220,7 +223,7 @@ describe('Goal planner component', () => {
     await waitFor(() => expect(updateDocMock).toHaveBeenCalledTimes(1))
     const [, deletePayload, deleteOptions] = updateDocMock.mock.calls[0]
 
-    expect(deletePayload.daily[dayKey]).toEqual([])
+    expect(deletePayload.daily?.[dayKey]).toEqual([])
     expect(deleteOptions).toEqual({ merge: true })
   })
 })
