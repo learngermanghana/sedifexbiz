@@ -155,7 +155,7 @@ export function useMemberships() {
 
   useEffect(() => {
     let cancelled = false
-    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let retryTimer: ReturnType<typeof globalThis.setTimeout> | null = null
 
     async function run() {
       if (!user) {
@@ -181,11 +181,12 @@ export function useMemberships() {
         if (cancelled) return
         setError(e)
         setMemberships([])
+        if (retryTimer) {
+          globalThis.clearTimeout(retryTimer)
+        }
+
         if (typeof window !== 'undefined') {
-          if (retryTimer) {
-            window.clearTimeout(retryTimer)
-          }
-          retryTimer = window.setTimeout(() => {
+          retryTimer = globalThis.setTimeout(() => {
             requestAutoRerun()
           }, 10_000)
         }
@@ -199,7 +200,7 @@ export function useMemberships() {
     return () => {
       cancelled = true
       if (retryTimer) {
-        clearTimeout(retryTimer)
+        globalThis.clearTimeout(retryTimer)
       }
     }
   }, [autoRerunToken, requestAutoRerun, user?.uid])

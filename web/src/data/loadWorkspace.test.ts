@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { FirebaseError } from 'firebase/app'
 
 import { getActiveStoreId, loadWorkspaceProfile, mapAccount } from './loadWorkspace'

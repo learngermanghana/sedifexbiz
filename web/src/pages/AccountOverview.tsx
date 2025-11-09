@@ -567,7 +567,7 @@ export default function AccountOverview() {
           </div>
           {roster.length === 0 && !rosterLoading ? (
             <div role="row" className="account-overview__roster-empty">
-              <span role="cell" colSpan={4}>
+              <span role="cell" aria-colspan={4} style={{ gridColumn: '1 / -1' }}>
                 No team members found.
               </span>
             </div>
