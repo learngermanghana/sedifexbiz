@@ -1,6 +1,0 @@
-{
-  "provider": "postgres",
-  "connectionStringEnv": "DATABASE_URL",
-  "poolerConnectionStringEnv": "DATABASE_POOLER_URL",
-  "notes": "Provision a Neon Postgres database and expose it via the SQL connection string env vars above."
-}
