@@ -1,8 +1,0 @@
-node_modules/
-functions/node_modules/
-web/node_modules/
-**/tsconfig.tsbuildinfo
-lib/
-dist/
-shared/**/*.js
-shared/**/*.js.map
