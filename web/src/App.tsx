@@ -127,34 +127,35 @@ function ensurePaystackScript(): Promise<void> {
     return Promise.resolve()
   }
 
-  if (!paystackLoader) {
-    paystackLoader = new Promise((resolve, reject) => {
-      const existingScript = document.querySelector(`script[src="${PAYSTACK_SCRIPT_URL}"]`)
-      if (existingScript) {
-        existingScript.addEventListener('load', () => resolve(), { once: true })
-        existingScript.addEventListener(
-          'error',
-          () => reject(new Error('Paystack checkout could not be loaded. Check your connection and try again.')),
-          { once: true },
-        )
-        return
-      }
+if (!paystackLoader) {
+  paystackLoader = new Promise<void>((resolve, reject) => {
+    const existingScript = document.querySelector(`script[src="${PAYSTACK_SCRIPT_URL}"]`)
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(undefined), { once: true })
+      existingScript.addEventListener(
+        'error',
+        () =>
+          reject(
+            new Error('Paystack checkout could not be loaded. Check your connection and try again.'),
+          ),
+        { once: true },
+      )
+      return
+    }
 
-      const script = document.createElement('script')
-      script.src = PAYSTACK_SCRIPT_URL
-      script.async = true
-      script.onload = () => resolve()
-      script.onerror = () =>
-        reject(new Error('Paystack checkout could not be loaded. Check your connection and try again.'))
-      document.head.appendChild(script)
-    }).catch(error => {
-      paystackLoader = null
-      throw error
-    })
-  }
-
-  return paystackLoader
+    const script = document.createElement('script')
+    script.src = PAYSTACK_SCRIPT_URL
+    script.async = true
+    script.onload = () => resolve(undefined)
+    script.onerror = () =>
+      reject(new Error('Paystack checkout could not be loaded. Check your connection and try again.'))
+    document.head.appendChild(script)
+  }).catch(error => {
+    paystackLoader = null
+    throw error
+  })
 }
+
 
 async function loadPaystackSdk() {
   await ensurePaystackScript()
