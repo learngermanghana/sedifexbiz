@@ -97,6 +97,7 @@ type PaystackPaymentSuccess = {
   provider: 'paystack'
   reference: string
   status: string
+  message?: string
 }
 
 type PaystackPaymentFailure = {
