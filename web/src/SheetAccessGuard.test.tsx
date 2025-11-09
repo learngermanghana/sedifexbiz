@@ -1,10 +1,9 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import React from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
-import { vi } from 'vitest'
 
 import SheetAccessGuard from './SheetAccessGuard'
 
-const mockUseAuthUser = vi.fn()
 vi.mock('./hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
