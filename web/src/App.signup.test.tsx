@@ -93,12 +93,13 @@ vi.mock('./controllers/sessionController', () => ({
 }))
 
 vi.mock('./controllers/accessController', () => ({
-  initializeStore: (...args: unknown[]) => mocks.initializeStore(...args),
-  resolveStoreAccess: (...args: unknown[]) => mocks.resolveStoreAccess(...args),
+  initializeStore: mocks.initializeStore,
+  resolveStoreAccess: mocks.resolveStoreAccess,
   extractCallableErrorMessage: (error: unknown) =>
     error instanceof Error ? error.message : 'An unexpected error occurred.',
   INACTIVE_WORKSPACE_MESSAGE: 'Your workspace is inactive.',
 }))
+
 
 vi.mock('./lib/paid', () => ({
   getPaidMarker: () => paidMarkerMocks.getPaidMarker(),
