@@ -12,7 +12,7 @@ const mockAuth = vi.hoisted(() => ({} as unknown as Record<string, unknown>))
 const mockSignInWithEmailAndPassword = vi.fn()
 const mockPersistSession = vi.fn(async (..._args: unknown[]) => {})
 const mockEnsureStoreDocument = vi.fn(async (..._args: unknown[]) => {})
-const mockPublish = vi.fn<(options: MockToastOptions) => void>()
+const mockPublish = vi.fn<[MockToastOptions], void>()
 const mockNavigate = vi.fn()
 const signupConfigMock = vi.hoisted(() => ({
   paymentUrl: 'https://billing.example.com/checkout',

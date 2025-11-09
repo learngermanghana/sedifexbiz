@@ -1,5 +1,5 @@
 import React from 'react'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AccountOverview from '../AccountOverview'
@@ -98,11 +98,14 @@ function createProfile(overrides: Partial<WorkspaceAccountProfile> = {}): Worksp
 }
 
 beforeAll(() => {
-  Object.assign(navigator as Navigator & { clipboard: typeof clipboardMock }, { clipboard: clipboardMock })
+  Object.defineProperty(navigator, 'clipboard', {
+    value: clipboardMock,
+    configurable: true,
+  })
 })
 
 afterAll(() => {
-  delete (navigator as Record<string, unknown>).clipboard
+  Reflect.deleteProperty(navigator, 'clipboard')
 })
 
 describe('AccountOverview', () => {
