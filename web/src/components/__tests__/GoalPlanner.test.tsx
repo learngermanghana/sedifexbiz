@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { expect, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import GoalPlanner from '../GoalPlanner'
 import Shell from '../../layout/Shell'
@@ -108,7 +108,7 @@ describe('Goal planner component', () => {
 
   beforeEach(() => {
     uuidSpy.mockReset()
-    uuidSpy.mockReturnValue('goal-new-id')
+    uuidSpy.mockReturnValue('00000000-0000-0000-0000-000000000000')
 
     mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'manager@example.com' })
     mockUseActiveStore.mockReturnValue({
