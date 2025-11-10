@@ -1,4 +1,5 @@
 // web/lib/billing.ts
+
 export interface StartCheckoutOptions {
   /**
    * Overrides the default billing endpoint. If omitted, `/api/billing/checkout`
@@ -20,7 +21,13 @@ const DEFAULT_ENDPOINT = '/api/billing/checkout'
 
 function resolveEndpoint(explicit?: string) {
   if (explicit) return explicit
-  const envEndpoint = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_BILLING_CHECKOUT_ENDPOINT : null
+
+  // Use any-cast so TypeScript doesn't complain about the env property
+  const envEndpoint =
+    typeof import.meta !== 'undefined'
+      ? (import.meta as any).env?.VITE_BILLING_CHECKOUT_ENDPOINT
+      : null
+
   if (typeof envEndpoint === 'string' && envEndpoint.trim()) {
     return envEndpoint.trim()
   }
@@ -34,8 +41,9 @@ function buildReturnUrl(planId: string, override?: string) {
     return `/billing/thanks?plan=${encodeURIComponent(planId)}`
   }
 
-  const origin = window.location?.origin ?? ''
-  return `${origin}/billing/thanks?plan=${encodeURIComponent(planId)}`
+  const url = new URL(window.location.origin + '/billing/thanks')
+  url.searchParams.set('plan', planId)
+  return url.toString()
 }
 
 function ensureWindow() {
@@ -44,24 +52,22 @@ function ensureWindow() {
   }
 }
 
-function toError(message: string, cause?: unknown) {
+function toError(message: string, cause: unknown) {
   const error = new Error(message)
-  if (cause instanceof Error && 'cause' in error) {
-    ;(error as Error & { cause?: Error }).cause = cause
-  }
+  ;(error as any).cause = cause
   return error
 }
 
-export async function startCheckout(planId: string, options: StartCheckoutOptions = {}) {
-  const trimmedPlan = planId.trim()
-  if (!trimmedPlan) {
-    throw new Error('A plan identifier is required to start checkout')
-  }
-
+export async function startCheckout(
+  planId: string,
+  options: StartCheckoutOptions = {},
+): Promise<void> {
   const endpoint = resolveEndpoint(options.endpoint)
+  const returnUrl = buildReturnUrl(planId, options.returnUrl)
+
   const payload = {
-    planId: trimmedPlan,
-    returnUrl: buildReturnUrl(trimmedPlan, options.returnUrl),
+    planId,
+    returnUrl,
     metadata: options.metadata ?? {},
   }
 
@@ -77,21 +83,22 @@ export async function startCheckout(planId: string, options: StartCheckoutOption
     throw toError('Unable to reach the billing service. Please try again.', error)
   }
 
-  let data: unknown
+  let data: any
   try {
     data = await response.json()
   } catch (error) {
-    throw toError('Received an invalid response from the billing service.', error)
+    throw toError('Billing service returned an invalid response.', error)
   }
 
   if (!response.ok) {
-    const message = typeof (data as { message?: string })?.message === 'string'
-      ? (data as { message: string }).message
-      : 'The billing service rejected the request.'
+    const message =
+      (data && typeof data.message === 'string' && data.message) ||
+      'The billing service rejected the request.'
     throw new Error(message)
   }
 
-  const redirectUrl = typeof (data as { url?: string })?.url === 'string' ? (data as { url: string }).url : null
+  const redirectUrl =
+    data && typeof data.url === 'string' ? (data.url as string) : null
   if (!redirectUrl) {
     throw new Error('Billing service did not return a checkout URL.')
   }
