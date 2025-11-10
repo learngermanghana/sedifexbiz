@@ -12,9 +12,6 @@ interface ImportMetaEnv {
   readonly VITE_APPCHECK_DEBUG_TOKEN?: string
   readonly VITE_HEARTBEAT_URL?: string
   readonly VITE_PAYSTACK_PUBLIC_KEY?: string
-  readonly VITE_SUPABASE_URL: string
-  readonly VITE_SUPABASE_ANON_KEY: string
-  readonly VITE_SUPABASE_FUNCTIONS_URL?: string
   readonly VITE_OVERRIDE_TEAM_MEMBER_DOC_ID?: string
   readonly VITE_SIGNUP_PAYMENT_URL?: string
 }
