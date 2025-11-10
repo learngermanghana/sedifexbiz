@@ -60,10 +60,8 @@ vi.mock('./firebase', () => ({
 }))
 
 vi.mock('firebase/auth', () => ({
-  createUserWithEmailAndPassword: (...args: unknown[]) =>
-    mocks.createUserWithEmailAndPassword(...args),
-  signInWithEmailAndPassword: (...args: unknown[]) =>
-    mocks.signInWithEmailAndPassword(...args),
+  createUserWithEmailAndPassword: mocks.createUserWithEmailAndPassword,
+  signInWithEmailAndPassword: mocks.signInWithEmailAndPassword,
   onAuthStateChanged: (_auth: unknown, callback: (user: User | null) => void) => {
     mocks.listeners.push(callback)
     callback(mocks.auth.currentUser)
@@ -86,10 +84,10 @@ vi.mock('./lib/db', () => ({
 }))
 
 vi.mock('./controllers/sessionController', () => ({
-  configureAuthPersistence: (...args: unknown[]) => mocks.configureAuthPersistence(...args),
-  ensureStoreDocument: (...args: unknown[]) => mocks.ensureStoreDocument(...args),
-  persistSession: (...args: unknown[]) => mocks.persistSession(...args),
-  refreshSessionHeartbeat: (...args: unknown[]) => mocks.refreshSessionHeartbeat(...args),
+  configureAuthPersistence: mocks.configureAuthPersistence,
+  ensureStoreDocument: mocks.ensureStoreDocument,
+  persistSession: mocks.persistSession,
+  refreshSessionHeartbeat: mocks.refreshSessionHeartbeat,
 }))
 
 vi.mock('./controllers/accessController', () => ({
@@ -107,7 +105,7 @@ vi.mock('./lib/paid', () => ({
 }))
 
 vi.mock('./utils/activeStoreStorage', () => ({
-  clearActiveStoreIdForUser: (...args: unknown[]) => clearActiveStoreIdForUserMock(...args),
+  clearActiveStoreIdForUser: clearActiveStoreIdForUserMock,
 }))
 
 vi.mock('./components/ToastProvider', () => ({
