@@ -179,7 +179,11 @@ function sanitizePrice(value: unknown): number | null {
 
 export default function Sell() {
   const user = useAuthUser();
-  const { storeId: activeStoreId, workspaceId: activeWorkspaceId } = useActiveStore();
+  const {
+    storeId: activeStoreId,
+    workspaceId: activeWorkspaceId,
+    workspaceSlug: activeWorkspaceSlug,
+  } = useActiveStore();
 
   const resolveAccessCallable = useMemo(
     () =>
@@ -557,19 +561,23 @@ export default function Sell() {
 
   async function recordSale() {
     if (cart.length === 0) return;
-    if (!activeStoreId || !activeWorkspaceId) { setSaleError('Select a workspace before recording a sale.'); return; }
+    const branchId = activeStoreId?.trim() || null;
+    const workspaceDocId = activeWorkspaceId?.trim() || branchId;
+    const workspaceSelector =
+      activeWorkspaceSlug?.trim() || activeWorkspaceId?.trim() || activeStoreId?.trim() || null;
+    if (!branchId || !workspaceDocId) { setSaleError('Select a workspace before recording a sale.'); return; }
     if (!user) { setSaleError('You must be signed in to record a sale.'); return; }
     if (isCashShort) { setSaleError('Cash received is less than the total due.'); return; }
 
     setSaleError(null); setSaleSuccess(null); setReceipt(null); setIsRecording(true);
 
     // Sale doc ID within store subcollection
-    const saleId = doc(collection(db, 'workspaces', activeWorkspaceId, 'sales')).id;
+    const saleId = doc(collection(db, 'workspaces', workspaceDocId, 'sales')).id;
     const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale');
 
     const payload: CommitSalePayload = {
-      branchId: activeStoreId,
-      workspaceId: activeWorkspaceId,
+      branchId,
+      workspaceId: workspaceSelector,
       saleId,
       cashierId: user.uid,
       totals: { total: subtotal, taxTotal: 0 },
@@ -595,7 +603,7 @@ export default function Sell() {
     const receiptItems = cart.map(l => ({ ...l }));
 
     try {
-      const accessSelector = activeStoreId?.trim() || activeWorkspaceId?.trim() || null;
+      const accessSelector = workspaceSelector;
       let lastError: any = null;
       let response: CommitSaleResponse | null = null;
       let attempts = 0;
