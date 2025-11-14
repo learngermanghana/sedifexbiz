@@ -7,6 +7,7 @@ import {
   onSnapshot,
   doc,
   db,
+  rosterDb,
 } from '../lib/db';
 import { where } from 'firebase/firestore'; // keep where only if you need it elsewhere
 import { FirebaseError } from 'firebase/app';
@@ -37,6 +38,7 @@ type Product = {
   stockCount?: number;
   createdAt?: unknown;
   updatedAt?: unknown;
+  status?: string;
 };
 type CartLine = { productId: string; name: string; price: number; qty: number };
 type Customer = {
@@ -177,6 +179,21 @@ function sanitizePrice(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
+function sanitizeStockCount(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function sortProductsByName(products: Product[]): Product[] {
+  return [...products].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' }));
+}
+
 async function callWithTokenRefresh<T>(callback: () => Promise<T>): Promise<T> {
   const currentUser = auth.currentUser;
 
@@ -264,7 +281,8 @@ export default function Sell() {
     []
   );
 
-  const [products, setProducts] = useState<Product[]>([]);
+  const [workspaceProducts, setWorkspaceProducts] = useState<Product[]>([]);
+  const [rosterProducts, setRosterProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [queryText, setQueryText] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -280,6 +298,11 @@ export default function Sell() {
   const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null);
   const canUseWebShare = typeof navigator !== 'undefined' && typeof (navigator as any).share === 'function';
 
+  const availableProducts = useMemo(
+    () => (workspaceProducts.length ? workspaceProducts : rosterProducts),
+    [workspaceProducts, rosterProducts]
+  );
+
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
   const selectedCustomerDisplayName = selectedCustomer ? getCustomerDisplayName(selectedCustomer) : '';
@@ -292,7 +315,7 @@ export default function Sell() {
   useEffect(() => {
     let cancelled = false;
     if (!activeStoreId || !activeWorkspaceId) {
-      setProducts([]);
+      setWorkspaceProducts([]);
       return () => { cancelled = true; };
     }
 
@@ -300,7 +323,7 @@ export default function Sell() {
       .then(cached => {
         if (!cancelled && cached.length) {
           const sanitized = cached.map(item => ({ ...(item as Product), price: sanitizePrice((item as Product).price) }));
-          setProducts(sanitized.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })));
+          setWorkspaceProducts(sortProductsByName(sanitized));
         }
       })
       .catch(err => console.warn('[sell] Failed to load cached products', err));
@@ -317,7 +340,7 @@ export default function Sell() {
         const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
         const sanitized = rows.map(r => ({ ...(r as Product), price: sanitizePrice((r as Product).price) }));
         saveCachedProducts(sanitized, { storeId: activeStoreId }).catch(e => console.warn('[sell] cache products err', e));
-        setProducts(sanitized.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })));
+        setWorkspaceProducts(sortProductsByName(sanitized));
       },
       err => {
         console.error('[sell] products snapshot error', err?.code, err?.message, err);
@@ -326,6 +349,60 @@ export default function Sell() {
 
     return () => { cancelled = true; unsubscribe(); };
   }, [activeStoreId, activeWorkspaceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!activeStoreId) {
+      setRosterProducts([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const snapshotRef = doc(rosterDb, 'inventorySnapshots', activeStoreId);
+    const unsubscribe = onSnapshot(
+      snapshotRef,
+      snap => {
+        if (cancelled) return;
+        const data = snap.data() as { items?: unknown } | undefined;
+        const items = Array.isArray(data?.items) ? data?.items : [];
+        const mapped: Product[] = items
+          .map(item => {
+            if (!item || typeof item !== 'object') return null;
+            const record = item as Record<string, unknown>;
+            const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : null;
+            const name = typeof record.name === 'string' && record.name.trim() ? record.name.trim() : null;
+            if (!id || !name) {
+              return null;
+            }
+            const sku = typeof record.sku === 'string' ? record.sku : null;
+            const price = sanitizePrice(record.price);
+            const stockCount = sanitizeStockCount(record.stockCount);
+            const status = typeof record.status === 'string' ? record.status : undefined;
+            return {
+              id,
+              name,
+              price,
+              sku,
+              stockCount: stockCount ?? undefined,
+              status,
+            } satisfies Product;
+          })
+          .filter((item): item is Product => Boolean(item));
+        setRosterProducts(sortProductsByName(mapped));
+      },
+      error => {
+        console.warn('[sell] roster snapshot error', (error as any)?.code, (error as any)?.message, error);
+        setRosterProducts([]);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [activeStoreId]);
 
   // CUSTOMERS listener (subcollection)
   useEffect(() => {
@@ -569,7 +646,7 @@ export default function Sell() {
     (result: ScanResult) => {
       const normalized = result.code.trim();
       if (!normalized) return;
-      const match = products.find(p => p.sku?.trim().toLowerCase() === normalized.toLowerCase());
+      const match = availableProducts.find(p => p.sku?.trim().toLowerCase() === normalized.toLowerCase());
       if (!match) {
         setScannerStatus({ tone: 'error', message: `We couldn't find a product for code ${normalized}.` });
         return;
@@ -583,7 +660,7 @@ export default function Sell() {
         result.source === 'manual' ? 'manual entry' : result.source === 'camera' ? 'the camera' : 'the scanner';
       setScannerStatus({ tone: 'success', message: `Added ${match.name} via ${friendly}.` });
     },
-    [addToCart, products]
+    [addToCart, availableProducts]
   );
 
   function setQty(id: string, qty: number) {
@@ -738,7 +815,7 @@ export default function Sell() {
     }
   }
 
-  const filtered = products.filter(p => (p.name || '').toLowerCase().includes(queryText.toLowerCase()));
+  const filtered = availableProducts.filter(p => (p.name || '').toLowerCase().includes(queryText.toLowerCase()));
 
   return (
     <div className="page sell-page">
