@@ -54,8 +54,10 @@ export async function getActiveStoreId(uid: string | null | undefined): Promise<
     const snapshot = await getDoc(memberRef)
     if (!snapshot.exists()) return null
 
-    const data = snapshot.data()
-    return normalizeString(data?.storeId)
+    const data = snapshot.data() ?? {}
+    const record = data as Record<string, unknown>
+    const activePreference = getNested(record, ['preferences', 'activeStoreId'])
+    return normalizeString(activePreference ?? record.storeId)
   } catch (error) {
     if (isOfflineError(error)) {
       return null
