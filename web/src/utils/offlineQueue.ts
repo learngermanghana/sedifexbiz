@@ -69,8 +69,28 @@ type QueueMessage = {
 
 type ProcessMessage = { type: 'PROCESS_QUEUE_NOW' }
 
+function isActivated(worker: ServiceWorker | null | undefined) {
+  if (!worker) return false
+  const state = (worker as ServiceWorker & { state?: string }).state
+  if (typeof state === 'string') {
+    return state === 'activated'
+  }
+  return true
+}
+
 function getController(registration: ServiceWorkerRegistration) {
-  return registration.active ?? registration.waiting ?? registration.installing ?? null
+  const container = typeof navigator !== 'undefined' ? navigator.serviceWorker : null
+  const controller = container?.controller
+  if (isActivated(controller)) {
+    return controller
+  }
+
+  const active = registration.active
+  if (isActivated(active)) {
+    return active
+  }
+
+  return null
 }
 
 function normalizeQueueStatus(value: unknown): QueueStatusValue {
@@ -267,7 +287,12 @@ export async function requestQueueStatus() {
       return false
     }
 
-    controller.postMessage({ type: REQUEST_QUEUE_STATUS_MESSAGE })
+    try {
+      controller.postMessage({ type: REQUEST_QUEUE_STATUS_MESSAGE })
+    } catch (error) {
+      console.warn('[offline-queue] Unable to request queue status', error)
+      return false
+    }
     return true
   } catch (error) {
     console.warn('[offline-queue] Unable to request queue status', error)
@@ -309,7 +334,12 @@ export async function queueCallableRequest(
       },
     }
 
-    controller.postMessage(message)
+    try {
+      controller.postMessage(message)
+    } catch (error) {
+      console.warn('[offline-queue] Unable to post queue request', error)
+      return false
+    }
 
     const syncManager = (registration as ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }).sync
     if (syncManager) {
@@ -317,10 +347,18 @@ export async function queueCallableRequest(
         await syncManager.register(SYNC_TAG)
       } catch (error) {
         console.warn('[offline-queue] Background sync registration failed', error)
-        controller.postMessage({ type: 'PROCESS_QUEUE_NOW' } as ProcessMessage)
+        try {
+          controller.postMessage({ type: 'PROCESS_QUEUE_NOW' } as ProcessMessage)
+        } catch (postError) {
+          console.warn('[offline-queue] Unable to trigger immediate queue processing', postError)
+        }
       }
     } else {
-      controller.postMessage({ type: 'PROCESS_QUEUE_NOW' } as ProcessMessage)
+      try {
+        controller.postMessage({ type: 'PROCESS_QUEUE_NOW' } as ProcessMessage)
+      } catch (error) {
+        console.warn('[offline-queue] Unable to trigger immediate queue processing', error)
+      }
     }
 
     return true
@@ -335,7 +373,13 @@ export async function triggerQueueProcessing() {
   try {
     const registration = await navigator.serviceWorker.ready
     const controller = getController(registration)
-    controller?.postMessage({ type: 'PROCESS_QUEUE_NOW' } as ProcessMessage)
+    if (controller) {
+      try {
+        controller.postMessage({ type: 'PROCESS_QUEUE_NOW' } as ProcessMessage)
+      } catch (error) {
+        console.warn('[offline-queue] Unable to trigger queue processing', error)
+      }
+    }
     const syncManager = (registration as ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }).sync
     if (syncManager) {
       try {
