@@ -367,29 +367,35 @@ export default function Sell() {
         if (cancelled) return;
         const data = snap.data() as { items?: unknown } | undefined;
         const items = Array.isArray(data?.items) ? data?.items : [];
-        const mapped: Product[] = items
-          .map(item => {
-            if (!item || typeof item !== 'object') return null;
-            const record = item as Record<string, unknown>;
-            const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : null;
-            const name = typeof record.name === 'string' && record.name.trim() ? record.name.trim() : null;
-            if (!id || !name) {
-              return null;
-            }
-            const sku = typeof record.sku === 'string' ? record.sku : null;
-            const price = sanitizePrice(record.price);
-            const stockCount = sanitizeStockCount(record.stockCount);
-            const status = typeof record.status === 'string' ? record.status : undefined;
-            return {
-              id,
-              name,
-              price,
-              sku,
-              stockCount: stockCount ?? undefined,
-              status,
-            } satisfies Product;
-          })
-          .filter((item): item is Product => Boolean(item));
+        const mapped = items.reduce<Product[]>((acc, item) => {
+          if (!item || typeof item !== 'object') {
+            return acc;
+          }
+
+          const record = item as Record<string, unknown>;
+          const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : null;
+          const name = typeof record.name === 'string' && record.name.trim() ? record.name.trim() : null;
+
+          if (!id || !name) {
+            return acc;
+          }
+
+          const sku = typeof record.sku === 'string' ? record.sku : undefined;
+          const price = sanitizePrice(record.price);
+          const stockCount = sanitizeStockCount(record.stockCount);
+          const status = typeof record.status === 'string' ? record.status : undefined;
+
+          acc.push({
+            id,
+            name,
+            price,
+            sku,
+            stockCount: stockCount ?? undefined,
+            status,
+          });
+
+          return acc;
+        }, []);
         setRosterProducts(sortProductsByName(mapped));
       },
       error => {
