@@ -1,7 +1,12 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { FirebaseError } from 'firebase/app'
 
-import { getActiveStoreId, loadWorkspaceProfile, mapAccount } from './loadWorkspace'
+import {
+  getActiveStoreId,
+  loadWorkspaceProfile,
+  mapAccount,
+  setActiveStoreIdForUser,
+} from './loadWorkspace'
 
 const docMock = vi.fn()
 const getDocMock = vi.fn()
@@ -10,6 +15,8 @@ const getDocsMock = vi.fn()
 const queryMock = vi.fn()
 const whereMock = vi.fn()
 const limitMock = vi.fn()
+const setDocMock = vi.fn()
+const serverTimestampMock = vi.fn(() => ({ type: 'server-timestamp' }))
 
 const mockDb = { name: 'primary-db' }
 const mockRosterDb = { name: 'roster-db' }
@@ -22,6 +29,8 @@ vi.mock('../lib/db', () => ({
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   limit: (...args: Parameters<typeof limitMock>) => limitMock(...args),
+  setDoc: (...args: Parameters<typeof setDocMock>) => setDocMock(...args),
+  serverTimestamp: () => serverTimestampMock(),
   db: mockDb,
   rosterDb: mockRosterDb,
 }))
@@ -34,6 +43,8 @@ beforeEach(() => {
   queryMock.mockReset()
   whereMock.mockReset()
   limitMock.mockReset()
+  setDocMock.mockReset()
+  serverTimestampMock.mockClear()
 })
 
 describe('loadWorkspaceProfile', () => {
@@ -154,6 +165,19 @@ describe('mapAccount', () => {
 })
 
 describe('getActiveStoreId', () => {
+  it('prefers the nested active store preference when present', async () => {
+    docMock.mockReturnValue({ type: 'doc', path: 'teamMembers/user-1' })
+    getDocMock.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ preferences: { activeStoreId: ' preferred-store ' }, storeId: 'store-fallback' }),
+    })
+
+    const storeId = await getActiveStoreId('user-1')
+
+    expect(docMock).toHaveBeenCalledWith(mockRosterDb, 'teamMembers', 'user-1')
+    expect(storeId).toBe('preferred-store')
+  })
+
   it('returns the trimmed storeId for the user document', async () => {
     docMock.mockReturnValue({ type: 'doc', path: 'teamMembers/user-1' })
     getDocMock.mockResolvedValue({
@@ -176,5 +200,34 @@ describe('getActiveStoreId', () => {
     const storeId = await getActiveStoreId('user-1')
 
     expect(storeId).toBeNull()
+  })
+})
+
+describe('setActiveStoreIdForUser', () => {
+  it('writes the normalized store id into nested preferences and sets a timestamp', async () => {
+    docMock.mockReturnValue({ type: 'doc', path: 'teamMembers/user-1' })
+    serverTimestampMock.mockReturnValueOnce('timestamp-value')
+
+    await setActiveStoreIdForUser(' user-1 ', ' store-123 ')
+
+    expect(docMock).toHaveBeenCalledWith(mockRosterDb, 'teamMembers', 'user-1')
+    expect(setDocMock).toHaveBeenCalledWith(
+      { type: 'doc', path: 'teamMembers/user-1' },
+      {
+        preferences: {
+          activeStoreId: 'store-123',
+        },
+        preferencesUpdatedAt: 'timestamp-value',
+      },
+      { merge: true },
+    )
+  })
+
+  it('ignores updates when the uid or store id is missing', async () => {
+    await setActiveStoreIdForUser(null, 'store-123')
+    await setActiveStoreIdForUser('user-1', null)
+    await setActiveStoreIdForUser(undefined, undefined)
+
+    expect(setDocMock).not.toHaveBeenCalled()
   })
 })

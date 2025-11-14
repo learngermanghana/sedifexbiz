@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMemberships, type Membership } from './useMemberships'
 import { useAuthUser } from './useAuthUser'
 import { persistActiveStoreIdForUser, readActiveStoreId } from '../utils/activeStoreStorage'
+import { getActiveStoreId, setActiveStoreIdForUser } from '../data/loadWorkspace'
 
 interface ActiveStoreState {
   storeId: string | null
@@ -19,6 +20,9 @@ export function useActiveStore(): ActiveStoreState {
   const { memberships, loading, error } = useMemberships()
   const user = useAuthUser()
   const [activeStoreId, setActiveStoreIdState] = useState<string | null>(null)
+  const [remoteStoreId, setRemoteStoreId] = useState<string | null>(null)
+  const [remoteStoreResolved, setRemoteStoreResolved] = useState(false)
+  const pendingRemoteUpdate = useRef<string | null>(null)
 
   const membershipStoreIds = useMemo(() => {
     const seen = new Set<string>()
@@ -45,6 +49,47 @@ export function useActiveStore(): ActiveStoreState {
   }, [user?.uid])
 
   useEffect(() => {
+    let cancelled = false
+
+    if (!user?.uid) {
+      setRemoteStoreId(null)
+      setRemoteStoreResolved(true)
+      pendingRemoteUpdate.current = null
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setRemoteStoreResolved(false)
+    setRemoteStoreId(null)
+    pendingRemoteUpdate.current = null
+
+    async function run() {
+      try {
+        const remote = await getActiveStoreId(user.uid)
+        if (!cancelled) {
+          setRemoteStoreId(remote)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[useActiveStore] Failed to load remote store preference', error)
+          setRemoteStoreId(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setRemoteStoreResolved(true)
+        }
+      }
+    }
+
+    void run()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user?.uid])
+
+  useEffect(() => {
     if (loading) {
       return
     }
@@ -54,26 +99,58 @@ export function useActiveStore(): ActiveStoreState {
       return
     }
 
+    let resolvedNextStoreId: string | null = null
+
+    const normalizeCandidate = (candidate: string | null | undefined) => {
+      if (typeof candidate !== 'string') {
+        return null
+      }
+      const trimmed = candidate.trim()
+      return trimmed && membershipStoreIds.includes(trimmed) ? trimmed : null
+    }
+
+    const remoteCandidate = normalizeCandidate(remoteStoreId)
+    const storedCandidate = normalizeCandidate(user?.uid ? readActiveStoreId(user.uid) : null)
+
     setActiveStoreIdState(previous => {
       let nextStoreId = previous
 
-      if (!previous || !membershipStoreIds.includes(previous)) {
-        const stored = user?.uid ? readActiveStoreId(user.uid) : null
-
-        if (stored && membershipStoreIds.includes(stored)) {
-          nextStoreId = stored
-        } else {
-          nextStoreId = membershipStoreIds[0]
-        }
+      if (
+        remoteCandidate &&
+        remoteCandidate !== previous &&
+        pendingRemoteUpdate.current !== previous
+      ) {
+        nextStoreId = remoteCandidate
+      } else if (!previous || !membershipStoreIds.includes(previous)) {
+        nextStoreId = remoteCandidate ?? storedCandidate ?? membershipStoreIds[0]
       }
 
       if (nextStoreId && nextStoreId !== previous && user?.uid) {
         persistActiveStoreIdForUser(user.uid, nextStoreId)
       }
 
+      resolvedNextStoreId = nextStoreId ?? null
       return nextStoreId
     })
-  }, [loading, membershipStoreIds, user?.uid])
+
+    if (
+      resolvedNextStoreId &&
+      user?.uid &&
+      remoteStoreResolved &&
+      resolvedNextStoreId !== (remoteCandidate ?? null)
+    ) {
+      pendingRemoteUpdate.current = resolvedNextStoreId
+      void setActiveStoreIdForUser(user.uid, resolvedNextStoreId)
+        .then(() => {
+          setRemoteStoreId(resolvedNextStoreId)
+          pendingRemoteUpdate.current = null
+        })
+        .catch(error => {
+          console.warn('[useActiveStore] Failed to persist remote store preference', error)
+          pendingRemoteUpdate.current = null
+        })
+    }
+  }, [loading, membershipStoreIds, remoteStoreId, remoteStoreResolved, user?.uid])
 
   const setActiveStoreId = useCallback(
     (storeId: string | null) => {
@@ -85,6 +162,7 @@ export function useActiveStore(): ActiveStoreState {
         return
       }
 
+      let updated = false
       setActiveStoreIdState(previous => {
         if (previous === storeId) {
           return previous
@@ -94,8 +172,15 @@ export function useActiveStore(): ActiveStoreState {
           persistActiveStoreIdForUser(user.uid, storeId)
         }
 
+        updated = true
         return storeId
       })
+
+      if (updated) {
+        pendingRemoteUpdate.current = storeId
+      } else {
+        pendingRemoteUpdate.current = null
+      }
     },
     [membershipStoreIds, user?.uid],
   )
