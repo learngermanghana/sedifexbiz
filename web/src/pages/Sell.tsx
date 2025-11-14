@@ -177,6 +177,35 @@ function sanitizePrice(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
+async function callWithTokenRefresh<T>(callback: () => Promise<T>): Promise<T> {
+  const currentUser = auth.currentUser;
+
+  if (currentUser) {
+    try {
+      await currentUser.getIdToken(true);
+    } catch (error) {
+      console.warn('[sell] Unable to refresh ID token before callable execution', error);
+    }
+  }
+
+  try {
+    return await callback();
+  } catch (error) {
+    if (error instanceof FirebaseError && error.code === 'functions/unauthenticated') {
+      if (currentUser) {
+        try {
+          await currentUser.getIdToken(true);
+        } catch (refreshError) {
+          console.warn('[sell] Unable to refresh ID token after unauthenticated error', refreshError);
+          throw error;
+        }
+        return await callback();
+      }
+    }
+    throw error;
+  }
+}
+
 export default function Sell() {
   const user = useAuthUser();
   const {
@@ -403,12 +432,14 @@ export default function Sell() {
 
     (async () => {
       try {
-        const response = await prepareReceiptShareCallable({
-          saleId: receipt.saleId,
-          storeId: activeStoreId ?? null,
-          lines,
-          pdfFileName,
-        });
+        const response = await callWithTokenRefresh(() =>
+          prepareReceiptShareCallable({
+            saleId: receipt.saleId,
+            storeId: activeStoreId ?? null,
+            lines,
+            pdfFileName,
+          })
+        );
         if (cancelled) return;
         const data = response.data;
         if (!data?.ok) return;
@@ -451,7 +482,7 @@ export default function Sell() {
         ...(meta?.errorMessage ? { errorMessage: meta.errorMessage } : {}),
       };
       try {
-        await logReceiptShareAttemptCallable(payload);
+        await callWithTokenRefresh(() => logReceiptShareAttemptCallable(payload));
       } catch (e) {
         console.warn('[sell] Failed to log share attempt', e);
       }
