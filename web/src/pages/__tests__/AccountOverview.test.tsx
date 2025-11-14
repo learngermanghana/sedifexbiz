@@ -1,11 +1,36 @@
 import React from 'react'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AccountOverview from '../AccountOverview'
 import type { WorkspaceAccountProfile } from '../../data/loadWorkspace'
 
 const mockPublish = vi.fn()
+
+
+const mockAuth = { currentUser: null as any }
+const mockFetchSignInMethodsForEmail = vi.fn()
+const mockLinkWithPopup = vi.fn()
+const mockGoogleAuthProvider = vi.fn()
+const mockGoogleSetParams = vi.fn()
+
+vi.mock('firebase/auth', () => ({
+  fetchSignInMethodsForEmail: (...args: unknown[]) => mockFetchSignInMethodsForEmail(...args),
+  GoogleAuthProvider: class {
+    constructor(...args: unknown[]) {
+      mockGoogleAuthProvider(...args)
+    }
+
+    setCustomParameters(params: unknown) {
+      mockGoogleSetParams(params)
+    }
+  },
+  linkWithPopup: (...args: unknown[]) => mockLinkWithPopup(...args),
+}))
+
+vi.mock('../../firebase', () => ({
+  auth: mockAuth,
+}))
 
 
 vi.mock('../../components/ToastProvider', () => ({
@@ -121,6 +146,11 @@ describe('AccountOverview', () => {
     mockGetActiveStoreId.mockReset()
     mockLoadWorkspaceProfile.mockReset()
     mockMapAccount.mockReset()
+    mockFetchSignInMethodsForEmail.mockReset()
+    mockFetchSignInMethodsForEmail.mockResolvedValue(['password'])
+    mockLinkWithPopup.mockReset()
+    mockGoogleAuthProvider.mockReset()
+    mockGoogleSetParams.mockReset()
     collectionMock.mockClear()
     getDocsMock.mockReset()
     queryMock.mockClear()
@@ -137,7 +167,9 @@ describe('AccountOverview', () => {
       isLoading: false,
       error: null,
     })
-    mockUseAuthUser.mockReturnValue({ uid: 'user-1', email: 'owner@example.com' })
+    const authUser = { uid: 'user-1', email: 'owner@example.com', providerData: [] as unknown[] }
+    mockAuth.currentUser = authUser
+    mockUseAuthUser.mockReturnValue(authUser)
     mockUseMemberships.mockReturnValue({
       memberships: [
         {
@@ -326,5 +358,35 @@ describe('AccountOverview', () => {
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
     expect(mockPublish).toHaveBeenCalledWith({ message: 'Team member updated.', tone: 'success' })
     expect(autoRerunTrigger).toHaveBeenCalled()
+  })
+
+  it('allows users to link a Google sign-in method', async () => {
+    mockFetchSignInMethodsForEmail.mockReset()
+    mockFetchSignInMethodsForEmail.mockResolvedValueOnce(['password'])
+    mockFetchSignInMethodsForEmail.mockResolvedValueOnce(['password', 'google.com'])
+    mockLinkWithPopup.mockResolvedValue({ user: mockAuth.currentUser })
+
+    render(<AccountOverview />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const googleMethod = await screen.findByTestId('account-signin-method-google.com')
+    expect(within(googleMethod).getByText(/not linked/i)).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    const linkButton = within(googleMethod).getByRole('button', { name: /link google/i })
+    await user.click(linkButton)
+
+    await waitFor(() => expect(mockLinkWithPopup).toHaveBeenCalled())
+    expect(mockLinkWithPopup).toHaveBeenCalledWith(mockAuth.currentUser, expect.anything())
+
+    await waitFor(() => expect(mockFetchSignInMethodsForEmail).toHaveBeenCalledTimes(2))
+    expect(mockPublish).toHaveBeenCalledWith({
+      message: 'Google account linked. You can now sign in with Google.',
+      tone: 'success',
+    })
+
+    await waitFor(() => expect(within(googleMethod).getByText(/linked/i)).toBeInTheDocument())
   })
 })

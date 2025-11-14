@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { GoogleAuthProvider, fetchSignInMethodsForEmail, linkWithPopup } from 'firebase/auth';
 import {
   Timestamp,
   collection,
@@ -19,6 +20,7 @@ import './AccountOverview.css';
 import { useAutoRerun } from '../hooks/useAutoRerun';
 import { normalizeStaffRole } from '../utils/normalizeStaffRole';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { auth } from '../firebase';
 
 // Current workspace slug selected in the header (provider you added)
 import { useSelectedWorkspaceSlug } from '../hooks/useWorkspaceSelect';
@@ -32,6 +34,144 @@ import {
 } from '../data/loadWorkspace';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const GOOGLE_PROVIDER_ID = 'google.com';
+
+type SignInProviderDefinition = {
+  id: string;
+  label: string;
+  description: string;
+  canLink?: boolean;
+  actionLabel?: string;
+};
+
+const SIGN_IN_PROVIDERS: SignInProviderDefinition[] = [
+  {
+    id: 'password',
+    label: 'Email & password',
+    description: 'Sign in with the email address and password you created for Sedifex.',
+  },
+  {
+    id: GOOGLE_PROVIDER_ID,
+    label: 'Google',
+    description: 'Link your Google account to sign in without typing a password.',
+    canLink: true,
+    actionLabel: 'Link Google',
+  },
+];
+
+type LinkFeedbackType = 'success' | 'error' | 'info';
+
+type LinkFeedback = {
+  type: LinkFeedbackType;
+  message: string;
+};
+
+type FirebaseLikeError = {
+  code?: string;
+  message?: string;
+};
+
+function resolveGoogleLinkError(error: unknown): { feedback: LinkFeedback; toastTone: 'error' | 'info' } {
+  const fallback: { feedback: LinkFeedback; toastTone: 'error' | 'info' } = {
+    feedback: {
+      type: 'error',
+      message: 'We could not link your Google account. Please try again.',
+    },
+    toastTone: 'error',
+  };
+
+  if (error && typeof error === 'object') {
+    const { code, message } = error as FirebaseLikeError;
+    switch (code) {
+      case 'auth/popup-closed-by-user':
+        return {
+          feedback: {
+            type: 'info',
+            message: 'Google sign-in was closed before we could link your account.',
+          },
+          toastTone: 'info',
+        };
+      case 'auth/cancelled-popup-request':
+        return {
+          feedback: {
+            type: 'info',
+            message: 'We cancelled the previous Google sign-in attempt. Please try again.',
+          },
+          toastTone: 'info',
+        };
+      case 'auth/provider-already-linked':
+        return {
+          feedback: {
+            type: 'info',
+            message: 'Your Sedifex account is already linked to Google.',
+          },
+          toastTone: 'info',
+        };
+      case 'auth/credential-already-in-use':
+        return {
+          feedback: {
+            type: 'error',
+            message: 'That Google account is already linked to another Sedifex user.',
+          },
+          toastTone: 'error',
+        };
+      case 'auth/popup-blocked':
+        return {
+          feedback: {
+            type: 'error',
+            message: 'We couldn’t open the Google sign-in popup. Allow popups for this site and try again.',
+          },
+          toastTone: 'error',
+        };
+      case 'auth/invalid-credential':
+        return {
+          feedback: {
+            type: 'error',
+            message: 'We could not verify the Google account. Try again or choose a different Google profile.',
+          },
+          toastTone: 'error',
+        };
+      default:
+        break;
+    }
+
+    if (typeof message === 'string' && message.trim()) {
+      return {
+        feedback: {
+          type: 'error',
+          message,
+        },
+        toastTone: 'error',
+      };
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return {
+      feedback: {
+        type: 'error',
+        message: error.message,
+      },
+      toastTone: 'error',
+    };
+  }
+
+  try {
+    const serialized = JSON.stringify(error);
+    if (serialized) {
+      return {
+        feedback: {
+          type: 'error',
+          message: serialized,
+        },
+        toastTone: 'error',
+      };
+    }
+  } catch {}
+
+  return fallback;
+}
 
 type RosterMember = {
   id: string;
@@ -146,6 +286,94 @@ export default function AccountOverview() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+
+  const providerFallback = useMemo(
+    () =>
+      (user?.providerData ?? [])
+        .map(provider => provider.providerId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    [user],
+  );
+  const [signInMethods, setSignInMethods] = useState<string[]>(providerFallback);
+  const [signInMethodsLoading, setSignInMethodsLoading] = useState(false);
+  const [signInMethodsError, setSignInMethodsError] = useState<string | null>(null);
+  const [signInMethodsVersion, setSignInMethodsVersion] = useState(0);
+  const [linkingProvider, setLinkingProvider] = useState<string | null>(null);
+  const [linkFeedback, setLinkFeedback] = useState<LinkFeedback | null>(null);
+
+  useEffect(() => {
+    const email = user?.email?.trim();
+    if (!email) {
+      setSignInMethods(providerFallback);
+      setSignInMethodsError(null);
+      setSignInMethodsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSignInMethodsLoading(true);
+    setSignInMethodsError(null);
+
+    fetchSignInMethodsForEmail(auth, email)
+      .then(methods => {
+        if (cancelled) return;
+        setSignInMethods(methods);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        console.warn('[account] Failed to load sign-in methods', error);
+        setSignInMethodsError('We could not load your linked sign-in methods.');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setSignInMethodsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.email, providerFallback, signInMethodsVersion]);
+
+  const signInMethodSet = useMemo(() => new Set(signInMethods), [signInMethods]);
+
+  const refreshSignInMethods = useCallback(() => {
+    setSignInMethodsVersion(version => version + 1);
+  }, []);
+
+  const handleLinkGoogle = useCallback(async () => {
+    const activeUser = auth.currentUser ?? user;
+    if (!activeUser) {
+      const message = 'You need to sign in again before linking a Google account.';
+      const feedback: LinkFeedback = { type: 'error', message };
+      setLinkFeedback(feedback);
+      publish({ message, tone: 'error' });
+      return;
+    }
+
+    setLinkFeedback(null);
+    setLinkingProvider(GOOGLE_PROVIDER_ID);
+
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await linkWithPopup(activeUser, provider);
+
+      const message = 'Google account linked. You can now sign in with Google.';
+      const feedback: LinkFeedback = { type: 'success', message };
+      setLinkFeedback(feedback);
+      publish({ message, tone: 'success' });
+      refreshSignInMethods();
+    } catch (error) {
+      const { feedback, toastTone } = resolveGoogleLinkError(error);
+      if (feedback.type === 'error') {
+        console.error('[account] Failed to link Google provider', error);
+      }
+      setLinkFeedback(feedback);
+      publish({ message: feedback.message, tone: toastTone });
+    } finally {
+      setLinkingProvider(null);
+    }
+  }, [publish, refreshSignInMethods, user]);
 
   const activeMembership = useMemo(() => {
     if (storeId) return memberships.find(m => m.storeId === storeId) ?? null;
@@ -390,6 +618,77 @@ export default function AccountOverview() {
             ? `Loading account details for workspace/${workspaceIdentifier}…`
             : 'Loading account details…'}
         </p>
+      )}
+
+      {user && (
+        <section className="account-overview__signin-card" aria-labelledby="account-overview-signin">
+          <h2 id="account-overview-signin">Sign-in methods</h2>
+          <p className="account-overview__signin-description">
+            {user.email
+              ? `Manage the sign-in options for ${user.email}.`
+              : 'Manage the sign-in options for your Sedifex account.'}
+          </p>
+
+          <ul className="account-overview__signin-list">
+            {SIGN_IN_PROVIDERS.map(provider => {
+              const isLinked = signInMethodSet.has(provider.id);
+              return (
+                <li
+                  key={provider.id}
+                  className="account-overview__signin-item"
+                  data-testid={`account-signin-method-${provider.id}`}
+                >
+                  <div className="account-overview__signin-info">
+                    <p className="account-overview__signin-name">{provider.label}</p>
+                    <p className="account-overview__signin-helper">{provider.description}</p>
+                  </div>
+                  <div className="account-overview__signin-actions">
+                    <span
+                      className="account-overview__signin-status"
+                      data-status={isLinked ? 'linked' : 'unlinked'}
+                    >
+                      {isLinked ? 'Linked' : 'Not linked'}
+                    </span>
+                    {provider.canLink && !isLinked ? (
+                      <button
+                        type="button"
+                        className="button button--secondary button--small"
+                        onClick={handleLinkGoogle}
+                        disabled={linkingProvider !== null || signInMethodsLoading}
+                      >
+                        {linkingProvider === provider.id ? 'Linking…' : provider.actionLabel ?? 'Link'}
+                      </button>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {signInMethodsLoading && !signInMethodsError && (
+            <p className="account-overview__signin-feedback" role="status">
+              Checking linked sign-in methods…
+            </p>
+          )}
+
+          {signInMethodsError && (
+            <p
+              className="account-overview__signin-feedback account-overview__signin-feedback--error"
+              role="alert"
+            >
+              {signInMethodsError}
+            </p>
+          )}
+
+          {linkFeedback && (
+            <p
+              className={`account-overview__signin-feedback account-overview__signin-feedback--${linkFeedback.type}`}
+              role={linkFeedback.type === 'error' ? 'alert' : 'status'}
+            >
+              {linkFeedback.message}
+            </p>
+          )}
+        </section>
       )}
 
       {profile && (
