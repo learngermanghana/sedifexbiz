@@ -48,12 +48,14 @@ describe('offlineQueue', () => {
         messageListeners.delete(listener as unknown as (event: MessageEvent) => void)
       }
     })
+    const controller = { postMessage: postMessageMock, state: 'activated' } as unknown as ServiceWorker
     const registration = {
-      active: { postMessage: postMessageMock },
+      active: controller,
     }
 
     const serviceWorker = {
       ready: Promise.resolve(registration),
+      controller,
       addEventListener: addEventListenerMock,
       removeEventListener: removeEventListenerMock,
     } as unknown as ServiceWorkerContainer
