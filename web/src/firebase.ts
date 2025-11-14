@@ -2,7 +2,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app'
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
 import { getAuth } from 'firebase/auth'
-import { getFunctions } from 'firebase/functions'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import {
   initializeFirestore,
   memoryLocalCache,
@@ -48,6 +48,53 @@ if (isBrowser && !isTest) {
 export const auth = getAuth(app)
 
 export const functions = getFunctions(app, firebaseEnv.functionsRegion || 'us-central1')
+
+type RawEnsureCanonicalWorkspaceResponse = {
+  ok?: unknown
+  workspaceSlug?: unknown
+  storeId?: unknown
+  claims?: unknown
+}
+
+export type EnsureCanonicalWorkspaceResult = {
+  ok: boolean
+  workspaceSlug: string | null
+  storeId: string | null
+  claims?: unknown
+}
+
+const ensureCanonicalWorkspaceCallable = httpsCallable<
+  undefined,
+  RawEnsureCanonicalWorkspaceResponse
+>(functions, 'ensureCanonicalWorkspace')
+
+let ensureCanonicalWorkspacePromise: Promise<EnsureCanonicalWorkspaceResult> | null = null
+
+export async function ensureCanonicalWorkspace(): Promise<EnsureCanonicalWorkspaceResult> {
+  if (!ensureCanonicalWorkspacePromise) {
+    ensureCanonicalWorkspacePromise = ensureCanonicalWorkspaceCallable()
+      .then(response => {
+        const payload = response?.data ?? {}
+
+        const workspaceSlugRaw =
+          typeof payload.workspaceSlug === 'string' ? payload.workspaceSlug.trim() : ''
+        const storeIdRaw = typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
+
+        return {
+          ok: payload.ok === true,
+          workspaceSlug: workspaceSlugRaw || null,
+          storeId: storeIdRaw || null,
+          claims: payload.claims,
+        }
+      })
+      .catch(error => {
+        ensureCanonicalWorkspacePromise = null
+        throw error
+      })
+  }
+
+  return ensureCanonicalWorkspacePromise
+}
 
 const supportsPersistentCache =
   isBrowser && 'indexedDB' in window && window.indexedDB !== null
