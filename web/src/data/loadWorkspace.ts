@@ -7,6 +7,8 @@ import {
   limit,
   query,
   rosterDb,
+  serverTimestamp,
+  setDoc,
   where,
   type DocumentData,
   type DocumentSnapshot,
@@ -60,6 +62,32 @@ export async function getActiveStoreId(uid: string | null | undefined): Promise<
     }
 
     throw error
+  }
+}
+
+export async function setActiveStoreIdForUser(
+  uid: string | null | undefined,
+  storeId: string | null | undefined,
+): Promise<void> {
+  const normalizedUid = normalizeString(uid)
+  const normalizedStoreId = normalizeString(storeId)
+
+  if (!normalizedUid || !normalizedStoreId) return
+
+  const memberRef = doc(rosterDb, 'teamMembers', normalizedUid)
+  try {
+    await setDoc(
+      memberRef,
+      {
+        storeId: normalizedStoreId,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    )
+  } catch (error) {
+    if (!isOfflineError(error)) {
+      throw error
+    }
   }
 }
 

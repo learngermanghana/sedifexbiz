@@ -4,6 +4,9 @@ import { renderHook, waitFor, act } from '@testing-library/react'
 import { useActiveStore } from './useActiveStore'
 import { getActiveStoreStorageKey } from '../utils/activeStoreStorage'
 
+const mockGetActiveStoreId = vi.fn()
+const mockSetActiveStoreIdForUser = vi.fn()
+
 const mockUseMemberships = vi.fn()
 const mockUseAuthUser = vi.fn()
 
@@ -13,6 +16,13 @@ vi.mock('./useMemberships', () => ({
 
 vi.mock('./useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
+}))
+
+vi.mock('../data/loadWorkspace', () => ({
+  getActiveStoreId: (...args: Parameters<typeof mockGetActiveStoreId>) =>
+    mockGetActiveStoreId(...args),
+  setActiveStoreIdForUser: (...args: Parameters<typeof mockSetActiveStoreIdForUser>) =>
+    mockSetActiveStoreIdForUser(...args),
 }))
 
 describe('useActiveStore', () => {
@@ -35,8 +45,12 @@ describe('useActiveStore', () => {
   beforeEach(() => {
     mockUseMemberships.mockReset()
     mockUseAuthUser.mockReset()
+    mockGetActiveStoreId.mockReset()
+    mockSetActiveStoreIdForUser.mockReset()
     window.localStorage.clear()
     mockUseAuthUser.mockReturnValue({ uid: 'user-1' })
+    mockGetActiveStoreId.mockResolvedValue(null)
+    mockSetActiveStoreIdForUser.mockResolvedValue(undefined)
   })
 
   it('prefers the persisted store id when it matches the membership store', async () => {
@@ -63,6 +77,36 @@ describe('useActiveStore', () => {
     expect(result.current.workspaceId).toBe('matching-store')
     expect(result.current.workspaceSlug).toBe('matching-store')
     expect(result.current.error).toBeNull()
+    await waitFor(() => {
+      expect(mockSetActiveStoreIdForUser).toHaveBeenCalledWith('user-1', 'matching-store')
+    })
+  })
+
+  it('uses the remote store id when available', async () => {
+    mockGetActiveStoreId.mockResolvedValue('remote-store')
+
+    mockUseMemberships.mockImplementation(storeId =>
+      storeId === undefined
+        ? { memberships: [], loading: true, error: null }
+        : {
+            memberships: [createMembership('local-store'), createMembership('remote-store')],
+            loading: false,
+            error: null,
+          },
+    )
+
+    const storageKey = getActiveStoreStorageKey('user-1')
+    window.localStorage.setItem(storageKey, 'local-store')
+
+    const { result } = renderHook(() => useActiveStore())
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false)
+      expect(result.current.storeId).toBe('remote-store')
+    })
+
+    expect(window.localStorage.getItem(storageKey)).toBe('remote-store')
+    expect(mockSetActiveStoreIdForUser).not.toHaveBeenCalled()
   })
 
   it('updates the persisted store id when membership store differs', async () => {
@@ -89,6 +133,9 @@ describe('useActiveStore', () => {
     })
 
     expect(window.localStorage.getItem(storageKey)).toBe('membership-store')
+    await waitFor(() => {
+      expect(mockSetActiveStoreIdForUser).toHaveBeenCalledWith('user-1', 'membership-store')
+    })
   })
 
   it('falls back to the membership store id when nothing is persisted', async () => {
@@ -114,6 +161,9 @@ describe('useActiveStore', () => {
     expect(result.current.storeId).toBe('membership-store')
     expect(result.current.workspaceId).toBe('membership-store')
     expect(result.current.workspaceSlug).toBe('membership-store')
+    await waitFor(() => {
+      expect(mockSetActiveStoreIdForUser).toHaveBeenCalledWith('user-1', 'membership-store')
+    })
   })
 
   it('resets the active store when switching to a different user', async () => {
@@ -152,6 +202,10 @@ describe('useActiveStore', () => {
       expect(result.current.workspaceSlug).toBe('user-1-store')
     })
 
+    await waitFor(() => {
+      expect(mockSetActiveStoreIdForUser).toHaveBeenCalledWith('user-1', 'user-1-store')
+    })
+
     currentUser = { uid: 'user-2' }
     const user2Key = getActiveStoreStorageKey('user-2')
     window.localStorage.setItem(user2Key, 'user-2-store')
@@ -166,6 +220,9 @@ describe('useActiveStore', () => {
 
     expect(window.localStorage.getItem(user1Key)).toBe('user-1-store')
     expect(window.localStorage.getItem(user2Key)).toBe('user-2-store')
+    await waitFor(() => {
+      expect(mockSetActiveStoreIdForUser).toHaveBeenLastCalledWith('user-2', 'user-2-store')
+    })
   })
 
   it('allows selecting a membership store manually', async () => {
@@ -202,6 +259,9 @@ describe('useActiveStore', () => {
     })
 
     expect(window.localStorage.getItem(storageKey)).toBe('store-b')
+    await waitFor(() => {
+      expect(mockSetActiveStoreIdForUser).toHaveBeenLastCalledWith('user-1', 'store-b')
+    })
   })
 
   it('derives workspace slug from membership when available', async () => {
