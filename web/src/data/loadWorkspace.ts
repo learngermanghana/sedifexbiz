@@ -81,10 +81,8 @@ export async function setActiveStoreIdForUser(
     await setDoc(
       memberRef,
       {
-        preferences: {
-          activeStoreId: normalizedStoreId,
-        },
-        preferencesUpdatedAt: serverTimestamp(),
+        storeId: normalizedStoreId,
+        updatedAt: serverTimestamp(),
       },
       { merge: true },
     )
