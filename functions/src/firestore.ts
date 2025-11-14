@@ -37,32 +37,52 @@ if (typeof defaultDb.settings === 'function') {
 // }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Secondary DB: named "roster"
-// For named databases we must use the @google-cloud/firestore client.
-const rosterOptions: ConstructorParameters<typeof Firestore>[0] = {
-  databaseId: 'roster',
+const rosterDatabaseIdRaw =
+  process.env.FIRESTORE_ROSTER_DATABASE_ID || process.env.ROSTER_DB_ID || 'roster';
+const rosterDatabaseId = rosterDatabaseIdRaw.trim();
+const useDefaultRosterDb =
+  !rosterDatabaseId || rosterDatabaseId === 'default' || rosterDatabaseId === '(default)';
 
-  // prefer the REST transport in Cloud Functions Gen2 (often more reliable)
-  // Safe to leave enabled elsewhere as well.
-  preferRest: true,
-};
+let rosterDb: FirebaseFirestore.Firestore;
 
-if (projectId) {
-  rosterOptions.projectId = projectId;
+if (useDefaultRosterDb) {
+  rosterDb = defaultDb;
+} else {
+  // Secondary DB: named database (default: "roster")
+  // For named databases we must use the @google-cloud/firestore client.
+  const rosterOptions: ConstructorParameters<typeof Firestore>[0] = {
+    databaseId: rosterDatabaseId,
+
+    // prefer the REST transport in Cloud Functions Gen2 (often more reliable)
+    // Safe to leave enabled elsewhere as well.
+    preferRest: true,
+  };
+
+  if (projectId) {
+    rosterOptions.projectId = projectId;
+  }
+
+  // When running against the emulator, @google-cloud/firestore honors the env var,
+  // but we can be explicit to avoid surprises in some environments.
+  if (isEmulator && emulatorHost) {
+    const [host, portStr] = emulatorHost.split(':');
+    const port = Number(portStr) || 8080;
+
+    rosterOptions.host = host;
+    rosterOptions.port = port;
+    rosterOptions.ssl = false;
+  }
+
+  try {
+    rosterDb = new Firestore(rosterOptions) as FirebaseFirestore.Firestore;
+  } catch (error) {
+    console.warn(
+      `[firestore] Falling back to default database for roster (failed to init "${rosterDatabaseId}")`,
+      error,
+    );
+    rosterDb = defaultDb;
+  }
 }
-
-// When running against the emulator, @google-cloud/firestore honors the env var,
-// but we can be explicit to avoid surprises in some environments.
-if (isEmulator && emulatorHost) {
-  const [host, portStr] = emulatorHost.split(':');
-  const port = Number(portStr) || 8080;
-
-  rosterOptions.host = host;
-  rosterOptions.port = port;
-  rosterOptions.ssl = false;
-}
-
-const rosterDb = (projectId || isEmulator ? new Firestore(rosterOptions) : defaultDb) as FirebaseFirestore.Firestore;
 
 // ─────────────────────────────────────────────────────────────────────────────
 export { admin, defaultDb, rosterDb };
