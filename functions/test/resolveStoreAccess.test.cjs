@@ -371,6 +371,52 @@ async function runMissingEmailTokenTest() {
   assert.strictEqual(rosterDoc.email, 'staffless@example.com')
 }
 
+async function runNestedSerializationTest() {
+  const contractStart = Date.parse('2024-04-01T00:00:00.000Z')
+  const contractEnd = Date.parse('2025-04-01T00:00:00.000Z')
+
+  currentDefaultDb = new MockFirestore({
+    'stores/store-nested': {
+      status: 'Active',
+      profile: {
+        contract: {
+          start: MockTimestamp.fromMillis(contractStart),
+          end: MockTimestamp.fromMillis(contractEnd),
+        },
+        reminders: [
+          {
+            sentAt: MockTimestamp.fromMillis(contractStart),
+          },
+        ],
+      },
+    },
+    'teamMembers/nested-owner@example.com': {
+      email: 'nested-owner@example.com',
+      storeId: 'store-nested',
+      role: 'Owner',
+    },
+  })
+  currentRosterDb = currentDefaultDb
+
+  const { resolveStoreAccess } = loadFunctionsModule()
+  const context = {
+    auth: {
+      uid: 'nested-user',
+      token: { email: 'nested-owner@example.com' },
+    },
+  }
+
+  const result = await resolveStoreAccess.run({ storeId: 'store-nested' }, context)
+
+  assert.strictEqual(result.ok, true)
+  assert.strictEqual(result.storeId, 'store-nested')
+  assert.strictEqual(result.role, 'owner')
+  assert.ok(result.store)
+  assert.strictEqual(result.store.data.profile.contract.start, contractStart)
+  assert.strictEqual(result.store.data.profile.contract.end, contractEnd)
+  assert.strictEqual(result.store.data.profile.reminders[0].sentAt, contractStart)
+}
+
 async function run() {
   await runActiveStatusTest()
   await runInactiveStatusTest()
@@ -379,6 +425,7 @@ async function run() {
   await runMissingStoreIdTest()
   await runManagedStaffAccessTest()
   await runMissingEmailTokenTest()
+  await runNestedSerializationTest()
   console.log('resolveStoreAccess tests passed')
 }
 

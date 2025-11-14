@@ -486,20 +486,93 @@ function mapCustomerSeeds(records: Record<string, unknown>[], storeId: string): 
     .filter((item): item is SeededDocument => item !== null)
 }
 
+function isFirestoreDocumentReference(value: unknown): value is { path: string } {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as { path?: unknown; id?: unknown; get?: unknown }
+  const hasPath = typeof candidate.path === 'string' && candidate.path.length > 0
+  const hasAccessor = typeof candidate.get === 'function'
+
+  if (!hasPath) {
+    return false
+  }
+
+  if (hasAccessor) {
+    return true
+  }
+
+  try {
+    const id = (candidate as { id?: unknown }).id
+    return typeof id === 'string' && id.length > 0
+  } catch {
+    return false
+  }
+}
+
+function isFirestoreGeoPoint(value: unknown): value is { latitude: number; longitude: number } {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as { latitude?: unknown; longitude?: unknown }
+  return typeof candidate.latitude === 'number' && typeof candidate.longitude === 'number'
+}
+
+function serializeFirestoreValue(value: unknown): unknown {
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (value instanceof admin.firestore.Timestamp) {
+    return value.toMillis()
+  }
+
+  if (isFirestoreGeoPoint(value)) {
+    return { latitude: value.latitude, longitude: value.longitude }
+  }
+
+  if (typeof admin.firestore.DocumentReference === 'function' && value instanceof admin.firestore.DocumentReference) {
+    return value.path
+  }
+
+  if (isFirestoreDocumentReference(value)) {
+    return value.path
+  }
+
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.getTime() : undefined
+  }
+
+  if (Array.isArray(value)) {
+    const serializedArray = value
+      .map(item => serializeFirestoreValue(item))
+      .filter(item => item !== undefined)
+    return serializedArray
+  }
+
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+    const result: Record<string, unknown> = {}
+    for (const [key, nested] of entries) {
+      const serialized = serializeFirestoreValue(nested)
+      if (serialized !== undefined) {
+        result[key] = serialized
+      }
+    }
+    return result
+  }
+
+  return value
+}
+
 function serializeFirestoreData(data: admin.firestore.DocumentData): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(data)) {
-    if (value instanceof admin.firestore.Timestamp) {
-      result[key] = value.toMillis()
-    } else if (value && typeof value === 'object' && '_millis' in value) {
-      const millis = (value as { _millis?: unknown })._millis
-      result[key] = typeof millis === 'number' ? millis : value
-    } else if (Array.isArray(value)) {
-      result[key] = value.map(item =>
-        item instanceof admin.firestore.Timestamp ? item.toMillis() : item,
-      )
-    } else {
-      result[key] = value
+    const serialized = serializeFirestoreValue(value)
+    if (serialized !== undefined) {
+      result[key] = serialized
     }
   }
   return result
