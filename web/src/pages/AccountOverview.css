@@ -8,6 +8,107 @@
   gap: 12px;
 }
 
+.account-overview__signin-card {
+  margin-bottom: 24px;
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  display: grid;
+  gap: 16px;
+}
+
+.account-overview__signin-card h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.account-overview__signin-description {
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+}
+
+.account-overview__signin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.account-overview__signin-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: #f8fafc;
+}
+
+.account-overview__signin-info {
+  flex: 1 1 240px;
+  min-width: 200px;
+}
+
+.account-overview__signin-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.account-overview__signin-helper {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.account-overview__signin-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-overview__signin-status {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+}
+
+.account-overview__signin-status[data-status='linked'] {
+  color: #047857;
+}
+
+.account-overview__signin-status[data-status='unlinked'] {
+  color: #b91c1c;
+}
+
+.account-overview__signin-feedback {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.account-overview__signin-feedback--success {
+  color: #047857;
+}
+
+.account-overview__signin-feedback--error {
+  color: #b91c1c;
+}
+
+.account-overview__signin-feedback--info {
+  color: #1d4ed8;
+}
+
 .account-overview__invite h3 {
   margin: 0;
   font-size: 18px;
