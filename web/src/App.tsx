@@ -23,6 +23,7 @@ import { useToast } from './components/ToastProvider'
 import {
   configureAuthPersistence,
   ensureStoreDocument,
+  ensureTeamMemberDocument,
   persistSession,
   refreshSessionHeartbeat,
 } from './controllers/sessionController'
@@ -642,6 +643,11 @@ export default function App() {
         if (!isMounted) return
         setUser(nextUser)
         setIsAuthReady(true)
+        if (nextUser) {
+          ensureTeamMemberDocument(nextUser).catch(error => {
+            console.warn('[team] Unable to ensure team member metadata after auth state change', error)
+          })
+        }
       })
     })()
 
@@ -782,6 +788,14 @@ export default function App() {
             storeId: resolution.storeId,
             role: resolution.role,
           })
+          try {
+            await ensureTeamMemberDocument(nextUser, {
+              storeId: resolution.storeId,
+              role: resolution.role,
+            })
+          } catch (error) {
+            console.warn('[team] Unable to ensure team member metadata after login', error)
+          }
           await persistStoreSeedData(resolution)
         } catch (error) {
           console.warn('[auth] Failed to resolve workspace access', error)
