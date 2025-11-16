@@ -1,14 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  collection,
-  query,
-  orderBy,
-  limit,
-  onSnapshot,
-  doc,
-  db,
-  rosterDb,
-} from '../lib/db';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { collection, query, orderBy, limit, onSnapshot, doc, db } from '../lib/db';
 import { where } from 'firebase/firestore'; // keep where only if you need it elsewhere
 import { FirebaseError } from 'firebase/app';
 import { httpsCallable } from 'firebase/functions';
@@ -194,6 +185,42 @@ function sortProductsByName(products: Product[]): Product[] {
   return [...products].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' }));
 }
 
+function mapInventorySnapshotItems(items: unknown): Product[] {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.reduce<Product[]>((acc, item) => {
+    if (!item || typeof item !== 'object') {
+      return acc;
+    }
+
+    const record = item as Record<string, unknown>;
+    const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : null;
+    const name = typeof record.name === 'string' && record.name.trim() ? record.name.trim() : null;
+
+    if (!id || !name) {
+      return acc;
+    }
+
+    const sku = typeof record.sku === 'string' ? record.sku : undefined;
+    const price = sanitizePrice(record.price);
+    const stockCount = sanitizeStockCount(record.stockCount);
+    const status = typeof record.status === 'string' ? record.status : undefined;
+
+    acc.push({
+      id,
+      name,
+      price,
+      sku,
+      stockCount: stockCount ?? undefined,
+      status,
+    });
+
+    return acc;
+  }, []);
+}
+
 async function callWithTokenRefresh<T>(callback: () => Promise<T>): Promise<T> {
   const currentUser = auth.currentUser;
 
@@ -297,6 +324,7 @@ export default function Sell() {
   const [paymentProviderMeta, setPaymentProviderMeta] = useState<PaymentProviderMetadata | null>(null);
   const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null);
   const canUseWebShare = typeof navigator !== 'undefined' && typeof (navigator as any).share === 'function';
+  const preferLegacyRosterSnapshotRef = useRef(true);
 
   const availableProducts = useMemo(
     () => (workspaceProducts.length ? workspaceProducts : rosterProducts),
@@ -353,62 +381,80 @@ export default function Sell() {
   useEffect(() => {
     let cancelled = false;
 
-    if (!activeStoreId) {
+    const snapshotWorkspaceId = activeWorkspaceId ?? activeStoreId;
+    if (!snapshotWorkspaceId) {
       setRosterProducts([]);
       return () => {
         cancelled = true;
       };
     }
 
-    const snapshotRef = doc(rosterDb, 'inventorySnapshots', activeStoreId);
-    const unsubscribe = onSnapshot(
-      snapshotRef,
+    preferLegacyRosterSnapshotRef.current = !activeWorkspaceId;
+
+    const workspaceSnapshotRef = doc(
+      db,
+      'workspaces',
+      snapshotWorkspaceId,
+      'inventorySnapshots',
+      'latest'
+    );
+    const legacySnapshotRef = doc(db, 'inventorySnapshots', snapshotWorkspaceId);
+
+    const applySnapshot = (snapshotData: { items?: unknown } | undefined) => {
+      const mapped = mapInventorySnapshotItems(snapshotData?.items);
+      setRosterProducts(sortProductsByName(mapped));
+    };
+
+    const unsubscribeWorkspace = onSnapshot(
+      workspaceSnapshotRef,
       snap => {
         if (cancelled) return;
-        const data = snap.data() as { items?: unknown } | undefined;
-        const items = Array.isArray(data?.items) ? data?.items : [];
-        const mapped = items.reduce<Product[]>((acc, item) => {
-          if (!item || typeof item !== 'object') {
-            return acc;
-          }
-
-          const record = item as Record<string, unknown>;
-          const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : null;
-          const name = typeof record.name === 'string' && record.name.trim() ? record.name.trim() : null;
-
-          if (!id || !name) {
-            return acc;
-          }
-
-          const sku = typeof record.sku === 'string' ? record.sku : undefined;
-          const price = sanitizePrice(record.price);
-          const stockCount = sanitizeStockCount(record.stockCount);
-          const status = typeof record.status === 'string' ? record.status : undefined;
-
-          acc.push({
-            id,
-            name,
-            price,
-            sku,
-            stockCount: stockCount ?? undefined,
-            status,
-          });
-
-          return acc;
-        }, []);
-        setRosterProducts(sortProductsByName(mapped));
+        if (!snap.exists()) {
+          preferLegacyRosterSnapshotRef.current = true;
+          return;
+        }
+        preferLegacyRosterSnapshotRef.current = false;
+        applySnapshot(snap.data() as { items?: unknown } | undefined);
       },
       error => {
-        console.warn('[sell] roster snapshot error', (error as any)?.code, (error as any)?.message, error);
-        setRosterProducts([]);
+        if (cancelled) return;
+        console.warn(
+          '[sell] workspace inventory snapshot error',
+          (error as any)?.code,
+          (error as any)?.message,
+          error
+        );
+        preferLegacyRosterSnapshotRef.current = true;
+      }
+    );
+
+    const unsubscribeLegacy = onSnapshot(
+      legacySnapshotRef,
+      snap => {
+        if (cancelled || !preferLegacyRosterSnapshotRef.current) return;
+        if (!snap.exists()) {
+          setRosterProducts([]);
+          return;
+        }
+        applySnapshot(snap.data() as { items?: unknown } | undefined);
+      },
+      error => {
+        if (cancelled) return;
+        console.warn(
+          '[sell] legacy inventory snapshot error',
+          (error as any)?.code,
+          (error as any)?.message,
+          error
+        );
       }
     );
 
     return () => {
       cancelled = true;
-      unsubscribe();
+      unsubscribeWorkspace();
+      unsubscribeLegacy();
     };
-  }, [activeStoreId]);
+  }, [activeStoreId, activeWorkspaceId]);
 
   // CUSTOMERS listener (subcollection)
   useEffect(() => {
