@@ -17,8 +17,6 @@ const getDocsMock = vi.fn()
 const queryMock = vi.fn()
 const whereMock = vi.fn()
 
-const mockRosterDb = { name: 'roster-db' }
-
 vi.mock('./lib/db', () => ({
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
   getDoc: (...args: Parameters<typeof getDocMock>) => getDocMock(...args),
@@ -26,7 +24,7 @@ vi.mock('./lib/db', () => ({
   getDocs: (...args: Parameters<typeof getDocsMock>) => getDocsMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
-  rosterDb: mockRosterDb,
+  db: {},
 }))
 
 const persistActiveStoreMock = vi.fn()

@@ -23,7 +23,6 @@ const mockGetDoc = vi.fn()
 
 vi.mock('../lib/db', () => ({
   db: { __name: 'defaultDb' },
-  rosterDb: { __name: 'rosterDb' },
   doc: (...args: Parameters<typeof mockDoc>) => mockDoc(...args),
   getDoc: (...args: Parameters<typeof mockGetDoc>) => mockGetDoc(...args),
   Timestamp: class {

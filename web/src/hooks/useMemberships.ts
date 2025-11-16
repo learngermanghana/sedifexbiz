@@ -3,9 +3,9 @@ import { useEffect, useState } from 'react'
 import {
   Timestamp,
   collection,
+  db,
   getDocs,
   query,
-  rosterDb,
   where,
   type DocumentData,
   type Firestore,
@@ -116,7 +116,7 @@ async function loadMembershipsFromDb(firestore: Firestore, uid: string): Promise
 }
 
 async function loadMembershipsForUser(uid: string): Promise<Membership[]> {
-  return loadMembershipsFromDb(rosterDb, uid)
+  return loadMembershipsFromDb(db, uid)
 }
 
 /**

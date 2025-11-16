@@ -70,11 +70,11 @@ const whereMock = vi.fn((field: string, op: string, value: unknown) => ({ field,
 
 vi.mock('../../lib/db', () => ({
   Timestamp: class {},
+  db: { name: 'primary-db' },
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   getDocs: (...args: Parameters<typeof getDocsMock>) => getDocsMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
-  rosterDb: { name: 'roster-db' },
 }))
 
 const mockGetActiveStoreId = vi.fn()

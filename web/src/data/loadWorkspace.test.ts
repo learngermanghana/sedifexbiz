@@ -12,7 +12,6 @@ const whereMock = vi.fn()
 const limitMock = vi.fn()
 
 const mockDb = { name: 'primary-db' }
-const mockRosterDb = { name: 'roster-db' }
 
 vi.mock('../lib/db', () => ({
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
@@ -23,7 +22,6 @@ vi.mock('../lib/db', () => ({
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   limit: (...args: Parameters<typeof limitMock>) => limitMock(...args),
   db: mockDb,
-  rosterDb: mockRosterDb,
 }))
 
 beforeEach(() => {
@@ -163,7 +161,7 @@ describe('getActiveStoreId', () => {
 
     const storeId = await getActiveStoreId('user-1')
 
-    expect(docMock).toHaveBeenCalledWith(mockRosterDb, 'teamMembers', 'user-1')
+    expect(docMock).toHaveBeenCalledWith(mockDb, 'teamMembers', 'user-1')
     expect(storeId).toBe('store-789')
   })
 

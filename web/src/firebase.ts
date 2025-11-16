@@ -130,4 +130,3 @@ const buildFirestoreOptions = () => ({
 
 export const db = initializeFirestore(app, buildFirestoreOptions())
 
-export const rosterDb = db

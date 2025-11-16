@@ -26,7 +26,6 @@ vi.mock('./controllers/accessController', () => ({
 
 vi.mock('./lib/db', () => ({
   db: {},
-  rosterDb: {},
   doc: vi.fn(),
   setDoc: vi.fn(),
   updateDoc: vi.fn(),
