@@ -97,7 +97,6 @@ const docMock = vi.fn((...args: unknown[]) => {
 
 vi.mock('../../lib/db', () => ({
   db: {},
-  rosterDb: { name: 'roster-db' },
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   orderBy: (...args: Parameters<typeof orderByMock>) => orderByMock(...args),

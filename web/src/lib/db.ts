@@ -1,2 +1,2 @@
-export { db, rosterDb } from '../firebase'
+export { db } from '../firebase'
 export * from 'firebase/firestore'

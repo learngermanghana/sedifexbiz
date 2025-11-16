@@ -71,7 +71,6 @@ vi.mock('firebase/auth', () => ({
 
 vi.mock('./lib/db', () => ({
   db: {},
-  rosterDb: {},
   doc: vi.fn(() => ({})),
   setDoc: vi.fn(async () => {}),
   updateDoc: vi.fn(async () => {}),

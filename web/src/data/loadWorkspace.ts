@@ -6,7 +6,6 @@ import {
   getDocs,
   limit,
   query,
-  rosterDb,
   serverTimestamp,
   setDoc,
   where,
@@ -49,7 +48,7 @@ export async function getActiveStoreId(uid: string | null | undefined): Promise<
   const normalizedUid = normalizeString(uid)
   if (!normalizedUid) return null
 
-  const memberRef = doc(rosterDb, 'teamMembers', normalizedUid)
+  const memberRef = doc(db, 'teamMembers', normalizedUid)
   try {
     const snapshot = await getDoc(memberRef)
     if (!snapshot.exists()) return null
@@ -74,7 +73,7 @@ export async function setActiveStoreIdForUser(
 
   if (!normalizedUid || !normalizedStoreId) return
 
-  const memberRef = doc(rosterDb, 'teamMembers', normalizedUid)
+  const memberRef = doc(db, 'teamMembers', normalizedUid)
   try {
     await setDoc(
       memberRef,

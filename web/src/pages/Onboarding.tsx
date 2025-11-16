@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { doc, getDoc, Timestamp, db, rosterDb } from '../lib/db'
+import { doc, getDoc, Timestamp, db } from '../lib/db'
 import { useNavigate } from 'react-router-dom'
 import { useAuthUser } from '../hooks/useAuthUser'
 
@@ -120,7 +120,7 @@ export default function Onboarding() {
     const fetchDetails = async () => {
       try {
         const [memberSnapshot, storeSnapshot] = await Promise.all([
-          getDoc(doc(rosterDb, 'teamMembers', user.uid)),
+          getDoc(doc(db, 'teamMembers', user.uid)),
           getDoc(doc(db, 'stores', user.uid)),
         ])
 

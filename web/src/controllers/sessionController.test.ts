@@ -10,7 +10,6 @@ vi.mock('../lib/db', () => {
 
   return {
     db: {},
-    rosterDb: {},
     doc,
     setDoc,
     updateDoc: vi.fn(),

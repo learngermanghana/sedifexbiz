@@ -5,13 +5,13 @@ import { GoogleAuthProvider, fetchSignInMethodsForEmail, linkWithPopup } from 'f
 import {
   Timestamp,
   collection,
+  db,
   getDocs,
   query,
-  rosterDb,
   where,
   type DocumentData,
   type QueryDocumentSnapshot,
-} from '../lib/db'; // roster DB handle (default DB is used inside the loader)
+} from '../lib/db';
 import { useActiveStore } from '../hooks/useActiveStore';
 import { useMemberships, type Membership } from '../hooks/useMemberships';
 import { manageStaffAccount } from '../controllers/storeController';
@@ -514,7 +514,7 @@ export default function AccountOverview() {
     setRosterLoading(true);
     setRosterError(null);
 
-    const membersRef = collection(rosterDb, 'teamMembers');
+    const membersRef = collection(db, 'teamMembers');
     const rosterQuery = query(membersRef, where('storeId', '==', resolvedStoreId));
 
     getDocs(rosterQuery)

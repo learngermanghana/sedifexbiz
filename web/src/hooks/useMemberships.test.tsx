@@ -16,7 +16,6 @@ const getDocsMock = vi.fn()
 vi.mock('../lib/db', () => ({
   Timestamp: class MockTimestamp {},
   db: { name: 'primary-db' },
-  rosterDb: { name: 'roster-db' },
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
