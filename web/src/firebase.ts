@@ -1,6 +1,11 @@
 // web/src/firebase.ts
 import { initializeApp, getApps, getApp } from 'firebase/app'
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check'
+import {
+  initializeAppCheck,
+  ReCaptchaEnterpriseProvider,
+  getToken,
+  type AppCheck,
+} from 'firebase/app-check'
 import { getAuth } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import {
@@ -35,11 +40,13 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
 const envMode = typeof runtimeEnv.MODE === 'string' ? runtimeEnv.MODE : undefined
 const isTest = envMode === 'test'
 
+let appCheckInstance: AppCheck | null = null
+
 if (isBrowser && !isTest) {
   if (firebaseEnv.appCheckDebugToken) {
     ;(globalThis as any).FIREBASE_APPCHECK_DEBUG_TOKEN = firebaseEnv.appCheckDebugToken
   }
-  initializeAppCheck(app, {
+  appCheckInstance = initializeAppCheck(app, {
     provider: new ReCaptchaEnterpriseProvider(firebaseEnv.appCheckSiteKey),
     isTokenAutoRefreshEnabled: true,
   })
@@ -48,6 +55,20 @@ if (isBrowser && !isTest) {
 export const auth = getAuth(app)
 
 export const functions = getFunctions(app, firebaseEnv.functionsRegion || 'us-central1')
+
+export async function getAppCheckToken(forceRefresh = false): Promise<string | null> {
+  if (!appCheckInstance) {
+    return null
+  }
+
+  try {
+    const result = await getToken(appCheckInstance, forceRefresh)
+    return typeof result?.token === 'string' ? result.token : null
+  } catch (error) {
+    console.warn('[firebase] Unable to fetch App Check token', error)
+    return null
+  }
+}
 
 type RawEnsureCanonicalWorkspaceResponse = {
   ok?: unknown

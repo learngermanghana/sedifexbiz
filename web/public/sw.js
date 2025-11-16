@@ -141,6 +141,7 @@ async function handleQueueRequest(payload) {
     endpoint: payload.endpoint,
     payload: payload.payload,
     authToken: payload.authToken || null,
+    appCheckToken: payload.appCheckToken || null,
     createdAt: payload.createdAt || Date.now(),
     retries: 0,
     updatedAt: Date.now(),
@@ -349,6 +350,9 @@ async function sendQueueEntry(entry) {
   const headers = { 'Content-Type': 'application/json' }
   if (entry.authToken) {
     headers['Authorization'] = `Bearer ${entry.authToken}`
+  }
+  if (entry.appCheckToken) {
+    headers['X-Firebase-AppCheck'] = entry.appCheckToken
   }
 
   const response = await fetch(entry.endpoint, {
