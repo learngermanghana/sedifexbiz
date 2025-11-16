@@ -128,31 +128,6 @@ const buildFirestoreOptions = () => ({
     : memoryLocalCache(),
 })
 
-const rosterDatabaseIdRaw =
-  typeof runtimeEnv.VITE_FIRESTORE_ROSTER_DATABASE_ID === 'string'
-    ? runtimeEnv.VITE_FIRESTORE_ROSTER_DATABASE_ID
-    : undefined
-
-const rosterDatabaseId = (rosterDatabaseIdRaw ?? 'roster').trim()
-const useDefaultRosterDb =
-  rosterDatabaseId.length === 0 ||
-  rosterDatabaseId === 'default' ||
-  rosterDatabaseId === '(default)'
-
 export const db = initializeFirestore(app, buildFirestoreOptions())
 
-export const rosterDb = useDefaultRosterDb
-  ? db
-  : (() => {
-      try {
-        return initializeFirestore(app, buildFirestoreOptions(), rosterDatabaseId)
-      } catch (error) {
-        if (!isTest) {
-          console.warn(
-            `[firebase] Falling back to default Firestore for roster (failed to init "${rosterDatabaseId}")`,
-            error,
-          )
-        }
-        return db
-      }
-    })()
+export const rosterDb = db
