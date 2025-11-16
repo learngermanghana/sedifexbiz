@@ -268,7 +268,9 @@ export default function AccountOverview() {
   // SOURCE OF TRUTH for workspace choice
   const selectedSlug = useSelectedWorkspaceSlug();
 
-  const [resolvedStoreId, setResolvedStoreId] = useState<string | null>(storeId ?? null);
+  const [resolvedStoreId, setResolvedStoreId] = useState<string | null>(
+    () => storeId ?? selectedSlug ?? null,
+  );
   const { token: autoRefreshToken, trigger: requestAutoRefresh } = useAutoRerun(Boolean(resolvedStoreId));
 
   const [profile, setProfile] = useState<WorkspaceAccountProfile | null>(null);
@@ -416,6 +418,14 @@ export default function AccountOverview() {
     const t = setTimeout(() => setCopyStatus('idle'), 4000);
     return () => clearTimeout(t);
   }, [copyStatus]);
+
+  useEffect(() => {
+    if (storeId || !selectedSlug) {
+      return;
+    }
+
+    setResolvedStoreId(prev => (prev ? prev : selectedSlug));
+  }, [selectedSlug, storeId]);
 
   // Resolve storeId from roster if hook didn’t provide one
   useEffect(() => {

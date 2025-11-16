@@ -57,7 +57,8 @@ export default function CloseDay() {
   useEffect(() => {
     const start = new Date()
     start.setHours(0, 0, 0, 0)
-    if (!activeStoreId || !activeWorkspaceId) {
+    const workspaceDocId = activeWorkspaceId ?? activeStoreId ?? null
+    if (!workspaceDocId) {
       setTotal(0)
       return () => {
         /* noop */
@@ -65,7 +66,7 @@ export default function CloseDay() {
     }
 
     const q = query(
-      collection(db, 'workspaces', activeWorkspaceId, 'sales'),
+      collection(db, 'workspaces', workspaceDocId, 'sales'),
       where('createdAt', '>=', Timestamp.fromDate(start)),
       orderBy('createdAt', 'desc')
     )
@@ -140,9 +141,11 @@ export default function CloseDay() {
     setIsSubmitting(true)
 
     try {
-      if (!activeStoreId || !activeWorkspaceId) {
+      const workspaceDocId = activeWorkspaceId ?? activeStoreId ?? null
+      if (!workspaceDocId) {
         throw new Error('Select a workspace before recording a close-out.')
       }
+      const storeContextId = activeStoreId ?? activeWorkspaceId ?? workspaceDocId
       const start = new Date(); start.setHours(0, 0, 0, 0)
       const closePayload = {
         businessDay: Timestamp.fromDate(start),
@@ -171,11 +174,11 @@ export default function CloseDay() {
             }
           : null,
         closedAt: serverTimestamp(),
-        storeId: activeStoreId,
-        workspaceId: activeWorkspaceId,
+        storeId: storeContextId,
+        workspaceId: workspaceDocId,
       }
 
-      await addDoc(collection(db, 'workspaces', activeWorkspaceId, 'closeDays'), closePayload)
+      await addDoc(collection(db, 'workspaces', workspaceDocId, 'closeDays'), closePayload)
       setSubmitSuccess(true)
       setCashCounts(createInitialCashCountState())
       setLooseCash('')
