@@ -8,7 +8,6 @@ import {
   limit,
   onSnapshot,
   orderBy,
-  rosterDb,
   query,
   serverTimestamp,
   setDoc,
@@ -196,8 +195,19 @@ export default function Products() {
   const [isDeleting, setIsDeleting] = useState(false)
 
   const persistRosterSnapshot = useCallback(
-    async (storeId: string, snapshotProducts: ProductRecord[]) => {
-      if (!storeId) return
+    async (
+      workspaceId: string | null | undefined,
+      snapshotProducts: ProductRecord[],
+      fallbackStoreId?: string | null | undefined,
+    ) => {
+      const normalizedWorkspaceId = typeof workspaceId === 'string' ? workspaceId.trim() : ''
+      const normalizedFallbackStoreId =
+        typeof fallbackStoreId === 'string' ? fallbackStoreId.trim() : ''
+      const legacySnapshotId = normalizedFallbackStoreId || normalizedWorkspaceId
+
+      if (!normalizedWorkspaceId && !legacySnapshotId) {
+        return
+      }
 
       const rosterItems = snapshotProducts.map(product => ({
         id: product.id,
@@ -230,20 +240,35 @@ export default function Products() {
 
       rosterSyncSignatureRef.current = signature
 
-      try {
-        await setDoc(
-          doc(rosterDb, 'inventorySnapshots', storeId),
-          {
-            storeId,
-            workspaceId: storeId,
-            totalSkus: rosterItems.length,
-            pendingSkus: rosterItems.filter(item => item.status === 'pending').length,
-            items: rosterItems,
-            syncedAt: serverTimestamp(),
-            capturedAt: new Date().toISOString(),
-          },
-          { merge: true },
+      const payload = {
+        storeId: normalizedFallbackStoreId || normalizedWorkspaceId || null,
+        workspaceId: normalizedWorkspaceId || normalizedFallbackStoreId || null,
+        totalSkus: rosterItems.length,
+        pendingSkus: rosterItems.filter(item => item.status === 'pending').length,
+        items: rosterItems,
+        syncedAt: serverTimestamp(),
+        capturedAt: new Date().toISOString(),
+      }
+
+      const writes: Promise<void>[] = []
+
+      if (normalizedWorkspaceId) {
+        const workspaceSnapshotRef = doc(
+          db,
+          'workspaces',
+          normalizedWorkspaceId,
+          'inventorySnapshots',
+          'latest',
         )
+        writes.push(setDoc(workspaceSnapshotRef, payload, { merge: true }))
+      }
+
+      if (legacySnapshotId) {
+        writes.push(setDoc(doc(db, 'inventorySnapshots', legacySnapshotId), payload, { merge: true }))
+      }
+
+      try {
+        await Promise.all(writes)
       } catch (error) {
         rosterSyncSignatureRef.current = null
         console.warn('[products] Failed to persist roster inventory snapshot', error)
@@ -355,7 +380,7 @@ export default function Products() {
         saveCachedProducts(sanitizedRows, { storeId: activeStoreId }).catch(error => {
           console.warn('[products] Failed to cache products', error)
         })
-        void persistRosterSnapshot(activeStoreId, sanitizedRows)
+        void persistRosterSnapshot(activeWorkspaceId, sanitizedRows, activeStoreId)
         setProducts(prev => {
           const optimistic = prev.filter(
             product => product.__optimistic && product.storeId === activeStoreId,
@@ -505,7 +530,7 @@ export default function Products() {
     setIsCreating(true)
     setCreateStatus(null)
     setProducts(prev => sortProducts([optimisticProduct, ...prev]))
-    void persistRosterSnapshot(activeStoreId, [optimisticProduct])
+    void persistRosterSnapshot(activeWorkspaceId, [optimisticProduct], activeStoreId)
 
     try {
 
@@ -660,7 +685,7 @@ export default function Products() {
         ),
       )
       const updatedProduct = { ...previous, ...updatedValues, __optimistic: false } as ProductRecord
-      void persistRosterSnapshot(activeStoreId, [updatedProduct])
+      void persistRosterSnapshot(activeWorkspaceId, [updatedProduct], activeStoreId)
       setEditingProductId(null)
     } catch (error) {
       console.error('[products] Failed to update product', error)
@@ -738,7 +763,7 @@ export default function Products() {
       )
       setProducts(prev => {
         const next = prev.filter(item => item.id !== editingProductId)
-        void persistRosterSnapshot(activeStoreId, next)
+        void persistRosterSnapshot(activeWorkspaceId, next, activeStoreId)
         return next
       })
       setEditStatus({ tone: 'success', message: 'Product deleted.' })
@@ -951,9 +976,9 @@ export default function Products() {
   }, [activeStoreId, activeWorkspaceId, optimisticSignature, persistRosterSnapshot, products])
 
   useEffect(() => {
-    if (!activeStoreId) return
-    void persistRosterSnapshot(activeStoreId, products)
-  }, [activeStoreId, products, persistRosterSnapshot])
+    if (!activeStoreId && !activeWorkspaceId) return
+    void persistRosterSnapshot(activeWorkspaceId, products, activeStoreId)
+  }, [activeStoreId, activeWorkspaceId, products, persistRosterSnapshot])
 
   function renderStatus(status: StatusState | null) {
     if (!status) return null
