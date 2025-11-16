@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getIdTokenMock = vi.fn(async () => 'test-token')
+const getAppCheckTokenMock = vi.fn(async () => 'app-check-token')
 
 vi.mock('../../config/firebaseEnv', () => ({
   firebaseEnv: {
@@ -20,6 +21,7 @@ vi.mock('../../firebase', () => ({
       getIdToken: getIdTokenMock,
     },
   },
+  getAppCheckToken: getAppCheckTokenMock,
 }))
 
 describe('offlineQueue', () => {
@@ -36,6 +38,7 @@ describe('offlineQueue', () => {
   beforeEach(async () => {
     vi.resetModules()
     getIdTokenMock.mockClear()
+    getAppCheckTokenMock.mockClear()
     postMessageMock = vi.fn()
     messageListeners = new Set()
     addEventListenerMock = vi.fn((event: string, listener: EventListener) => {
@@ -94,7 +97,9 @@ describe('offlineQueue', () => {
     const firstMessage = postMessageMock.mock.calls[0]?.[0]
     expect(firstMessage?.payload?.requestType).toBe('sale')
     expect(firstMessage?.payload?.authToken).toBe('test-token')
+    expect(firstMessage?.payload?.appCheckToken).toBe('app-check-token')
     expect(getIdTokenMock).toHaveBeenCalledTimes(1)
+    expect(getAppCheckTokenMock).toHaveBeenCalledTimes(1)
     expect(firstMessage?.payload?.endpoint).toBe(
       'https://us-central1-demo-project.cloudfunctions.net/processSale'
     )

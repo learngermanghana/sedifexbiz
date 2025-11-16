@@ -1,4 +1,4 @@
-import { auth } from '../firebase'
+import { auth, getAppCheckToken } from '../firebase'
 import { firebaseEnv } from '../config/firebaseEnv'
 
 const FUNCTIONS_REGION = firebaseEnv.functionsRegion
@@ -63,6 +63,7 @@ type QueueMessage = {
     endpoint: string
     payload: unknown
     authToken: string | null
+    appCheckToken: string | null
     createdAt: number
   }
 }
@@ -318,9 +319,16 @@ export async function queueCallableRequest(
 
     let authToken: string | null = null
     try {
-      authToken = await auth.currentUser?.getIdToken() ?? null
+      authToken = (await auth.currentUser?.getIdToken()) ?? null
     } catch (error) {
       console.warn('[offline-queue] Unable to read auth token for queued request', error)
+    }
+
+    let appCheckToken: string | null = null
+    try {
+      appCheckToken = (await getAppCheckToken()) ?? null
+    } catch (error) {
+      console.warn('[offline-queue] Unable to read App Check token for queued request', error)
     }
 
     const message: QueueMessage = {
@@ -330,6 +338,7 @@ export async function queueCallableRequest(
         endpoint: getCallableEndpoint(functionName),
         payload,
         authToken,
+        appCheckToken,
         createdAt: Date.now(),
       },
     }
