@@ -455,22 +455,29 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   const [selectedRangeId, setSelectedRangeId] = useState<PresetRangeId>('today')
   const [customRange, setCustomRange] = useState<CustomRange>({ start: '', end: '' })
 
+  const goalOwnerId = useMemo(
+    () => activeStoreId ?? activeWorkspaceId ?? null,
+    [activeStoreId, activeWorkspaceId],
+  )
+
   const goalDocumentId = useMemo(
-    () => activeStoreId ?? `user-${authUser?.uid ?? 'default'}`,
-    [activeStoreId, authUser?.uid],
+    () => goalOwnerId ?? `user-${authUser?.uid ?? 'default'}`,
+    [goalOwnerId, authUser?.uid],
   )
 
   useEffect(() => {
     let cancelled = false
+    const resolvedWorkspaceId = activeWorkspaceId ?? activeStoreId ?? null
+    const cacheStoreKey = activeStoreId ?? activeWorkspaceId ?? null
 
-    if (!activeStoreId || !activeWorkspaceId) {
+    if (!resolvedWorkspaceId) {
       setSales([])
       return () => {
         cancelled = true
       }
     }
 
-    loadCachedSales<SaleRecord>({ storeId: activeStoreId })
+    loadCachedSales<SaleRecord>({ storeId: cacheStoreKey ?? undefined })
       .then(cached => {
         if (!cancelled && cached.length) {
           setSales(cached)
@@ -481,7 +488,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       })
 
     const q = query(
-      collection(db, 'workspaces', activeWorkspaceId, 'sales'),
+      collection(db, 'workspaces', resolvedWorkspaceId, 'sales'),
       orderBy('createdAt', 'desc'),
       limit(SALES_CACHE_LIMIT),
     )
@@ -492,7 +499,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
         ...(docSnap.data() as Omit<SaleRecord, 'id'>),
       }))
       setSales(rows)
-      saveCachedSales(rows, { storeId: activeStoreId }).catch(error => {
+      saveCachedSales(rows, { storeId: cacheStoreKey ?? undefined }).catch(error => {
         console.warn('[metrics] Failed to cache sales', error)
       })
     })
@@ -505,15 +512,17 @@ export function useStoreMetrics(): UseStoreMetricsResult {
 
   useEffect(() => {
     let cancelled = false
+    const resolvedWorkspaceId = activeWorkspaceId ?? activeStoreId ?? null
+    const cacheStoreKey = activeStoreId ?? activeWorkspaceId ?? null
 
-    if (!activeStoreId || !activeWorkspaceId) {
+    if (!resolvedWorkspaceId) {
       setProducts([])
       return () => {
         cancelled = true
       }
     }
 
-    loadCachedProducts<ProductRecord>({ storeId: activeStoreId })
+    loadCachedProducts<ProductRecord>({ storeId: cacheStoreKey ?? undefined })
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(cached)
@@ -524,7 +533,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       })
 
     const q = query(
-      collection(db, 'workspaces', activeWorkspaceId, 'products'),
+      collection(db, 'workspaces', resolvedWorkspaceId, 'products'),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -536,7 +545,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
         ...(docSnap.data() as Omit<ProductRecord, 'id'>),
       }))
       setProducts(rows)
-      saveCachedProducts(rows, { storeId: activeStoreId }).catch(error => {
+      saveCachedProducts(rows, { storeId: cacheStoreKey ?? undefined }).catch(error => {
         console.warn('[metrics] Failed to cache products', error)
       })
     })
@@ -549,15 +558,17 @@ export function useStoreMetrics(): UseStoreMetricsResult {
 
   useEffect(() => {
     let cancelled = false
+    const resolvedWorkspaceId = activeWorkspaceId ?? activeStoreId ?? null
+    const cacheStoreKey = activeStoreId ?? activeWorkspaceId ?? null
 
-    if (!activeStoreId || !activeWorkspaceId) {
+    if (!resolvedWorkspaceId) {
       setCustomers([])
       return () => {
         cancelled = true
       }
     }
 
-    loadCachedCustomers<CustomerRecord>({ storeId: activeStoreId })
+    loadCachedCustomers<CustomerRecord>({ storeId: cacheStoreKey ?? undefined })
       .then(cached => {
         if (!cancelled && cached.length) {
           setCustomers(cached)
@@ -568,7 +579,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       })
 
     const q = query(
-      collection(db, 'workspaces', activeWorkspaceId, 'customers'),
+      collection(db, 'workspaces', resolvedWorkspaceId, 'customers'),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(CUSTOMER_CACHE_LIMIT),
@@ -580,7 +591,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
         ...(docSnap.data() as Omit<CustomerRecord, 'id'>),
       }))
       setCustomers(rows)
-      saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
+      saveCachedCustomers(rows, { storeId: cacheStoreKey ?? undefined }).catch(error => {
         console.warn('[metrics] Failed to cache customers', error)
       })
     })
@@ -592,13 +603,14 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
-    if (!activeStoreId || !activeWorkspaceId) {
+    const resolvedWorkspaceId = activeWorkspaceId ?? activeStoreId ?? null
+    if (!resolvedWorkspaceId) {
       setReceipts([])
       return () => {}
     }
 
     const q = query(
-      collection(db, 'workspaces', activeWorkspaceId, 'receipts'),
+      collection(db, 'workspaces', resolvedWorkspaceId, 'receipts'),
       orderBy('createdAt', 'desc'),
       limit(RECEIPT_CACHE_LIMIT),
     )
@@ -613,14 +625,16 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   }, [activeStoreId, activeWorkspaceId])
 
   useEffect(() => {
-    if (!activeStoreId || !activeWorkspaceId) {
+    const resolvedWorkspaceId = activeWorkspaceId ?? activeStoreId ?? null
+    const storeFilterId = activeStoreId ?? activeWorkspaceId ?? null
+    if (!resolvedWorkspaceId || !storeFilterId) {
       setLedgerEntries([])
       return () => {}
     }
 
     const q = query(
-      collection(db, 'workspaces', activeWorkspaceId, 'ledger'),
-      where('storeId', '==', activeStoreId),
+      collection(db, 'workspaces', resolvedWorkspaceId, 'ledger'),
+      where('storeId', '==', storeFilterId),
       orderBy('createdAt', 'desc'),
       limit(LEDGER_CACHE_LIMIT),
     )
@@ -1273,8 +1287,8 @@ export function useStoreMetrics(): UseStoreMetricsResult {
 
   async function handleGoalSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (!activeStoreId) {
-      publish({ tone: 'error', message: 'Select a store to save goals.' })
+    if (!goalOwnerId) {
+      publish({ tone: 'error', message: 'Select a workspace before saving goals.' })
       return
     }
 

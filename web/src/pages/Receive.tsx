@@ -70,14 +70,17 @@ export default function Receive() {
   useEffect(() => {
     let cancelled = false
 
-    if (!activeStoreId || !activeWorkspaceId) {
+    const workspaceDocId = activeWorkspaceId ?? activeStoreId ?? null
+    const cacheStoreKey = activeStoreId ?? activeWorkspaceId ?? null
+
+    if (!workspaceDocId) {
       setProducts([])
       return () => {
         cancelled = true
       }
     }
 
-    loadCachedProducts<Product>({ storeId: activeStoreId })
+    loadCachedProducts<Product>({ storeId: cacheStoreKey ?? undefined })
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(
@@ -89,7 +92,7 @@ export default function Receive() {
         console.warn('[receive] Failed to load cached products', error)
       })
 
-    const productsCollection = collection(db, 'workspaces', activeWorkspaceId, 'products')
+    const productsCollection = collection(db, 'workspaces', workspaceDocId, 'products')
     const q = query(
       productsCollection,
       orderBy('updatedAt', 'desc'),
@@ -99,7 +102,7 @@ export default function Receive() {
 
     const unsubscribe = onSnapshot(q, snap => {
       const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
-      saveCachedProducts(rows, { storeId: activeStoreId }).catch(error => {
+      saveCachedProducts(rows, { storeId: cacheStoreKey ?? undefined }).catch(error => {
         console.warn('[receive] Failed to cache products', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
@@ -116,7 +119,10 @@ export default function Receive() {
 
   async function receive() {
     if (!selected || qty === '') return
-    if (!activeStoreId || !activeWorkspaceId) {
+    const workspaceDocId = activeWorkspaceId ?? activeStoreId ?? null
+    const cacheStoreKey = activeStoreId ?? activeWorkspaceId ?? null
+
+    if (!workspaceDocId) {
       showStatus('error', 'Select a workspace before receiving stock.')
       return
     }
@@ -149,8 +155,8 @@ export default function Receive() {
       supplier: supplierName,
       reference: referenceNumber,
       unitCost: parsedCost,
-      workspaceId: activeWorkspaceId,
-      storeId: activeStoreId,
+      workspaceId: workspaceDocId,
+      storeId: cacheStoreKey,
     }
 
     try {
