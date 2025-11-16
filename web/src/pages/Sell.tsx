@@ -325,6 +325,7 @@ export default function Sell() {
   const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null);
   const canUseWebShare = typeof navigator !== 'undefined' && typeof (navigator as any).share === 'function';
   const preferLegacyRosterSnapshotRef = useRef(true);
+  const legacyRosterSnapshotDataRef = useRef<{ items?: unknown } | undefined>(undefined);
 
   const availableProducts = useMemo(
     () => (workspaceProducts.length ? workspaceProducts : rosterProducts),
@@ -411,6 +412,12 @@ export default function Sell() {
         if (cancelled) return;
         if (!snap.exists()) {
           preferLegacyRosterSnapshotRef.current = true;
+          const legacySnapshot = legacyRosterSnapshotDataRef.current;
+          if (legacySnapshot) {
+            applySnapshot(legacySnapshot);
+          } else {
+            setRosterProducts([]);
+          }
           return;
         }
         preferLegacyRosterSnapshotRef.current = false;
@@ -431,12 +438,20 @@ export default function Sell() {
     const unsubscribeLegacy = onSnapshot(
       legacySnapshotRef,
       snap => {
-        if (cancelled || !preferLegacyRosterSnapshotRef.current) return;
+        if (cancelled) return;
         if (!snap.exists()) {
-          setRosterProducts([]);
+          legacyRosterSnapshotDataRef.current = undefined;
+          if (preferLegacyRosterSnapshotRef.current) {
+            setRosterProducts([]);
+          }
           return;
         }
-        applySnapshot(snap.data() as { items?: unknown } | undefined);
+        const data = snap.data() as { items?: unknown } | undefined;
+        legacyRosterSnapshotDataRef.current = data;
+        if (!preferLegacyRosterSnapshotRef.current) {
+          return;
+        }
+        applySnapshot(data);
       },
       error => {
         if (cancelled) return;

@@ -880,7 +880,7 @@ export default function Products() {
                 }
               }
               if (syncedProduct) {
-                void persistRosterSnapshot(operation.storeId, [syncedProduct])
+                void persistRosterSnapshot(activeWorkspaceId, [syncedProduct], operation.storeId)
               }
             } catch (error) {
               if (isOfflineError(error)) {
@@ -929,7 +929,7 @@ export default function Products() {
                 return sortProducts(mapped)
               })
               if (syncedProduct) {
-                void persistRosterSnapshot(operation.storeId, [syncedProduct])
+                void persistRosterSnapshot(activeWorkspaceId, [syncedProduct], operation.storeId)
               }
             } catch (error) {
               if (isOfflineError(error)) {
