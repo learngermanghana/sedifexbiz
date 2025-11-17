@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { collection, query, orderBy, limit, onSnapshot, doc, db } from '../lib/db';
-import { where } from 'firebase/firestore'; // keep where only if you need it elsewhere
+import { collection, query, orderBy, limit, onSnapshot, doc, db, where } from '../lib/db';
 import { FirebaseError } from 'firebase/app';
 import { httpsCallable } from 'firebase/functions';
 
@@ -339,15 +338,16 @@ export default function Sell() {
   const changeDue = Math.max(0, amountPaid - subtotal);
   const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0;
 
-  // PRODUCTS listener (subcollection)
+  // PRODUCTS listener (root collection filtered by store)
   useEffect(() => {
     let cancelled = false;
-    if (!activeStoreId || !activeWorkspaceId) {
+    const storeSelector = activeStoreId ?? activeWorkspaceId;
+    if (!storeSelector) {
       setWorkspaceProducts([]);
       return () => { cancelled = true; };
     }
 
-    loadCachedProducts<Product>({ storeId: activeStoreId })
+    loadCachedProducts<Product>({ storeId: storeSelector })
       .then(cached => {
         if (!cancelled && cached.length) {
           const sanitized = cached.map(item => ({ ...(item as Product), price: sanitizePrice((item as Product).price) }));
@@ -357,7 +357,8 @@ export default function Sell() {
       .catch(err => console.warn('[sell] Failed to load cached products', err));
 
     const q = query(
-      collection(db, 'workspaces', activeWorkspaceId, 'products'),
+      collection(db, 'products'),
+      where('storeId', '==', storeSelector),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -367,7 +368,7 @@ export default function Sell() {
       snap => {
         const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
         const sanitized = rows.map(r => ({ ...(r as Product), price: sanitizePrice((r as Product).price) }));
-        saveCachedProducts(sanitized, { storeId: activeStoreId }).catch(e => console.warn('[sell] cache products err', e));
+        saveCachedProducts(sanitized, { storeId: storeSelector }).catch(e => console.warn('[sell] cache products err', e));
         setWorkspaceProducts(sortProductsByName(sanitized));
       },
       err => {
