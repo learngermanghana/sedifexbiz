@@ -1,5 +1,4 @@
 import * as admin from 'firebase-admin';
-import { Firestore } from '@google-cloud/firestore';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // One-time Admin init
@@ -37,31 +36,8 @@ if (typeof defaultDb.settings === 'function') {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Secondary DB: named "roster"
-// For named databases we must use the @google-cloud/firestore client.
-const rosterOptions: ConstructorParameters<typeof Firestore>[0] = {
-  databaseId: 'roster',
-
-  // prefer the REST transport in Cloud Functions Gen2 (often more reliable)
-  // Safe to leave enabled elsewhere as well.
-  preferRest: true,
-};
-
-if (projectId) {
-  rosterOptions.projectId = projectId;
-}
-
-// When running against the emulator, @google-cloud/firestore honors the env var,
-// but we can be explicit to avoid surprises in some environments.
-if (isEmulator && emulatorHost) {
-  const [host, portStr] = emulatorHost.split(':');
-  const port = Number(portStr) || 8080;
-
-  rosterOptions.host = host;
-  rosterOptions.port = port;
-  rosterOptions.ssl = false;
-}
-
-const rosterDb = (projectId || isEmulator ? new Firestore(rosterOptions) : defaultDb) as FirebaseFirestore.Firestore;
+// If you don't want a separate database, just use the default DB everywhere.
+const rosterDb = defaultDb;
 
 // ─────────────────────────────────────────────────────────────────────────────
 export { admin, defaultDb, rosterDb };
