@@ -128,5 +128,11 @@ const buildFirestoreOptions = () => ({
     : memoryLocalCache(),
 })
 
-export const db = initializeFirestore(app, buildFirestoreOptions())
+// Always pin the client to the default Firestore database. Some environments
+// expose a secondary "roster" database, but inventory and transactional data
+// must live in the default database so that backend Functions can read them
+// without 500 errors.
+const DEFAULT_DATABASE_ID = '(default)'
+
+export const db = initializeFirestore(app, buildFirestoreOptions(), DEFAULT_DATABASE_ID)
 
