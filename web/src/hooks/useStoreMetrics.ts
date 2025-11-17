@@ -512,17 +512,15 @@ export function useStoreMetrics(): UseStoreMetricsResult {
 
   useEffect(() => {
     let cancelled = false
-    const resolvedWorkspaceId = activeWorkspaceId ?? activeStoreId ?? null
-    const cacheStoreKey = activeStoreId ?? activeWorkspaceId ?? null
-
-    if (!resolvedWorkspaceId) {
+    const storeSelector = activeStoreId ?? activeWorkspaceId ?? null
+    if (!storeSelector) {
       setProducts([])
       return () => {
         cancelled = true
       }
     }
 
-    loadCachedProducts<ProductRecord>({ storeId: cacheStoreKey ?? undefined })
+    loadCachedProducts<ProductRecord>({ storeId: storeSelector ?? undefined })
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(cached)
@@ -533,7 +531,8 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       })
 
     const q = query(
-      collection(db, 'workspaces', resolvedWorkspaceId, 'products'),
+      collection(db, 'products'),
+      where('storeId', '==', storeSelector),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -545,7 +544,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
         ...(docSnap.data() as Omit<ProductRecord, 'id'>),
       }))
       setProducts(rows)
-      saveCachedProducts(rows, { storeId: cacheStoreKey ?? undefined }).catch(error => {
+      saveCachedProducts(rows, { storeId: storeSelector ?? undefined }).catch(error => {
         console.warn('[metrics] Failed to cache products', error)
       })
     })

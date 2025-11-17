@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, query, orderBy, limit, onSnapshot, db } from '../lib/db'
+import { collection, query, orderBy, limit, onSnapshot, db, where } from '../lib/db'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 
@@ -70,17 +70,17 @@ export default function Receive() {
   useEffect(() => {
     let cancelled = false
 
-    const workspaceDocId = activeWorkspaceId ?? activeStoreId ?? null
-    const cacheStoreKey = activeStoreId ?? activeWorkspaceId ?? null
+    const storeSelector = activeStoreId ?? activeWorkspaceId ?? null
+    const cacheStoreKey = storeSelector ?? undefined
 
-    if (!workspaceDocId) {
+    if (!storeSelector) {
       setProducts([])
       return () => {
         cancelled = true
       }
     }
 
-    loadCachedProducts<Product>({ storeId: cacheStoreKey ?? undefined })
+    loadCachedProducts<Product>({ storeId: cacheStoreKey })
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(
@@ -92,9 +92,10 @@ export default function Receive() {
         console.warn('[receive] Failed to load cached products', error)
       })
 
-    const productsCollection = collection(db, 'workspaces', workspaceDocId, 'products')
+    const productsCollection = collection(db, 'products')
     const q = query(
       productsCollection,
+      where('storeId', '==', storeSelector),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(PRODUCT_CACHE_LIMIT),
@@ -102,7 +103,7 @@ export default function Receive() {
 
     const unsubscribe = onSnapshot(q, snap => {
       const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }))
-      saveCachedProducts(rows, { storeId: cacheStoreKey ?? undefined }).catch(error => {
+      saveCachedProducts(rows, { storeId: cacheStoreKey }).catch(error => {
         console.warn('[receive] Failed to cache products', error)
       })
       const sortedRows = [...rows].sort((a, b) =>
