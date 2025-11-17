@@ -12,6 +12,7 @@ export { paystackWebhook, checkSignupUnlock }
 
 import * as functions from 'firebase-functions'
 import { admin, defaultDb, rosterDb } from './firestore'
+import { ensureWorkspaceForUser, normalizeExistingSlug } from './workspaces'
 import { buildSimplePdf } from './utils/pdf'
 
 function serializeError(error: unknown) {
@@ -529,6 +530,14 @@ function serializeFirestoreValue(value: unknown): unknown {
     return value.toMillis()
   }
 
+  if (
+    value &&
+    typeof value === 'object' &&
+    typeof (value as { _millis?: unknown })._millis === 'number'
+  ) {
+    return (value as { _millis: number })._millis
+  }
+
   if (isFirestoreGeoPoint(value)) {
     return { latitude: value.latitude, longitude: value.longitude }
   }
@@ -581,8 +590,8 @@ function serializeFirestoreData(data: admin.firestore.DocumentData): Record<stri
 export const handleUserCreate = functions.auth.user().onCreate(async user => {
   const uid = user.uid
   const email = typeof user.email === 'string' ? user.email.toLowerCase() : null
-  const memberRef = rosterDb.collection('teamMembers').doc(uid)
-  const emailRef = email ? rosterDb.collection('teamMembers').doc(email) : null
+  const memberRef = defaultDb.collection('teamMembers').doc(uid)
+  const emailRef = email ? defaultDb.collection('teamMembers').doc(email) : null
   const [memberSnap, emailSnap] = await Promise.all([
     memberRef.get(),
     emailRef ? emailRef.get() : Promise.resolve(null),
@@ -634,9 +643,13 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
     getOptionalString(
       (existingData as any).contractStatus ?? (existingEmailData as any).contractStatus ?? (existingEmailData as any).contract_status ?? undefined,
     ) ?? null
+  const resolvedWorkspaceSlug =
+    getOptionalString((existingData as any).workspaceSlug ?? (existingEmailData as any).workspaceSlug ?? undefined) ?? null
 
   const storeId = resolvedStoreId ?? uid
   const shouldSeedDefaultStore = !resolvedStoreId
+
+  let workspaceSlug: string | null = resolvedWorkspaceSlug
 
   const memberData: admin.firestore.DocumentData = {
     ...existingEmailData,
@@ -644,6 +657,7 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
     uid,
     email: resolvedEmail,
     phone: resolvedPhone,
+    workspaceSlug,
     updatedAt: timestamp,
   }
 
@@ -677,31 +691,18 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
     }
   }
 
-  await memberRef.set(memberData, { merge: true })
-
-  if (email && emailRef) {
-    const emailData: admin.firestore.DocumentData = {
-      ...existingEmailData,
-      ...memberData,
-      uid,
-      email: resolvedEmail,
-      updatedAt: timestamp,
-    }
-
-    if (!emailSnap?.exists) {
-      if ((emailData as any).createdAt === undefined) {
-        ;(emailData as any).createdAt = timestamp
-      }
-    } else {
-      delete (emailData as any).createdAt
-    }
-
-    await emailRef.set(emailData, { merge: true })
-  }
-
   if (shouldSeedDefaultStore) {
     const storeRef = defaultDb.collection('stores').doc(storeId)
     const storeSnap = await storeRef.get()
+
+    const existingStoreData = storeSnap.exists ? storeSnap.data() : undefined
+    const existingWorkspaceSlug = existingStoreData
+      ? normalizeExistingSlug((existingStoreData as Record<string, unknown>).workspaceSlug ?? null)
+      : null
+
+    const { slug } = await ensureWorkspaceForUser(user, timestamp, workspaceSlug ?? existingWorkspaceSlug)
+    workspaceSlug = slug
+    memberData.workspaceSlug = slug
 
     // Add default billing on first seed too (parity with initializeStore)
     const { trialDays } = getBillingConfig()
@@ -711,6 +712,7 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
       ownerId: uid,
       status: 'Active',
       contractStatus: 'Active',
+      workspaceSlug: slug,
       billing: {
         planId: ('starter' as PlanId),
         status: 'trial',
@@ -745,6 +747,30 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
     }
 
     await storeRef.set(storeData, { merge: true })
+  } else if (workspaceSlug) {
+    memberData.workspaceSlug = workspaceSlug
+  }
+
+  await memberRef.set(memberData, { merge: true })
+
+  if (email && emailRef) {
+    const emailData: admin.firestore.DocumentData = {
+      ...existingEmailData,
+      ...memberData,
+      uid,
+      email: resolvedEmail,
+      updatedAt: timestamp,
+    }
+
+    if (!emailSnap?.exists) {
+      if ((emailData as any).createdAt === undefined) {
+        ;(emailData as any).createdAt = timestamp
+      }
+    } else {
+      delete (emailData as any).createdAt
+    }
+
+    await emailRef.set(emailData, { merge: true })
   }
 })
 

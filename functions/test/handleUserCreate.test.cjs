@@ -51,6 +51,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 function loadFunctionsModule() {
   apps.length = 0
   delete require.cache[require.resolve('../lib/firestore.js')]
+  delete require.cache[require.resolve('../lib/workspaces.js')]
   delete require.cache[require.resolve('../lib/index.js')]
   return require('../lib/index.js')
 }
@@ -71,6 +72,7 @@ async function runHandleUserCreateMergesRosterDataTest() {
       createdAt: existingCreatedAt,
     },
   })
+  currentRosterDb = new MockFirestore()
 
   const { handleUserCreate } = loadFunctionsModule()
 
@@ -103,10 +105,14 @@ async function runHandleUserCreateMergesRosterDataTest() {
   assert.strictEqual(rosterEmailDoc.invitedBy, 'owner-1')
   assert.strictEqual(rosterEmailDoc.firstSignupEmail, 'staff@example.com')
   assert.strictEqual(rosterEmailDoc.createdAt._millis, existingCreatedAt._millis)
+
+  const rosterDbDoc = currentRosterDb.getDoc('teamMembers/staff-uid')
+  assert.strictEqual(rosterDbDoc, undefined, 'Expected roster DB to remain untouched')
 }
 
 async function runHandleUserCreateSeedsDefaultStoreTest() {
   currentDefaultDb = new MockFirestore()
+  currentRosterDb = new MockFirestore()
 
   const { handleUserCreate } = loadFunctionsModule()
 
@@ -129,6 +135,7 @@ async function runHandleUserCreateSeedsDefaultStoreTest() {
   assert.strictEqual(storeDoc.ownerEmail, 'Owner@example.com')
   assert.strictEqual(storeDoc.status, 'Active')
   assert.strictEqual(storeDoc.contractStatus, 'Active')
+  assert.strictEqual(storeDoc.workspaceSlug, 'owner')
   assert.deepStrictEqual(storeDoc.inventorySummary, {
     trackedSkus: 0,
     lowStockSkus: 0,
@@ -136,6 +143,11 @@ async function runHandleUserCreateSeedsDefaultStoreTest() {
   })
   assert.ok(storeDoc.createdAt, 'Expected createdAt to be set')
   assert.ok(storeDoc.updatedAt, 'Expected updatedAt to be set')
+
+  const workspaceDoc = currentDefaultDb.getDoc('workspaces/owner')
+  assert.ok(workspaceDoc, 'Expected workspace to be created automatically')
+  assert.strictEqual(workspaceDoc.slug, 'owner')
+  assert.strictEqual(workspaceDoc.ownerId, 'new-owner')
 }
 
 async function run() {

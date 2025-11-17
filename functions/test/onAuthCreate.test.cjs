@@ -44,6 +44,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 function loadOnAuthCreateModule() {
   apps.length = 0
   delete require.cache[require.resolve('../lib/firestore.js')]
+  delete require.cache[require.resolve('../lib/workspaces.js')]
   delete require.cache[require.resolve('../lib/onAuthCreate.js')]
   return require('../lib/onAuthCreate.js')
 }
