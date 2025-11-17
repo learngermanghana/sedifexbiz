@@ -51,6 +51,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
 function loadFunctionsModule() {
   apps.length = 0
   delete require.cache[require.resolve('../lib/firestore.js')]
+  delete require.cache[require.resolve('../lib/workspaces.js')]
   delete require.cache[require.resolve('../lib/index.js')]
   return require('../lib/index.js')
 }
