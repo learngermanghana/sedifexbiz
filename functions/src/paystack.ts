@@ -2,6 +2,13 @@
 import * as functions from 'firebase-functions/v1'
 import * as crypto from 'crypto'
 import { admin, defaultDb } from './firestore'
+import {
+  DEFAULT_PLAN_ID,
+  getPlanById,
+  normalizePlanId,
+  type PlanId,
+  upsertPlanCatalog,
+} from './plans'
 
 /**
  * Types for Paystack responses/events
@@ -80,15 +87,25 @@ export const createCheckout = functions.https.onCall(async (data, context) => {
   }
 
   const email = typeof data?.email === 'string' ? data.email.trim().toLowerCase() : ''
-  const amount = Number(data?.amount)
   const storeId = typeof data?.storeId === 'string' ? data.storeId.trim() : ''
-  const plan = typeof data?.plan === 'string' ? data.plan.trim() : undefined
+  const requestedPlanId = normalizePlanId(data?.plan ?? data?.planId ?? undefined)
+  const planConfig = getPlanById(requestedPlanId ?? DEFAULT_PLAN_ID)
+  const plan = planConfig?.id ?? (typeof data?.plan === 'string' ? data.plan.trim() : undefined)
   const redirectUrlRaw = typeof data?.redirectUrl === 'string' ? data.redirectUrl.trim() : ''
   const redirectUrl = redirectUrlRaw || (APP_BASE_URL ? `${APP_BASE_URL}/billing/verify` : undefined)
   const metadataIn =
     data?.metadata && typeof data.metadata === 'object'
       ? (data.metadata as Record<string, any>)
       : {}
+
+  try {
+    await upsertPlanCatalog()
+  } catch (err) {
+    functions.logger.warn('Failed to sync plan catalog before checkout', { err })
+  }
+
+  const amountFromPlan = planConfig?.totalPriceUsd ?? null
+  const amount = amountFromPlan ?? Number(data?.amount)
 
   if (!email) {
     throw new functions.https.HttpsError('invalid-argument', 'A valid email is required')
@@ -109,7 +126,11 @@ export const createCheckout = functions.https.onCall(async (data, context) => {
     callback_url: redirectUrl,
     metadata: {
       storeId,
-      plan,
+      plan: (planConfig?.id ?? plan ?? DEFAULT_PLAN_ID) as PlanId,
+      billingMonths: planConfig?.months ?? null,
+      discountPercent: planConfig?.discountPercent ?? null,
+      monthlyPriceUsd: planConfig?.monthlyPriceUsd ?? null,
+      totalPriceUsd: planConfig?.totalPriceUsd ?? amount,
       createdBy: context.auth!.uid,
       ...metadataIn,
     },
@@ -140,7 +161,11 @@ export const createCheckout = functions.https.onCall(async (data, context) => {
         {
           provider: 'paystack',
           status: 'pending',
-          plan: plan || null,
+          plan: (planConfig?.id ?? plan ?? DEFAULT_PLAN_ID) as PlanId,
+          billingMonths: planConfig?.months ?? null,
+          discountPercent: planConfig?.discountPercent ?? null,
+          monthlyPriceUsd: planConfig?.monthlyPriceUsd ?? null,
+          totalPriceUsd: planConfig?.totalPriceUsd ?? amount,
           reference,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           createdBy: context.auth!.uid,
@@ -245,6 +270,9 @@ export const paystackWebhook = functions.https.onRequest(async (req, res): Promi
         const amount = typeof data.amount === 'number' ? data.amount / 100 : null
         const paidAt = data.paid_at || null
         const reference = data.reference || null
+        const normalizedPlan: PlanId | null = normalizePlanId(plan ?? DEFAULT_PLAN_ID)
+        const planConfig = getPlanById(normalizedPlan ?? undefined)
+        const resolvedPlan = planConfig?.id ?? normalizedPlan ?? null
 
         if (!storeId) break
 
@@ -255,7 +283,11 @@ export const paystackWebhook = functions.https.onRequest(async (req, res): Promi
             {
               provider: 'paystack',
               status: 'active',
-              plan: plan || null,
+              plan: resolvedPlan,
+              billingMonths: planConfig?.months ?? data.metadata?.billingMonths ?? null,
+              discountPercent: planConfig?.discountPercent ?? data.metadata?.discountPercent ?? null,
+              monthlyPriceUsd: planConfig?.monthlyPriceUsd ?? data.metadata?.monthlyPriceUsd ?? null,
+              totalPriceUsd: planConfig?.totalPriceUsd ?? amount,
               customerEmail: email,
               reference,
               amount,
@@ -281,6 +313,7 @@ export const paystackWebhook = functions.https.onRequest(async (req, res): Promi
               {
                 provider: 'paystack',
                 status: 'failed',
+                plan: normalizePlanId(data.metadata?.plan ?? null),
                 reference,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 lastEvent: evtType,
