@@ -1,25 +1,26 @@
 // functions/src/index.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Billing config (plans & trial)
-
 // Core imports first
 import * as functions from 'firebase-functions/v1'
 import { admin, defaultDb } from './firestore'
 import { buildSimplePdf } from './utils/pdf'
 
 // Billing config (plans & trial)
-import { DEFAULT_PLAN_ID, getBillingConfig, normalizePlanId, type PlanId } from './plans'
-
-// Paystack billing functions
-import { createCheckout, paystackWebhook, checkSignupUnlock } from './paystack'
-
-// Access-control constants
-import { INACTIVE_WORKSPACE_MESSAGE } from './constants/access'
+import {
+  DEFAULT_PLAN_ID,
+  getBillingConfig,
+  normalizePlanId,
+  type PlanId,
+} from './plans'
 
 // Re-export triggers so Firebase can discover them
-export { onAuthCreate } from './onAuthCreate'
 export { confirmPayment } from './confirmPayment'
-export { createCheckout, paystackWebhook, checkSignupUnlock }
+export { createCheckout, paystackWebhook, checkSignupUnlock } from './paystack'
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared helpers and types
+// ─────────────────────────────────────────────────────────────────────────────
 
 function serializeError(error: unknown) {
   if (error instanceof functions.https.HttpsError) {
@@ -137,7 +138,10 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
         const trimmed = raw.trim()
         phone = trimmed ? trimmed : null
       } else {
-        throw new functions.https.HttpsError('invalid-argument', 'Phone must be a string when provided')
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Phone must be a string when provided',
+        )
       }
     }
 
@@ -166,7 +170,10 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
         const trimmed = raw.trim()
         ownerName = trimmed ? trimmed : null
       } else {
-        throw new functions.https.HttpsError('invalid-argument', 'Owner name must be a string when provided')
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Owner name must be a string when provided',
+        )
       }
     }
 
@@ -179,7 +186,10 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
         const trimmed = raw.trim()
         businessName = trimmed ? trimmed : null
       } else {
-        throw new functions.https.HttpsError('invalid-argument', 'Business name must be a string when provided')
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Business name must be a string when provided',
+        )
       }
     }
 
@@ -192,7 +202,10 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
         const trimmed = raw.trim()
         country = trimmed ? trimmed : null
       } else {
-        throw new functions.https.HttpsError('invalid-argument', 'Country must be a string when provided')
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Country must be a string when provided',
+        )
       }
     }
 
@@ -205,7 +218,10 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
         const trimmed = raw.trim()
         town = trimmed ? trimmed : null
       } else {
-        throw new functions.https.HttpsError('invalid-argument', 'Town must be a string when provided')
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Town must be a string when provided',
+        )
       }
     }
 
@@ -224,7 +240,10 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
           signupRole = null
         }
       } else {
-        throw new functions.https.HttpsError('invalid-argument', 'Signup role must be a string when provided')
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Signup role must be a string when provided',
+        )
       }
     }
   }
@@ -312,7 +331,10 @@ function normalizeManageStaffPayload(data: ManageStaffPayload) {
   } else if (typeof passwordRaw === 'string') {
     password = passwordRaw
   } else {
-    throw new functions.https.HttpsError('invalid-argument', 'Password must be a string when provided')
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Password must be a string when provided',
+    )
   }
 
   if (!storeId) throw new functions.https.HttpsError('invalid-argument', 'A storeId is required')
@@ -338,7 +360,9 @@ async function ensureAuthUser(email: string, password?: string) {
           'A password is required when creating a new staff account',
         )
       }
-      const record = await admin.auth().createUser({ email, password, emailVerified: false })
+      const record = await admin
+        .auth()
+        .createUser({ email, password, emailVerified: false })
       return { record, created: true }
     }
     throw error
@@ -405,17 +429,24 @@ function buildSeedId(storeId: string, candidate: string | null, fallback: string
 
 function toSeedRecords(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) {
-    return value.filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    return value.filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === 'object' && item !== null,
+    )
   }
   if (value && typeof value === 'object') {
     return Object.values(value as Record<string, unknown>).filter(
-      (item): item is Record<string, unknown> => typeof item === 'object' && item !== null,
+      (item): item is Record<string, unknown> =>
+        typeof item === 'object' && item !== null,
     )
   }
   return []
 }
 
-function mapProductSeeds(records: Record<string, unknown>[], storeId: string): SeededDocument[] {
+function mapProductSeeds(
+  records: Record<string, unknown>[],
+  storeId: string,
+): SeededDocument[] {
   return records
     .map((product, index) => {
       const name =
@@ -459,7 +490,10 @@ function mapProductSeeds(records: Record<string, unknown>[], storeId: string): S
     .filter((item): item is SeededDocument => item !== null)
 }
 
-function mapCustomerSeeds(records: Record<string, unknown>[], storeId: string): SeededDocument[] {
+function mapCustomerSeeds(
+  records: Record<string, unknown>[],
+  storeId: string,
+): SeededDocument[] {
   return records
     .map((customer, index) => {
       const primaryName =
@@ -511,7 +545,8 @@ function mapCustomerSeeds(records: Record<string, unknown>[], storeId: string): 
             undefined,
         ) ?? null
 
-      const labelFallback = fallbackName ?? primaryName ?? email ?? phone ?? `customer_${index + 1}`
+      const labelFallback =
+        fallbackName ?? primaryName ?? email ?? phone ?? `customer_${index + 1}`
 
       const data: admin.firestore.DocumentData = { storeId }
       for (const [key, value] of Object.entries(customer)) {
@@ -528,7 +563,11 @@ function mapCustomerSeeds(records: Record<string, unknown>[], storeId: string): 
     .filter((item): item is SeededDocument => item !== null)
 }
 
-export const handleUserCreate = functions.auth.user().onCreate(async user => {
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth trigger: on user creation (seeds teamMembers + default store)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const onAuthCreate = functions.auth.user().onCreate(async user => {
   const uid = user.uid
   const email = typeof user.email === 'string' ? user.email.toLowerCase() : null
 
@@ -544,7 +583,8 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
   const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
   const resolvedEmail = user.email ?? existingData.email ?? existingEmailData.email ?? null
-  const resolvedPhone = user.phoneNumber ?? existingData.phone ?? existingEmailData.phone ?? null
+  const resolvedPhone =
+    user.phoneNumber ?? existingData.phone ?? existingEmailData.phone ?? null
   const resolvedStoreId =
     getOptionalString(
       (existingData as any).storeId ??
@@ -629,7 +669,7 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
   } else {
     const currentStoreId = getOptionalString((memberData as any).storeId ?? undefined)
     if (!currentStoreId) {
-      (memberData as any).storeId = storeId
+      ;(memberData as any).storeId = storeId
     }
   }
 
@@ -641,12 +681,17 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
       (memberData as any).role = 'owner'
     }
   }
-  if (resolvedFirstSignupEmail !== null) (memberData as any).firstSignupEmail = resolvedFirstSignupEmail
+
+  if (resolvedFirstSignupEmail !== null) {
+    (memberData as any).firstSignupEmail = resolvedFirstSignupEmail
+  }
   if (resolvedInvitedBy) (memberData as any).invitedBy = resolvedInvitedBy
   if (resolvedName) (memberData as any).name = resolvedName
   if (resolvedCompanyName) (memberData as any).companyName = resolvedCompanyName
   if (resolvedStatus) (memberData as any).status = resolvedStatus
-  if (resolvedContractStatus) (memberData as any).contractStatus = resolvedContractStatus
+  if (resolvedContractStatus)
+    (memberData as any).contractStatus = resolvedContractStatus
+
 
   if (!memberSnap.exists) {
     if ((memberData as any).createdAt === undefined) {
@@ -727,6 +772,10 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
   }
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// initializeStore callable
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function initializeStoreImpl(
   data: unknown,
   context: functions.https.CallableContext,
@@ -737,7 +786,8 @@ async function initializeStoreImpl(
   const token = context.auth!.token as Record<string, unknown>
   const email = typeof token.email === 'string' ? (token.email as string) : null
   const normalizedEmail = email ? email.toLowerCase() : null
-  const tokenPhone = typeof token.phone_number === 'string' ? (token.phone_number as string) : null
+  const tokenPhone =
+    typeof token.phone_number === 'string' ? (token.phone_number as string) : null
 
   const payload = (data ?? {}) as InitializeStorePayload
   const contact = normalizeContactPayload(payload.contact)
@@ -746,7 +796,9 @@ async function initializeStoreImpl(
     ? contact.firstSignupEmail ?? null
     : email?.toLowerCase() ?? null
   const resolvedOwnerName = contact.hasOwnerName ? contact.ownerName ?? null : null
-  const resolvedBusinessName = contact.hasBusinessName ? contact.businessName ?? null : null
+  const resolvedBusinessName = contact.hasBusinessName
+    ? contact.businessName ?? null
+    : null
   const resolvedCountry = contact.hasCountry ? contact.country ?? null : null
   const resolvedTown = contact.hasTown ? contact.town ?? null : null
   const resolvedSignupRole = contact.hasSignupRole ? contact.signupRole ?? null : null
@@ -766,7 +818,10 @@ async function initializeStoreImpl(
   const { trialDays } = getBillingConfig()
   const requestedPlanId = normalizePlanId(payload.planId)
   if (payload.planId !== undefined && requestedPlanId === null) {
-    throw new functions.https.HttpsError('invalid-argument', 'Choose a valid Sedifex plan.')
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Choose a valid Sedifex plan.',
+    )
   }
 
   const existingData = memberSnap.data() ?? {}
@@ -902,17 +957,17 @@ async function initializeStoreImpl(
   if (normalizedEmail) {
     const emailRef = defaultDb.collection('teamMembers').doc(normalizedEmail)
     const emailSnap = await emailRef.get()
-      const emailData: admin.firestore.DocumentData = {
-        uid,
-        email,
-        storeId,
-        role: resolvedRole,
-        phone: resolvedPhone,
-        firstSignupEmail: resolvedFirstSignupEmail,
-        invitedBy: uid,
-        updatedAt: timestamp,
-        workspaceSlug,
-      }
+    const emailData: admin.firestore.DocumentData = {
+      uid,
+      email,
+      storeId,
+      role: resolvedRole,
+      phone: resolvedPhone,
+      firstSignupEmail: resolvedFirstSignupEmail,
+      invitedBy: uid,
+      updatedAt: timestamp,
+      workspaceSlug,
+    }
 
     if (resolvedOwnerName !== null) {
       ;(emailData as any).name = resolvedOwnerName
@@ -1038,6 +1093,10 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
     throw error
   }
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workspace lookup + access resolution
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function lookupWorkspaceBySelector(selector: string): Promise<{
   slug: string
@@ -1174,7 +1233,10 @@ export const resolveStoreAccess = functions.https.onCall(
       if (!getOptionalString((storeData as any).ownerId ?? undefined)) {
         ;(storeData as any).ownerId = uid
       }
-      if (emailFromToken && !getOptionalString((storeData as any).ownerEmail ?? undefined)) {
+      if (
+        emailFromToken &&
+        !getOptionalString((storeData as any).ownerEmail ?? undefined)
+      ) {
         ;(storeData as any).ownerEmail = emailFromToken
       }
       if (!getOptionalString((storeData as any).status ?? undefined)) {
@@ -1215,7 +1277,12 @@ export const resolveStoreAccess = functions.https.onCall(
 
     await workspaceRef.set(workspacePayload, { merge: true })
 
-    const claims = await updateUserClaims(uid, resolvedRole, resolvedStoreId, workspaceSlug)
+    const claims = await updateUserClaims(
+      uid,
+      resolvedRole,
+      resolvedStoreId,
+      workspaceSlug,
+    )
 
     return {
       ok: true,
@@ -1226,6 +1293,10 @@ export const resolveStoreAccess = functions.https.onCall(
     }
   },
 )
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Staff management
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const manageStaffAccount = functions.https.onCall(async (data, context) => {
   assertOwnerAccess(context)
@@ -1275,6 +1346,10 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
   return { ok: true, role, email, uid: record.uid, created, storeId, claims }
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Sales + stock receiving
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const commitSale = functions.https.onCall(async (data, context) => {
   // For now, just require that the user is logged in.
   // We’re NOT enforcing role-based access until claims are sorted out.
@@ -1303,7 +1378,9 @@ export const commitSale = functions.https.onCall(async (data, context) => {
   const workspaceIdCandidate =
     typeof workspaceIdRaw === 'string' ? workspaceIdRaw.trim() : ''
   const lookupSelector = workspaceIdCandidate || normalizedBranchId
-  const workspaceLookup = lookupSelector ? await lookupWorkspaceBySelector(lookupSelector) : null
+  const workspaceLookup = lookupSelector
+    ? await lookupWorkspaceBySelector(lookupSelector)
+    : null
   const resolvedWorkspaceId =
     workspaceLookup?.slug ??
     (workspaceIdCandidate ? workspaceIdCandidate : normalizedBranchId)
@@ -1432,7 +1509,10 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
 
   const normalizedSupplier = typeof supplier === 'string' ? supplier.trim() : ''
   if (!normalizedSupplier) {
-    throw new functions.https.HttpsError('invalid-argument', 'Supplier is required')
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Supplier is required',
+    )
   }
 
   const normalizedReference = typeof reference === 'string' ? reference.trim() : ''
@@ -1461,9 +1541,12 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
   const branchIdCandidate =
     typeof branchIdRaw === 'string' ? branchIdRaw.trim() : ''
   const selector = workspaceIdCandidate || storeIdCandidate || branchIdCandidate
-  const workspaceLookup = selector ? await lookupWorkspaceBySelector(selector) : null
+  const workspaceLookup = selector
+    ? await lookupWorkspaceBySelector(selector)
+    : null
   const resolvedWorkspaceId =
-    workspaceLookup?.slug ?? (workspaceIdCandidate ? workspaceIdCandidate : selector)
+    workspaceLookup?.slug ??
+    (workspaceIdCandidate ? workspaceIdCandidate : selector)
   if (!resolvedWorkspaceId) {
     throw new functions.https.HttpsError(
       'invalid-argument',
@@ -1535,6 +1618,10 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
 
   return { ok: true, receiptId: receiptRef.id }
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Receipt share logging
+// ─────────────────────────────────────────────────────────────────────────────
 
 const SHARE_METHODS = new Set(['web-share', 'email', 'sms', 'whatsapp', 'download'])
 const SHARE_STATUSES = new Set(['started', 'success', 'cancelled', 'error'])

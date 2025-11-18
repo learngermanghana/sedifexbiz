@@ -1,123 +1,110 @@
 // functions/src/plans.ts
 
-import { admin, defaultDb } from './firestore'
-
+// The IDs you’ll store in Firestore and send to Paystack
 export type PlanId =
-  | 'space-monthly'
-  | 'space-quarterly'
-  | 'space-semiannual'
-  | 'space-annual'
-  | 'trial'
+  | 'starter-monthly'
+  | 'starter-annual'
+  | 'pro-monthly'
+  | 'pro-annual'
 
-export const PLAN_IDS: PlanId[] = [
-  'space-monthly',
-  'space-quarterly',
-  'space-semiannual',
-  'space-annual',
-  'trial',
-]
-
-export const DEFAULT_PLAN_ID: PlanId = 'space-monthly'
-
-export type PlanVariant = {
+export type Plan = {
   id: PlanId
   label: string
-  product: 'space'
   months: number
   monthlyPriceUsd: number
-  discountPercent: number
   totalPriceUsd: number
+  discountPercent: number | null
+  isDefault?: boolean
 }
 
-const BASE_MONTHLY_PRICE_USD = 20
+// 👉 Default plan used when nothing is specified
+export const DEFAULT_PLAN_ID: PlanId = 'starter-monthly'
 
-export const SPACE_PLAN_VARIANTS: PlanVariant[] = [
-  {
-    id: 'space-monthly',
-    label: 'Space (1 month)',
-    product: 'space',
+// 👉 Central plan catalog (adjust prices/labels as you like)
+const PLAN_CATALOG: Record<PlanId, Plan> = {
+  'starter-monthly': {
+    id: 'starter-monthly',
+    label: 'Starter Monthly',
     months: 1,
-    monthlyPriceUsd: BASE_MONTHLY_PRICE_USD,
-    discountPercent: 0,
-    totalPriceUsd: BASE_MONTHLY_PRICE_USD,
+    monthlyPriceUsd: 9,
+    totalPriceUsd: 9,
+    discountPercent: null,
+    isDefault: true,
   },
-  {
-    id: 'space-quarterly',
-    label: 'Space (3 months)',
-    product: 'space',
-    months: 3,
-    monthlyPriceUsd: BASE_MONTHLY_PRICE_USD,
-    discountPercent: 0.05,
-    totalPriceUsd: +(BASE_MONTHLY_PRICE_USD * 3 * 0.95).toFixed(2),
-  },
-  {
-    id: 'space-semiannual',
-    label: 'Space (6 months)',
-    product: 'space',
-    months: 6,
-    monthlyPriceUsd: BASE_MONTHLY_PRICE_USD,
-    discountPercent: 0.1,
-    totalPriceUsd: +(BASE_MONTHLY_PRICE_USD * 6 * 0.9).toFixed(2),
-  },
-  {
-    id: 'space-annual',
-    label: 'Space (12 months)',
-    product: 'space',
+  'starter-annual': {
+    id: 'starter-annual',
+    label: 'Starter Annual',
     months: 12,
-    monthlyPriceUsd: BASE_MONTHLY_PRICE_USD,
-    discountPercent: 0.15,
-    totalPriceUsd: +(BASE_MONTHLY_PRICE_USD * 12 * 0.85).toFixed(2),
+    monthlyPriceUsd: 8,
+    totalPriceUsd: 96,
+    discountPercent: 11, // example: (9-8)/9 ≈ 11%
   },
-]
-
-const VALID_PLAN_IDS = new Set<PlanId>(PLAN_IDS as PlanId[])
-
-export function normalizePlanId(value: unknown): PlanId | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim().toLowerCase()
-  if (!trimmed) return null
-  return VALID_PLAN_IDS.has(trimmed as PlanId) ? (trimmed as PlanId) : null
+  'pro-monthly': {
+    id: 'pro-monthly',
+    label: 'Pro Monthly',
+    months: 1,
+    monthlyPriceUsd: 19,
+    totalPriceUsd: 19,
+    discountPercent: null,
+  },
+  'pro-annual': {
+    id: 'pro-annual',
+    label: 'Pro Annual',
+    months: 12,
+    monthlyPriceUsd: 16,
+    totalPriceUsd: 192,
+    discountPercent: 16, // example
+  },
 }
 
-export function getPlanById(planId: PlanId | null | undefined): PlanVariant | null {
-  if (!planId || planId === 'trial') return null
-  return SPACE_PLAN_VARIANTS.find(plan => plan.id === planId) ?? null
+// 👉 What your other code expects from getBillingConfig()
+export function getBillingConfig() {
+  return {
+    // Free trial length in days (used in index.ts initializeStoreImpl)
+    trialDays: 14,
+    defaultPlanId: DEFAULT_PLAN_ID,
+    plans: PLAN_CATALOG,
+  }
 }
 
-export async function upsertPlanCatalog() {
-  const timestamp = admin.firestore.FieldValue.serverTimestamp()
+// 👉 Map various string values to a canonical PlanId
+const PLAN_ALIAS_MAP: Record<string, PlanId> = {
+  // Starter
+  starter: 'starter-monthly',
+  'starter-monthly': 'starter-monthly',
+  'starter-annual': 'starter-annual',
 
-  await Promise.all(
-    SPACE_PLAN_VARIANTS.map(async plan => {
-      const ref = defaultDb.collection('plans').doc(plan.id)
-
-      await defaultDb.runTransaction(async tx => {
-        const snap = await tx.get(ref)
-        const payload: admin.firestore.DocumentData = {
-          product: plan.product,
-          label: plan.label,
-          months: plan.months,
-          monthlyPriceUsd: plan.monthlyPriceUsd,
-          discountPercent: plan.discountPercent,
-          totalPriceUsd: plan.totalPriceUsd,
-          updatedAt: timestamp,
-        }
-
-        if (!snap.exists) {
-          payload.createdAt = timestamp
-        }
-
-        tx.set(ref, payload, { merge: true })
-      })
-    }),
-  )
+  // Pro
+  pro: 'pro-monthly',
+  'pro-monthly': 'pro-monthly',
+  'pro-annual': 'pro-annual',
 }
 
 /**
- * Billing configuration used for trial length etc.
+ * Normalize any incoming plan string (from frontend/metadata) into a PlanId.
+ * Returns null if we don’t recognize it.
  */
-export function getBillingConfig() {
-  return {
-    trialDays: 14, // 14-day trial; adjust if you like
-  }
+export function normalizePlanId(raw: unknown): PlanId | null {
+  if (!raw || typeof raw !== 'string') return null
+  const key = raw.trim().toLowerCase()
+  return PLAN_ALIAS_MAP[key] ?? null
+}
+
+/**
+ * Safely get a plan config by id.
+ * If planId is missing or unknown, it falls back to DEFAULT_PLAN_ID.
+ */
+export function getPlanById(planId?: PlanId | null): Plan | null {
+  const id = planId ?? DEFAULT_PLAN_ID
+  return PLAN_CATALOG[id] ?? PLAN_CATALOG[DEFAULT_PLAN_ID]
+}
+
+/**
+ * Upsert plan catalog into Firestore or another storage.
+ * For now we keep it as a NO-OP so callers in paystack.ts can await it safely.
+ * You can later implement real syncing if you want.
+ */
+export async function upsertPlanCatalog(): Promise<void> {
+  // No-op: safe to remove or expand later.
+  return
 }

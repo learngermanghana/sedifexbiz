@@ -1,42 +1,45 @@
 import * as functions from 'firebase-functions/v1'
-import { admin, defaultDb } from './firestore' // ⬅️ removed rosterDb
+import { admin, defaultDb } from './firestore'
 
-export const onAuthCreate = functions.auth.user().onCreate(async (user) => {
+/**
+ * onAuthCreate
+ *  - Runs when a new Firebase Auth user is created
+ *  - Writes a basic teamMembers/<uid> document in the DEFAULT Firestore DB
+ *  - Role + storeId will be set later by the onboarding callable (handleUserCreate)
+ */
+export const onAuthCreate = functions.auth.user().onCreate(async user => {
   const uid = user.uid
   const now = admin.firestore.FieldValue.serverTimestamp()
 
-  // Default DB: teamMembers/<uid>
-  await defaultDb
-    .collection('teamMembers')
-    .doc(uid)
-    .set(
-      {
-        uid,
-        email: user.email ?? null,
-        phone: user.phoneNumber ?? null,
-        createdAt: now,
-        updatedAt: now,
-      },
-      { merge: true },
-    )
+  functions.logger.info('onAuthCreate triggered', {
+    uid,
+    email: user.email ?? null,
+    phone: user.phoneNumber ?? null,
+  })
 
-  // Default DB: stores/<uid>
-  await defaultDb
-    .collection('stores')
-    .doc(uid)
-    .set(
-      {
-        ownerId: uid,
-        status: 'Active',
-        contractStatus: 'Active',
-        inventorySummary: {
-          trackedSkus: 0,
-          lowStockSkus: 0,
-          incomingShipments: 0,
+  try {
+    await defaultDb
+      .collection('teamMembers')
+      .doc(uid)
+      .set(
+        {
+          uid,
+          email: user.email ?? null,
+          phone: user.phoneNumber ?? null,
+          role: 'pending',     // will later become "owner" or "member"
+          storeId: null,       // will be set after onboarding
+          createdAt: now,
+          updatedAt: now,
         },
-        createdAt: now,
-        updatedAt: now,
-      },
-      { merge: true },
-    )
+        { merge: true },
+      )
+
+    functions.logger.info('onAuthCreate completed successfully', { uid })
+  } catch (error) {
+    functions.logger.error('onAuthCreate failed', {
+      uid,
+      errorMessage: (error as any)?.message ?? String(error),
+      error,
+    })
+  }
 })
