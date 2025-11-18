@@ -1,24 +1,27 @@
-import * as admin from 'firebase-admin'
-import { getFirestore } from 'firebase-admin/firestore'
+import * as admin from 'firebase-admin';
 
-if (!admin.apps.length) {
-  admin.initializeApp()
+// ─────────────────────────────────────────────────────────────────────────────
+// One-time Admin init
+try {
+  admin.app();
+} catch {
+  admin.initializeApp();
 }
 
-export const defaultDb = getFirestore()
-export const rosterDb = getFirestore(admin.app(), 'roster')
+// ─────────────────────────────────────────────────────────────────────────────
+// Default Firestore DB: this is your main project database
+const defaultDb = admin.firestore();
 
-export const supabaseAdmin = {
-  from() {
-    throw new Error('Supabase admin client is not configured')
-  },
-  auth: {
-    admin: {
-      updateUserById() {
-        throw new Error('Supabase admin client is not configured')
-      },
-    },
-  },
-} as any
+// Ignore undefined properties (matches original behaviour)
+if (typeof defaultDb.settings === 'function') {
+  defaultDb.settings({ ignoreUndefinedProperties: true });
+}
 
-export { admin }
+// ─────────────────────────────────────────────────────────────────────────────
+// "Roster" DB ALIAS
+// Any code that used rosterDb before will now hit the default DB.
+// This is the "force everything to default" part.
+const rosterDb = defaultDb;
+
+// Exports used everywhere in the codebase
+export { admin, defaultDb, rosterDb };

@@ -1,12 +1,12 @@
-import * as functions from 'firebase-functions'
-import { admin, defaultDb, rosterDb } from './firestore'
+import * as functions from 'firebase-functions/v1'
+import { admin, defaultDb } from './firestore' // ⬅️ removed rosterDb
 
 export const onAuthCreate = functions.auth.user().onCreate(async (user) => {
   const uid = user.uid
   const now = admin.firestore.FieldValue.serverTimestamp()
 
-  // Roster DB: teamMembers/<uid>
-  await rosterDb
+  // Default DB: teamMembers/<uid>
+  await defaultDb
     .collection('teamMembers')
     .doc(uid)
     .set(

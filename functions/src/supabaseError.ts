@@ -1,24 +1,18 @@
-export type SupabaseErrorStatus =
-  | 'bad-request'
-  | 'unauthorized'
-  | 'forbidden'
-  | 'not-found'
-  | 'failed-precondition'
-  | 'internal'
-
-export type SupabaseErrorDetails = {
-  cause?: unknown
-  hint?: string
-}
+// src/supabaseError.ts
+// Minimal stub to satisfy existing SupabaseFunctionError imports.
+// We match the constructor signature used in customClaims.ts.
 
 export class SupabaseFunctionError extends Error {
-  readonly status: SupabaseErrorStatus
-  readonly details?: SupabaseErrorDetails
+  code: string
 
-  constructor(status: SupabaseErrorStatus, message: string, details?: SupabaseErrorDetails) {
+  constructor(code: string, message: string, options?: { cause?: unknown }) {
     super(message)
     this.name = 'SupabaseFunctionError'
-    this.status = status
-    this.details = details
+    this.code = code
+
+    // Optional: attach cause if provided
+    if (options && 'cause' in options) {
+      ;(this as any).cause = options.cause
+    }
   }
 }

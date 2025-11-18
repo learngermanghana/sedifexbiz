@@ -3,7 +3,6 @@ import { initializeApp } from 'firebase/app'
 import { getAuth, RecaptchaVerifier } from 'firebase/auth'
 import {
   initializeFirestore,
-  getFirestore,
   enableIndexedDbPersistence,
   type Firestore,
 } from 'firebase/firestore'
@@ -16,6 +15,7 @@ type FirebaseEnvKey =
   | 'VITE_FB_PROJECT_ID'
   | 'VITE_FB_STORAGE_BUCKET'
   | 'VITE_FB_APP_ID'
+  | 'VITE_FB_FUNCTIONS_REGION'
 
 function requireEnv(key: FirebaseEnvKey): string {
   const v = import.meta.env[key]
@@ -31,36 +31,41 @@ const firebaseConfig = {
   appId: requireEnv('VITE_FB_APP_ID'),
 }
 
-// --- Core app instances ---
+// ----- Core app instances -----
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const storage = getStorage(app)
-// If you later add a region: getFunctions(app, import.meta.env.VITE_FB_FUNCTIONS_REGION)
-export const functions = getFunctions(app)
 
-// --- Firestore (default + secondary "roster") ---
+// Region defaults to us-central1 (where your functions are deployed)
+const FUNCTIONS_REGION =
+  import.meta.env.VITE_FB_FUNCTIONS_REGION && import.meta.env.VITE_FB_FUNCTIONS_REGION.trim()
+    ? import.meta.env.VITE_FB_FUNCTIONS_REGION.trim()
+    : 'us-central1'
+
+export const functions = getFunctions(app, FUNCTIONS_REGION)
+
+// ----- Firestore (default + "roster" database) -----
 const FIRESTORE_SETTINGS = { ignoreUndefinedProperties: true }
 
-// Create BOTH instances with settings so they’re consistent
-export const db = initializeFirestore(app, FIRESTORE_SETTINGS) // default DB
-export const rosterDb: Firestore = initializeFirestore(app, FIRESTORE_SETTINGS, 'roster') // secondary DB named "roster"
+// Default Firestore database
+export const db: Firestore = initializeFirestore(app, FIRESTORE_SETTINGS)
 
-// Optionally re-acquire with getFirestore if you prefer (pointing to same instances):
-// export const db = getFirestore(app)
-// export const rosterDb = getFirestore(app, 'roster')
+// Secondary Firestore database named "roster"
+// (make sure you actually created a Firestore DB called "roster" in the console)
+export const rosterDb: Firestore = initializeFirestore(app, FIRESTORE_SETTINGS, 'roster')
 
-// --- Offline persistence (browser-only guards) ---
+// ----- Offline persistence (browser only) -----
 if (typeof window !== 'undefined') {
   enableIndexedDbPersistence(db).catch(() => {
-    // multi-tab/unsupported; safe to ignore
+    // Multi-tab or unsupported browser; safe to ignore.
   })
   enableIndexedDbPersistence(rosterDb).catch(() => {
-    // same as above
+    // Same as above.
   })
 }
 
-// --- Helpers ---
+// ----- Helpers -----
 export function setupRecaptcha(containerId = 'recaptcha-container') {
-  // v10+ signature: new RecaptchaVerifier(auth, container, options)
+  // v9/v10 signature: new RecaptchaVerifier(auth, container, options)
   return new RecaptchaVerifier(auth, containerId, { size: 'invisible' })
 }

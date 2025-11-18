@@ -1,4 +1,4 @@
-import * as functions from 'firebase-functions'
+import * as functions from 'firebase-functions/v1'
 import { admin, defaultDb, rosterDb } from './firestore'
 
 const db = defaultDb

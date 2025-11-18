@@ -1,58 +1,43 @@
-import { supabaseAdmin } from './firestore'
-import { SupabaseFunctionError } from './supabaseError'
+import * as functions from 'firebase-functions/v1'
+import { admin } from './firestore'
 
-export type RoleClaimPayload = {
-  uid: string
-  role: string
-  storeId: string
+type Role = 'owner' | 'staff'
+
+function assertAuthenticated(ctx: functions.https.CallableContext) {
+  if (!ctx.auth) throw new functions.https.HttpsError('unauthenticated', 'Login required')
 }
 
-function normalizeString(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
-}
+/**
+ * Minimal callable to set a user's custom role claim using Firebase Admin only.
+ * If `uid` is omitted, the caller's uid is used.
+ */
+export const applyRoleClaims = functions.https.onCall(async (data, context) => {
+  assertAuthenticated(context)
 
-async function resolveCompanyName(uid: string, storeId: string): Promise<string | null> {
-  const [{ data: membership }, { data: store }] = await Promise.all([
-    supabaseAdmin
-      .from('store_memberships')
-      .select('company')
-      .eq('user_id', uid)
-      .eq('store_id', storeId)
-      .maybeSingle(),
-    supabaseAdmin.from('stores').select('company').eq('id', storeId).maybeSingle(),
-  ])
+  const uid =
+    typeof data?.uid === 'string' && data.uid.trim() ? data.uid.trim() : context.auth!.uid
 
-  const memberCompany = normalizeString(membership?.company)
-  const storeCompany = normalizeString(store?.company)
-  return storeCompany ?? memberCompany ?? null
-}
-
-export async function applyRoleClaims({ uid, role, storeId }: RoleClaimPayload) {
   if (!uid) {
-    throw new SupabaseFunctionError('bad-request', 'A user id is required to apply role claims')
+    throw new functions.https.HttpsError('invalid-argument', 'A user id is required to apply role claims')
   }
 
-  const metadata: Record<string, unknown> = {
-    role,
-    activeStoreId: storeId,
-  }
+  const roleRaw = typeof data?.role === 'string' ? data.role.trim().toLowerCase() : ''
+  const role: Role = roleRaw === 'owner' ? 'owner' : 'staff'
 
-  const company = await resolveCompanyName(uid, storeId).catch(() => null)
-  if (company) {
-    metadata.company = company
-  }
+  // Merge with existing custom claims to avoid clobbering anything else.
+  const existing =
+    (await admin
+      .auth()
+      .getUser(uid)
+      .then(u => (u.customClaims ?? {}) as Record<string, unknown>)
+      .catch(() => ({})))
 
-  const { data, error } = await supabaseAdmin.auth.admin.updateUserById(uid, {
-    app_metadata: metadata,
-  })
+  const nextClaims: Record<string, unknown> = { ...existing, role }
+  delete nextClaims.stores
+  delete nextClaims.activeStoreId
+  delete nextClaims.storeId
+  delete nextClaims.roleByStore
 
-  if (error) {
-    throw new SupabaseFunctionError('internal', 'Failed to apply Supabase role metadata', {
-      cause: error,
-    })
-  }
-
-  return data?.user?.app_metadata ?? metadata
-}
+  await admin.auth().setCustomUserClaims(uid, nextClaims)
+  return { ok: true as const, uid, claims: nextClaims }
+})
