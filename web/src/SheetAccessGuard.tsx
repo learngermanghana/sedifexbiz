@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
 import { auth, rosterDb } from './firebase'
+import { INACTIVE_WORKSPACE_MESSAGE } from './controllers/accessController'
 import { clearActiveStoreIdForUser, persistActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { useAuthUser } from './hooks/useAuthUser'
 import type { User } from 'firebase/auth'
@@ -71,7 +72,7 @@ async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMe
   }
 
   if (!isWorkspaceActive(lastSnapshot)) {
-    throw new Error('Your Sedifex workspace contract is not active.')
+    throw new Error(INACTIVE_WORKSPACE_MESSAGE)
   }
 
   throw new Error('Access denied.')
