@@ -6,24 +6,18 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
 } from 'firebase/auth'
-import { doc, serverTimestamp, setDoc, Timestamp, type Firestore } from 'firebase/firestore'
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { auth, db } from './firebase'
 import './App.css'
 import './pwa'
 import { useToast } from './components/ToastProvider'
-import {
-  configureAuthPersistence,
-  ensureStoreDocument,
-  persistSession,
-  refreshSessionHeartbeat,
-} from './controllers/sessionController'
+import { configureAuthPersistence, persistSession, refreshSessionHeartbeat } from './controllers/sessionController'
 import {
   initializeStore,
   resolveStoreAccess,
   type ResolveStoreAccessResult,
-  type SeededDocument,
   type SignupRoleOption,
   extractCallableErrorMessage,
   INACTIVE_WORKSPACE_MESSAGE,
@@ -100,79 +94,8 @@ function sanitizePhone(value: string): string {
   return value.replace(/\D+/g, '')
 }
 
-const OWNER_NAME_FALLBACK = 'Owner account'
-
 function normalizeSignupRole(value: string | SignupRoleOption): SignupRoleOption {
   return value === 'team-member' ? 'team-member' : 'owner'
-}
-
-function resolveOwnerName(user: User, explicitName?: string | null): string {
-  const trimmedExplicitName = explicitName?.trim()
-  if (trimmedExplicitName) return trimmedExplicitName
-
-  const displayName = user.displayName?.trim()
-  if (displayName && displayName.length > 0) return displayName
-
-  return OWNER_NAME_FALLBACK
-}
-
-type OwnerProfileMetadata = {
-  ownerName?: string | null
-  businessName?: string | null
-  country?: string | null
-  town?: string | null
-  signupRole?: SignupRoleOption | null
-}
-
-async function persistTeamMemberMetadata(
-  user: User,
-  email: string,
-  phone: string,
-  resolution: ResolveStoreAccessResult,
-  metadata?: OwnerProfileMetadata,
-  onError?: (msg: string) => void,
-) {
-  try {
-    const ownerName = resolveOwnerName(user, metadata?.ownerName)
-    const businessName = metadata?.businessName?.trim() || null
-    const country = metadata?.country?.trim() || null
-    const town = metadata?.town?.trim() || null
-    const signupRole = metadata?.signupRole ?? null
-
-    const basePayload = {
-      uid: user.uid,
-      role: resolution.role,
-      storeId: resolution.storeId,
-      name: ownerName,
-      phone,
-      email,
-      firstSignupEmail: email,
-      invitedBy: user.uid,
-      companyName: businessName,
-      country,
-      town,
-      signupRole,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    }
-
-    const writes: Array<Promise<unknown>> = [
-      setDoc(doc(db, 'teamMembers', user.uid), basePayload, { merge: true }),
-    ]
-
-    const normalizedEmail = email.trim().toLowerCase()
-    if (normalizedEmail) {
-      writes.push(
-        setDoc(doc(db, 'teamMembers', normalizedEmail), basePayload, { merge: true }),
-      )
-    }
-
-    await Promise.all(writes)
-  } catch (error) {
-    console.warn('[signup] Failed to persist team member metadata', error)
-    onError?.(getErrorMessage(error))
-    throw error
-  }
 }
 
 // We intentionally keep the auth account so administrators can investigate the failure later.
@@ -181,68 +104,6 @@ async function cleanupFailedSignup(_user: User) {
     await auth.signOut()
   } catch (error) {
     console.warn('[signup] Unable to sign out after rejected signup', error)
-  }
-}
-
-const TIMESTAMP_FIELD_KEYS = new Set(['createdAt', 'updatedAt', 'receivedAt'])
-
-function normalizeSeededDocumentData(data: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
-
-  Object.entries(data).forEach(([key, value]) => {
-    if (value === undefined) return
-
-    if (value === null) {
-      result[key] = null
-      return
-    }
-
-    if (TIMESTAMP_FIELD_KEYS.has(key) && typeof value === 'number' && Number.isFinite(value)) {
-      result[key] = Timestamp.fromMillis(value)
-      return
-    }
-
-    if (Array.isArray(value)) {
-      result[key] = value.map(item => {
-        if (item && typeof item === 'object' && !Array.isArray(item)) {
-          return normalizeSeededDocumentData(item as Record<string, unknown>)
-        }
-        return item
-      })
-      return
-    }
-
-    if (typeof value === 'object') {
-      result[key] = normalizeSeededDocumentData(value as Record<string, unknown>)
-      return
-    }
-
-    result[key] = value
-  })
-
-  return result
-}
-
-async function persistStoreSeedData(resolution: ResolveStoreAccessResult) {
-  const writes: Promise<unknown>[] = []
-
-  const enqueue = (
-    targetDb: Firestore,
-    collectionName: string,
-    document: SeededDocument | null,
-  ) => {
-    if (!document) return
-    const normalized = normalizeSeededDocumentData(document.data)
-    writes.push(setDoc(doc(targetDb, collectionName, document.id), normalized, { merge: true }))
-  }
-
-  enqueue(db, 'teamMembers', resolution.teamMember)
-  enqueue(db, 'stores', resolution.store)
-  resolution.products.forEach(product => enqueue(db, 'products', product))
-  resolution.customers.forEach(customer => enqueue(db, 'customers', customer))
-
-  if (writes.length) {
-    await Promise.all(writes)
   }
 }
 
@@ -481,15 +342,14 @@ export default function App() {
           sanitizedEmail,
           sanitizedPassword,
         )
-        await ensureStoreDocument(nextUser)
         await persistSession(nextUser)
         try {
           const resolution = await resolveStoreAccess()
           await persistSession(nextUser, {
             storeId: resolution.storeId,
+            workspaceSlug: resolution.workspaceSlug,
             role: resolution.role,
           })
-          await persistStoreSeedData(resolution)
         } catch (error) {
           console.warn('[auth] Failed to resolve workspace access', error)
           setStatus({ tone: 'error', message: getErrorMessage(error) })
@@ -532,34 +392,11 @@ export default function App() {
           return
         }
 
-        await ensureStoreDocument(nextUser)
         await persistSession(nextUser, {
           storeId: resolution.storeId,
+          workspaceSlug: resolution.workspaceSlug,
           role: resolution.role,
         })
-
-        await persistTeamMemberMetadata(
-          nextUser,
-          sanitizedEmail,
-          sanitizedPhone,
-          resolution,
-          {
-            ownerName: sanitizedFullName || null,
-            businessName: sanitizedBusinessName || null,
-            country: sanitizedCountry || null,
-            town: sanitizedTown || null,
-            signupRole: sanitizedSignupRole,
-          },
-          msg => publish({ tone: 'error', message: msg }),
-        )
-
-        try {
-          await persistStoreSeedData(resolution)
-        } catch (error) {
-          console.warn('[signup] Failed to seed workspace data', error)
-          setStatus({ tone: 'error', message: getErrorMessage(error) })
-          return
-        }
 
         try {
           const preferredDisplayName =

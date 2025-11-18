@@ -283,7 +283,12 @@ function assertStaffAccess(context: functions.https.CallableContext) {
   }
 }
 
-async function updateUserClaims(uid: string, role: string) {
+async function updateUserClaims(
+  uid: string,
+  role: string,
+  storeId?: string,
+  workspaceSlug?: string,
+) {
   const userRecord = await admin
     .auth()
     .getUser(uid)
@@ -291,9 +296,14 @@ async function updateUserClaims(uid: string, role: string) {
   const existingClaims = (userRecord?.customClaims ?? {}) as Record<string, unknown>
   const nextClaims: Record<string, unknown> = { ...existingClaims }
   nextClaims.role = role
+  if (storeId) {
+    nextClaims.storeId = storeId
+  }
+  if (workspaceSlug) {
+    nextClaims.workspaceSlug = workspaceSlug
+  }
   delete nextClaims.stores
   delete nextClaims.activeStoreId
-  delete nextClaims.storeId
   delete nextClaims.roleByStore
   await admin.auth().setCustomUserClaims(uid, nextClaims)
   return nextClaims
@@ -525,25 +535,6 @@ function mapCustomerSeeds(records: Record<string, unknown>[], storeId: string): 
       return { id: seedId, data }
     })
     .filter((item): item is SeededDocument => item !== null)
-}
-
-function serializeFirestoreData(data: admin.firestore.DocumentData): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(data)) {
-    if (value instanceof admin.firestore.Timestamp) {
-      result[key] = value.toMillis()
-    } else if (value && typeof value === 'object' && '_millis' in value) {
-      const millis = (value as { _millis?: unknown })._millis
-      result[key] = typeof millis === 'number' ? millis : value
-    } else if (Array.isArray(value)) {
-      result[key] = value.map(item =>
-        item instanceof admin.firestore.Timestamp ? item.toMillis() : item,
-      )
-    } else {
-      result[key] = value
-    }
-  }
-  return result
 }
 
 export const handleUserCreate = functions.auth.user().onCreate(async user => {
@@ -958,7 +949,7 @@ async function initializeStoreImpl(
   }
 
   if (resolvedRole === 'staff') {
-    const claims = await updateUserClaims(uid, resolvedRole)
+    const claims = await updateUserClaims(uid, resolvedRole, storeId, workspaceSlug)
     return { ok: true, claims, storeId, role: resolvedRole }
   }
 
@@ -1043,7 +1034,7 @@ async function initializeStoreImpl(
   }
 
   await storeRef.set(storeData, { merge: true })
-  const claims = await updateUserClaims(uid, resolvedRole)
+  const claims = await updateUserClaims(uid, resolvedRole, storeId, workspaceSlug)
 
   return { ok: true, claims, storeId, role: resolvedRole }
 }
@@ -1138,7 +1129,10 @@ export const resolveStoreAccess = functions.https.onCall(
         : 'owner'
 
     const now = admin.firestore.FieldValue.serverTimestamp()
-    const workspaceSlug = resolvedStoreId
+    const workspaceSlug = normalizeWorkspaceSlug(
+      (baseMemberData as any).workspaceSlug ?? null,
+      resolvedStoreId,
+    )
 
     const memberPayload: admin.firestore.DocumentData = {
       ...baseMemberData,
@@ -1213,26 +1207,31 @@ export const resolveStoreAccess = functions.https.onCall(
 
     await storeRef.set(storeData, { merge: true })
 
-    const claims = await updateUserClaims(uid, resolvedRole)
-
-    const storeResponseData: admin.firestore.DocumentData = {
-      ...storeData,
+    const workspaceRef = defaultDb.collection('workspaces').doc(resolvedStoreId)
+    const workspaceSnap = await workspaceRef.get()
+    const workspacePayload: admin.firestore.DocumentData = {
       storeId: resolvedStoreId,
+      slug: workspaceSlug,
       workspaceSlug,
+      storeSlug: workspaceSlug,
+      ownerId: (storeData as any).ownerId ?? null,
+      updatedAt: now,
     }
+
+    if (!workspaceSnap.exists) {
+      ;(workspacePayload as any).createdAt = now
+    }
+
+    await workspaceRef.set(workspacePayload, { merge: true })
+
+    const claims = await updateUserClaims(uid, resolvedRole, resolvedStoreId, workspaceSlug)
 
     return {
       ok: true,
       storeId: resolvedStoreId,
+      workspaceSlug,
       role: resolvedRole,
       claims,
-      teamMember: { id: memberRef.id, data: serializeFirestoreData(memberPayload) },
-      store: {
-        id: storeRef.id,
-        data: serializeFirestoreData(storeResponseData),
-      },
-      products: [] as any[],
-      customers: [] as any[],
     }
   },
 )
@@ -1280,7 +1279,7 @@ export const manageStaffAccount = functions.https.onCall(async (data, context) =
     ;(emailData as any).createdAt = timestamp
   }
   await emailRef.set(emailData, { merge: true })
-  const claims = await updateUserClaims(record.uid, role)
+  const claims = await updateUserClaims(record.uid, role, storeId, storeId)
 
   return { ok: true, role, email, uid: record.uid, created, storeId, claims }
 })

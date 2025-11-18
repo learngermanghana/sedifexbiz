@@ -190,7 +190,7 @@ describe('App signup cleanup', () => {
     )
   })
 
-  it('persists metadata and seeds the workspace after a successful signup', async () => {
+  it('persists workspace metadata without seeding store/team/product docs on signup success', async () => {
     const user = userEvent.setup()
     const { user: createdUser } = createTestUser()
 
@@ -204,25 +204,9 @@ describe('App signup cleanup', () => {
     mocks.resolveStoreAccess.mockResolvedValueOnce({
       ok: true,
       storeId: 'workspace-store-id',
+      workspaceSlug: 'workspace-store-id',
       role: 'staff',
       claims: {},
-      teamMember: { id: 'seed-team-member', data: { name: 'Seeded Member' } },
-      store: { id: 'workspace-store-id', data: { name: 'Seeded Store' } },
-      products: [
-        {
-          id: 'product-1',
-          data: {
-            name: 'Seed Product',
-            createdAt: 1_700_000_000_000,
-          },
-        },
-      ],
-      customers: [
-        {
-          id: 'seeded-customer',
-          data: { name: 'Seeded Customer' },
-        },
-      ],
     })
 
     render(
@@ -260,6 +244,7 @@ describe('App signup cleanup', () => {
     expect(secondPersistCall?.[0]).toBe(createdUser)
     expect(secondPersistCall?.[1]).toEqual({
       storeId: 'workspace-store-id',
+      workspaceSlug: 'workspace-store-id',
       role: 'staff',
     })
     await waitFor(() =>
@@ -278,135 +263,24 @@ describe('App signup cleanup', () => {
     )
 
     const ownerDocKey = `teamMembers/${createdUser.uid}`
-    const ownerStoreDocKey = `stores/${createdUser.uid}`
     const customerDocKey = `customers/${createdUser.uid}`
-    const seededTeamMemberDocKey = 'teamMembers/seed-team-member'
-    const seededStoreDocKey = 'stores/workspace-store-id'
-    const seededProductDocKey = 'products/product-1'
-    const seededCustomerDocKey = 'customers/seeded-customer'
-
     const ownerDocRef = firestore.docRefByPath.get(ownerDocKey)
-    const ownerEmailDocKey = `teamMembers/${createdUser.email!.toLowerCase()}`
-    const ownerStoreDocRef = firestore.docRefByPath.get(ownerStoreDocKey)
     const customerDocRef = firestore.docRefByPath.get(customerDocKey)
-    const seededTeamMemberDocRef = firestore.docRefByPath.get(seededTeamMemberDocKey)
-    const seededStoreDocRef = firestore.docRefByPath.get(seededStoreDocKey)
-    const seededProductDocRef = firestore.docRefByPath.get(seededProductDocKey)
-    const seededCustomerDocRef = firestore.docRefByPath.get(seededCustomerDocKey)
 
-    const ownerEmailDocRef = firestore.docRefByPath.get(ownerEmailDocKey)
-
-    expect(ownerDocRef).toBeDefined()
-    expect(ownerEmailDocRef).toBeDefined()
-    expect(ownerStoreDocRef).toBeDefined()
+    // Signup should only persist user metadata for the customer profile. All store/team/product
+    // documents are created later by backend workspace resolution, not seeded from the client.
+    expect(ownerDocRef).toBeUndefined()
     expect(customerDocRef).toBeDefined()
-    expect(seededTeamMemberDocRef).toBeDefined()
-    expect(seededStoreDocRef).toBeDefined()
-    expect(seededProductDocRef).toBeDefined()
-    expect(seededCustomerDocRef).toBeDefined()
 
     const setDocCalls = firestore.setDocMock.mock.calls
-
-    const ownerCalls = setDocCalls.filter(([ref]) => ref === ownerDocRef)
-    expect(ownerCalls).toHaveLength(2)
-    ownerCalls.forEach(([, ownerPayload, ownerOptions]) => {
-      expect(ownerPayload).toEqual(
-        expect.objectContaining({
-          storeId: 'workspace-store-id',
-          name: 'Morgan Owner',
-          companyName: 'Morgan Retail Co',
-          phone: '5551234567',
-          email: 'owner@example.com',
-          role: 'staff',
-          country: 'United States',
-          town: 'Seattle',
-          signupRole: 'team-member',
-          createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-          updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        }),
-      )
-      expect(ownerOptions).toEqual({ merge: true })
-    })
-
-    const ownerEmailCalls = setDocCalls.filter(([ref]) => ref === ownerEmailDocRef)
-    expect(ownerEmailCalls).toHaveLength(1)
-    ownerEmailCalls.forEach(([, ownerEmailPayload, ownerEmailOptions]) => {
-      expect(ownerEmailPayload).toEqual(
-        expect.objectContaining({
-          storeId: 'workspace-store-id',
-          name: 'Morgan Owner',
-          companyName: 'Morgan Retail Co',
-          phone: '5551234567',
-          email: 'owner@example.com',
-          role: 'staff',
-          country: 'United States',
-          town: 'Seattle',
-          signupRole: 'team-member',
-          createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-          updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        }),
-      )
-      expect(ownerEmailOptions).toEqual({ merge: true })
-    })
-
-    const ownerStoreCall = setDocCalls.find(([ref]) => ref === ownerStoreDocRef)
-    expect(ownerStoreCall).toBeDefined()
-    const [, ownerStorePayload, ownerStoreOptions] = ownerStoreCall!
-    expect(ownerStorePayload).toEqual(
-      expect.objectContaining({
-        ownerId: createdUser.uid,
-        status: 'active',
-        inventorySummary: expect.objectContaining({
-          trackedSkus: 0,
-          lowStockSkus: 0,
-          incomingShipments: 0,
-        }),
-        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
-    )
-    expect(ownerStoreOptions).toEqual({ merge: true })
-
     const customerCall = setDocCalls.find(([ref]) => ref === customerDocRef)
     expect(customerCall).toBeDefined()
-    const [, customerPayload, customerOptions] = customerCall!
-    expect(customerPayload).toEqual(
-      expect.objectContaining({
-        storeId: 'workspace-store-id',
-        name: 'Morgan Retail Co',
-        displayName: 'Morgan Owner',
-        email: 'owner@example.com',
-        phone: '5551234567',
-        businessName: 'Morgan Retail Co',
-        ownerName: 'Morgan Owner',
-        country: 'United States',
-        town: 'Seattle',
-        status: 'active',
-        role: 'client',
-        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
-    )
-    expect(customerOptions).toEqual({ merge: true })
 
-    const seededTeamMemberCall = setDocCalls.find(([ref]) => ref === seededTeamMemberDocRef)
-    expect(seededTeamMemberCall?.[1]).toEqual(
-      expect.objectContaining({ name: 'Seeded Member' }),
-    )
-
-    const seededStoreCall = setDocCalls.find(([ref]) => ref === seededStoreDocRef)
-    expect(seededStoreCall?.[1]).toEqual(expect.objectContaining({ name: 'Seeded Store' }))
-
-    const seededProductCall = setDocCalls.find(([ref]) => ref === seededProductDocRef)
-    expect(seededProductCall?.[1]).toEqual(
-      expect.objectContaining({
-        name: 'Seed Product',
-        createdAt: expect.objectContaining({ __type: 'timestamp', millis: 1_700_000_000_000 }),
-      }),
-    )
-
-    const seededCustomerCall = setDocCalls.find(([ref]) => ref === seededCustomerDocRef)
-    expect(seededCustomerCall?.[1]).toEqual(expect.objectContaining({ name: 'Seeded Customer' }))
+    const unrelatedWrites = setDocCalls.filter(([ref]) => {
+      const path = ref?.path ?? ''
+      return path.startsWith('teamMembers/') || path.startsWith('stores/') || path.startsWith('products/')
+    })
+    expect(unrelatedWrites).toHaveLength(0)
 
     await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
     expect(mocks.auth.currentUser).toBeNull()
@@ -512,7 +386,7 @@ describe('App login store metadata', () => {
     mocks.resolveStoreAccess.mockReset()
   })
 
-  it('ensures the signed-in user has a store document keyed by their UID', async () => {
+  it('does not create store documents during login workspace resolution', async () => {
     const user = userEvent.setup()
     const { user: existingUser } = createTestUser()
 
@@ -525,12 +399,9 @@ describe('App login store metadata', () => {
     mocks.resolveStoreAccess.mockResolvedValueOnce({
       ok: true,
       storeId: 'workspace-store-id',
+      workspaceSlug: 'workspace-store-id',
       role: 'staff',
       claims: {},
-      teamMember: null,
-      store: null,
-      products: [],
-      customers: [],
     })
 
     render(
@@ -553,30 +424,11 @@ describe('App login store metadata', () => {
     await waitFor(() => expect(mocks.signInWithEmailAndPassword).toHaveBeenCalled())
     await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalled())
 
-    await waitFor(() => {
-      expect(firestore.docRefByPath.has(`stores/${existingUser.uid}`)).toBe(true)
-    })
+    expect(firestore.docRefByPath.has(`stores/${existingUser.uid}`)).toBe(false)
 
-    const ownerStoreDocRef = firestore.docRefByPath.get(`stores/${existingUser.uid}`)
-    expect(ownerStoreDocRef).toBeDefined()
-
-    const storeCall = firestore.setDocMock.mock.calls.find(([ref]) => ref === ownerStoreDocRef)
-    expect(storeCall).toBeDefined()
-
-    const [, storePayload, storeOptions] = storeCall!
-    expect(storePayload).toEqual(
-      expect.objectContaining({
-        ownerId: existingUser.uid,
-        status: 'active',
-        inventorySummary: expect.objectContaining({
-          trackedSkus: 0,
-          lowStockSkus: 0,
-          incomingShipments: 0,
-        }),
-        createdAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-        updatedAt: expect.objectContaining({ __type: 'serverTimestamp' }),
-      }),
+    const storeWrites = firestore.setDocMock.mock.calls.filter(([ref]) =>
+      (ref?.path ?? '').startsWith('stores/'),
     )
-    expect(storeOptions).toEqual({ merge: true })
+    expect(storeWrites).toHaveLength(0)
   })
 })

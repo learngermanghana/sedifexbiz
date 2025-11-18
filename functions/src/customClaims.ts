@@ -35,7 +35,6 @@ export const applyRoleClaims = functions.https.onCall(async (data, context) => {
   const nextClaims: Record<string, unknown> = { ...existing, role }
   delete nextClaims.stores
   delete nextClaims.activeStoreId
-  delete nextClaims.storeId
   delete nextClaims.roleByStore
 
   await admin.auth().setCustomUserClaims(uid, nextClaims)
