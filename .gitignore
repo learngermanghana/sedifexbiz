@@ -6,3 +6,4 @@ lib/
 dist/
 shared/**/*.js
 shared/**/*.js.map
+functions/.env
