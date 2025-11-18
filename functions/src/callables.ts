@@ -1,172 +1,194 @@
+// functions/src/callables.ts
+
 import * as functions from 'firebase-functions/v1'
-import { admin, defaultDb, rosterDb } from './firestore'
+import { admin, defaultDb } from './firestore'
 
-const db = defaultDb
+/**
+ * Request shape from the frontend (new flow):
+ *
+ * - role: 'owner' | 'member'
+ * - storeId: optional for owner, required for member
+ * - companyName: optional readable company/store name for owner
+ *
+ * Legacy / auto flow (current frontend):
+ * - data is undefined or has no role
+ * - we then try to infer workspace from teamMembers/<uid>.storeId
+ *   If none exists yet, we auto-provision a default store and treat
+ *   the user as an owner.
+ */
 
-const VALID_ROLES = new Set(['owner', 'staff'])
-
-type ContactPayload = {
-  phone?: unknown
-  firstSignupEmail?: unknown
-  ownerName?: unknown
-  businessName?: unknown
+type EnsureCanonicalWorkspaceRequest = {
+  role?: 'owner' | 'member'
+  storeId?: string
+  companyName?: string
 }
 
-type BackfillPayload = {
-  contact?: ContactPayload
+type RawEnsureCanonicalWorkspaceResponse = {
+  ok: boolean
+  workspaceSlug: string | null
+  storeId: string | null
+  claims?: unknown
 }
 
-function normalizeContact(contact: ContactPayload | undefined) {
-  let hasPhone = false
-  let hasFirstSignupEmail = false
-  let hasOwnerName = false
-  let hasBusinessName = false
-  let phone: string | null | undefined
-  let firstSignupEmail: string | null | undefined
-  let ownerName: string | null | undefined
-  let businessName: string | null | undefined
+export const ensureCanonicalWorkspace = functions.https.onCall(
+  async (rawData: unknown, context): Promise<RawEnsureCanonicalWorkspaceResponse> => {
+    const uid = context.auth?.uid
+    const email = (context.auth?.token?.email as string | undefined) ?? null
 
-  if (contact && typeof contact === 'object') {
-    if ('phone' in contact) {
-      hasPhone = true
-      const raw = contact.phone
-      if (raw === null || raw === undefined || raw === '') {
-        phone = null
-      } else if (typeof raw === 'string') {
-        const trimmed = raw.trim()
-        phone = trimmed ? trimmed : null
-      } else {
-        throw new functions.https.HttpsError('invalid-argument', 'Phone must be a string when provided')
+    if (!uid) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'You must be authenticated to call ensureCanonicalWorkspace.',
+      )
+    }
+
+    const data = (rawData ?? {}) as EnsureCanonicalWorkspaceRequest
+    const now = admin.firestore.FieldValue.serverTimestamp()
+
+    const memberRef = defaultDb.collection('teamMembers').doc(uid)
+    const memberSnap = await memberRef.get()
+    const existingMember = memberSnap.exists ? (memberSnap.data() as any) : null
+
+    // Helper to set auth claims and build the response
+    const finalize = async (
+      storeId: string,
+      role: 'owner' | 'member',
+    ): Promise<RawEnsureCanonicalWorkspaceResponse> => {
+      const claims = { storeId, role }
+      await admin.auth().setCustomUserClaims(uid, claims)
+
+      return {
+        ok: true,
+        workspaceSlug: storeId, // we now treat storeId as the workspace id
+        storeId,
+        claims,
       }
     }
 
-    if ('firstSignupEmail' in contact) {
-      hasFirstSignupEmail = true
-      const raw = contact.firstSignupEmail
-      if (raw === null || raw === undefined || raw === '') {
-        firstSignupEmail = null
-      } else if (typeof raw === 'string') {
-        const trimmed = raw.trim().toLowerCase()
-        firstSignupEmail = trimmed ? trimmed : null
-      } else {
+    // ─────────────────────────────────────────────────────────────
+    // LEGACY / AUTO MODE (current frontend)
+    // No role passed => we infer or auto-create a workspace.
+    // ─────────────────────────────────────────────────────────────
+    if (!data.role) {
+      // Case 1: teamMembers/<uid> already has a storeId → reuse it.
+      if (
+        existingMember &&
+        typeof existingMember.storeId === 'string' &&
+        existingMember.storeId.trim()
+      ) {
+        const storeId = existingMember.storeId.trim()
+        const role =
+          (existingMember.role as 'owner' | 'member' | undefined) ?? 'owner'
+        return finalize(storeId, role)
+      }
+
+      // Case 2: No storeId yet → auto-provision a default store and
+      // treat this user as an owner.
+      const generatedStoreId = `store-${uid}`
+
+      // Optional but useful: keep a workspace document keyed by storeId
+      const workspaceRef = defaultDb.collection('workspaces').doc(generatedStoreId)
+      await workspaceRef.set(
+        {
+          company: email || 'My Store',
+          storeId: generatedStoreId,
+          status: 'active',
+          contractStatus: 'Active',
+          paymentStatus: 'trial',
+          plan: 'Starter',
+          billingCycle: 'monthly',
+          contactEmail: email,
+          createdAt: existingMember?.createdAt ?? now,
+          updatedAt: now,
+        },
+        { merge: true },
+      )
+
+      // Upsert the team member as owner of this store
+      await memberRef.set(
+        {
+          uid,
+          email,
+          role: 'owner',
+          storeId: generatedStoreId,
+          createdAt: existingMember?.createdAt ?? now,
+          updatedAt: now,
+        },
+        { merge: true },
+      )
+
+      return finalize(generatedStoreId, 'owner')
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // NEW EXPLICIT MODE (when frontend passes role + storeId)
+    // ─────────────────────────────────────────────────────────────
+    const role: 'owner' | 'member' = data.role === 'owner' ? 'owner' : 'member'
+    let storeId = (data.storeId ?? '').trim()
+    const companyName = (data.companyName ?? '').trim() || 'My Store'
+
+    if (role === 'owner') {
+      // If owner did not provide a storeId, generate one from uid
+      if (!storeId) {
+        storeId = `store-${uid}`
+      }
+
+      const workspaceRef = defaultDb.collection('workspaces').doc(storeId)
+      await workspaceRef.set(
+        {
+          company: companyName,
+          storeId,
+          status: 'active',
+          contractStatus: 'Active',
+          paymentStatus: 'paid',
+          plan: 'Starter',
+          billingCycle: 'monthly',
+          contactEmail: email,
+          createdAt: existingMember?.createdAt ?? now,
+          updatedAt: now,
+        },
+        { merge: true },
+      )
+
+      await memberRef.set(
+        {
+          uid,
+          email,
+          role: 'owner',
+          storeId,
+          createdAt: existingMember?.createdAt ?? now,
+          updatedAt: now,
+        },
+        { merge: true },
+      )
+
+      return finalize(storeId, 'owner')
+    } else {
+      // role === 'member'
+      if (!storeId) {
         throw new functions.https.HttpsError(
           'invalid-argument',
-          'First signup email must be a string when provided',
+          'storeId is required when role is "member".',
         )
       }
+
+      // Optionally verify workspace exists here if you want:
+      // const workspaceSnap = await defaultDb.collection('workspaces').doc(storeId).get()
+      // if (!workspaceSnap.exists) { throw new HttpsError(...); }
+
+      await memberRef.set(
+        {
+          uid,
+          email,
+          role: 'member',
+          storeId,
+          createdAt: existingMember?.createdAt ?? now,
+          updatedAt: now,
+        },
+        { merge: true },
+      )
+
+      return finalize(storeId, 'member')
     }
-
-    if ('ownerName' in contact) {
-      hasOwnerName = true
-      const raw = contact.ownerName
-      if (raw === null || raw === undefined || raw === '') {
-        ownerName = null
-      } else if (typeof raw === 'string') {
-        const trimmed = raw.trim()
-        ownerName = trimmed ? trimmed : null
-      } else {
-        throw new functions.https.HttpsError('invalid-argument', 'Owner name must be a string when provided')
-      }
-    }
-
-    if ('businessName' in contact) {
-      hasBusinessName = true
-      const raw = contact.businessName
-      if (raw === null || raw === undefined || raw === '') {
-        businessName = null
-      } else if (typeof raw === 'string') {
-        const trimmed = raw.trim()
-        businessName = trimmed ? trimmed : null
-      } else {
-        throw new functions.https.HttpsError('invalid-argument', 'Business name must be a string when provided')
-      }
-    }
-  }
-
-  return {
-    phone,
-    hasPhone,
-    firstSignupEmail,
-    hasFirstSignupEmail,
-    ownerName,
-    hasOwnerName,
-    businessName,
-    hasBusinessName,
-  }
-}
-
-async function applyRoleClaim(uid: string, role: string) {
-  const userRecord = await admin
-    .auth()
-    .getUser(uid)
-    .catch(() => null)
-  const existingClaims = (userRecord?.customClaims ?? {}) as Record<string, unknown>
-  const nextClaims: Record<string, unknown> = { ...existingClaims }
-  if (VALID_ROLES.has(role)) {
-    nextClaims.role = role
-  } else {
-    delete nextClaims.role
-  }
-  delete nextClaims.stores
-  delete nextClaims.activeStoreId
-  delete nextClaims.storeId
-  delete nextClaims.roleByStore
-  await admin.auth().setCustomUserClaims(uid, nextClaims)
-  return nextClaims
-}
-
-export const backfillMyStore = functions.https.onCall(async (data, context) => {
-  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in first.')
-
-  const uid = context.auth.uid
-  const token = context.auth.token as Record<string, unknown>
-  const email = typeof token.email === 'string' ? (token.email as string) : null
-  const phone = typeof token.phone_number === 'string' ? (token.phone_number as string) : null
-
-  const payload = (data ?? {}) as BackfillPayload
-  const contact = normalizeContact(payload.contact)
-  const resolvedPhone = contact.hasPhone ? contact.phone ?? null : phone ?? null
-  const resolvedFirstSignupEmail = contact.hasFirstSignupEmail
-    ? contact.firstSignupEmail ?? null
-    : email?.toLowerCase() ?? null
-  const resolvedOwnerName = contact.hasOwnerName ? contact.ownerName ?? null : null
-  const resolvedBusinessName = contact.hasBusinessName ? contact.businessName ?? null : null
-
-  const memberRef = rosterDb.collection('teamMembers').doc(uid)
-  const memberSnap = await memberRef.get()
-  const timestamp = admin.firestore.FieldValue.serverTimestamp()
-  const existingData = memberSnap.data() ?? {}
-  const existingStoreId =
-    typeof existingData.storeId === 'string' && existingData.storeId.trim() !== ''
-      ? (existingData.storeId as string)
-      : null
-  const storeId = existingStoreId ?? uid
-
-  const memberData: admin.firestore.DocumentData = {
-    uid,
-    email,
-    role: 'owner',
-    storeId,
-    phone: resolvedPhone,
-    firstSignupEmail: resolvedFirstSignupEmail,
-    invitedBy: uid,
-    updatedAt: timestamp,
-  }
-
-  if (resolvedOwnerName !== null) {
-    memberData.name = resolvedOwnerName
-  }
-
-  if (resolvedBusinessName !== null) {
-    memberData.companyName = resolvedBusinessName
-  }
-
-  if (!memberSnap.exists) {
-    memberData.createdAt = timestamp
-  }
-
-  await memberRef.set(memberData, { merge: true })
-  const claims = await applyRoleClaim(uid, 'owner')
-
-  return { ok: true, claims, storeId }
-})
+  },
+)

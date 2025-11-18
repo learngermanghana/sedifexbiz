@@ -1,6 +1,6 @@
+// functions/src/firestore.ts
 import * as admin from 'firebase-admin';
 
-// ─────────────────────────────────────────────────────────────────────────────
 // One-time Admin init
 try {
   admin.app();
@@ -8,20 +8,16 @@ try {
   admin.initializeApp();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Default Firestore DB: this is your main project database
+// Single Firestore instance: DEFAULT database only
 const defaultDb = admin.firestore();
 
-// Ignore undefined properties (matches original behaviour)
+// Safety: ignore undefined properties in writes
 if (typeof defaultDb.settings === 'function') {
   defaultDb.settings({ ignoreUndefinedProperties: true });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// "Roster" DB ALIAS
-// Any code that used rosterDb before will now hit the default DB.
-// This is the "force everything to default" part.
+// TEMP: keep the old name but point it to the same DB.
+// All code that used `rosterDb` now talks to the default database.
 const rosterDb = defaultDb;
 
-// Exports used everywhere in the codebase
 export { admin, defaultDb, rosterDb };
