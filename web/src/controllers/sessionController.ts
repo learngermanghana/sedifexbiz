@@ -34,6 +34,7 @@ export async function configureAuthPersistence(auth: Auth) {
 
 type WorkspaceMetadata = {
   storeId?: string
+  workspaceSlug?: string
   role?: 'owner' | 'staff'
 }
 
@@ -53,6 +54,7 @@ export async function persistSession(user: User, workspace?: WorkspaceMetadata) 
         lastActiveAt: serverTimestamp(),
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
         storeId: workspace?.storeId ?? null,
+        workspaceSlug: workspace?.workspaceSlug ?? null,
         role: workspace?.role ?? null,
       },
       { merge: true },
