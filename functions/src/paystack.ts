@@ -63,9 +63,12 @@ if (!PAYSTACK_SECRET) {
 }
 
 /**
- * Util: kobo conversion (Paystack expects amounts in kobo)
+ * Util: convert a major-unit currency amount to the minor units expected by Paystack.
+ *
+ * Paystack accepts amounts in the smallest unit for the provided currency
+ * (kobo, pesewas, cents, etc.), so we simply multiply by 100 and round.
  */
-const toKobo = (amountGhsOrNgn: number) => Math.round(Math.abs(amountGhsOrNgn) * 100)
+const toMinorUnits = (amount: number) => Math.round(Math.abs(amount) * 100)
 
 /**
  * Small helper: assert the user is logged in for callables
@@ -105,7 +108,15 @@ export const createCheckout = functions.https.onCall(async (data, context) => {
   }
 
   const amountFromPlan = planConfig?.totalPriceUsd ?? null
-  const amount = amountFromPlan ?? Number(data?.amount)
+  const amountOverride = Number(data?.amount)
+  const amount = amountFromPlan ?? amountOverride
+
+  const currency =
+    typeof data?.currency === 'string' && data.currency.trim()
+      ? data.currency.trim().toUpperCase()
+      : amountFromPlan !== null
+        ? 'USD'
+        : 'NGN'
 
   if (!email) {
     throw new functions.https.HttpsError('invalid-argument', 'A valid email is required')
@@ -121,7 +132,8 @@ export const createCheckout = functions.https.onCall(async (data, context) => {
 
   const payload = {
     email,
-    amount: toKobo(amount),
+    amount: toMinorUnits(amount),
+    currency,
     reference,
     callback_url: redirectUrl,
     metadata: {
