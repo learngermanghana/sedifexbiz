@@ -8,7 +8,7 @@ import { admin, defaultDb } from './firestore'
 import { buildSimplePdf } from './utils/pdf'
 
 // Billing config (plans & trial)
-import { getBillingConfig, PLAN_IDS, type PlanId } from './plans'
+import { DEFAULT_PLAN_ID, getBillingConfig, normalizePlanId, type PlanId } from './plans'
 
 // Paystack billing functions
 import { createCheckout, paystackWebhook, checkSignupUnlock } from './paystack'
@@ -76,15 +76,6 @@ type ManageStaffPayload = {
 }
 
 const VALID_ROLES = new Set(['owner', 'staff'])
-
-const VALID_PLAN_IDS = new Set<PlanId>(PLAN_IDS as PlanId[])
-
-function normalizePlanId(value: unknown): PlanId | null {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim().toLowerCase()
-  if (!trimmed) return null
-  return VALID_PLAN_IDS.has(trimmed as PlanId) ? (trimmed as PlanId) : null
-}
 
 function toTimestamp(value: unknown): admin.firestore.Timestamp | null {
   if (!value) return null
@@ -700,7 +691,7 @@ export const handleUserCreate = functions.auth.user().onCreate(async user => {
       status: 'Active',
       contractStatus: 'Active',
       billing: {
-        planId: 'starter' as PlanId,
+        planId: DEFAULT_PLAN_ID as PlanId,
         status: 'trial',
         trialEndsAt,
         provider: 'paystack',
@@ -814,7 +805,7 @@ async function initializeStoreImpl(
       (existingStoreData as any).planId ??
       null,
   )
-  const resolvedPlanId = requestedPlanId ?? existingPlanId ?? 'starter'
+  const resolvedPlanId = requestedPlanId ?? existingPlanId ?? DEFAULT_PLAN_ID
 
   const trialDurationMs = Math.max(trialDays, 0) * 24 * 60 * 60 * 1000
   const nowTimestampValue = admin.firestore.Timestamp.now()
