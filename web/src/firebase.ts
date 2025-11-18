@@ -50,17 +50,13 @@ const FIRESTORE_SETTINGS = { ignoreUndefinedProperties: true }
 // Default Firestore database
 export const db: Firestore = initializeFirestore(app, FIRESTORE_SETTINGS)
 
-// Secondary Firestore database named "roster"
-// (make sure you actually created a Firestore DB called "roster" in the console)
-export const rosterDb: Firestore = initializeFirestore(app, FIRESTORE_SETTINGS, 'roster')
+// Alias rosterDb to the default database to keep all data in the primary Firestore
+export const rosterDb: Firestore = db
 
 // ----- Offline persistence (browser only) -----
 if (typeof window !== 'undefined') {
   enableIndexedDbPersistence(db).catch(() => {
     // Multi-tab or unsupported browser; safe to ignore.
-  })
-  enableIndexedDbPersistence(rosterDb).catch(() => {
-    // Same as above.
   })
 }
 

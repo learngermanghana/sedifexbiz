@@ -65,6 +65,7 @@ type ContactPayload = {
 type InitializeStorePayload = {
   contact?: ContactPayload
   planId?: unknown
+  storeId?: unknown
 }
 
 type ManageStaffPayload = {
@@ -111,6 +112,12 @@ function normalizeWorkspaceSlug(value: unknown, fallback: string): string {
     }
   }
   return fallback
+}
+
+function normalizeStoreId(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed || null
 }
 
 function normalizeContactPayload(contact: ContactPayload | undefined) {
@@ -762,6 +769,9 @@ async function initializeStoreImpl(
   const resolvedTown = contact.hasTown ? contact.town ?? null : null
   const resolvedSignupRole = contact.hasSignupRole ? contact.signupRole ?? null : null
 
+  const normalizedStoreId = normalizeStoreId(payload.storeId ?? null)
+  const resolvedRole = resolvedSignupRole === 'team-member' ? 'staff' : 'owner'
+
   // ✅ Use default DB for teamMembers
   const memberRef = defaultDb.collection('teamMembers').doc(uid)
   const defaultMemberRef = memberRef
@@ -783,7 +793,14 @@ async function initializeStoreImpl(
     (existingData as any).storeId.trim() !== ''
       ? ((existingData as any).storeId as string)
       : null
-  const storeId = existingStoreId ?? uid
+  const storeIdCandidate = existingStoreId ?? normalizedStoreId
+  if (resolvedRole === 'staff' && !storeIdCandidate) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Enter the store ID provided by your workspace owner to continue.',
+    )
+  }
+  const storeId = storeIdCandidate ?? uid
 
   const storeRef = defaultDb.collection('stores').doc(storeId)
   const storeSnap = await storeRef.get()
@@ -795,9 +812,6 @@ async function initializeStoreImpl(
       null,
     storeId,
   )
-  const workspaceRef = defaultDb.collection('workspaces').doc(workspaceSlug)
-  const workspaceSnap = await workspaceRef.get()
-  const existingWorkspaceData = (workspaceSnap.data() ?? {}) as admin.firestore.DocumentData
 
   const existingBillingRaw =
     typeof (existingStoreData as any).billing === 'object' &&
@@ -827,7 +841,7 @@ async function initializeStoreImpl(
   const memberData: admin.firestore.DocumentData = {
     uid,
     email,
-    role: 'owner',
+    role: resolvedRole,
     storeId,
     phone: resolvedPhone,
     firstSignupEmail: resolvedFirstSignupEmail,
@@ -866,7 +880,7 @@ async function initializeStoreImpl(
       const defaultMemberData: admin.firestore.DocumentData = {
         uid,
         email,
-        role: 'owner',
+        role: resolvedRole,
         storeId,
         phone: resolvedPhone,
         firstSignupEmail: resolvedFirstSignupEmail,
@@ -906,17 +920,17 @@ async function initializeStoreImpl(
   if (normalizedEmail) {
     const emailRef = defaultDb.collection('teamMembers').doc(normalizedEmail)
     const emailSnap = await emailRef.get()
-    const emailData: admin.firestore.DocumentData = {
-      uid,
-      email,
-      storeId,
-      role: 'owner',
-      phone: resolvedPhone,
-      firstSignupEmail: resolvedFirstSignupEmail,
-      invitedBy: uid,
-      updatedAt: timestamp,
-      workspaceSlug,
-    }
+      const emailData: admin.firestore.DocumentData = {
+        uid,
+        email,
+        storeId,
+        role: resolvedRole,
+        phone: resolvedPhone,
+        firstSignupEmail: resolvedFirstSignupEmail,
+        invitedBy: uid,
+        updatedAt: timestamp,
+        workspaceSlug,
+      }
 
     if (resolvedOwnerName !== null) {
       ;(emailData as any).name = resolvedOwnerName
@@ -941,6 +955,11 @@ async function initializeStoreImpl(
       ;(emailData as any).createdAt = timestamp
     }
     await emailRef.set(emailData, { merge: true })
+  }
+
+  if (resolvedRole === 'staff') {
+    const claims = await updateUserClaims(uid, resolvedRole)
+    return { ok: true, claims, storeId, role: resolvedRole }
   }
 
   const storeData: admin.firestore.DocumentData = {
@@ -1024,76 +1043,9 @@ async function initializeStoreImpl(
   }
 
   await storeRef.set(storeData, { merge: true })
+  const claims = await updateUserClaims(uid, resolvedRole)
 
-  const workspaceData: admin.firestore.DocumentData = {
-    slug: workspaceSlug,
-    storeId,
-    ownerId: uid,
-    updatedAt: timestamp,
-    planId: resolvedPlanId,
-  }
-  if (!workspaceSnap.exists) {
-    ;(workspaceData as any).createdAt = timestamp
-  }
-  if (email) {
-    ;(workspaceData as any).ownerEmail = email
-  }
-  if (resolvedPhone) {
-    ;(workspaceData as any).ownerPhone = resolvedPhone
-  }
-  if (resolvedOwnerName) {
-    ;(workspaceData as any).ownerName = resolvedOwnerName
-  }
-  if (resolvedBusinessName) {
-    ;(workspaceData as any).company = resolvedBusinessName
-    ;(workspaceData as any).displayName = resolvedBusinessName
-  }
-  if (resolvedCountry) {
-    ;(workspaceData as any).country = resolvedCountry
-  }
-  if (resolvedTown) {
-    ;(workspaceData as any).town = resolvedTown
-  }
-  if (resolvedFirstSignupEmail !== null) {
-    ;(workspaceData as any).firstSignupEmail = resolvedFirstSignupEmail
-  }
-
-  const existingWorkspaceContractStart = toTimestamp(
-    (existingWorkspaceData as any).contractStart,
-  )
-  if (!existingWorkspaceContractStart) {
-    ;(workspaceData as any).contractStart = contractStartTimestamp
-  }
-  const existingWorkspaceContractEnd = toTimestamp(
-    (existingWorkspaceData as any).contractEnd,
-  )
-  if (!existingWorkspaceContractEnd) {
-    ;(workspaceData as any).contractEnd = contractEndTimestamp
-  }
-
-  const existingWorkspaceStatus = getOptionalString(
-    (existingWorkspaceData as any).status ?? undefined,
-  )
-  if (!existingWorkspaceStatus) {
-    ;(workspaceData as any).status = 'active'
-  }
-  const existingWorkspaceContractStatus = getOptionalString(
-    (existingWorkspaceData as any).contractStatus ?? undefined,
-  )
-  if (!existingWorkspaceContractStatus) {
-    ;(workspaceData as any).contractStatus = 'active'
-  }
-  const existingWorkspacePaymentStatus = getOptionalString(
-    (existingWorkspaceData as any).paymentStatus ?? undefined,
-  )
-  if (!existingWorkspacePaymentStatus) {
-    ;(workspaceData as any).paymentStatus = 'trial'
-  }
-
-  await workspaceRef.set(workspaceData, { merge: true })
-  const claims = await updateUserClaims(uid, 'owner')
-
-  return { ok: true, claims, storeId }
+  return { ok: true, claims, storeId, role: resolvedRole }
 }
 
 export const initializeStore = functions.https.onCall(async (data, context) => {
@@ -1155,54 +1107,97 @@ export const resolveStoreAccess = functions.https.onCall(
     const emailFromToken =
       typeof token.email === 'string' ? (token.email as string).toLowerCase() : null
 
-    // storeId that comes from the app (or fall back to uid)
-    const rawStoreId =
-      data && typeof (data as any).storeId === 'string'
-        ? (data as any).storeId.trim()
-        : ''
-    const workspaceSlug = rawStoreId || uid
+    // storeId that comes from the app (or fall back to profile/uid)
+    const requestedStoreId = normalizeStoreId((data as any)?.storeId ?? null)
+    const memberRef = defaultDb.collection('teamMembers').doc(uid)
+    const emailRef = emailFromToken
+      ? defaultDb.collection('teamMembers').doc(emailFromToken)
+      : null
+    const [memberSnap, emailSnap] = await Promise.all([
+      memberRef.get(),
+      emailRef?.get() ?? Promise.resolve(null),
+    ])
 
-    // 1) Workspace in DEFAULT database
-    const workspaceRef = defaultDb.collection('workspaces').doc(workspaceSlug)
-    const workspaceSnap = await workspaceRef.get()
+    const baseMemberData = {
+      ...(emailSnap?.data() ?? {}),
+      ...(memberSnap.data() ?? {}),
+    } as admin.firestore.DocumentData
 
-    if (!workspaceSnap.exists) {
+    const profileStoreId = normalizeStoreId((baseMemberData as any).storeId ?? null)
+    const resolvedStoreId = requestedStoreId ?? profileStoreId ?? uid
+    if (!resolvedStoreId) {
       throw new functions.https.HttpsError(
         'failed-precondition',
-        'We could not locate your Sedifex workspace configuration. Check the store ID in Settings.',
+        'A valid store ID is required to access this account.',
       )
     }
 
-    const workspaceData = (workspaceSnap.data() ?? {}) as admin.firestore.DocumentData
-
-    // Prefer storeId from workspace doc, otherwise use slug
-    const existingStoreIdRaw =
-      typeof (workspaceData as any).storeId === 'string'
-        ? ((workspaceData as any).storeId as string).trim()
-        : ''
-    const storeId = existingStoreIdRaw || workspaceSlug
+    const resolvedRole =
+      getOptionalString((baseMemberData as any).role ?? undefined) === 'staff'
+        ? 'staff'
+        : 'owner'
 
     const now = admin.firestore.FieldValue.serverTimestamp()
+    const workspaceSlug = resolvedStoreId
 
-    // 2) Store document in DEFAULT database
-    const storeRef = defaultDb.collection('stores').doc(storeId)
-    const storeSnap = await storeRef.get()
-    const baseStoreData = (storeSnap.data() ?? {}) as admin.firestore.DocumentData
-
-    const storeData: admin.firestore.DocumentData = {
-      ...baseStoreData,
-      ownerId:
-        typeof (baseStoreData as any).ownerId === 'string'
-          ? (baseStoreData as any).ownerId
-          : uid,
-      ownerEmail:
-        typeof (baseStoreData as any).ownerEmail === 'string'
-          ? (baseStoreData as any).ownerEmail
-          : emailFromToken,
-      status: (baseStoreData as any).status ?? 'Active',
-      contractStatus: (baseStoreData as any).contractStatus ?? 'Active',
+    const memberPayload: admin.firestore.DocumentData = {
+      ...baseMemberData,
+      uid,
+      storeId: resolvedStoreId,
+      role: resolvedRole,
+      email: emailFromToken ?? (baseMemberData as any).email ?? null,
       workspaceSlug,
       updatedAt: now,
+    }
+
+    if (!memberSnap.exists) {
+      ;(memberPayload as any).createdAt = now
+    }
+
+    await memberRef.set(memberPayload, { merge: true })
+    if (emailRef) {
+      const emailPayload: admin.firestore.DocumentData = {
+        ...memberPayload,
+        uid,
+        email: emailFromToken,
+        updatedAt: now,
+      }
+      if (emailSnap && !emailSnap.exists) {
+        ;(emailPayload as any).createdAt = now
+      }
+      await emailRef.set(emailPayload, { merge: true })
+    }
+
+    const storeRef = defaultDb.collection('stores').doc(resolvedStoreId)
+    const storeSnap = await storeRef.get()
+    const baseStoreData = (storeSnap.data() ?? {}) as admin.firestore.DocumentData
+    const storeData: admin.firestore.DocumentData = {
+      ...baseStoreData,
+      storeId: resolvedStoreId,
+      workspaceSlug,
+      updatedAt: now,
+    }
+
+    if (!getOptionalString((storeData as any).status ?? undefined)) {
+      ;(storeData as any).status = 'Active'
+    }
+    if (!getOptionalString((storeData as any).contractStatus ?? undefined)) {
+      ;(storeData as any).contractStatus = 'Active'
+    }
+
+    if (resolvedRole === 'owner') {
+      if (!getOptionalString((storeData as any).ownerId ?? undefined)) {
+        ;(storeData as any).ownerId = uid
+      }
+      if (emailFromToken && !getOptionalString((storeData as any).ownerEmail ?? undefined)) {
+        ;(storeData as any).ownerEmail = emailFromToken
+      }
+      if (!getOptionalString((storeData as any).status ?? undefined)) {
+        ;(storeData as any).status = 'Active'
+      }
+      if (!getOptionalString((storeData as any).contractStatus ?? undefined)) {
+        ;(storeData as any).contractStatus = 'Active'
+      }
     }
 
     if (!storeSnap.exists) {
@@ -1218,46 +1213,20 @@ export const resolveStoreAccess = functions.https.onCall(
 
     await storeRef.set(storeData, { merge: true })
 
-    // 3) Team member record in DEFAULT database (give yourself OWNER role)
-    const memberRef = defaultDb.collection('teamMembers').doc(uid)
-    const memberSnap = await memberRef.get()
-    const existingMember = (memberSnap.data() ?? {}) as admin.firestore.DocumentData
-
-    const memberCreatedAt =
-      memberSnap.exists &&
-      (existingMember as any).createdAt instanceof admin.firestore.Timestamp
-        ? ((existingMember as any).createdAt as admin.firestore.Timestamp)
-        : admin.firestore.Timestamp.now()
-
-    const memberData: admin.firestore.DocumentData = {
-      ...existingMember,
-      uid,
-      storeId,
-      role: 'owner',
-      email: emailFromToken,
-      workspaceSlug,
-      updatedAt: now,
-      createdAt: memberCreatedAt,
-    }
-
-    await memberRef.set(memberData, { merge: true })
-
-    // 4) Set auth custom claims so commitSale/receiveStock pass assertStaffAccess
-    const claims = await updateUserClaims(uid, 'owner')
+    const claims = await updateUserClaims(uid, resolvedRole)
 
     const storeResponseData: admin.firestore.DocumentData = {
       ...storeData,
-      storeId,
+      storeId: resolvedStoreId,
       workspaceSlug,
     }
 
-    // Shape similar to original implementation; products/customers left empty
     return {
       ok: true,
-      storeId,
-      role: 'owner',
+      storeId: resolvedStoreId,
+      role: resolvedRole,
       claims,
-      teamMember: { id: memberRef.id, data: serializeFirestoreData(memberData) },
+      teamMember: { id: memberRef.id, data: serializeFirestoreData(memberPayload) },
       store: {
         id: storeRef.id,
         data: serializeFirestoreData(storeResponseData),

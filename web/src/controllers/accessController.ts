@@ -32,12 +32,14 @@ function normalizeSignupRoleInput(value: SignupRoleOption | null | undefined): S
 
 type InitializeStorePayload = {
   contact?: InitializeStoreContactPayload
+  storeId?: string | null
 }
 
 type RawInitializeStoreResponse = {
   ok?: unknown
   storeId?: unknown
   claims?: unknown
+  role?: unknown
 }
 
 type RawResolveStoreAccessResponse = {
@@ -156,7 +158,10 @@ export function extractCallableErrorMessage(error: FirebaseError): string | null
   return normalized || null
 }
 
-export async function initializeStore(contact?: InitializeStoreContactPayload) {
+export async function initializeStore(
+  contact?: InitializeStoreContactPayload,
+  storeId?: string | null,
+) {
   let payload: InitializeStorePayload | undefined
 
   if (contact) {
@@ -197,19 +202,25 @@ export async function initializeStore(contact?: InitializeStoreContactPayload) {
     }
   }
 
+  if (storeId !== undefined) {
+    payload = { ...(payload ?? {}), storeId: storeId ?? null }
+  }
+
   const response = await initializeStoreCallable(payload)
   const data = response.data ?? {}
 
   const ok = data.ok === true
-  const storeId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
+  const resolvedStoreId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
+  const role = normalizeSignupRoleInput((data as any).role) ?? 'owner'
 
-  if (!ok || !storeId) {
+  if (!ok || !resolvedStoreId) {
     throw new Error('Unable to initialize the Sedifex workspace.')
   }
 
   return {
-    storeId,
+    storeId: resolvedStoreId,
     claims: data.claims,
+    role,
   }
 }
 

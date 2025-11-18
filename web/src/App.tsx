@@ -9,7 +9,7 @@ import {
 import { doc, serverTimestamp, setDoc, Timestamp, type Firestore } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { auth, db, rosterDb } from './firebase'
+import { auth, db } from './firebase'
 import './App.css'
 import './pwa'
 import { useToast } from './components/ToastProvider'
@@ -157,14 +157,13 @@ async function persistTeamMemberMetadata(
     }
 
     const writes: Array<Promise<unknown>> = [
-      setDoc(doc(rosterDb, 'teamMembers', user.uid), basePayload, { merge: true }),
       setDoc(doc(db, 'teamMembers', user.uid), basePayload, { merge: true }),
     ]
 
     const normalizedEmail = email.trim().toLowerCase()
     if (normalizedEmail) {
       writes.push(
-        setDoc(doc(rosterDb, 'teamMembers', normalizedEmail), basePayload, { merge: true }),
+        setDoc(doc(db, 'teamMembers', normalizedEmail), basePayload, { merge: true }),
       )
     }
 
@@ -237,7 +236,7 @@ async function persistStoreSeedData(resolution: ResolveStoreAccessResult) {
     writes.push(setDoc(doc(targetDb, collectionName, document.id), normalized, { merge: true }))
   }
 
-  enqueue(rosterDb, 'teamMembers', resolution.teamMember)
+  enqueue(db, 'teamMembers', resolution.teamMember)
   enqueue(db, 'stores', resolution.store)
   resolution.products.forEach(product => enqueue(db, 'products', product))
   resolution.customers.forEach(customer => enqueue(db, 'customers', customer))
@@ -317,6 +316,7 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [businessName, setBusinessName] = useState('')
+  const [storeId, setStoreId] = useState('')
   const [phone, setPhone] = useState('')
   const [normalizedPhone, setNormalizedPhone] = useState('')
   const [country, setCountry] = useState('')
@@ -335,6 +335,7 @@ export default function App() {
   const normalizedBusinessName = businessName.trim()
   const normalizedCountry = country.trim()
   const normalizedTown = town.trim()
+  const normalizedStoreId = storeId.trim()
 
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
   const passwordChecklist = [
@@ -353,7 +354,8 @@ export default function App() {
     normalizedBusinessName.length > 0 &&
     normalizedPhone.length > 0 &&
     normalizedCountry.length > 0 &&
-    normalizedTown.length > 0
+    normalizedTown.length > 0 &&
+    (signupRole === 'team-member' ? normalizedStoreId.length > 0 : true)
 
   const isLoginFormValid = EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
@@ -441,6 +443,7 @@ export default function App() {
     const sanitizedCountry = country.trim()
     const sanitizedTown = town.trim()
     const sanitizedSignupRole = normalizeSignupRole(signupRole)
+    const sanitizedStoreId = storeId.trim()
 
     const validationError =
       mode === 'login' ? getLoginValidationError(sanitizedEmail, sanitizedPassword) : null
@@ -453,10 +456,16 @@ export default function App() {
       setCountry(sanitizedCountry)
       setTown(sanitizedTown)
       setSignupRole(sanitizedSignupRole)
+      setStoreId(sanitizedStoreId)
     }
 
     if (validationError) {
       setStatus({ tone: 'error', message: validationError })
+      return
+    }
+
+    if (mode === 'signup' && sanitizedSignupRole === 'team-member' && !sanitizedStoreId) {
+      setStatus({ tone: 'error', message: 'Enter your store ID to continue.' })
       return
     }
 
@@ -504,7 +513,7 @@ export default function App() {
             country: sanitizedCountry || null,
             town: sanitizedTown || null,
             signupRole: sanitizedSignupRole,
-          })
+          }, sanitizedSignupRole === 'team-member' ? sanitizedStoreId : null)
           initializedStoreId = initialization.storeId
         } catch (error) {
           console.warn('[signup] Failed to initialize workspace', error)
@@ -608,6 +617,7 @@ export default function App() {
       setNormalizedPhone('')
       setCountry('')
       setTown('')
+      setStoreId('')
       setSignupRole('owner')
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
@@ -934,6 +944,28 @@ export default function App() {
                   </div>
                   <p className="form__hint">We’ll customize onboarding tips based on your role.</p>
                 </fieldset>
+              )}
+
+              {mode === 'signup' && signupRole === 'team-member' && (
+                <div className="form__field">
+                  <label htmlFor="store-id">Store ID</label>
+                  <input
+                    id="store-id"
+                    value={storeId}
+                    onChange={event => setStoreId(event.target.value)}
+                    onBlur={() => setStoreId(current => current.trim())}
+                    type="text"
+                    autoComplete="off"
+                    placeholder="Enter the store ID from your owner"
+                    required
+                    disabled={isLoading}
+                    aria-invalid={storeId.length > 0 && normalizedStoreId.length === 0}
+                    aria-describedby="store-id-hint"
+                  />
+                  <p className="form__hint" id="store-id-hint">
+                    Ask your workspace owner for the store ID to join their team.
+                  </p>
+                </div>
               )}
 
               <div className="form__field">
