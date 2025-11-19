@@ -1,23 +1,26 @@
 // functions/src/firestore.ts
-import * as admin from 'firebase-admin';
+import * as admin from 'firebase-admin'
+import { getFirestore } from 'firebase-admin/firestore'
 
-// One-time Admin init
+// Ensure we only initialize the app once
 try {
-  admin.app();
+  admin.app()
 } catch {
-  admin.initializeApp();
+  admin.initializeApp()
 }
 
-// Single Firestore instance: DEFAULT database only
-const defaultDb = admin.firestore();
+// IMPORTANT:
+// You recreated Firestore with a named database ID "default" (not the older "(default)").
+// Tell the Admin SDK to use that database explicitly.
+const app = admin.app()
+const defaultDb = getFirestore(app, 'default')
 
-// Safety: ignore undefined properties in writes
-if (typeof defaultDb.settings === 'function') {
-  defaultDb.settings({ ignoreUndefinedProperties: true });
+// Keep ignoring undefined properties like before
+if (typeof (defaultDb as any).settings === 'function') {
+  defaultDb.settings({ ignoreUndefinedProperties: true })
 }
 
-// TEMP: keep the old name but point it to the same DB.
-// All code that used `rosterDb` now talks to the default database.
-const rosterDb = defaultDb;
+// We no longer use a separate roster DB – point it at the same instance
+const rosterDb = defaultDb
 
-export { admin, defaultDb, rosterDb };
+export { admin, defaultDb, rosterDb }
