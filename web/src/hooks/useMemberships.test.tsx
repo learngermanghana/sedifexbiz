@@ -8,8 +8,9 @@ vi.mock('./useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
 }))
 
+// ✅ Mock default Firestore DB now (not rosterDb)
 vi.mock('../firebase', () => ({
-  rosterDb: {},
+  db: {},
 }))
 
 const collectionMock = vi.fn(() => ({ type: 'collection' }))
