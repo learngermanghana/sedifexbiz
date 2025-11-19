@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { doc, getDoc, Timestamp } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, limit, query, Timestamp, where } from 'firebase/firestore'
+import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { db, rosterDb } from '../firebase'
+import { getStoreIdFromRecord } from '../utils/storeId'
 import { getOnboardingStatus, setOnboardingStatus, type OnboardingStatus } from '../utils/onboarding'
 import './Onboarding.css'
 
@@ -121,32 +123,30 @@ export default function Onboarding() {
 
     const fetchDetails = async () => {
       try {
-        const [memberSnapshot, storeSnapshot] = await Promise.all([
-          getDoc(doc(rosterDb, 'teamMembers', user.uid)),
-          getDoc(doc(db, 'stores', user.uid)),
-        ])
+        const teamMembersRef = collection(rosterDb, 'teamMembers')
+        const membershipQuery = query(teamMembersRef, where('uid', '==', user.uid), limit(1))
+        const membershipSnapshot = await getDocs(membershipQuery)
+        const membershipDoc = membershipSnapshot.docs[0] ?? null
 
         if (!isActive) {
           return
         }
 
-        if (memberSnapshot.exists()) {
+        if (membershipDoc) {
           setTeamMemberDetails({
-            id: memberSnapshot.id,
-            ...(memberSnapshot.data() as TeamMemberDocument),
+            id: membershipDoc.id,
+            ...(membershipDoc.data() as TeamMemberDocument),
           })
         } else {
           setTeamMemberDetails(null)
         }
 
-        if (storeSnapshot.exists()) {
-          setStoreDetails({
-            id: storeSnapshot.id,
-            ...(storeSnapshot.data() as StoreDocument),
-          })
-        } else {
-          setStoreDetails(null)
+        const storeDetails = await loadStoreDetails(user.uid, membershipDoc)
+        if (!isActive) {
+          return
         }
+
+        setStoreDetails(storeDetails)
       } catch (error) {
         if (!isActive) {
           return
@@ -324,4 +324,40 @@ export default function Onboarding() {
       </section>
     </div>
   )
+}
+
+function normalizeStoreIdCandidate(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+async function loadStoreDetails(
+  userUid: string,
+  membershipDoc: QueryDocumentSnapshot<DocumentData> | null,
+): Promise<StoreDetails | null> {
+  const membershipData = membershipDoc?.data() as TeamMemberDocument | undefined
+  const storeIdFromRecord = membershipData ? getStoreIdFromRecord(membershipData) : null
+  const candidates = Array.from(
+    new Set(
+      [storeIdFromRecord, membershipDoc?.id, userUid]
+        .map(normalizeStoreIdCandidate)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  )
+
+  for (const candidateId of candidates) {
+    const snapshot = await getDoc(doc(db, 'stores', candidateId))
+    if (snapshot.exists()) {
+      return {
+        id: snapshot.id,
+        ...(snapshot.data() as StoreDocument),
+      }
+    }
+  }
+
+  return null
 }
