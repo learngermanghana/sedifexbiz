@@ -76,4 +76,17 @@ describe('Onboarding page', () => {
     expect(screen.getByText(/let's get your workspace ready/i)).toBeInTheDocument()
     expect(screen.getByText(/review your workspace details/i)).toBeInTheDocument()
   })
+
+  it('defaults to pending status when no onboarding record exists yet', () => {
+    mockGetOnboardingStatus.mockReturnValueOnce(null)
+
+    render(
+      <MemoryRouter>
+        <Onboarding />
+      </MemoryRouter>,
+    )
+
+    expect(mockSetOnboardingStatus).toHaveBeenCalledWith('user-123', 'pending')
+    expect(screen.getByRole('heading', { name: /welcome to sedifex/i })).toBeInTheDocument()
+  })
 })

@@ -76,7 +76,9 @@ function formatRole(value: string | null | undefined): string {
 export default function Onboarding() {
   const user = useAuthUser()
   const navigate = useNavigate()
-  const [status, setStatus] = useState<OnboardingStatus | null>(() => getOnboardingStatus(user?.uid ?? null))
+  const [status, setStatus] = useState<OnboardingStatus>(() =>
+    getOnboardingStatus(user?.uid ?? null) ?? 'pending',
+  )
   const [teamMemberDetails, setTeamMemberDetails] = useState<TeamMemberDetails | null>(null)
   const [storeDetails, setStoreDetails] = useState<StoreDetails | null>(null)
   const [detailsError, setDetailsError] = useState<string | null>(null)
@@ -92,7 +94,16 @@ export default function Onboarding() {
   const updatedAtLabel = formatTimestamp(storeDetails?.updatedAt ?? null)
 
   useEffect(() => {
-    setStatus(getOnboardingStatus(user?.uid ?? null))
+    const storedStatus = getOnboardingStatus(user?.uid ?? null)
+    if (!storedStatus) {
+      if (user?.uid) {
+        setOnboardingStatus(user.uid, 'pending')
+      }
+      setStatus('pending')
+      return
+    }
+
+    setStatus(storedStatus)
   }, [user?.uid])
 
   useEffect(() => {
