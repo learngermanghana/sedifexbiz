@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore'
 import { rosterDb } from '../firebase'
 import { useAuthUser } from './useAuthUser'
+import { getStoreIdFromRecord } from '../utils/storeId'
 
 export type Membership = {
   id: string
@@ -35,7 +36,7 @@ function mapMembershipSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): M
 
   const createdAt = data.createdAt instanceof Timestamp ? data.createdAt : null
   const updatedAt = data.updatedAt instanceof Timestamp ? data.updatedAt : null
-  const storeId = typeof data.storeId === 'string' && data.storeId.trim() !== '' ? data.storeId : null
+  const storeId = getStoreIdFromRecord(data)
 
   return {
     id: snapshot.id,
