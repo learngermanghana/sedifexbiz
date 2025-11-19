@@ -115,7 +115,7 @@ type TeamMemberMetadata = {
 }
 
 /**
- * Seeds/repairs the roster entry in the secondary "roster" DB.
+ * Seeds/repairs the team member entry in the default Firestore database.
  * Also creates an email-key alias doc when available for flexible lookups.
  */
 export async function ensureTeamMemberDocument(user: User, metadata?: TeamMemberMetadata) {
