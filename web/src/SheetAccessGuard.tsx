@@ -5,6 +5,7 @@ import { INACTIVE_WORKSPACE_MESSAGE } from './controllers/accessController'
 import { clearActiveStoreIdForUser, persistActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { useAuthUser } from './hooks/useAuthUser'
 import type { User } from 'firebase/auth'
+import { getStoreIdFromRecord } from './utils/storeId'
 
 type TeamMemberSnapshot = {
   storeId: string | null
@@ -35,7 +36,7 @@ function snapshotFromData(data: Record<string, unknown> | undefined): TeamMember
     return { storeId: null, status: null, contractStatus: null }
   }
 
-  const storeId = normalizeString(data['storeId'])
+  const storeId = getStoreIdFromRecord(data)
   const status = normalizeString(data['status'])
   const contractStatus = normalizeString(data['contractStatus'])
 

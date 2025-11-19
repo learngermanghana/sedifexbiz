@@ -129,4 +129,27 @@ describe('useMemberships', () => {
       },
     ])
   })
+
+  it('maps legacy workspace_uid fields to storeId', async () => {
+    mockUseAuthUser.mockReturnValue({ uid: 'user-789' })
+
+    const membershipDoc = {
+      id: 'member-doc',
+      data: () => ({
+        uid: 'user-789',
+        role: 'staff',
+        workspace_uid: 'workspace-from-default-db',
+      }),
+    }
+
+    getDocsMock.mockResolvedValue({ docs: [membershipDoc] })
+
+    const { result } = renderHook(() => useMemberships())
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false)
+    })
+
+    expect(result.current.memberships[0]?.storeId).toBe('workspace-from-default-db')
+  })
 })
