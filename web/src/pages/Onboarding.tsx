@@ -1,11 +1,24 @@
 import React, { useEffect, useState } from 'react'
-import { collection, doc, getDoc, getDocs, limit, query, Timestamp, where } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  query,
+  Timestamp,
+  where,
+} from 'firebase/firestore'
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { useAuthUser } from '../hooks/useAuthUser'
-import { db, rosterDb } from '../firebase'
+import { db } from '../firebase' // ✅ use only default Firestore
 import { getStoreIdFromRecord } from '../utils/storeId'
-import { getOnboardingStatus, setOnboardingStatus, type OnboardingStatus } from '../utils/onboarding'
+import {
+  getOnboardingStatus,
+  setOnboardingStatus,
+  type OnboardingStatus,
+} from '../utils/onboarding'
 import './Onboarding.css'
 
 type TeamMemberDocument = {
@@ -31,9 +44,7 @@ type StoreDocument = {
 type StoreDetails = StoreDocument & { id: string }
 
 function formatTimestamp(value: unknown): string | null {
-  if (!value) {
-    return null
-  }
+  if (!value) return null
 
   if (value instanceof Timestamp) {
     return value.toDate().toLocaleString()
@@ -60,13 +71,9 @@ function formatTimestamp(value: unknown): string | null {
 }
 
 function formatLabel(value: string | null | undefined): string {
-  if (!value) {
-    return '—'
-  }
+  if (!value) return '—'
   const normalized = value.trim()
-  if (!normalized) {
-    return '—'
-  }
+  if (!normalized) return '—'
   return normalized.replace(/\b\w/g, letter => letter.toUpperCase())
 }
 
@@ -81,7 +88,8 @@ export default function Onboarding() {
   const [status, setStatus] = useState<OnboardingStatus>(() =>
     getOnboardingStatus(user?.uid ?? null) ?? 'pending',
   )
-  const [teamMemberDetails, setTeamMemberDetails] = useState<TeamMemberDetails | null>(null)
+  const [teamMemberDetails, setTeamMemberDetails] =
+    useState<TeamMemberDetails | null>(null)
   const [storeDetails, setStoreDetails] = useState<StoreDetails | null>(null)
   const [detailsError, setDetailsError] = useState<string | null>(null)
   const [isLoadingDetails, setIsLoadingDetails] = useState(false)
@@ -90,7 +98,8 @@ export default function Onboarding() {
   const ownerEmail = teamMemberDetails?.email ?? user?.email ?? '—'
   const ownerRole = formatRole(teamMemberDetails?.role)
   const createdAtLabel = formatTimestamp(teamMemberDetails?.createdAt ?? null)
-  const storeIdLabel = teamMemberDetails?.storeId ?? storeDetails?.id ?? user?.uid ?? '—'
+  const storeIdLabel =
+    teamMemberDetails?.storeId ?? storeDetails?.id ?? user?.uid ?? '—'
   const storeStatusLabel = formatLabel(storeDetails?.status)
   const contractStatusLabel = formatLabel(storeDetails?.contractStatus)
   const updatedAtLabel = formatTimestamp(storeDetails?.updatedAt ?? null)
@@ -123,14 +132,17 @@ export default function Onboarding() {
 
     const fetchDetails = async () => {
       try {
-        const teamMembersRef = collection(rosterDb, 'teamMembers')
-        const membershipQuery = query(teamMembersRef, where('uid', '==', user.uid), limit(1))
+        // ✅ read teamMembers from the *default* Firestore DB
+        const teamMembersRef = collection(db, 'teamMembers')
+        const membershipQuery = query(
+          teamMembersRef,
+          where('uid', '==', user.uid),
+          limit(1),
+        )
         const membershipSnapshot = await getDocs(membershipQuery)
         const membershipDoc = membershipSnapshot.docs[0] ?? null
 
-        if (!isActive) {
-          return
-        }
+        if (!isActive) return
 
         if (membershipDoc) {
           setTeamMemberDetails({
@@ -142,19 +154,17 @@ export default function Onboarding() {
         }
 
         const storeDetails = await loadStoreDetails(user.uid, membershipDoc)
-        if (!isActive) {
-          return
-        }
+        if (!isActive) return
 
         setStoreDetails(storeDetails)
       } catch (error) {
-        if (!isActive) {
-          return
-        }
+        if (!isActive) return
         console.warn('[onboarding] Failed to load workspace details', error)
         setTeamMemberDetails(null)
         setStoreDetails(null)
-        setDetailsError('We couldn’t load your workspace details. Refresh to try again.')
+        setDetailsError(
+          'We couldn’t load your workspace details. Refresh to try again.',
+        )
       } finally {
         if (isActive) {
           setIsLoadingDetails(false)
@@ -172,9 +182,7 @@ export default function Onboarding() {
   const hasCompleted = status === 'completed'
 
   function handleComplete() {
-    if (!user) {
-      return
-    }
+    if (!user) return
 
     setOnboardingStatus(user.uid, 'completed')
     setStatus('completed')
@@ -182,24 +190,36 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="page onboarding-page" role="region" aria-labelledby="onboarding-title">
+    <div
+      className="page onboarding-page"
+      role="region"
+      aria-labelledby="onboarding-title"
+    >
       <header className="page__header onboarding-page__header">
         <div>
           <h1 className="page__title" id="onboarding-title">
             Welcome to Sedifex
           </h1>
           <p className="page__subtitle">
-            Let&apos;s get your workspace ready before you invite the rest of your team.
+            Let&apos;s get your workspace ready before you invite the rest of
+            your team.
           </p>
         </div>
         {hasCompleted && (
-          <span className="onboarding-page__status" role="status" aria-live="polite">
+          <span
+            className="onboarding-page__status"
+            role="status"
+            aria-live="polite"
+          >
             Onboarding complete
           </span>
         )}
       </header>
 
-      <section className="card onboarding-card" aria-labelledby="onboarding-step-1">
+      <section
+        className="card onboarding-card"
+        aria-labelledby="onboarding-step-1"
+      >
         <header className="onboarding-card__header">
           <span className="onboarding-card__step">Step 1</span>
           <h2 className="onboarding-card__title" id="onboarding-step-1">
@@ -207,9 +227,10 @@ export default function Onboarding() {
           </h2>
         </header>
         <p>
-          You&apos;re signed in as the workspace owner. We recommend keeping this login private and using it only for
-          high-impact controls like payouts, data exports, and team access. Add a recovery email in case you ever
-          need to reset your password.
+          You&apos;re signed in as the workspace owner. We recommend keeping
+          this login private and using it only for high-impact controls like
+          payouts, data exports, and team access. Add a recovery email in case
+          you ever need to reset your password.
         </p>
         <ul className="onboarding-card__list">
           <li>Keep your owner credentials secure.</li>
@@ -218,38 +239,61 @@ export default function Onboarding() {
         </ul>
         <div className="onboarding-card__details" aria-live="polite">
           <div className="onboarding-card__details-header">
-            <h3 className="onboarding-card__details-title" id="onboarding-owner-details">
+            <h3
+              className="onboarding-card__details-title"
+              id="onboarding-owner-details"
+            >
               Review your workspace details
             </h3>
             <p className="onboarding-card__details-subtitle">
-              Confirm that your owner profile and store information look correct before inviting your team.
+              Confirm that your owner profile and store information look correct
+              before inviting your team.
             </p>
           </div>
           {isLoadingDetails ? (
-            <p className="onboarding-card__details-status">Loading your workspace data…</p>
+            <p className="onboarding-card__details-status">
+              Loading your workspace data…
+            </p>
           ) : detailsError ? (
-            <p className="onboarding-card__details-status onboarding-card__details-status--error">{detailsError}</p>
+            <p className="onboarding-card__details-status onboarding-card__details-status--error">
+              {detailsError}
+            </p>
           ) : (
-            <div className="onboarding-card__details-columns" aria-describedby="onboarding-owner-details">
+            <div
+              className="onboarding-card__details-columns"
+              aria-describedby="onboarding-owner-details"
+            >
               <div className="onboarding-card__details-section">
-                <p className="onboarding-card__details-section-title">Account</p>
+                <p className="onboarding-card__details-section-title">
+                  Account
+                </p>
                 <dl className="onboarding-card__details-grid">
                   <div className="onboarding-card__details-row">
                     <dt className="onboarding-card__details-term">Owner UID</dt>
-                    <dd className="onboarding-card__details-value">{ownerUid}</dd>
+                    <dd className="onboarding-card__details-value">
+                      {ownerUid}
+                    </dd>
                   </div>
                   <div className="onboarding-card__details-row">
                     <dt className="onboarding-card__details-term">Email</dt>
-                    <dd className="onboarding-card__details-value">{ownerEmail}</dd>
+                    <dd className="onboarding-card__details-value">
+                      {ownerEmail}
+                    </dd>
                   </div>
                   <div className="onboarding-card__details-row">
                     <dt className="onboarding-card__details-term">Role</dt>
-                    <dd className="onboarding-card__details-value">{ownerRole}</dd>
+                    <dd className="onboarding-card__details-value">
+                      {ownerRole}
+                    </dd>
                   </div>
                   {createdAtLabel ? (
                     <div className="onboarding-card__details-row">
-                      <dt className="onboarding-card__details-term">Created</dt>
-                      <dd className="onboarding-card__details-value">{createdAtLabel}</dd>
+                      <dt className="onboarding-card__details-term">
+                        Created
+                      </dt>
+                      <dd className="onboarding-card__details-value">
+                        {createdAtLabel}
+                      </dd>
                     </div>
                   ) : null}
                 </dl>
@@ -259,20 +303,32 @@ export default function Onboarding() {
                 <dl className="onboarding-card__details-grid">
                   <div className="onboarding-card__details-row">
                     <dt className="onboarding-card__details-term">Store ID</dt>
-                    <dd className="onboarding-card__details-value">{storeIdLabel}</dd>
+                    <dd className="onboarding-card__details-value">
+                      {storeIdLabel}
+                    </dd>
                   </div>
                   <div className="onboarding-card__details-row">
                     <dt className="onboarding-card__details-term">Status</dt>
-                    <dd className="onboarding-card__details-value">{storeStatusLabel}</dd>
+                    <dd className="onboarding-card__details-value">
+                      {storeStatusLabel}
+                    </dd>
                   </div>
                   <div className="onboarding-card__details-row">
-                    <dt className="onboarding-card__details-term">Contract</dt>
-                    <dd className="onboarding-card__details-value">{contractStatusLabel}</dd>
+                    <dt className="onboarding-card__details-term">
+                      Contract
+                    </dt>
+                    <dd className="onboarding-card__details-value">
+                      {contractStatusLabel}
+                    </dd>
                   </div>
                   {updatedAtLabel ? (
                     <div className="onboarding-card__details-row">
-                      <dt className="onboarding-card__details-term">Last updated</dt>
-                      <dd className="onboarding-card__details-value">{updatedAtLabel}</dd>
+                      <dt className="onboarding-card__details-term">
+                        Last updated
+                      </dt>
+                      <dd className="onboarding-card__details-value">
+                        {updatedAtLabel}
+                      </dd>
                     </div>
                   ) : null}
                 </dl>
@@ -282,7 +338,10 @@ export default function Onboarding() {
         </div>
       </section>
 
-      <section className="card onboarding-card" aria-labelledby="onboarding-step-2">
+      <section
+        className="card onboarding-card"
+        aria-labelledby="onboarding-step-2"
+      >
         <header className="onboarding-card__header">
           <span className="onboarding-card__step">Step 2</span>
           <h2 className="onboarding-card__title" id="onboarding-step-2">
@@ -290,20 +349,27 @@ export default function Onboarding() {
           </h2>
         </header>
         <p>
-          Use the team access workspace to create login credentials for every teammate who needs Sedifex. Assign
-          each person a role so they only see the tools they need.
+          Use the team access workspace to create login credentials for every
+          teammate who needs Sedifex. Assign each person a role so they only see
+          the tools they need.
         </p>
         <ul className="onboarding-card__list">
           <li>Managers can run inventory and day-close workflows.</li>
-          <li>Cashiers can sell, receive stock, and view customer history.</li>
+          <li>
+            Cashiers can sell, receive stock, and view customer history.
+          </li>
           <li>Owners always retain full admin and billing access.</li>
         </ul>
         <p className="onboarding-card__cta">
-          Need to update access later? Your Sedifex account manager can help tailor roles for your team.
+          Need to update access later? Your Sedifex account manager can help
+          tailor roles for your team.
         </p>
       </section>
 
-      <section className="card onboarding-card" aria-labelledby="onboarding-step-3">
+      <section
+        className="card onboarding-card"
+        aria-labelledby="onboarding-step-3"
+      >
         <header className="onboarding-card__header">
           <span className="onboarding-card__step">Step 3</span>
           <h2 className="onboarding-card__title" id="onboarding-step-3">
@@ -311,8 +377,9 @@ export default function Onboarding() {
           </h2>
         </header>
         <p>
-          Once you&apos;ve added your teammates, you&apos;re ready to jump into the dashboard. You can always revisit
-          staff access later to make changes.
+          Once you&apos;ve added your teammates, you&apos;re ready to jump into
+          the dashboard. You can always revisit staff access later to make
+          changes.
         </p>
         <button
           type="button"
@@ -327,10 +394,7 @@ export default function Onboarding() {
 }
 
 function normalizeStoreIdCandidate(value: unknown): string | null {
-  if (typeof value !== 'string') {
-    return null
-  }
-
+  if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed ? trimmed : null
 }
@@ -339,8 +403,12 @@ async function loadStoreDetails(
   userUid: string,
   membershipDoc: QueryDocumentSnapshot<DocumentData> | null,
 ): Promise<StoreDetails | null> {
-  const membershipData = membershipDoc?.data() as TeamMemberDocument | undefined
-  const storeIdFromRecord = membershipData ? getStoreIdFromRecord(membershipData) : null
+  const membershipData = membershipDoc?.data() as
+    | TeamMemberDocument
+    | undefined
+  const storeIdFromRecord = membershipData
+    ? getStoreIdFromRecord(membershipData)
+    : null
   const candidates = Array.from(
     new Set(
       [storeIdFromRecord, membershipDoc?.id, userUid]
