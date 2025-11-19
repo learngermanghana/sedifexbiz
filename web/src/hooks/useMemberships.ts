@@ -1,4 +1,3 @@
-// web/src/hooks/useMemberships.ts
 import { useEffect, useState } from 'react'
 import {
   Timestamp,
@@ -9,7 +8,7 @@ import {
   type DocumentData,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { rosterDb } from '../firebase'
+import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
 import { getStoreIdFromRecord } from '../utils/storeId'
 
@@ -77,7 +76,8 @@ export function useMemberships() {
       }
 
       try {
-        const membersRef = collection(rosterDb, 'teamMembers')
+        // ✅ Use default Firestore DB
+        const membersRef = collection(db, 'teamMembers')
         const membershipsQuery = query(membersRef, where('uid', '==', user.uid))
         const snapshot = await getDocs(membershipsQuery)
 
