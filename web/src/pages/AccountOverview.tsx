@@ -11,47 +11,15 @@ import {
   type DocumentSnapshot,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
-import { httpsCallable } from 'firebase/functions'
-import { db, functions } from '../firebase'
+import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
 import { manageStaffAccount } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
 import { useAuthUser } from '../hooks/useAuthUser'
+import { AccountBillingSection } from '../components/AccountBillingSection'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-type BillingCycle = 'monthly' | 'quarterly' | 'semiannual' | 'annual'
-
-type PlanOption = {
-  id: string
-  label: string
-}
-
-const PLAN_OPTIONS: PlanOption[] = [
-  { id: 'space', label: 'Standard' },
-]
-
-const BILLING_CYCLE_OPTIONS: { value: BillingCycle; label: string }[] = [
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'quarterly', label: 'Quarterly' },
-  { value: 'semiannual', label: 'Semiannual' },
-  { value: 'annual', label: 'Annual' },
-]
-
-type CreateCheckoutPayload = {
-  planId: string
-  billingCycle: BillingCycle
-  email: string
-  storeId: string
-  redirectUrl?: string
-}
-
-type CreateCheckoutResponse = {
-  ok?: boolean
-  authorizationUrl?: string | null
-  reference?: string | null
-}
 
 type StoreProfile = {
   name: string | null
@@ -155,10 +123,6 @@ function formatTimestamp(timestamp: Timestamp | null) {
   }
 }
 
-function getPlanVariantId(planId: string, billingCycle: BillingCycle) {
-  return `${planId}-${billingCycle}`
-}
-
 export default function AccountOverview() {
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
   const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships()
@@ -180,76 +144,12 @@ export default function AccountOverview() {
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  const [selectedPlanId, setSelectedPlanId] = useState(PLAN_OPTIONS[0]?.id ?? '')
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly')
-  const [checkoutError, setCheckoutError] = useState<string | null>(null)
-  const [startingCheckout, setStartingCheckout] = useState(false)
-
   const activeMembership = useMemo(() => {
     if (!storeId) return null
     return memberships.find(m => m.storeId === storeId) ?? null
   }, [memberships, storeId])
 
   const isOwner = activeMembership?.role === 'owner'
-
-  const createCheckout = useMemo(
-    () => httpsCallable<CreateCheckoutPayload, CreateCheckoutResponse>(functions, 'createCheckout'),
-    [],
-  )
-
-  async function handleStartCheckout(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (startingCheckout) return
-
-    setCheckoutError(null)
-
-    if (!storeId) {
-      const message = 'Select a workspace before starting checkout.'
-      setCheckoutError(message)
-      publish({ message, tone: 'error' })
-      return
-    }
-
-    const accountEmail = user?.email?.trim()
-    if (!accountEmail) {
-      const message = 'A valid account email is required to start checkout.'
-      setCheckoutError(message)
-      publish({ message, tone: 'error' })
-      return
-    }
-
-    const planId = getPlanVariantId(selectedPlanId, billingCycle)
-    const redirectUrl = `${window.location.origin}${window.location.pathname}#/account`
-
-    setStartingCheckout(true)
-
-    try {
-      const payload: CreateCheckoutPayload = {
-        planId,
-        billingCycle,
-        email: accountEmail,
-        storeId,
-        redirectUrl,
-      }
-
-      const { data } = await createCheckout(payload)
-      const authorizationUrl = data?.authorizationUrl ?? null
-
-      if (authorizationUrl) {
-        window.location.assign(authorizationUrl)
-        return
-      }
-
-      throw new Error('We could not start the Paystack checkout. Please try again.')
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unable to start the Paystack checkout. Please try again.'
-      setCheckoutError(message)
-      publish({ message, tone: 'error' })
-    } finally {
-      setStartingCheckout(false)
-    }
-  }
 
   useEffect(() => {
     if (!storeId) {
@@ -491,71 +391,14 @@ export default function AccountOverview() {
         </section>
       )}
 
-      <section aria-labelledby="account-overview-contract">
-        <h2 id="account-overview-contract">Contract &amp; billing</h2>
-        <dl className="account-overview__grid">
-          <div>
-            <dt>Contract status</dt>
-            <dd>{formatValue(profile?.status ?? null)}</dd>
-          </div>
-          <div>
-            <dt>Billing plan</dt>
-            <dd>{formatValue(profile?.billingPlan ?? null)}</dd>
-          </div>
-          <div>
-            <dt>Payment provider</dt>
-            <dd>{formatValue(profile?.paymentProvider ?? null)}</dd>
-          </div>
-        </dl>
-
-        {isOwner ? (
-          <form onSubmit={handleStartCheckout} className="account-overview__form">
-            <fieldset disabled={startingCheckout || storeLoading || membershipsLoading}>
-              <legend className="sr-only">Start Paystack checkout</legend>
-              <div className="account-overview__form-grid">
-                <label>
-                  <span>Plan</span>
-                  <select
-                    value={selectedPlanId}
-                    onChange={event => setSelectedPlanId(event.target.value)}
-                    required
-                  >
-                    {PLAN_OPTIONS.map(plan => (
-                      <option key={plan.id} value={plan.id}>
-                        {plan.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  <span>Billing cycle</span>
-                  <select
-                    value={billingCycle}
-                    onChange={event => setBillingCycle(event.target.value as BillingCycle)}
-                    required
-                  >
-                    {BILLING_CYCLE_OPTIONS.map(option => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <button type="submit" className="button button--primary">
-                  {startingCheckout ? 'Redirecting…' : 'Pay with Paystack'}
-                </button>
-              </div>
-
-              <p className="form__hint">We’ll send you to Paystack to confirm your subscription.</p>
-              {checkoutError && <p className="account-overview__form-error">{checkoutError}</p>}
-            </fieldset>
-          </form>
-        ) : (
-          <p role="note">Only workspace owners can start billing checkout.</p>
-        )}
-      </section>
+      <AccountBillingSection
+        storeId={storeId ?? null}
+        ownerEmail={user?.email ?? null}
+        isOwner={isOwner}
+        contractStatus={profile?.status ?? null}
+        billingPlan={profile?.billingPlan ?? null}
+        paymentProvider={profile?.paymentProvider ?? null}
+      />
 
       <section aria-labelledby="account-overview-roster">
         <h2 id="account-overview-roster">Team roster</h2>
