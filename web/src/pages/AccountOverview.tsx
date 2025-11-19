@@ -18,6 +18,7 @@ import { manageStaffAccount } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { AccountBillingSection } from '../components/AccountBillingSection'
+import { getStoreIdFromRecord } from '../utils/storeId'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -59,14 +60,18 @@ function toNullableString(value: unknown) {
 }
 
 function isTimestamp(value: unknown): value is Timestamp {
-  return typeof value === 'object' && value !== null && typeof (value as Timestamp).toDate === 'function'
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Timestamp).toDate === 'function'
+  )
 }
 
 function mapStoreSnapshot(
   snapshot: DocumentSnapshot<DocumentData> | QueryDocumentSnapshot<DocumentData> | null,
 ): StoreProfile | null {
   if (!snapshot) return null
-  const data = snapshot.data()
+  const data = snapshot.data() || {}
 
   return {
     name: toNullableString(data.name),
@@ -90,10 +95,15 @@ function mapStoreSnapshot(
 }
 
 function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): RosterMember {
-  const data = snapshot.data()
-  const role = data.role === 'owner' ? 'owner' : 'staff'
-  const uid = typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id
-  const storeId = typeof data.storeId === 'string' && data.storeId.trim() ? data.storeId : null
+  const data = snapshot.data() || {}
+  const role: Membership['role'] = data.role === 'owner' ? 'owner' : 'staff'
+  const uid =
+    typeof data.uid === 'string' && data.uid.trim()
+      ? data.uid
+      : snapshot.id
+
+  // Use helper so it also supports legacy workspace_uid / workspaceId fields
+  const storeId = getStoreIdFromRecord(data)
 
   return {
     id: snapshot.id,
@@ -374,7 +384,14 @@ export default function AccountOverview() {
             <div>
               <dt>Address</dt>
               <dd>
-                {[profile.addressLine1, profile.addressLine2, profile.city, profile.region, profile.postalCode, profile.country]
+                {[
+                  profile.addressLine1,
+                  profile.addressLine2,
+                  profile.city,
+                  profile.region,
+                  profile.postalCode,
+                  profile.country,
+                ]
                   .filter(Boolean)
                   .join(', ') || '—'}
               </dd>
@@ -404,7 +421,11 @@ export default function AccountOverview() {
         <h2 id="account-overview-roster">Team roster</h2>
 
         {isOwner ? (
-          <form onSubmit={handleSubmit} data-testid="account-invite-form" className="account-overview__form">
+          <form
+            onSubmit={handleSubmit}
+            data-testid="account-invite-form"
+            className="account-overview__form"
+          >
             <fieldset disabled={submitting}>
               <legend className="sr-only">Invite or update a teammate</legend>
               <div className="account-overview__form-grid">
@@ -420,7 +441,12 @@ export default function AccountOverview() {
                 </label>
                 <label>
                   <span>Role</span>
-                  <select value={role} onChange={event => setRole(event.target.value as Membership['role'])}>
+                  <select
+                    value={role}
+                    onChange={event =>
+                      setRole(event.target.value as Membership['role'])
+                    }
+                  >
                     <option value="owner">Owner</option>
                     <option value="staff">Staff</option>
                   </select>
@@ -438,14 +464,20 @@ export default function AccountOverview() {
                   {submitting ? 'Sending…' : 'Send invite'}
                 </button>
               </div>
-              {formError && <p className="account-overview__form-error">{formError}</p>}
+              {formError && (
+                <p className="account-overview__form-error">{formError}</p>
+              )}
             </fieldset>
           </form>
         ) : (
           <p role="note">You have read-only access to the team roster.</p>
         )}
 
-        <div className="account-overview__roster" role="table" aria-label="Team roster">
+        <div
+          className="account-overview__roster"
+          role="table"
+          aria-label="Team roster"
+        >
           <div className="account-overview__roster-header" role="row">
             <span role="columnheader">Email</span>
             <span role="columnheader">Role</span>
@@ -470,9 +502,13 @@ export default function AccountOverview() {
                 data-first-signup-email={member.firstSignupEmail ?? undefined}
               >
                 <span role="cell">{formatValue(member.email)}</span>
-                <span role="cell">{member.role === 'owner' ? 'Owner' : 'Staff'}</span>
+                <span role="cell">
+                  {member.role === 'owner' ? 'Owner' : 'Staff'}
+                </span>
                 <span role="cell">{formatValue(member.invitedBy)}</span>
-                <span role="cell">{formatTimestamp(member.updatedAt ?? member.createdAt)}</span>
+                <span role="cell">
+                  {formatTimestamp(member.updatedAt ?? member.createdAt)}
+                </span>
               </div>
             ))
           )}
