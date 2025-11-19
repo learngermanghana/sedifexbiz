@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore'
-import { auth, rosterDb } from './firebase'
+import { auth, db } from './firebase'
 import { INACTIVE_WORKSPACE_MESSAGE } from './controllers/accessController'
 import { clearActiveStoreIdForUser, persistActiveStoreIdForUser } from './utils/activeStoreStorage'
 import { useAuthUser } from './hooks/useAuthUser'
@@ -80,11 +80,12 @@ async function loadActiveTeamMemberWithRetries(user: User): Promise<ActiveTeamMe
 }
 
 async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
-  const uidRef = doc(rosterDb, 'teamMembers', user.uid)
+  // ✅ Look up membership in the default Firestore DB
+  const uidRef = doc(db, 'teamMembers', user.uid)
   const uidSnapshot = await getDoc(uidRef)
 
   if (uidSnapshot.exists()) {
-    return snapshotFromData(uidSnapshot.data())
+    return snapshotFromData(uidSnapshot.data() as Record<string, unknown>)
   }
 
   const email = normalizeString(user.email)
@@ -92,14 +93,14 @@ async function loadTeamMember(user: User): Promise<TeamMemberSnapshot> {
     return { storeId: null, status: null, contractStatus: null }
   }
 
-  const membersRef = collection(rosterDb, 'teamMembers')
+  const membersRef = collection(db, 'teamMembers')
   const candidates = await getDocs(query(membersRef, where('email', '==', email)))
   const match = candidates.docs[0]
   if (!match) {
     return { storeId: null, status: null, contractStatus: null }
   }
 
-  return snapshotFromData(match.data())
+  return snapshotFromData(match.data() as Record<string, unknown>)
 }
 
 function isWorkspaceActive({ status, contractStatus }: TeamMemberSnapshot): boolean {
