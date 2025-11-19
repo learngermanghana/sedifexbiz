@@ -11,6 +11,7 @@ import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
 import Onboarding from './pages/Onboarding'
 import AccountOverview from './pages/AccountOverview'
+import { BillingVerifyPage } from './pages/BillingVerifyPage'
 import { ToastProvider } from './components/ToastProvider'
 
 const router = createHashRouter([
@@ -19,6 +20,7 @@ const router = createHashRouter([
     element: <App />,
     children: [
       { index: true, element: <Shell><Dashboard /></Shell> },
+      { path: 'dashboard', element: <Shell><Dashboard /></Shell> },
       { path: 'products',  element: <Shell><Products /></Shell> },
       { path: 'sell',      element: <Shell><Sell /></Shell> },
       { path: 'receive',   element: <Shell><Receive /></Shell> },
@@ -26,6 +28,7 @@ const router = createHashRouter([
       { path: 'close-day', element: <Shell><CloseDay /></Shell> },
       { path: 'onboarding', element: <Shell><Onboarding /></Shell> },
       { path: 'account',   element: <Shell><AccountOverview /></Shell> },
+      { path: 'billing/verify', element: <BillingVerifyPage /> },
     ],
   },
 ])
