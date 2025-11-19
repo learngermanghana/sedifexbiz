@@ -248,7 +248,11 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return
-    const status = getOnboardingStatus(user.uid)
+    let status = getOnboardingStatus(user.uid)
+    if (!status) {
+      status = 'pending'
+      setOnboardingStatus(user.uid, 'pending')
+    }
     if (status === 'pending' && location.pathname !== '/onboarding') {
       navigate('/onboarding', { replace: true })
     }
