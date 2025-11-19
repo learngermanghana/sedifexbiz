@@ -109,7 +109,7 @@ export const createCheckout = functions.https.onCall(async (data, context) => {
   const redirectUrlRaw =
     typeof data?.redirectUrl === 'string' ? data.redirectUrl.trim() : ''
   const redirectUrl =
-    redirectUrlRaw || (APP_BASE_URL ? `${APP_BASE_URL}/billing/verify` : undefined)
+    redirectUrlRaw || (APP_BASE_URL ? `${APP_BASE_URL}/#/billing/verify` : undefined)
 
   const metadataIn =
     data?.metadata && typeof data.metadata === 'object'

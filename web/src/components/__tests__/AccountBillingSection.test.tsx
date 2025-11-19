@@ -54,7 +54,7 @@ describe('AccountBillingSection', () => {
         storeId: 'store-123',
         amount: 100,
         plan: 'starter-yearly',
-        redirectUrl: expect.stringContaining('/billing/verify'),
+        redirectUrl: expect.stringContaining('/#/billing/verify'),
         metadata: { source: 'account-contract-billing' },
       })
     })
