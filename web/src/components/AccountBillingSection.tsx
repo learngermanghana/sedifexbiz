@@ -63,7 +63,9 @@ export const AccountBillingSection: React.FC<Props> = ({
     try {
       setLoading(true)
 
-      const redirectUrl = `${window.location.origin}/billing/verify?storeId=${encodeURIComponent(storeId)}`
+      const redirectUrl = `${window.location.origin}/#/billing/verify?storeId=${encodeURIComponent(
+        storeId,
+      )}`
 
       const response = await startPaystackCheckout({
         email: ownerEmail,
