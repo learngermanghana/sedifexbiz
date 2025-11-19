@@ -44,14 +44,11 @@ const FUNCTIONS_REGION =
 
 export const functions = getFunctions(app, FUNCTIONS_REGION)
 
-// ----- Firestore (default + "roster" database) -----
+// ----- Firestore -----
 const FIRESTORE_SETTINGS = { ignoreUndefinedProperties: true }
 
 // Default Firestore database
 export const db: Firestore = initializeFirestore(app, FIRESTORE_SETTINGS)
-
-// Alias rosterDb to the default database to keep all data in the primary Firestore
-export const rosterDb: Firestore = db
 
 // ----- Offline persistence (browser only) -----
 if (typeof window !== 'undefined') {
