@@ -7,7 +7,7 @@ function toErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message || 'Something went wrong. Please try again.'
   try {
     return JSON.stringify(error)
-  } catch (serializationError) {
+  } catch {
     return String(error)
   }
 }
@@ -22,7 +22,7 @@ export default function Gate({ children }: { children?: ReactNode }) {
   if (error) {
     return (
       <div className="mx-auto max-w-md p-6 text-center">
-        <h1 className="text-2xl font-semibold mb-2">We couldn't load your workspace</h1>
+        <h1 className="text-2xl font-semibold mb-2">We couldn&apos;t load your workspace</h1>
         <p className="text-sm text-red-600">{toErrorMessage(error)}</p>
       </div>
     )
