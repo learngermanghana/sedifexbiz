@@ -37,9 +37,10 @@ describe('firebase configuration', () => {
     vi.stubEnv('VITE_FB_FUNCTIONS_REGION', 'us-test-1')
   })
 
-  it('aliases rosterDb to the default Firestore database', async () => {
+  it('initializes the default Firestore database', async () => {
     const firebase = await import('./firebase')
 
-    expect(firebase.rosterDb).toBe(firebase.db)
+    expect(firebase.db).toBeDefined()
+    expect(firebase).not.toHaveProperty('rosterDb')
   })
 })
