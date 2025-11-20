@@ -168,6 +168,47 @@ describe('AccountOverview', () => {
     expect(mockPublish).toHaveBeenCalledWith({ message: 'Team member updated.', tone: 'success' })
   })
 
+  it('shows billing details from plan/provider fields stored in the workspace document', async () => {
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-1',
+          uid: 'owner-1',
+          role: 'owner',
+          storeId: 'store-123',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+
+    getDocMock.mockResolvedValueOnce({
+      exists: () => true,
+      data: () => ({
+        displayName: 'Sedifex Coffee',
+        status: 'trial',
+        contractStatus: 'Active',
+        planId: 'starter-monthly',
+        provider: 'paystack',
+      }),
+    })
+
+    render(<AccountOverview />)
+
+    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(1))
+
+    expect(await screen.findByText(/starter-monthly/i)).toBeInTheDocument()
+    expect(screen.getByText(/paystack/i)).toBeInTheDocument()
+    expect(screen.getByText(/active/i)).toBeInTheDocument()
+  })
+
   it('renders a read-only roster for staff members', async () => {
     mockUseMemberships.mockReturnValue({
       memberships: [

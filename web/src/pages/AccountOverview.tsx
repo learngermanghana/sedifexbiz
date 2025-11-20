@@ -28,6 +28,7 @@ type StoreProfile = {
   email: string | null
   phone: string | null
   status: string | null
+  contractStatus: string | null
   timezone: string | null
   currency: string | null
   billingPlan: string | null
@@ -59,6 +60,15 @@ function toNullableString(value: unknown) {
   return typeof value === 'string' && value.trim() !== '' ? value : null
 }
 
+function coalesceString(values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value
+    }
+  }
+  return null
+}
+
 function isTimestamp(value: unknown): value is Timestamp {
   return (
     typeof value === 'object' &&
@@ -79,10 +89,11 @@ function mapStoreSnapshot(
     email: toNullableString(data.email),
     phone: toNullableString(data.phone),
     status: toNullableString(data.status),
+    contractStatus: coalesceString([data.contractStatus, data.status]),
     timezone: toNullableString(data.timezone),
     currency: toNullableString(data.currency),
-    billingPlan: toNullableString(data.billingPlan),
-    paymentProvider: toNullableString(data.paymentProvider),
+    billingPlan: coalesceString([data.billingPlan, data.planId, data.plan]),
+    paymentProvider: coalesceString([data.paymentProvider, data.provider]),
     addressLine1: toNullableString(data.addressLine1),
     addressLine2: toNullableString(data.addressLine2),
     city: toNullableString(data.city),
@@ -412,7 +423,7 @@ export default function AccountOverview() {
         storeId={storeId ?? null}
         ownerEmail={user?.email ?? null}
         isOwner={isOwner}
-        contractStatus={profile?.status ?? null}
+        contractStatus={profile?.contractStatus ?? profile?.status ?? null}
         billingPlan={profile?.billingPlan ?? null}
         paymentProvider={profile?.paymentProvider ?? null}
       />

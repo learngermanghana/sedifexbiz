@@ -101,7 +101,9 @@ export default function Onboarding() {
   const storeIdLabel =
     teamMemberDetails?.storeId ?? storeDetails?.id ?? user?.uid ?? '—'
   const storeStatusLabel = formatLabel(storeDetails?.status)
-  const contractStatusLabel = formatLabel(storeDetails?.contractStatus)
+  const contractStatusLabel = formatLabel(
+    storeDetails?.contractStatus ?? storeDetails?.status,
+  )
   const updatedAtLabel = formatTimestamp(storeDetails?.updatedAt ?? null)
 
   useEffect(() => {
