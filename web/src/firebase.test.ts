@@ -12,10 +12,10 @@ vi.mock('firebase/auth', () => ({
   }),
 }))
 
-vi.mock('firebase/firestore', () => ({
+  vi.mock('firebase/firestore', () => ({
   initializeFirestore: vi.fn(() => ({ firestore: true })),
   enableIndexedDbPersistence: vi.fn(() => Promise.resolve()),
-}))
+  }))
 
 vi.mock('firebase/functions', () => ({
   getFunctions: vi.fn(() => ({ functions: true })),
@@ -37,8 +37,16 @@ describe('firebase configuration', () => {
     vi.stubEnv('VITE_FB_FUNCTIONS_REGION', 'us-test-1')
   })
 
-  it('initializes the default Firestore database', async () => {
+  it('initializes the manually created default Firestore database', async () => {
     const firebase = await import('./firebase')
+
+    const { initializeFirestore } = await import('firebase/firestore')
+
+    expect(initializeFirestore).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      'default',
+    )
 
     expect(firebase.db).toBeDefined()
     expect(firebase).not.toHaveProperty('rosterDb')

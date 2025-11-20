@@ -17,6 +17,12 @@ type FirebaseEnvKey =
   | 'VITE_FB_APP_ID'
   | 'VITE_FB_FUNCTIONS_REGION'
 
+const firestoreDatabaseId =
+  typeof import.meta.env.VITE_FB_DATABASE_ID === 'string' &&
+  import.meta.env.VITE_FB_DATABASE_ID.trim()
+    ? import.meta.env.VITE_FB_DATABASE_ID.trim()
+    : 'default'
+
 function requireEnv(key: FirebaseEnvKey): string {
   const v = import.meta.env[key]
   if (typeof v === 'string' && v.trim()) return v
@@ -47,8 +53,8 @@ export const functions = getFunctions(app, FUNCTIONS_REGION)
 // ----- Firestore -----
 const FIRESTORE_SETTINGS = { ignoreUndefinedProperties: true }
 
-// Default Firestore database
-export const db: Firestore = initializeFirestore(app, FIRESTORE_SETTINGS)
+// Default Firestore database (manually created as "default", not legacy "(default)")
+export const db: Firestore = initializeFirestore(app, FIRESTORE_SETTINGS, firestoreDatabaseId)
 
 // ----- Offline persistence (browser only) -----
 if (typeof window !== 'undefined') {
