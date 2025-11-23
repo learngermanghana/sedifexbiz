@@ -13,7 +13,6 @@ import { auth, db } from './firebase'
 import './App.css'
 import './pwa'
 import { useToast } from './components/ToastProvider'
-import { configureAuthPersistence, persistSession, refreshSessionHeartbeat } from './controllers/sessionController'
 import {
   initializeStore,
   resolveStoreAccess,
@@ -221,11 +220,6 @@ export default function App() {
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
 
   useEffect(() => {
-    // Ensure persistence is configured before we react to auth changes
-    configureAuthPersistence(auth).catch(error => {
-      console.warn('[auth] Unable to configure persistence', error)
-    })
-
     const unsubscribe = onAuthStateChanged(auth, nextUser => {
       setUser(nextUser)
       setIsAuthReady(true)
@@ -237,13 +231,6 @@ export default function App() {
     if (!isAuthReady || user) return
     if (status.tone === 'loading') setStatus({ tone: 'idle', message: '' })
   }, [isAuthReady, status.tone, user])
-
-  useEffect(() => {
-    if (!user) return
-    refreshSessionHeartbeat(user).catch(error => {
-      console.warn('[session] Unable to refresh session', error)
-    })
-  }, [user])
 
   useEffect(() => {
     // Small UX touch: show the current auth mode in the tab title
@@ -333,14 +320,8 @@ export default function App() {
           sanitizedEmail,
           sanitizedPassword,
         )
-        await persistSession(nextUser)
         try {
-          const resolution = await resolveStoreAccess()
-          await persistSession(nextUser, {
-            storeId: resolution.storeId,
-            workspaceSlug: resolution.workspaceSlug,
-            role: resolution.role,
-          })
+          await resolveStoreAccess()
         } catch (error) {
           console.warn('[auth] Failed to resolve workspace access', error)
           setStatus({ tone: 'error', message: getErrorMessage(error) })
@@ -352,7 +333,6 @@ export default function App() {
           sanitizedEmail,
           sanitizedPassword,
         )
-        await persistSession(nextUser)
 
         let initializedStoreId: string | undefined
         try {
@@ -382,12 +362,6 @@ export default function App() {
           await cleanupFailedSignup(nextUser)
           return
         }
-
-        await persistSession(nextUser, {
-          storeId: resolution.storeId,
-          workspaceSlug: resolution.workspaceSlug,
-          role: resolution.role,
-        })
 
         try {
           const preferredDisplayName =

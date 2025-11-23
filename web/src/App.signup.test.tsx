@@ -16,9 +16,6 @@ const mocks = vi.hoisted(() => {
     },
     createUserWithEmailAndPassword: vi.fn(),
     signInWithEmailAndPassword: vi.fn(),
-    configureAuthPersistence: vi.fn(async () => {}),
-    persistSession: vi.fn(async () => {}),
-    refreshSessionHeartbeat: vi.fn(async () => {}),
     publish: vi.fn(),
     initializeStore: vi.fn(),
     resolveStoreAccess: vi.fn(),
@@ -94,22 +91,6 @@ vi.mock('firebase/firestore', () => ({
   },
 }))
 
-vi.mock('./controllers/sessionController', async () => {
-  const actual = await vi.importActual<typeof import('./controllers/sessionController')>(
-    './controllers/sessionController',
-  )
-
-  return {
-    ...actual,
-    configureAuthPersistence: (...args: unknown[]) => mocks.configureAuthPersistence(...args),
-    persistSession: async (...args: Parameters<typeof actual.persistSession>) => {
-      await mocks.persistSession(...args)
-      return actual.persistSession(...args)
-    },
-    refreshSessionHeartbeat: (...args: unknown[]) => mocks.refreshSessionHeartbeat(...args),
-  }
-})
-
 vi.mock('./components/ToastProvider', () => ({
   useToast: () => ({ publish: mocks.publish }),
 }))
@@ -142,53 +123,6 @@ describe('App signup cleanup', () => {
     mocks.resolveStoreAccess.mockReset()
   })
 
-  it('surfaces signup errors without deleting the new account', async () => {
-    const user = userEvent.setup()
-    const { user: createdUser, deleteFn } = createTestUser()
-
-    mocks.createUserWithEmailAndPassword.mockImplementation(async () => {
-      mocks.auth.currentUser = createdUser
-      mocks.listeners.forEach(listener => listener(createdUser))
-      return { user: createdUser }
-    })
-
-    mocks.persistSession.mockRejectedValueOnce(new Error('Unable to persist session'))
-
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
-
-    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
-    await waitFor(() =>
-      expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument(),
-    )
-
-    await act(async () => {
-      await user.click(screen.getByRole('tab', { name: /Sign up/i }))
-      await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
-      await user.type(screen.getByLabelText(/Full name/i), 'Morgan Owner')
-      await user.type(screen.getByLabelText(/Business name/i), 'Morgan Retail Co')
-      await user.type(screen.getByLabelText(/Phone/i), '5551234567')
-      await user.type(screen.getByLabelText(/Country/i), 'Canada')
-      await user.type(screen.getByLabelText(/Town or city/i), 'Toronto')
-      await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
-      await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
-
-      await user.click(screen.getByRole('button', { name: /Create account/i }))
-    })
-
-    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
-
-    expect(deleteFn).not.toHaveBeenCalled()
-    expect(mocks.auth.signOut).not.toHaveBeenCalled()
-    expect(mocks.auth.currentUser).toBe(createdUser)
-    expect(mocks.publish).toHaveBeenCalledWith(
-      expect.objectContaining({ tone: 'error', message: 'Unable to persist session' }),
-    )
-  })
-
   it('persists workspace metadata without seeding store/team/product docs on signup success', async () => {
     const user = userEvent.setup()
     const { user: createdUser } = createTestUser()
@@ -214,7 +148,6 @@ describe('App signup cleanup', () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() =>
       expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument(),
     )
@@ -234,18 +167,6 @@ describe('App signup cleanup', () => {
       await user.click(screen.getByRole('button', { name: /Create account/i }))
     })
 
-    await waitFor(() => expect(mocks.persistSession).toHaveBeenCalledTimes(2))
-    const firstPersistCall = mocks.persistSession.mock.calls[0]
-    expect(firstPersistCall?.[0]).toBe(createdUser)
-    expect(firstPersistCall?.[1]).toBeUndefined()
-
-    const secondPersistCall = mocks.persistSession.mock.calls[1]
-    expect(secondPersistCall?.[0]).toBe(createdUser)
-    expect(secondPersistCall?.[1]).toEqual({
-      storeId: 'workspace-store-id',
-      workspaceSlug: 'workspace-store-id',
-      role: 'staff',
-    })
     await waitFor(() =>
       expect(mocks.initializeStore).toHaveBeenCalledWith({
         phone: '5551234567',
@@ -315,7 +236,6 @@ describe('App signup cleanup', () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() =>
       expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument(),
     )
@@ -409,7 +329,6 @@ describe('App login store metadata', () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() =>
       expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument(),
     )
