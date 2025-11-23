@@ -133,7 +133,13 @@ function formatTimestamp(timestamp: Timestamp | null) {
   }
 }
 
-export default function AccountOverview() {
+type HeadingLevel = 'h1' | 'h2' | 'h3' | 'h4'
+
+type AccountOverviewProps = {
+  headingLevel?: HeadingLevel
+}
+
+export default function AccountOverview({ headingLevel = 'h1' }: AccountOverviewProps) {
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
   const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships()
   const { publish } = useToast()
@@ -324,10 +330,12 @@ export default function AccountOverview() {
     return <div role="alert">{storeError}</div>
   }
 
+  const Heading = headingLevel as keyof JSX.IntrinsicElements
+
   if (!storeId && !storeLoading) {
     return (
       <div className="account-overview" role="status">
-        <h1>Account overview</h1>
+        <Heading>Account overview</Heading>
         <p>Select a workspace to view account details.</p>
       </div>
     )
@@ -337,7 +345,7 @@ export default function AccountOverview() {
 
   return (
     <div className="account-overview">
-      <h1>Account overview</h1>
+      <Heading>Account overview</Heading>
 
       {(membershipsError || profileError || rosterError) && (
         <div className="account-overview__error" role="alert">

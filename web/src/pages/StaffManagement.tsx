@@ -60,7 +60,13 @@ function formatDate(value: Date | null) {
   }
 }
 
-export default function StaffManagement() {
+type HeadingLevel = 'h1' | 'h2' | 'h3' | 'h4'
+
+type StaffManagementProps = {
+  headingLevel?: HeadingLevel
+}
+
+export default function StaffManagement({ headingLevel = 'h1' }: StaffManagementProps) {
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
   const { memberships } = useMemberships()
   const { publish } = useToast()
@@ -212,10 +218,12 @@ export default function StaffManagement() {
     return <div role="alert">{storeError}</div>
   }
 
+  const Heading = headingLevel as keyof JSX.IntrinsicElements
+
   if (!storeId && !storeLoading) {
     return (
       <div className="page staff-page" role="status">
-        <h1>Staff management</h1>
+        <Heading>Staff management</Heading>
         <p>Select a workspace to manage staff accounts.</p>
       </div>
     )
@@ -226,7 +234,7 @@ export default function StaffManagement() {
       <header className="page__header">
         <div>
           <p className="page__eyebrow">Workspace</p>
-          <h1 className="page__title">Staff management</h1>
+          <Heading className="page__title">Staff management</Heading>
           <p className="page__subtitle">
             Invite new teammates, reset passwords, or deactivate access.
           </p>

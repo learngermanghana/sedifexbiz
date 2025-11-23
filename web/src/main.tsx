@@ -10,9 +10,7 @@ import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
 import Onboarding from './pages/Onboarding'
-import AccountOverview from './pages/AccountOverview'
-import WorkspaceSettings from './pages/WorkspaceSettings'
-import StaffManagement from './pages/StaffManagement'
+import WorkspaceHub from './pages/WorkspaceHub'
 import { BillingVerifyPage } from './pages/BillingVerifyPage'
 import { ToastProvider } from './components/ToastProvider'
 
@@ -29,9 +27,9 @@ const router = createHashRouter([
       { path: 'customers', element: <Shell><Customers /></Shell> },
       { path: 'close-day', element: <Shell><CloseDay /></Shell> },
       { path: 'onboarding', element: <Shell><Onboarding /></Shell> },
-      { path: 'workspace', element: <Shell><WorkspaceSettings /></Shell> },
-      { path: 'staff', element: <Shell><StaffManagement /></Shell> },
-      { path: 'account',   element: <Shell><AccountOverview /></Shell> },
+      { path: 'workspace', element: <Shell><WorkspaceHub /></Shell> },
+      { path: 'staff', element: <Shell><WorkspaceHub /></Shell> },
+      { path: 'account',   element: <Shell><WorkspaceHub /></Shell> },
       { path: 'billing/verify', element: <BillingVerifyPage /> },
     ],
   },
