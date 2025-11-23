@@ -81,17 +81,26 @@ describe('AccountOverview', () => {
     whereMock.mockClear()
 
     mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
-    getDocMock.mockResolvedValue({
-      exists: () => true,
-      data: () => ({
-        displayName: 'Sedifex Coffee',
-        status: 'Active',
-        currency: 'GHS',
-        billingPlan: 'Monthly',
-        paymentProvider: 'Stripe',
-        createdAt: { toDate: () => new Date('2023-01-01T00:00:00Z') },
-        updatedAt: { toDate: () => new Date('2023-02-01T00:00:00Z') },
-      }),
+    getDocMock.mockImplementation(async request => {
+      const path = (request as { path?: string } | undefined)?.path ?? ''
+
+      if (path === 'default/store/store-123') {
+        return {
+          id: 'store-123',
+          exists: () => true,
+          data: () => ({
+            displayName: 'Sedifex Coffee',
+            status: 'Active',
+            currency: 'GHS',
+            billingPlan: 'Monthly',
+            paymentProvider: 'Stripe',
+            createdAt: { toDate: () => new Date('2023-01-01T00:00:00Z') },
+            updatedAt: { toDate: () => new Date('2023-02-01T00:00:00Z') },
+          }),
+        }
+      }
+
+      return { exists: () => false }
     })
     getDocsMock.mockResolvedValue({
       docs: [
@@ -221,8 +230,11 @@ describe('AccountOverview', () => {
       error: null,
     })
 
-    getDocMock.mockResolvedValueOnce({
-      exists: () => false,
+    getDocMock.mockImplementation(request => {
+      const path = (request as { path?: string } | undefined)?.path ?? ''
+      if (path === 'default/store/owner-1') return { exists: () => false }
+      if (path === 'stores/owner-1') return { exists: () => false }
+      return { exists: () => false }
     })
 
     getDocsMock.mockImplementation(async request => {
@@ -274,7 +286,7 @@ describe('AccountOverview', () => {
       await Promise.resolve()
     })
 
-    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
 
     expect(queryMock).toHaveBeenCalledWith(

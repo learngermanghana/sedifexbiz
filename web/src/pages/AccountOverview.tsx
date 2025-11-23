@@ -164,13 +164,23 @@ export default function AccountOverview() {
     async function loadStore() {
       if (!storeId) return
       try {
+        const defaultStoreRef = doc(db, 'default/store', storeId)
+        const defaultSnapshot = await getDoc(defaultStoreRef)
+
+        if (cancelled) return
+
+        if (defaultSnapshot.exists()) {
+          setStore({ id: storeId, ...(defaultSnapshot.data() as DocumentData) })
+          return
+        }
+
         const storeRef = doc(db, 'stores', storeId)
         const snapshot = await getDoc(storeRef)
 
         if (cancelled) return
 
         if (snapshot.exists()) {
-          setStore({ id: snapshot.id, ...(snapshot.data() as DocumentData) })
+          setStore({ id: snapshot.id ?? storeId, ...(snapshot.data() as DocumentData) })
           return
         }
 
