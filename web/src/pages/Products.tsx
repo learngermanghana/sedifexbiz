@@ -34,6 +34,7 @@ export type ProductRecord = {
   price: number | null
   sku?: string | null
   stockCount?: number | null
+  reorderLevel?: number | null
   reorderThreshold?: number | null
   lastReceipt?: ReceiptDetails | null
   createdAt?: unknown
@@ -60,7 +61,7 @@ const DEFAULT_CREATE_FORM = {
   name: '',
   sku: '',
   price: '',
-  reorderThreshold: '',
+  reorderLevel: '',
   initialStock: '',
 }
 
@@ -68,7 +69,7 @@ const DEFAULT_EDIT_FORM = {
   name: '',
   sku: '',
   price: '',
-  reorderThreshold: '',
+  reorderLevel: '',
 }
 
 function toDate(value: unknown): Date | null {
@@ -216,12 +217,23 @@ export default function Products() {
           id: docSnap.id,
           ...(docSnap.data() as Record<string, unknown>),
         }))
-        const sanitizedRows = rows.map(row => ({
-          ...(row as ProductRecord),
-          price: sanitizePrice((row as ProductRecord).price),
-          storeId: activeStoreId,
-          __optimistic: false,
-        }))
+        const sanitizedRows = rows.map(row => {
+          const typedRow = row as ProductRecord
+          const resolvedReorderLevel =
+            typeof typedRow.reorderLevel === 'number' && Number.isFinite(typedRow.reorderLevel)
+              ? typedRow.reorderLevel
+              : typeof typedRow.reorderThreshold === 'number' &&
+                  Number.isFinite(typedRow.reorderThreshold)
+                ? typedRow.reorderThreshold
+                : null
+          return {
+            ...typedRow,
+            reorderLevel: resolvedReorderLevel,
+            price: sanitizePrice(typedRow.price),
+            storeId: activeStoreId,
+            __optimistic: false,
+          }
+        })
         saveCachedProducts(sanitizedRows, { storeId: activeStoreId }).catch(error => {
           console.warn('[products] Failed to cache products', error)
         })
@@ -264,9 +276,9 @@ export default function Products() {
         typeof product.price === 'number' && Number.isFinite(product.price)
           ? String(product.price)
           : '',
-      reorderThreshold:
-        typeof product.reorderThreshold === 'number' && Number.isFinite(product.reorderThreshold)
-          ? String(product.reorderThreshold)
+      reorderLevel:
+        typeof product.reorderLevel === 'number' && Number.isFinite(product.reorderLevel)
+          ? String(product.reorderLevel)
           : '',
     })
   }, [editingProductId, products])
@@ -276,7 +288,7 @@ export default function Products() {
     return sortProducts(
       products.filter(product => {
         const stockCount = typeof product.stockCount === 'number' ? product.stockCount : 0
-        const reorder = typeof product.reorderThreshold === 'number' ? product.reorderThreshold : null
+        const reorder = typeof product.reorderLevel === 'number' ? product.reorderLevel : null
         const matchesLowStock = !showLowStockOnly || (reorder !== null && stockCount <= reorder)
         if (!matchesLowStock) return false
         if (!normalizedQuery) return true
@@ -322,7 +334,7 @@ export default function Products() {
     const name = createForm.name.trim()
     const sku = createForm.sku.trim()
     const price = parsePriceInput(createForm.price)
-    const reorderThreshold = validateNumbers(createForm.reorderThreshold)
+    const reorderLevel = validateNumbers(createForm.reorderLevel)
     const initialStock = validateNumbers(createForm.initialStock)
 
     if (!name) {
@@ -340,7 +352,7 @@ export default function Products() {
       })
       return
     }
-    if (createForm.reorderThreshold && reorderThreshold === null) {
+    if (createForm.reorderLevel && reorderLevel === null) {
       setCreateStatus({ tone: 'error', message: 'Enter a valid reorder point that is zero or greater.' })
       return
     }
@@ -359,7 +371,7 @@ export default function Products() {
       name,
       price,
       sku,
-      reorderThreshold: reorderThreshold ?? null,
+      reorderLevel: reorderLevel ?? null,
       stockCount: initialStock ?? 0,
       lastReceipt: null,
       createdAt: new Date(),
@@ -377,7 +389,8 @@ export default function Products() {
         name,
         price,
         sku,
-        reorderThreshold: reorderThreshold ?? null,
+        reorderLevel: reorderLevel ?? null,
+        reorderThreshold: reorderLevel ?? null,
         stockCount: initialStock ?? 0,
         storeId: activeStoreId,
         createdAt: serverTimestamp(),
@@ -425,7 +438,7 @@ export default function Products() {
     const name = editForm.name.trim()
     const sku = editForm.sku.trim()
     const price = parsePriceInput(editForm.price)
-    const reorderThreshold = validateNumbers(editForm.reorderThreshold)
+    const reorderLevel = validateNumbers(editForm.reorderLevel)
 
     if (!name) {
       setEditStatus({ tone: 'error', message: 'Name your product so staff know what to pick.' })
@@ -442,7 +455,7 @@ export default function Products() {
       })
       return
     }
-    if (editForm.reorderThreshold && reorderThreshold === null) {
+    if (editForm.reorderLevel && reorderLevel === null) {
       setEditStatus({ tone: 'error', message: 'Enter a valid reorder point that is zero or greater.' })
       return
     }
@@ -462,7 +475,7 @@ export default function Products() {
       name,
       price,
       sku,
-      reorderThreshold: reorderThreshold ?? null,
+      reorderLevel: reorderLevel ?? null,
       updatedAt: new Date(),
       storeId: activeStoreId,
     }
@@ -484,7 +497,8 @@ export default function Products() {
         name,
         price,
         sku,
-        reorderThreshold: reorderThreshold ?? null,
+        reorderLevel: reorderLevel ?? null,
+        reorderThreshold: reorderLevel ?? null,
         storeId: activeStoreId,
         updatedAt: serverTimestamp(),
       })
@@ -584,9 +598,9 @@ export default function Products() {
               <tbody>
                 {filteredProducts.map(product => {
                   const stockCount = typeof product.stockCount === 'number' ? product.stockCount : 0
-                  const reorderThreshold =
-                    typeof product.reorderThreshold === 'number' ? product.reorderThreshold : null
-                  const isLowStock = reorderThreshold !== null && stockCount <= reorderThreshold
+                  const reorderLevel =
+                    typeof product.reorderLevel === 'number' ? product.reorderLevel : null
+                  const isLowStock = reorderLevel !== null && stockCount <= reorderLevel
                   return (
                     <tr key={product.id} data-testid={`product-row-${product.id}`}>
                       <th scope="row">
@@ -607,7 +621,7 @@ export default function Products() {
                           : '—'
                       }</td>
                       <td>{stockCount}</td>
-                      <td>{reorderThreshold ?? '—'}</td>
+                      <td>{reorderLevel ?? '—'}</td>
                       <td>{formatReceiptDetails(product.lastReceipt)}</td>
                       <td className="products-page__actions">
                         <button
@@ -672,8 +686,8 @@ export default function Products() {
           <label className="field">
             <span className="field__label">Reorder point</span>
             <input
-              name="reorderThreshold"
-              value={createForm.reorderThreshold}
+              name="reorderLevel"
+              value={createForm.reorderLevel}
               onChange={handleCreateFieldChange}
               placeholder="Alert when stock drops to…"
               inputMode="numeric"
@@ -736,8 +750,8 @@ export default function Products() {
               <label className="field">
                 <span className="field__label">Reorder point</span>
                 <input
-                  name="reorderThreshold"
-                  value={editForm.reorderThreshold}
+                  name="reorderLevel"
+                  value={editForm.reorderLevel}
                   onChange={handleEditFieldChange}
                   inputMode="numeric"
                 />
