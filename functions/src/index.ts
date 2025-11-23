@@ -563,6 +563,21 @@ function mapCustomerSeeds(
     .filter((item): item is SeededDocument => item !== null)
 }
 
+function parseNonNegativeNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed
+  }
+  return null
+}
+
+function resolveReorderLevel(rawLevel: unknown, legacyThreshold?: unknown): number | null {
+  return parseNonNegativeNumber(rawLevel) ?? parseNonNegativeNumber(legacyThreshold)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth trigger: on user creation (seeds teamMembers + default store)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1398,6 +1413,7 @@ export const commitSale = functions.https.onCall(async (data, context) => {
   const saleRef = workspaceRef.collection('sales').doc(saleId)
   const saleItemsCollection = workspaceRef.collection('saleItems')
   const ledgerCollection = workspaceRef.collection('ledger')
+  const alertsCollection = db.collection('alerts')
 
   await db.runTransaction(async tx => {
     const existingSale = await tx.get(saleRef)
@@ -1458,6 +1474,13 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       }
       const curr = Number(pSnap.get('stockCount') || 0)
       const next = curr - Math.abs(it.qty || 0)
+      const reorderLevel = resolveReorderLevel(
+        pSnap.get('reorderLevel'),
+        pSnap.get('reorderThreshold'),
+      )
+      const productStoreIdRaw = pSnap.get('storeId')
+      const productStoreId =
+        typeof productStoreIdRaw === 'string' ? productStoreIdRaw.trim() : null
       tx.update(pRef, { stockCount: next, updatedAt: timestamp })
 
       const ledgerId = db.collection('_').doc().id
@@ -1470,6 +1493,16 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         workspaceId: resolvedWorkspaceId,
         createdAt: timestamp,
       })
+
+      if (reorderLevel !== null && next <= reorderLevel) {
+        const alertRef = alertsCollection.doc()
+        tx.set(alertRef, {
+          type: 'low-stock',
+          productId: it.productId,
+          storeId: productStoreId || resolvedStoreId,
+          createdAt: timestamp,
+        })
+      }
     }
   })
 
@@ -1563,6 +1596,7 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
   const productRef = db.collection('products').doc(productIdStr)
   const receiptRef = workspaceRef.collection('receipts').doc()
   const ledgerRef = workspaceRef.collection('ledger').doc()
+  const alertsCollection = db.collection('alerts')
 
   await db.runTransaction(async tx => {
     const pSnap = await tx.get(productRef)
@@ -1577,6 +1611,10 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
     const currentStock = Number(pSnap.get('stockCount') || 0)
     const nextStock = currentStock + amount
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const reorderLevel = resolveReorderLevel(
+      pSnap.get('reorderLevel'),
+      pSnap.get('reorderThreshold'),
+    )
 
     tx.update(productRef, {
       stockCount: nextStock,
@@ -1614,6 +1652,16 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
       workspaceId: resolvedWorkspaceId,
       createdAt: timestamp,
     })
+
+    if (reorderLevel !== null && nextStock <= reorderLevel) {
+      const alertRef = alertsCollection.doc()
+      tx.set(alertRef, {
+        type: 'low-stock',
+        productId: productIdStr,
+        storeId: productStoreId || resolvedStoreId,
+        createdAt: timestamp,
+      })
+    }
   })
 
   return { ok: true, receiptId: receiptRef.id }
