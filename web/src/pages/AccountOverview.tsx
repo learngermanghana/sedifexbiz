@@ -247,6 +247,9 @@ export default function AccountOverview() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={calloutStyle} data-testid="account-default-file-note">
+        <strong>Note:</strong> The default file in Firebase is a new replacement—the original default was deleted.
+      </div>
       <StoreSummary store={store} canShowSensitive={canShowSensitive} />
 
       <section style={sectionStyle}>
@@ -384,4 +387,11 @@ const inputStyle: React.CSSProperties = {
   padding: '10px 12px',
   fontSize: 14,
   color: '#0F172A',
+}
+const calloutStyle: React.CSSProperties = {
+  padding: '12px 14px',
+  borderRadius: 12,
+  background: '#FFF7ED',
+  color: '#9A3412',
+  border: '1px solid #FED7AA',
 }
