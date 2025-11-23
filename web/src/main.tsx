@@ -12,6 +12,7 @@ import Customers from './pages/Customers'
 import Onboarding from './pages/Onboarding'
 import WorkspaceHub from './pages/WorkspaceHub'
 import { BillingVerifyPage } from './pages/BillingVerifyPage'
+import Support from './pages/Support'
 import { ToastProvider } from './components/ToastProvider'
 
 const router = createHashRouter([
@@ -31,6 +32,7 @@ const router = createHashRouter([
       { path: 'staff', element: <Shell><WorkspaceHub /></Shell> },
       { path: 'account',   element: <Shell><WorkspaceHub /></Shell> },
       { path: 'billing/verify', element: <BillingVerifyPage /> },
+      { path: 'support', element: <Shell><Support /></Shell> },
     ],
   },
 ])

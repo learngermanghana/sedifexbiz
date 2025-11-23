@@ -4,6 +4,7 @@ import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
+import SupportTicketLauncher from '../components/SupportTicketLauncher'
 import './Shell.css'
 import './Workspace.css'
 
@@ -158,6 +159,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <span className="shell__sr-only">{banner.message}</span>
               </div>
             )}
+
+            <SupportTicketLauncher />
 
             <div className="shell__account">
               <span className="shell__account-email">{userEmail}</span>
