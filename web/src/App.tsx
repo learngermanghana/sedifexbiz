@@ -23,7 +23,6 @@ import {
   INACTIVE_WORKSPACE_MESSAGE,
 } from './controllers/accessController'
 import { AuthUserContext } from './hooks/useAuthUser'
-import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
 
 /* -------------------------------------------------------------------------- */
 /*                              Paystack helpers                              */
@@ -245,18 +244,6 @@ export default function App() {
       console.warn('[session] Unable to refresh session', error)
     })
   }, [user])
-
-  useEffect(() => {
-    if (!user) return
-    let status = getOnboardingStatus(user.uid)
-    if (!status) {
-      status = 'pending'
-      setOnboardingStatus(user.uid, 'pending')
-    }
-    if (status === 'pending' && location.pathname !== '/onboarding') {
-      navigate('/onboarding', { replace: true })
-    }
-  }, [location.pathname, navigate, user])
 
   useEffect(() => {
     // Small UX touch: show the current auth mode in the tab title
