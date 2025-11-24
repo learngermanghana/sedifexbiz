@@ -167,6 +167,27 @@ export default function CloseDay() {
     <div className="print-summary" style={{ maxWidth: 760 }}>
       <h2 style={{ color: '#4338CA' }}>Close Day</h2>
 
+      <div
+        className="no-print"
+        style={{
+          marginTop: 12,
+          padding: '12px 14px',
+          background: '#EEF2FF',
+          border: '1px solid #C7D2FE',
+          borderRadius: 8,
+          display: 'grid',
+          gap: 6,
+        }}
+      >
+        <strong>How to use this page</strong>
+        <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>
+          <li>Confirm the sales total is correct for today.</li>
+          <li>Enter card/digital payments and any cash removed or added.</li>
+          <li>Count each denomination, add loose coins, and review the variance.</li>
+          <li>Add notes for the next shift, then save and print the summary.</li>
+        </ul>
+      </div>
+
       <form onSubmit={handleSubmit}>
         <section style={{ marginTop: 24 }}>
           <h3 style={{ marginBottom: 8 }}>Sales Summary</h3>
