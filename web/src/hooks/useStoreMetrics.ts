@@ -295,6 +295,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   const { storeId: activeStoreId } = useActiveStore()
   const { publish } = useToast()
 
+  const [now, setNow] = useState(() => new Date())
   const [sales, setSales] = useState<SaleRecord[]>([])
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [customers, setCustomers] = useState<CustomerRecord[]>([])
@@ -313,6 +314,11 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     () => activeStoreId ?? `user-${authUser?.uid ?? 'default'}`,
     [activeStoreId, authUser?.uid],
   )
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -487,7 +493,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     })
   }, [monthlyGoals, selectedGoalMonth, goalFormTouched])
 
-  const today = useMemo(() => new Date(), [sales])
+  const today = useMemo(() => now, [now])
   const defaultMonthKey = useMemo(() => formatMonthInput(today), [today])
   const rangeInfo = useMemo(() => {
     const fallbackPreset = RANGE_PRESETS.find(option => option.id === 'today')
