@@ -1007,7 +1007,7 @@ export default function Customers() {
                     <th scope="col">Contact</th>
                     <th scope="col">Tags</th>
                     <th scope="col">Visits</th>
-                    <th scope="col">Last purchase</th>
+                    <th scope="col">Last visit</th>
                     <th scope="col">Total spent</th>
                     <th scope="col">Actions</th>
                   </tr>
@@ -1138,7 +1138,7 @@ export default function Customers() {
                   <dd>{currencyFormatter.format(selectedCustomerStats.totalSpend)}</dd>
                 </div>
                 <div>
-                  <dt>Last purchase</dt>
+                  <dt>Last visit</dt>
                   <dd>{formatDate(selectedCustomerStats.lastVisit)}</dd>
                 </div>
               </dl>

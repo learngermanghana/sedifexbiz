@@ -106,9 +106,21 @@
 
 .products-page__product-name {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.products-page__product-name-row {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.products-page__product-meta {
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .products-page__badge {
@@ -125,6 +137,11 @@
 .products-page__badge--alert {
   background-color: #fef3c7;
   color: #b45309;
+}
+
+.products-page__badge--danger {
+  background-color: #fee2e2;
+  color: #b91c1c;
 }
 
 .products-page__actions {
