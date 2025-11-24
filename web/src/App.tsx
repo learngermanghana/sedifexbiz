@@ -22,55 +22,9 @@ import {
   extractCallableErrorMessage,
   INACTIVE_WORKSPACE_MESSAGE,
 } from './controllers/accessController'
+import { payWithPaystack } from './lib/paystack'
 import { AuthUserContext } from './hooks/useAuthUser'
 import { getOnboardingStatus, setOnboardingStatus } from './utils/onboarding'
-
-/* -------------------------------------------------------------------------- */
-/*                              Paystack helpers                              */
-/* -------------------------------------------------------------------------- */
-
-const PAYSTACK_PK = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string
-
-declare global {
-  interface Window {
-    PaystackPop: any
-  }
-}
-
-function toMinor(ghs: number) {
-  // Paystack expects amounts in minor units (pesewas for GHS)
-  return Math.round(ghs * 100)
-}
-
-async function payWithPaystack(
-  amountGhs: number,
-  buyer?: { email?: string; phone?: string; name?: string },
-) {
-  return new Promise<{ ok: boolean; reference: string }>((resolve) => {
-    if (!window.PaystackPop) {
-      console.warn(
-        "Paystack script not loaded. Ensure <script src='https://js.paystack.co/v1/inline.js'></script> is in index.html",
-      )
-      resolve({ ok: false, reference: '' })
-      return
-    }
-
-    const handler = window.PaystackPop.setup({
-      key: PAYSTACK_PK,
-      email: buyer?.email || 'testbuyer@example.com',
-      amount: toMinor(amountGhs),
-      currency: 'GHS',
-      ref: `SFX_${Date.now()}`,
-      metadata: { phone: buyer?.phone, name: buyer?.name },
-      callback: (resp: any) => resolve({ ok: true, reference: resp.reference }),
-      onClose: () => resolve({ ok: false, reference: '' }),
-    })
-
-    handler.openIframe()
-  })
-}
-
-/* -------------------------------------------------------------------------- */
 
 type AuthMode = 'login' | 'signup'
 type StatusTone = 'idle' | 'loading' | 'success' | 'error'
@@ -557,7 +511,7 @@ export default function App() {
                     phone: normalizedPhone,
                     name: normalizedFullName || 'Test Buyer',
                   })
-                  if (r.ok) {
+                  if (r.ok && r.reference) {
                     publish({
                       tone: 'success',
                       message: `Paystack test payment complete. Ref: ${r.reference}`,
@@ -565,7 +519,10 @@ export default function App() {
                     // Later: call commitSale(...) with
                     // { provider: 'paystack', method: 'card', providerRef: r.reference, status: 'pending' }
                   } else {
-                    publish({ tone: 'error', message: 'Payment cancelled or failed' })
+                    publish({
+                      tone: 'error',
+                      message: r.error || 'Payment cancelled or failed',
+                    })
                   }
                 }}
               >
