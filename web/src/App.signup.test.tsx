@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { User } from 'firebase/auth'
 import { MemoryRouter } from 'react-router-dom'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 const mocks = vi.hoisted(() => {
@@ -140,6 +140,84 @@ describe('App signup cleanup', () => {
     firestore.reset()
     mocks.initializeStore.mockReset()
     mocks.resolveStoreAccess.mockReset()
+  })
+
+  it('prevents signup when passwords do not match', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
+
+    await act(async () => {
+      await user.click(screen.getByRole('tab', { name: /Sign up/i }))
+      await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/Full name/i), 'Morgan Owner')
+      await user.type(screen.getByLabelText(/Business name/i), 'Morgan Retail Co')
+      await user.type(screen.getByLabelText(/Phone/i), '5551234567')
+      await user.type(screen.getByLabelText(/Country/i), 'Canada')
+      await user.type(screen.getByLabelText(/Town or city/i), 'Toronto')
+      await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
+      await user.type(screen.getByLabelText(/Confirm password/i), 'Password2!')
+    })
+
+    await act(async () => {
+      fireEvent.submit(screen.getByLabelText(/Sign up form/i))
+    })
+
+    expect(mocks.createUserWithEmailAndPassword).not.toHaveBeenCalled()
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Passwords do not match. Please re-enter them.'),
+    )
+  })
+
+  it('disables signup until passwords match and meet strength requirements', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
+
+    await act(async () => {
+      await user.click(screen.getByRole('tab', { name: /Sign up/i }))
+      await user.type(screen.getByLabelText(/Email/i), 'owner@example.com')
+      await user.type(screen.getByLabelText(/Full name/i), 'Morgan Owner')
+      await user.type(screen.getByLabelText(/Business name/i), 'Morgan Retail Co')
+      await user.type(screen.getByLabelText(/Phone/i), '5551234567')
+      await user.type(screen.getByLabelText(/Country/i), 'Canada')
+      await user.type(screen.getByLabelText(/Town or city/i), 'Toronto')
+      await user.type(screen.getByLabelText(/^Password$/i), 'weak')
+      await user.type(screen.getByLabelText(/Confirm password/i), 'weak')
+    })
+
+    const submitButton = screen.getByRole('button', { name: /Create account/i })
+    expect(submitButton).toBeDisabled()
+
+    await act(async () => {
+      await user.clear(screen.getByLabelText(/^Password$/i))
+      await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
+      await user.clear(screen.getByLabelText(/Confirm password/i))
+      await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
+    })
+
+    expect(submitButton).not.toBeDisabled()
+
+    await act(async () => {
+      await user.clear(screen.getByLabelText(/Confirm password/i))
+      await user.type(screen.getByLabelText(/Confirm password/i), 'Password1')
+    })
+
+    expect(submitButton).toBeDisabled()
   })
 
   it('surfaces signup errors without deleting the new account', async () => {

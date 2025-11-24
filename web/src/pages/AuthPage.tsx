@@ -140,9 +140,12 @@ export default function AuthPage() {
   )
 
   const doesPasswordMeetAllChecks = passwordChecklist.every(item => item.passed)
+  const doPasswordsMatch = normalizedPassword === normalizedConfirmPassword
   const isSignupFormValid =
     normalizedEmail.length > 0 &&
     normalizedPassword.length > 0 &&
+    doesPasswordMeetAllChecks &&
+    doPasswordsMatch &&
     normalizedFullName.length > 0 &&
     normalizedBusinessName.length > 0 &&
     normalizedPhone.length > 0 &&
@@ -205,6 +208,20 @@ export default function AuthPage() {
       setTown(sanitizedTown)
       setSignupRole(sanitizedSignupRole)
       setStoreId(sanitizedStoreId)
+
+      if (!doesPasswordMeetAllChecks) {
+        setStatus({
+          tone: 'error',
+          message:
+            'Use a stronger password that is at least 8 characters and includes uppercase, lowercase, number, and symbol.',
+        })
+        return
+      }
+
+      if (sanitizedPassword !== sanitizedConfirmPassword) {
+        setStatus({ tone: 'error', message: 'Passwords do not match. Please re-enter them.' })
+        return
+      }
     }
 
     if (validationError) {
