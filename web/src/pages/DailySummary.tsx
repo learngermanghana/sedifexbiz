@@ -34,6 +34,7 @@ export default function DailySummary() {
   const [totalSales, setTotalSales] = useState(0)
   const [totalTax, setTotalTax] = useState(0)
   const [receiptCount, setReceiptCount] = useState(0)
+  const [distinctProductsSold, setDistinctProductsSold] = useState(0)
   const [topProducts, setTopProducts] = useState<ProductAggregate[]>([])
 
   useEffect(() => {
@@ -43,6 +44,7 @@ export default function DailySummary() {
       setTotalSales(0)
       setTotalTax(0)
       setReceiptCount(0)
+      setDistinctProductsSold(0)
       setTopProducts([])
       return () => {
         /* noop */
@@ -102,6 +104,7 @@ export default function DailySummary() {
         setTotalSales(salesTotal)
         setTotalTax(taxTotal)
         setReceiptCount(receipts)
+        setDistinctProductsSold(aggregate.size)
         setTopProducts(top)
         setIsLoading(false)
       },
@@ -118,6 +121,11 @@ export default function DailySummary() {
   const todayLabel = useMemo(
     () => new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }),
     [],
+  )
+
+  const averageSaleValue = useMemo(
+    () => (receiptCount > 0 ? totalSales / receiptCount : 0),
+    [receiptCount, totalSales],
   )
 
   return (
@@ -154,6 +162,14 @@ export default function DailySummary() {
             <div className="daily-summary__metric">
               <span className="daily-summary__metric-label">Number of receipts</span>
               <strong className="daily-summary__metric-value">{receiptCount}</strong>
+            </div>
+            <div className="daily-summary__metric">
+              <span className="daily-summary__metric-label">Average sale value</span>
+              <strong className="daily-summary__metric-value">{formatCurrency(averageSaleValue)}</strong>
+            </div>
+            <div className="daily-summary__metric">
+              <span className="daily-summary__metric-label">Distinct products sold</span>
+              <strong className="daily-summary__metric-value">{distinctProductsSold}</strong>
             </div>
           </div>
 

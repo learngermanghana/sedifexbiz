@@ -735,6 +735,14 @@ export default function Products() {
                       : null
                   const isLowStock =
                     reorderLevel !== null && stockCount <= reorderLevel
+                  const isOutOfStock = stockCount === 0
+                  const lastReceived = toDate(product.lastReceipt?.receivedAt)
+                  const lastReceivedLabel = lastReceived
+                    ? `Last received ${lastReceived.toLocaleDateString()} ${lastReceived.toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}`
+                    : 'No receipt recorded yet'
                   return (
                     <tr
                       key={product.id}
@@ -742,17 +750,30 @@ export default function Products() {
                     >
                       <th scope="row">
                         <div className="products-page__product-name">
-                          {product.name}
-                          {product.__optimistic ? (
-                            <span className="products-page__badge">
-                              Syncing…
-                            </span>
-                          ) : null}
-                          {isLowStock ? (
-                            <span className="products-page__badge products-page__badge--alert">
-                              Low stock
-                            </span>
-                          ) : null}
+                          <div className="products-page__product-name-row">
+                            {product.name}
+                            {product.__optimistic ? (
+                              <span className="products-page__badge">
+                                Syncing…
+                              </span>
+                            ) : null}
+                            {isOutOfStock ? (
+                              <span className="products-page__badge products-page__badge--danger">
+                                Out of stock
+                              </span>
+                            ) : null}
+                            {isLowStock ? (
+                              <span className="products-page__badge products-page__badge--alert">
+                                Low stock
+                              </span>
+                            ) : null}
+                          </div>
+                          <div
+                            className="products-page__product-meta"
+                            title={formatReceiptDetails(product.lastReceipt)}
+                          >
+                            {lastReceivedLabel}
+                          </div>
                         </div>
                       </th>
                       <td>{product.sku || '—'}</td>
