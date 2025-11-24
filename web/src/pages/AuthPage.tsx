@@ -15,7 +15,6 @@ import {
   extractCallableErrorMessage,
   INACTIVE_WORKSPACE_MESSAGE,
 } from '../controllers/accessController'
-import { payWithPaystack } from '../lib/paystack'
 import { auth, db } from '../firebase'
 import { setOnboardingStatus } from '../utils/onboarding'
 
@@ -371,29 +370,6 @@ export default function AuthPage() {
                 Sell faster. <span className="app__highlight">Count smarter.</span>
               </p>
             </div>
-          </div>
-
-          {/* --- TEMP: Test Paystack flow (remove later) --- */}
-          <div style={{ marginTop: 16 }}>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={async () => {
-                const r = await payWithPaystack(12.5, {
-                  email: normalizedEmail || 'testbuyer@example.com',
-                  phone: normalizedPhone,
-                  name: normalizedFullName || 'Test Buyer',
-                })
-                if (r.ok && r.reference) {
-                  publish({ tone: 'success', message: `Paystack test payment complete. Ref: ${r.reference}` })
-                } else {
-                  publish({ tone: 'error', message: 'Paystack test payment failed.' })
-                }
-              }}
-              disabled={isLoading}
-            >
-              Test Paystack
-            </button>
           </div>
 
           <div className="app__mode-toggle" role="tablist" aria-label="Authentication mode">
