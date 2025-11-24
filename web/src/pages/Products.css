@@ -66,6 +66,16 @@
   color: #b45309;
 }
 
+.products-page__restriction {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #fbbf24;
+  background-color: #fffbeb;
+  color: #92400e;
+  font-weight: 600;
+}
+
 /* Receive link ----------------------------------------------------- */
 
 .products-page__receive-link {
@@ -180,6 +190,17 @@
   display: grid;
   gap: 16px;
   max-width: 520px;
+}
+
+.products-page__fieldset {
+  display: contents;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.products-page__fieldset:disabled {
+  opacity: 0.8;
 }
 
 /* make labels darker + clearer */

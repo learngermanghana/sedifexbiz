@@ -199,6 +199,67 @@ body {
   transition: transform 180ms ease;
 }
 
+/* Subscription banner ---------------------------------------------------- */
+
+.subscription-banner {
+  width: 100%;
+  margin: 0 auto 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: radial-gradient(120% 160% at 12% 0%, rgba(56, 189, 248, 0.18), transparent),
+    radial-gradient(120% 120% at 85% 10%, rgba(168, 85, 247, 0.2), transparent),
+    linear-gradient(120deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.9));
+  color: #e2e8f0;
+  box-shadow: 0 24px 60px -36px rgba(15, 23, 42, 0.85);
+}
+
+.subscription-banner__inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+}
+
+.subscription-banner__text {
+  flex: 1;
+  min-width: 240px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.subscription-banner__button {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: linear-gradient(120deg, #38bdf8, #8b5cf6);
+  color: #0b1021;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 30px -16px rgba(99, 102, 241, 0.55);
+}
+
+.subscription-banner__button:hover {
+  filter: brightness(1.05);
+}
+
+.subscription-banner__button:focus-visible {
+  outline: 2px solid #bfdbfe;
+  outline-offset: 3px;
+}
+
+.subscription-banner--inactive {
+  border-color: rgba(248, 113, 113, 0.6);
+  background: linear-gradient(120deg, rgba(248, 113, 113, 0.14), rgba(15, 23, 42, 0.9));
+}
+
+.subscription-banner--past_due {
+  border-color: rgba(251, 191, 36, 0.7);
+  background: linear-gradient(120deg, rgba(251, 191, 36, 0.16), rgba(15, 23, 42, 0.9));
+}
+
 .feature-card:hover .feature-card__cta::after,
 .feature-card:focus-visible .feature-card__cta::after {
   transform: translateX(3px);

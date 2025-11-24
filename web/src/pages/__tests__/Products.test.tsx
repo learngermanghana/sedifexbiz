@@ -7,6 +7,13 @@ import Products from '../Products'
 
 const mockLoadCachedProducts = vi.fn(async () => [] as unknown[])
 const mockSaveCachedProducts = vi.fn(async () => {})
+const mockUseSubscriptionStatus = vi.fn(() => ({
+  loading: false,
+  status: 'active',
+  billing: null,
+  error: null,
+  isInactive: false,
+}))
 
 vi.mock('../../utils/offlineCache', () => ({
   PRODUCT_CACHE_LIMIT: 200,
@@ -18,6 +25,10 @@ vi.mock('../../utils/offlineCache', () => ({
 
 vi.mock('../../firebase', () => ({
   db: {},
+}))
+
+vi.mock('../../hooks/useSubscriptionStatus', () => ({
+  useSubscriptionStatus: () => mockUseSubscriptionStatus(),
 }))
 
 const mockUseActiveStore = vi.fn(() => ({ storeId: 'store-1', isLoading: false, error: null }))
@@ -76,6 +87,7 @@ describe('Products page', () => {
   beforeEach(() => {
     mockLoadCachedProducts.mockReset()
     mockSaveCachedProducts.mockReset()
+    mockUseSubscriptionStatus.mockReset()
     collectionMock.mockClear()
     queryMock.mockClear()
     orderByMock.mockClear()
@@ -88,6 +100,13 @@ describe('Products page', () => {
     whereMock.mockClear()
     mockUseActiveStore.mockReset()
     mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockUseSubscriptionStatus.mockReturnValue({
+      loading: false,
+      status: 'active',
+      billing: null,
+      error: null,
+      isInactive: false,
+    })
 
 
 

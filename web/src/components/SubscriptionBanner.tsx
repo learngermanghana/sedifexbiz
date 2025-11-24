@@ -1,7 +1,11 @@
 // src/components/SubscriptionBanner.tsx
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useStoreBilling } from '../hooks/useStoreBilling'
+import { useSubscriptionStatus } from '../hooks/useSubscriptionStatus'
+
+type SubscriptionBannerProps = {
+  subscription?: ReturnType<typeof useSubscriptionStatus>
+}
 
 function formatDaysRemaining(trialEndsAt: any): string | null {
   try {
@@ -18,9 +22,9 @@ function formatDaysRemaining(trialEndsAt: any): string | null {
   }
 }
 
-export function SubscriptionBanner() {
+export function SubscriptionBanner({ subscription }: SubscriptionBannerProps) {
   const navigate = useNavigate()
-  const { loading, billing } = useStoreBilling()
+  const { loading, billing } = subscription ?? useSubscriptionStatus()
 
   if (loading) return null
 
