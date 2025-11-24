@@ -19,6 +19,7 @@ import { useToast } from '../components/ToastProvider'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { AccountBillingSection } from '../components/AccountBillingSection'
 import { getStoreIdFromRecord } from '../utils/storeId'
+import { SubscriptionButton } from '../components/SubscriptionButton' // ⬅️ NEW
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -424,6 +425,18 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         billingPlan={profile?.billingPlan ?? null}
         paymentProvider={profile?.paymentProvider ?? null}
       />
+
+      {/* ⬇️ NEW: Subscription section with Paystack checkout button */}
+      {isOwner && storeId && (
+        <section aria-labelledby="account-overview-subscription">
+          <h2 id="account-overview-subscription">Subscription</h2>
+          <p className="account-overview__subtitle">
+            Activate your Sedifex workspace for <strong>$10/month</strong>. You’ll be redirected
+            to Paystack to complete your payment.
+          </p>
+          <SubscriptionButton />
+        </section>
+      )}
 
       <section aria-labelledby="account-overview-roster">
         <h2 id="account-overview-roster">Team roster</h2>
