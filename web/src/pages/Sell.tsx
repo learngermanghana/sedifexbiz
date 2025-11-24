@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { collection, query, orderBy, limit, onSnapshot, doc, where } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
@@ -439,6 +439,26 @@ export default function Sell() {
     }
   }, [paymentMethod])
 
+  const productStockById = useMemo(() => {
+    const map = new Map<string, number>()
+    products.forEach(product => {
+      if (typeof product.stockCount === 'number') {
+        map.set(product.id, product.stockCount)
+      }
+    })
+    return map
+  }, [products])
+
+  const getStockCount = useCallback(
+    (productId: string) => productStockById.get(productId) ?? 0,
+    [productStockById],
+  )
+
+  const hasInsufficientStockInCart = useMemo(
+    () => cart.some(line => line.qty > getStockCount(line.productId)),
+    [cart, getStockCount],
+  )
+
 
   const addToCart = useCallback((p: Product) => {
     if (typeof p.price !== 'number' || !Number.isFinite(p.price)) {
@@ -507,6 +527,10 @@ export default function Sell() {
     }
     if (!user) {
       setSaleError('You must be signed in to record a sale.')
+      return
+    }
+    if (hasInsufficientStockInCart) {
+      setSaleError('Not enough stock')
       return
     }
     if (isCashShort) {
@@ -716,6 +740,15 @@ export default function Sell() {
 
           {cart.length ? (
             <>
+              {hasInsufficientStockInCart ? (
+                <p
+                  className="sell-page__message sell-page__message--error"
+                  role="alert"
+                >
+                  Not enough stock.
+                </p>
+              ) : null}
+
               <div className="table-wrapper">
                 <table className="table">
                   <thead>
@@ -726,21 +759,31 @@ export default function Sell() {
                     </tr>
                   </thead>
                   <tbody>
-                    {cart.map(line => (
-                      <tr key={line.productId}>
-                        <td>{line.name}</td>
-                        <td className="sell-page__numeric">
-                          <input
-                            className="input--inline input--align-right"
-                            type="number"
-                            min={0}
-                            value={line.qty}
-                            onChange={e => setQty(line.productId, Number(e.target.value))}
-                          />
-                        </td>
-                        <td className="sell-page__numeric">GHS {(line.price * line.qty).toFixed(2)}</td>
-                      </tr>
-                    ))}
+                    {cart.map(line => {
+                      const stockCount = getStockCount(line.productId)
+                      const hasInsufficientStock = line.qty > stockCount
+                      return (
+                        <tr key={line.productId}>
+                          <td>{line.name}</td>
+                          <td className="sell-page__numeric">
+                            <input
+                              className={`input--inline input--align-right${hasInsufficientStock ? ' sell-page__input--error' : ''}`}
+                              type="number"
+                              min={0}
+                              value={line.qty}
+                              onChange={e => setQty(line.productId, Number(e.target.value))}
+                              aria-invalid={hasInsufficientStock}
+                            />
+                            {hasInsufficientStock ? (
+                              <div className="sell-page__qty-warning" role="alert">
+                                Not enough stock (on hand: {stockCount})
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="sell-page__numeric">GHS {(line.price * line.qty).toFixed(2)}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

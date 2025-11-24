@@ -190,6 +190,17 @@
   color: #047857;
 }
 
+.sell-page__input--error {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.sell-page__qty-warning {
+  color: #b91c1c;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
 .sell-page__loyalty {
   margin-top: 12px;
   padding: 12px 14px;

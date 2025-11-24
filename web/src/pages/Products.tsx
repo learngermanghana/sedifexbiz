@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
@@ -438,25 +439,44 @@ export default function Products() {
       return
     }
 
-    const optimisticProduct: ProductRecord = {
-      id: `optimistic-${Date.now()}`,
-      name,
-      price,
-      sku,
-      reorderLevel: reorderLevel ?? null,
-      stockCount: initialStock ?? 0,
-      lastReceipt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      storeId: activeStoreId,
-      __optimistic: true,
-    }
-
     setIsCreating(true)
     setCreateStatus(null)
-    setProducts(prev => sortProducts([optimisticProduct, ...prev]))
+
+    let optimisticProduct: ProductRecord | null = null
 
     try {
+      const duplicateQuery = query(
+        collection(db, 'products'),
+        where('storeId', '==', activeStoreId),
+        where('sku', '==', sku),
+        limit(1),
+      )
+      const duplicate = await getDocs(duplicateQuery)
+      if (!duplicate.empty) {
+        setCreateStatus({
+          tone: 'error',
+          message:
+            'A product in this workspace already uses that SKU. Pick a unique SKU before saving.',
+        })
+        return
+      }
+
+      optimisticProduct = {
+        id: `optimistic-${Date.now()}`,
+        name,
+        price,
+        sku,
+        reorderLevel: reorderLevel ?? null,
+        stockCount: initialStock ?? 0,
+        lastReceipt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        storeId: activeStoreId,
+        __optimistic: true,
+      }
+
+      setProducts(prev => sortProducts([optimisticProduct!, ...prev]))
+
       const ref = await addDoc(collection(db, 'products'), {
         name,
         price,
@@ -471,7 +491,7 @@ export default function Products() {
 
       setProducts(prev =>
         prev.map(product =>
-          product.id === optimisticProduct.id
+          product.id === optimisticProduct!.id
             ? { ...product, id: ref.id, __optimistic: false }
             : product,
         ),
@@ -483,10 +503,10 @@ export default function Products() {
       resetCreateForm()
     } catch (error) {
       console.error('[products] Failed to create product', error)
-      if (isOfflineError(error)) {
+      if (isOfflineError(error) && optimisticProduct) {
         setProducts(prev =>
           prev.map(product =>
-            product.id === optimisticProduct.id
+            product.id === optimisticProduct?.id
               ? { ...product, __optimistic: true, storeId: activeStoreId }
               : product,
           ),
@@ -498,9 +518,11 @@ export default function Products() {
         })
         return
       }
-      setProducts(prev =>
-        prev.filter(product => product.id !== optimisticProduct.id),
-      )
+      if (optimisticProduct) {
+        setProducts(prev =>
+          prev.filter(product => product.id !== optimisticProduct?.id),
+        )
+      }
       setCreateStatus({
         tone: 'error',
         message: 'Unable to create product. Please try again.',
