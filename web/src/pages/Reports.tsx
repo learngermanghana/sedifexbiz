@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { collection, onSnapshot, orderBy, query, where, type Timestamp } from 'firebase/firestore'
+import { collection, onSnapshot, orderBy, query, type Timestamp } from 'firebase/firestore'
 import PageSection from '../layout/PageSection'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { db } from '../firebase'
@@ -18,18 +18,15 @@ function formatCurrency(value: number) {
   return `GHS ${value.toFixed(2)}`
 }
 
-function parseDateFromId(id: string): Date | null {
-  const maybeDate = id.split('_')[1]
-  if (!maybeDate || maybeDate.length !== 8) return null
-  const year = Number(maybeDate.slice(0, 4))
-  const month = Number(maybeDate.slice(4, 6))
-  const day = Number(maybeDate.slice(6, 8))
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null
-  return new Date(year, month - 1, day)
-}
-
 function toDate(value: unknown): Date | null {
   return value instanceof Timestamp ? value.toDate() : null
+}
+
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export default function Reports(): ReactElement {
@@ -51,33 +48,63 @@ export default function Reports(): ReactElement {
     setIsLoading(true)
     setError(null)
 
-    const q = query(
-      collection(db, 'daySummaries'),
-      where('storeId', '==', storeId),
-      orderBy('businessDate', 'desc'),
-    )
+    const salesCollection = collection(db, 'workspaces', storeId, 'sales')
+    const salesQuery = query(salesCollection, orderBy('createdAt', 'desc'))
 
     return onSnapshot(
-      q,
+      salesQuery,
       snapshot => {
-        const rows: DaySummary[] = snapshot.docs.map(docSnap => {
+        const dailySummaries = new Map<string, DaySummary>()
+
+        snapshot.docs.forEach(docSnap => {
           const data = docSnap.data()
-          const businessDate = toDate(data.businessDate) ?? parseDateFromId(docSnap.id)
-          return {
-            id: docSnap.id,
-            businessDate,
-            totalSales: Number(data.totalSales ?? 0) || 0,
-            totalTax: Number(data.totalTax ?? 0) || 0,
-            receiptCount: Number(data.receiptCount ?? 0) || 0,
-            startTime: toDate(data.startTime),
-            endTime: toDate(data.endTime),
+          const createdAt = toDate(data.createdAt)
+          const businessDate = createdAt
+            ? new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate())
+            : null
+          const dateKey = createdAt ? formatDateKey(createdAt) : docSnap.id
+
+          const existing = dailySummaries.get(dateKey)
+          const summary: DaySummary =
+            existing ?? {
+              id: dateKey,
+              businessDate,
+              totalSales: 0,
+              totalTax: 0,
+              receiptCount: 0,
+              startTime: createdAt,
+              endTime: createdAt,
+            }
+
+          summary.totalSales += Number(data.total ?? 0) || 0
+          summary.totalTax += Number(data.taxTotal ?? 0) || 0
+          summary.receiptCount += 1
+          if (!summary.businessDate && businessDate) summary.businessDate = businessDate
+
+          if (createdAt) {
+            if (!summary.startTime || createdAt < summary.startTime) {
+              summary.startTime = createdAt
+            }
+            if (!summary.endTime || createdAt > summary.endTime) {
+              summary.endTime = createdAt
+            }
           }
+
+          dailySummaries.set(dateKey, summary)
         })
+
+        const rows = Array.from(dailySummaries.values()).sort((a, b) => {
+          const aTime = a.businessDate?.getTime() ?? 0
+          const bTime = b.businessDate?.getTime() ?? 0
+          if (aTime !== bTime) return bTime - aTime
+          return b.id.localeCompare(a.id)
+        })
+
         setSummaries(rows)
         setIsLoading(false)
       },
       err => {
-        console.error('[reports] Unable to load day summaries', err)
+        console.error('[reports] Unable to load sales summaries', err)
         setError('We could not load day summaries. Please try again.')
         setIsLoading(false)
       },
