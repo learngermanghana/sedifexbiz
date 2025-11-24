@@ -119,11 +119,20 @@ export default function Receive() {
       showStatus('error', 'Select a workspace before receiving stock.')
       return
     }
-    const p = products.find(x=>x.id===selected); if (!p) return
+    const hasProduct = products.some(candidate => candidate.id === selected)
+    if (!hasProduct) return
     const amount = Number(qty)
     if (!Number.isFinite(amount) || amount <= 0) {
       showStatus('error', 'Enter a valid quantity greater than zero.')
       return
+    }
+    if (amount > 10_000) {
+      const confirmed = window.confirm(
+        `Are you sure you want to receive ${amount} units?`,
+      )
+      if (!confirmed) {
+        return
+      }
     }
     const supplierName = supplier.trim()
     if (!supplierName) {
