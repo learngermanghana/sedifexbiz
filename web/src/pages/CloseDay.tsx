@@ -1,5 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { collection, query, where, orderBy, onSnapshot, Timestamp, addDoc, serverTimestamp } from 'firebase/firestore'
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+  Timestamp,
+  addDoc,
+  serverTimestamp,
+  getDocs,
+  setDoc,
+  doc,
+} from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
@@ -27,6 +39,13 @@ function parseQuantity(input: string): number {
   const normalized = input.replace(/[^0-9]/g, '')
   const value = Number.parseInt(normalized, 10)
   return Number.isFinite(value) && value >= 0 ? value : 0
+}
+
+function getDayKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}${month}${day}`
 }
 
 export default function CloseDay() {
@@ -115,9 +134,71 @@ export default function CloseDay() {
         throw new Error('Select a workspace before recording a close-out.')
       }
       const start = new Date(); start.setHours(0, 0, 0, 0)
+      const end = new Date(start); end.setDate(end.getDate() + 1)
+
+      const salesQuery = query(
+        collection(db, 'sales'),
+        where('storeId', '==', activeStoreId),
+        where('createdAt', '>=', Timestamp.fromDate(start)),
+        where('createdAt', '<', Timestamp.fromDate(end)),
+        orderBy('createdAt', 'asc'),
+      )
+
+      const salesSnapshot = await getDocs(salesQuery)
+
+      let totalSales = 0
+      let totalTax = 0
+      let receiptCount = 0
+      let startTime: Timestamp | null = null
+      let endTime: Timestamp | null = null
+      const cashierBreakdown: Record<string, { receiptCount: number; totalSales: number; totalTax: number }> = {}
+
+      salesSnapshot.forEach(docSnap => {
+        const data = docSnap.data()
+        const saleTotal = Number(data.total ?? 0) || 0
+        const saleTax = Number(data.taxTotal ?? 0) || 0
+        totalSales += saleTotal
+        totalTax += saleTax
+        receiptCount += 1
+
+        const createdAt = data.createdAt instanceof Timestamp ? data.createdAt : null
+        if (createdAt) {
+          const millis = createdAt.toMillis()
+          if (!startTime || millis < startTime.toMillis()) startTime = createdAt
+          if (!endTime || millis > endTime.toMillis()) endTime = createdAt
+        }
+
+        const cashierIdRaw = typeof data.cashierId === 'string' ? data.cashierId.trim() : ''
+        const cashierId = cashierIdRaw || (typeof data.createdBy === 'string' ? data.createdBy : '') || 'unknown'
+        const entry = cashierBreakdown[cashierId] ?? { receiptCount: 0, totalSales: 0, totalTax: 0 }
+        entry.receiptCount += 1
+        entry.totalSales += saleTotal
+        entry.totalTax += saleTax
+        cashierBreakdown[cashierId] = entry
+      })
+
+      const daySummaryId = `${activeStoreId}_${getDayKey(start)}`
+      const daySummaryRef = doc(db, 'daySummaries', daySummaryId)
+      const summaryPayload: Record<string, unknown> = {
+        storeId: activeStoreId,
+        businessDate: Timestamp.fromDate(start),
+        totalSales,
+        totalTax,
+        receiptCount,
+        startTime,
+        endTime,
+        updatedAt: serverTimestamp(),
+      }
+
+      if (Object.keys(cashierBreakdown).length > 0) {
+        summaryPayload.cashierBreakdown = cashierBreakdown
+      }
+
+      await setDoc(daySummaryRef, summaryPayload, { merge: true })
+
       const closePayload = {
         businessDay: Timestamp.fromDate(start),
-        salesTotal: total,
+        salesTotal: totalSales,
         expectedCash,
         countedCash,
         variance,
