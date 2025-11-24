@@ -24,7 +24,8 @@ function formatDaysRemaining(trialEndsAt: any): string | null {
 
 export function SubscriptionBanner({ subscription }: SubscriptionBannerProps) {
   const navigate = useNavigate()
-  const { loading, billing } = subscription ?? useSubscriptionStatus()
+  const subscriptionStatus = useSubscriptionStatus()
+  const { loading, billing } = subscription ?? subscriptionStatus
 
   if (loading) return null
 
