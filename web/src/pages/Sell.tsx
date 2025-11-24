@@ -5,6 +5,7 @@ import { httpsCallable } from 'firebase/functions'
 import { db, functions as cloudFunctions } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { useSubscriptionStatus } from '../hooks/useSubscriptionStatus'
 import './Sell.css'
 import { Link } from 'react-router-dom'
 import { queueCallableRequest } from '../utils/offlineQueue'
@@ -186,6 +187,7 @@ function sanitizePrice(value: unknown): number | null {
 export default function Sell() {
   const user = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
+  const { isInactive: isSubscriptionInactive } = useSubscriptionStatus()
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -521,6 +523,10 @@ export default function Sell() {
   }
   async function recordSale() {
     if (cart.length === 0) return
+    if (isSubscriptionInactive) {
+      setSaleError('Your subscription is inactive. Reactivate to record sales.')
+      return
+    }
     if (!activeStoreId) {
       setSaleError('Select a workspace before recording a sale.')
       return
@@ -870,11 +876,17 @@ export default function Sell() {
                   <span className="sell-page__summary-label">Paid</span>
                   <strong>GHS {amountPaid.toFixed(2)}</strong>
                 </div>
-                <div className={`sell-page__change${isCashShort ? ' is-short' : ''}`}>
-                  <span className="sell-page__summary-label">{isCashShort ? 'Short' : 'Change due'}</span>
-                  <strong>GHS {changeDue.toFixed(2)}</strong>
-                </div>
+              <div className={`sell-page__change${isCashShort ? ' is-short' : ''}`}>
+                <span className="sell-page__summary-label">{isCashShort ? 'Short' : 'Change due'}</span>
+                <strong>GHS {changeDue.toFixed(2)}</strong>
               </div>
+              </div>
+
+              {isSubscriptionInactive && (
+                <p className="sell-page__message sell-page__message--error" role="status">
+                  Reactivate your subscription to commit sales.
+                </p>
+              )}
 
               {saleError && <p className="sell-page__message sell-page__message--error">{saleError}</p>}
               {saleSuccess && (
@@ -934,8 +946,9 @@ export default function Sell() {
                 type="button"
                 className="button button--primary button--block"
                 onClick={recordSale}
-                disabled={cart.length === 0 || isRecording}
+                disabled={cart.length === 0 || isRecording || isSubscriptionInactive}
               >
+                {isSubscriptionInactive ? '🔒 ' : ''}
                 {isRecording ? 'Saving…' : 'Record sale'}
               </button>
             </>

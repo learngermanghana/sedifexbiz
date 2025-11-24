@@ -14,6 +14,7 @@ import {
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
+import { useSubscriptionStatus } from '../hooks/useSubscriptionStatus'
 import { manageStaffAccount } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
 import { useAuthUser } from '../hooks/useAuthUser'
@@ -145,6 +146,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships()
   const { publish } = useToast()
   const user = useAuthUser()
+  const { isInactive: isSubscriptionInactive } = useSubscriptionStatus()
 
   const [profile, setProfile] = useState<StoreProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
@@ -291,6 +293,13 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (submitting) return
+
+    if (isSubscriptionInactive) {
+      const message = 'Your subscription is inactive. Reactivate to invite teammates.'
+      setFormError(message)
+      publish({ message, tone: 'error' })
+      return
+    }
 
     const error = validateForm()
     if (error) {
@@ -481,10 +490,20 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                     autoComplete="new-password"
                   />
                 </label>
-                <button type="submit" className="button button--primary">
+                <button
+                  type="submit"
+                  className="button button--primary"
+                  disabled={submitting || isSubscriptionInactive}
+                >
+                  {isSubscriptionInactive ? '🔒 ' : ''}
                   {submitting ? 'Sending…' : 'Send invite'}
                 </button>
               </div>
+              {isSubscriptionInactive && (
+                <p className="account-overview__form-error" role="note">
+                  Reactivate your subscription to invite teammates.
+                </p>
+              )}
               {formError && (
                 <p className="account-overview__form-error">{formError}</p>
               )}

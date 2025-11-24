@@ -17,6 +17,17 @@ vi.mock('../hooks/useActiveStore', () => ({
   useActiveStore: () => mockUseActiveStore(),
 }))
 
+const mockUseSubscriptionStatus = vi.fn(() => ({
+  loading: false,
+  billing: null,
+  error: null,
+  status: 'active',
+  isInactive: false,
+}))
+vi.mock('../hooks/useSubscriptionStatus', () => ({
+  useSubscriptionStatus: () => mockUseSubscriptionStatus(),
+}))
+
 const originalCreateObjectURL = globalThis.URL.createObjectURL
 const originalRevokeObjectURL = globalThis.URL.revokeObjectURL
 
@@ -146,12 +157,20 @@ describe('Sell page', () => {
   beforeEach(() => {
     mockUseAuthUser.mockReset()
     mockUseActiveStore.mockReset()
+    mockUseSubscriptionStatus.mockReset()
     mockCommitSale.mockReset()
     mockUseAuthUser.mockReturnValue({
       uid: 'cashier-123',
       email: 'cashier@example.com',
     })
     mockUseActiveStore.mockReturnValue({ storeId: 'store-1', isLoading: false, error: null })
+    mockUseSubscriptionStatus.mockReturnValue({
+      loading: false,
+      billing: null,
+      error: null,
+      status: 'active',
+      isInactive: false,
+    })
 
 
     mockCommitSale.mockResolvedValue({
@@ -242,6 +261,28 @@ describe('Sell page', () => {
     expect(
       screen.queryByText(/we were unable to record this sale/i),
     ).not.toBeInTheDocument()
+  })
+
+  it('disables recording sales when the subscription is inactive', async () => {
+    const user = userEvent.setup()
+
+    mockUseSubscriptionStatus.mockReturnValue({
+      loading: false,
+      billing: null,
+      error: null,
+      status: 'inactive',
+      isInactive: true,
+    })
+
+    renderWithProviders(<Sell />)
+
+    const productButton = await screen.findByRole('button', { name: /iced coffee/i })
+    await user.click(productButton)
+
+    const recordButton = screen.getByRole('button', { name: /record sale/i })
+    expect(recordButton).toBeDisabled()
+    expect(recordButton).toHaveTextContent(/🔒/)
+    expect(mockCommitSale).not.toHaveBeenCalled()
   })
 
   it('disables products that do not have a valid price', async () => {
