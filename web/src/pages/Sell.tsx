@@ -187,7 +187,11 @@ function sanitizePrice(value: unknown): number | null {
 export default function Sell() {
   const user = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
-  const { isInactive: isSubscriptionInactive } = useSubscriptionStatus()
+  const {
+    isInactive: isSubscriptionInactive,
+    loading: isSubscriptionLoading,
+    status: subscriptionStatus,
+  } = useSubscriptionStatus()
 
   const [products, setProducts] = useState<Product[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -523,6 +527,10 @@ export default function Sell() {
   }
   async function recordSale() {
     if (cart.length === 0) return
+    if (isSubscriptionLoading || subscriptionStatus === 'unknown') {
+      setSaleError('Checking subscription status. Please wait and try again.')
+      return
+    }
     if (isSubscriptionInactive) {
       setSaleError('Your subscription is inactive. Reactivate to record sales.')
       return
@@ -946,9 +954,19 @@ export default function Sell() {
                 type="button"
                 className="button button--primary button--block"
                 onClick={recordSale}
-                disabled={cart.length === 0 || isRecording || isSubscriptionInactive}
+                disabled={
+                  cart.length === 0 ||
+                  isRecording ||
+                  isSubscriptionInactive ||
+                  isSubscriptionLoading ||
+                  subscriptionStatus === 'unknown'
+                }
               >
-                {isSubscriptionInactive ? '🔒 ' : ''}
+                {isSubscriptionInactive
+                  ? '🔒 '
+                  : isSubscriptionLoading || subscriptionStatus === 'unknown'
+                    ? '⏳ '
+                    : ''}
                 {isRecording ? 'Saving…' : 'Record sale'}
               </button>
             </>
