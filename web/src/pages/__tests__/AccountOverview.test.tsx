@@ -19,6 +19,17 @@ vi.mock('../../hooks/useMemberships', () => ({
   useMemberships: () => mockUseMemberships(),
 }))
 
+const mockUseSubscriptionStatus = vi.fn(() => ({
+  loading: false,
+  billing: null,
+  error: null,
+  status: 'active',
+  isInactive: false,
+}))
+vi.mock('../../hooks/useSubscriptionStatus', () => ({
+  useSubscriptionStatus: () => mockUseSubscriptionStatus(),
+}))
+
 const mockManageStaffAccount = vi.fn()
 vi.mock('../../controllers/storeController', () => ({
   manageStaffAccount: (...args: Parameters<typeof mockManageStaffAccount>) =>
@@ -72,6 +83,7 @@ describe('AccountOverview', () => {
     mockPublish.mockReset()
     mockUseActiveStore.mockReset()
     mockUseMemberships.mockReset()
+    mockUseSubscriptionStatus.mockReset()
     mockManageStaffAccount.mockReset()
     collectionMock.mockClear()
     docMock.mockClear()
@@ -81,6 +93,13 @@ describe('AccountOverview', () => {
     whereMock.mockClear()
 
     mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
+    mockUseSubscriptionStatus.mockReturnValue({
+      loading: false,
+      billing: null,
+      error: null,
+      status: 'active',
+      isInactive: false,
+    })
     getDocMock.mockResolvedValue({
       exists: () => true,
       data: () => ({
@@ -166,6 +185,44 @@ describe('AccountOverview', () => {
 
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
     expect(mockPublish).toHaveBeenCalledWith({ message: 'Team member updated.', tone: 'success' })
+  })
+
+  it('disables team invites when the subscription is inactive', async () => {
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-1',
+          uid: 'owner-1',
+          role: 'owner',
+          storeId: 'store-123',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+    mockUseSubscriptionStatus.mockReturnValue({
+      loading: false,
+      billing: null,
+      error: null,
+      status: 'inactive',
+      isInactive: true,
+    })
+
+    render(<AccountOverview />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const inviteButton = await screen.findByRole('button', { name: /send invite/i })
+    expect(inviteButton).toBeDisabled()
+    expect(inviteButton).toHaveTextContent(/🔒/)
+    expect(screen.getByText(/Reactivate your subscription to invite teammates/i)).toBeInTheDocument()
   })
 
   it('renders a read-only roster for staff members', async () => {

@@ -16,6 +16,8 @@ import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { useSubscriptionStatus } from '../hooks/useSubscriptionStatus'
+import { SubscriptionBanner } from '../components/SubscriptionBanner'
 import {
   PRODUCT_CACHE_LIMIT,
   loadCachedProducts,
@@ -167,6 +169,8 @@ function isOfflineError(error: unknown) {
 
 export default function Products() {
   const { storeId: activeStoreId } = useActiveStore()
+  const subscription = useSubscriptionStatus()
+  const isSubscriptionInactive = subscription.isInactive
   const [products, setProducts] = useState<ProductRecord[]>([])
   const [isLoadingProducts, setIsLoadingProducts] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -385,6 +389,15 @@ export default function Products() {
 
   async function handleCreateProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    if (isSubscriptionInactive) {
+      setCreateStatus({
+        tone: 'error',
+        message: 'Your subscription is inactive. Reactivate it to add products.',
+      })
+      return
+    }
+
     const name = createForm.name.trim()
     const sku = createForm.sku.trim()
     const price = parsePriceInput(createForm.price)
@@ -534,6 +547,15 @@ export default function Products() {
 
   async function handleUpdateProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+
+    if (isSubscriptionInactive) {
+      setEditStatus({
+        tone: 'error',
+        message: 'Your subscription is inactive. Resume it to edit products.',
+      })
+      return
+    }
+
     if (!editingProductId) {
       setEditStatus({
         tone: 'error',
@@ -681,6 +703,15 @@ export default function Products() {
 
   return (
     <div className="page products-page">
+      <SubscriptionBanner subscription={subscription} />
+
+      {isSubscriptionInactive ? (
+        <div className="products-page__restriction" role="alert">
+          Your subscription is inactive. You can browse products but cannot add
+          or edit them until you restart your plan.
+        </div>
+      ) : null}
+
       <header className="page__header">
         <div>
           <h2 className="page__title">Products</h2>
@@ -809,14 +840,15 @@ export default function Products() {
                       <td>{reorderLevel ?? '—'}</td>
                       <td>{formatReceiptDetails(product.lastReceipt)}</td>
                       <td className="products-page__actions">
-                        <button
-                          type="button"
-                          className="products-page__edit-button"
-                          onClick={() => setEditingProductId(product.id)}
-                        >
-                          Edit
-                        </button>
-                      </td>
+                    <button
+                      type="button"
+                      className="products-page__edit-button"
+                      disabled={isSubscriptionInactive}
+                      onClick={() => setEditingProductId(product.id)}
+                    >
+                      Edit
+                    </button>
+                  </td>
                     </tr>
                   )
                 })}
@@ -833,71 +865,73 @@ export default function Products() {
           one a SKU that matches the barcode you plan to scan at checkout.
         </p>
         <form className="products-page__form" onSubmit={handleCreateProduct}>
-          <label className="field">
-            <span className="field__label">Name</span>
-            <input
-              name="name"
-              autoFocus
-              value={createForm.name}
-              onChange={handleCreateFieldChange}
-              placeholder="e.g. House Blend Coffee"
-              required
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">SKU</span>
-            <input
-              name="sku"
-              value={createForm.sku}
-              onChange={handleCreateFieldChange}
-              placeholder="Barcode or SKU"
-              required
-              aria-describedby="create-sku-hint"
-            />
-          </label>
-          <p className="field__hint" id="create-sku-hint">
-            This must match the value encoded in your barcode so cashiers can
-            scan products.
-          </p>
-          <label className="field">
-            <span className="field__label">Price</span>
-            <input
-              name="price"
-              value={createForm.price}
-              onChange={handleCreateFieldChange}
-              placeholder="How much you sell it for"
-              inputMode="decimal"
-              required
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">Reorder point</span>
-            <input
-              name="reorderLevel"
-              value={createForm.reorderLevel}
-              onChange={handleCreateFieldChange}
-              placeholder="Alert when stock drops to…"
-              inputMode="numeric"
-            />
-          </label>
-          <label className="field">
-            <span className="field__label">Opening stock</span>
-            <input
-              name="initialStock"
-              value={createForm.initialStock}
-              onChange={handleCreateFieldChange}
-              placeholder="Quantity currently on hand"
-              inputMode="numeric"
-            />
-          </label>
-          <button
-            type="submit"
-            className="products-page__submit"
-            disabled={isCreating}
-          >
-            {isCreating ? 'Saving…' : 'Add product'}
-          </button>
-          {renderStatus(createStatus)}
+          <fieldset className="products-page__fieldset" disabled={isSubscriptionInactive}>
+            <label className="field">
+              <span className="field__label">Name</span>
+              <input
+                name="name"
+                autoFocus
+                value={createForm.name}
+                onChange={handleCreateFieldChange}
+                placeholder="e.g. House Blend Coffee"
+                required
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">SKU</span>
+              <input
+                name="sku"
+                value={createForm.sku}
+                onChange={handleCreateFieldChange}
+                placeholder="Barcode or SKU"
+                required
+                aria-describedby="create-sku-hint"
+              />
+            </label>
+            <p className="field__hint" id="create-sku-hint">
+              This must match the value encoded in your barcode so cashiers can
+              scan products.
+            </p>
+            <label className="field">
+              <span className="field__label">Price</span>
+              <input
+                name="price"
+                value={createForm.price}
+                onChange={handleCreateFieldChange}
+                placeholder="How much you sell it for"
+                inputMode="decimal"
+                required
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Reorder point</span>
+              <input
+                name="reorderLevel"
+                value={createForm.reorderLevel}
+                onChange={handleCreateFieldChange}
+                placeholder="Alert when stock drops to…"
+                inputMode="numeric"
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Opening stock</span>
+              <input
+                name="initialStock"
+                value={createForm.initialStock}
+                onChange={handleCreateFieldChange}
+                placeholder="Quantity currently on hand"
+                inputMode="numeric"
+              />
+            </label>
+            <button
+              type="submit"
+              className="products-page__submit"
+              disabled={isCreating || isSubscriptionInactive}
+            >
+              {isCreating ? 'Saving…' : 'Add product'}
+            </button>
+            {renderStatus(createStatus)}
+          </fieldset>
         </form>
       </section>
 
@@ -910,67 +944,69 @@ export default function Products() {
           <div className="products-page__dialog-content">
             <h3>Edit product</h3>
             <form className="products-page__form" onSubmit={handleUpdateProduct}>
-              <label className="field">
-                <span className="field__label">Name</span>
-                <input
-                  name="name"
-                  autoFocus
-                  value={editForm.name}
-                  onChange={handleEditFieldChange}
-                  required
-                />
-              </label>
-              <label className="field">
-                <span className="field__label">SKU</span>
-                <input
-                  name="sku"
-                  value={editForm.sku}
-                  onChange={handleEditFieldChange}
-                  required
-                  aria-describedby="edit-sku-hint"
-                />
-              </label>
-              <p className="field__hint" id="edit-sku-hint">
-                Update the SKU to mirror the barcode if you need to reprint or
-                relabel items.
-              </p>
-              <label className="field">
-                <span className="field__label">Price</span>
-                <input
-                  name="price"
-                  value={editForm.price}
-                  onChange={handleEditFieldChange}
-                  inputMode="decimal"
-                  required
-                />
-              </label>
-              <label className="field">
-                <span className="field__label">Reorder point</span>
-                <input
-                  name="reorderLevel"
-                  value={editForm.reorderLevel}
-                  onChange={handleEditFieldChange}
-                  inputMode="numeric"
-                />
-              </label>
-              <div className="products-page__dialog-actions">
-                <button
-                  type="button"
-                  className="products-page__cancel"
-                  onClick={handleCancelEdit}
-                  disabled={isUpdating}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="products-page__submit"
-                  disabled={isUpdating}
-                >
-                  {isUpdating ? 'Saving…' : 'Save changes'}
-                </button>
-              </div>
-              {renderStatus(editStatus)}
+              <fieldset className="products-page__fieldset" disabled={isSubscriptionInactive}>
+                <label className="field">
+                  <span className="field__label">Name</span>
+                  <input
+                    name="name"
+                    autoFocus
+                    value={editForm.name}
+                    onChange={handleEditFieldChange}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">SKU</span>
+                  <input
+                    name="sku"
+                    value={editForm.sku}
+                    onChange={handleEditFieldChange}
+                    required
+                    aria-describedby="edit-sku-hint"
+                  />
+                </label>
+                <p className="field__hint" id="edit-sku-hint">
+                  Update the SKU to mirror the barcode if you need to reprint or
+                  relabel items.
+                </p>
+                <label className="field">
+                  <span className="field__label">Price</span>
+                  <input
+                    name="price"
+                    value={editForm.price}
+                    onChange={handleEditFieldChange}
+                    inputMode="decimal"
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Reorder point</span>
+                  <input
+                    name="reorderLevel"
+                    value={editForm.reorderLevel}
+                    onChange={handleEditFieldChange}
+                    inputMode="numeric"
+                  />
+                </label>
+                <div className="products-page__dialog-actions">
+                  <button
+                    type="button"
+                    className="products-page__cancel"
+                    onClick={handleCancelEdit}
+                    disabled={isUpdating}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="products-page__submit"
+                    disabled={isUpdating || isSubscriptionInactive}
+                  >
+                    {isUpdating ? 'Saving…' : 'Save changes'}
+                  </button>
+                </div>
+                {renderStatus(editStatus)}
+              </fieldset>
             </form>
           </div>
         </div>
