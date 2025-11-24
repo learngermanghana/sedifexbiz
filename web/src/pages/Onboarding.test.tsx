@@ -1,8 +1,21 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 import Onboarding from './Onboarding'
+
+const mockNavigate = vi.fn()
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>(
+    'react-router-dom',
+  )
+
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
+})
 
 const mockUseAuthUser = vi.fn()
 vi.mock('../hooks/useAuthUser', () => ({
@@ -55,6 +68,7 @@ describe('Onboarding page', () => {
     mockUseAuthUser.mockReset()
     mockGetOnboardingStatus.mockReset()
     mockSetOnboardingStatus.mockReset()
+    mockNavigate.mockReset()
 
     mockCollection.mockReset()
     mockDoc.mockReset()
@@ -147,5 +161,22 @@ describe('Onboarding page', () => {
     expect(
       screen.getByRole('heading', { name: /welcome to sedifex/i }),
     ).toBeInTheDocument()
+  })
+
+  it('links the team step to the roster screen', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter>
+        <Onboarding />
+      </MemoryRouter>,
+    )
+
+    await user.click(screen.getByRole('button', { name: /add my team now/i }))
+
+    expect(mockNavigate).toHaveBeenCalledWith({
+      pathname: '/account',
+      hash: '#account-overview-roster',
+    })
   })
 })
