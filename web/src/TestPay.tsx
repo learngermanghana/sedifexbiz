@@ -1,24 +1,18 @@
-import React from "react";
-const PAYSTACK_PK = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY!;
-
-function toKobo(ghs: number) { return Math.round(ghs * 100); }
+import React from 'react'
+import { payWithPaystack } from './lib/paystack'
 
 export default function TestPay() {
-  const pay = () => {
-    // @ts-ignore
-    const handler = window.PaystackPop.setup({
-      key: PAYSTACK_PK,
-      email: "testbuyer@example.com",
-      amount: toKobo(12.5), // GHS 12.50 (Paystack expects minor units)
-      currency: "GHS",
-      ref: `SFX_${Date.now()}`,
-      callback: (resp: any) => {
-        alert("Reference: " + resp.reference);
-        // normally you'd call commitSale(sale, { providerRef: resp.reference, ... })
-      },
-      onClose: () => alert("Checkout closed"),
-    });
-    handler.openIframe();
-  };
-  return <button onClick={pay}>Pay GHS 12.50 (Test)</button>;
+  const pay = async () => {
+    const result = await payWithPaystack(12.5, {
+      email: 'testbuyer@example.com',
+      name: 'Test Buyer',
+    })
+
+    if (result.ok && result.reference) {
+      alert('Reference: ' + result.reference)
+    } else {
+      alert(result.error ?? 'Checkout closed')
+    }
+  }
+  return <button onClick={pay}>Pay GHS 12.50 (Test)</button>
 }
