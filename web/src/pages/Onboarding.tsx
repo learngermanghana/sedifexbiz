@@ -189,6 +189,10 @@ export default function Onboarding() {
     navigate('/', { replace: true })
   }
 
+  function goToTeamRoster() {
+    navigate({ pathname: '/account', hash: '#account-overview-roster' })
+  }
+
   return (
     <div
       className="page onboarding-page"
@@ -364,6 +368,13 @@ export default function Onboarding() {
           Need to update access later? Your Sedifex account manager can help
           tailor roles for your team.
         </p>
+        <button
+          type="button"
+          className="button button--primary onboarding-card__cta"
+          onClick={goToTeamRoster}
+        >
+          Add my team now
+        </button>
       </section>
 
       <section
