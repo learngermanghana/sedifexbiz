@@ -1,185 +1,309 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react'
-import { collection, onSnapshot, orderBy, query, type Timestamp } from 'firebase/firestore'
-import PageSection from '../layout/PageSection'
-import { useActiveStore } from '../hooks/useActiveStore'
+import React, { useEffect, useMemo, useState } from 'react'
+import {
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+  type DocumentData,
+  type QuerySnapshot,
+} from 'firebase/firestore'
 import { db } from '../firebase'
+import { useActiveStore } from '../hooks/useActiveStore'
+import './Today.css' // or Reports.css – whatever you already use
 
 type DaySummary = {
-  id: string
-  businessDate: Date | null
+  dateKey: string            // 'YYYY-MM-DD'
+  date: Date
   totalSales: number
   totalTax: number
   receiptCount: number
-  startTime: Date | null
-  endTime: Date | null
-}
-
-function formatCurrency(value: number) {
-  return `GHS ${value.toFixed(2)}`
+  firstSaleAt: Date | null
+  lastSaleAt: Date | null
 }
 
 function toDate(value: unknown): Date | null {
-  return value instanceof Timestamp ? value.toDate() : null
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? null : new Date(parsed)
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? new Date(value) : null
+  }
+  if (typeof value === 'object') {
+    const anyValue = value as {
+      toDate?: () => Date
+      toMillis?: () => number
+      seconds?: number
+      nanoseconds?: number
+    }
+    if (typeof anyValue.toDate === 'function') {
+      try {
+        return anyValue.toDate() ?? null
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof anyValue.toMillis === 'function') {
+      try {
+        const ms = anyValue.toMillis()
+        return Number.isFinite(ms) ? new Date(ms) : null
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof anyValue.seconds === 'number') {
+      const ms =
+        anyValue.seconds * 1000 +
+        Math.round((anyValue.nanoseconds ?? 0) / 1_000_000)
+      return Number.isFinite(ms) ? new Date(ms) : null
+    }
+  }
+  return null
 }
 
-function formatDateKey(date: Date): string {
-  const year = date.getFullYear()
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${year}-${month}-${day}`
+function formatDate(date: Date | null) {
+  if (!date) return '—'
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 }
 
-export default function Reports(): ReactElement {
-  const { storeId } = useActiveStore()
+function formatTime(date: Date | null) {
+  if (!date) return '—'
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatCurrency(amount: number) {
+  if (!Number.isFinite(amount)) return '—'
+  return `GHS ${amount.toFixed(2)}`
+}
+
+export default function Today() {
+  const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
   const [summaries, setSummaries] = useState<DaySummary[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+
     if (!storeId) {
       setSummaries([])
-      setIsLoading(false)
-      setError('Select a workspace to see your reports.')
+      setLoadError(null)
+      setLoading(false)
       return () => {
-        /* noop */
+        cancelled = true
       }
     }
 
-    setIsLoading(true)
-    setError(null)
+    setLoading(true)
+    setLoadError(null)
 
-    const salesCollection = collection(db, 'workspaces', storeId, 'sales')
-    const salesQuery = query(salesCollection, orderBy('createdAt', 'desc'))
+    const salesRef = collection(db, 'sales')
+    const q = query(
+      salesRef,
+      where('storeId', '==', storeId),
+      orderBy('createdAt', 'desc'),
+    )
 
-    return onSnapshot(
-      salesQuery,
-      snapshot => {
-        const dailySummaries = new Map<string, DaySummary>()
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot: QuerySnapshot<DocumentData>) => {
+        if (cancelled) return
 
-        snapshot.docs.forEach(docSnap => {
-          const data = docSnap.data()
+        const byDate = new Map<string, DaySummary>()
+
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() || {}
           const createdAt = toDate(data.createdAt)
-          const businessDate = createdAt
-            ? new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate())
-            : null
-          const dateKey = createdAt ? formatDateKey(createdAt) : docSnap.id
+          if (!createdAt) return
 
-          const existing = dailySummaries.get(dateKey)
-          const summary: DaySummary =
-            existing ?? {
-              id: dateKey,
-              businessDate,
+          const total =
+            typeof data.total === 'number' && Number.isFinite(data.total)
+              ? data.total
+              : 0
+          const taxTotal =
+            typeof data.taxTotal === 'number' && Number.isFinite(data.taxTotal)
+              ? data.taxTotal
+              : 0
+
+          const dateOnly = new Date(
+            createdAt.getFullYear(),
+            createdAt.getMonth(),
+            createdAt.getDate(),
+          )
+          const dateKey = dateOnly.toISOString().slice(0, 10)
+
+          let existing = byDate.get(dateKey)
+          if (!existing) {
+            existing = {
+              dateKey,
+              date: dateOnly,
               totalSales: 0,
               totalTax: 0,
               receiptCount: 0,
-              startTime: createdAt,
-              endTime: createdAt,
+              firstSaleAt: createdAt,
+              lastSaleAt: createdAt,
             }
-
-          summary.totalSales += Number(data.total ?? 0) || 0
-          summary.totalTax += Number(data.taxTotal ?? 0) || 0
-          summary.receiptCount += 1
-          if (!summary.businessDate && businessDate) summary.businessDate = businessDate
-
-          if (createdAt) {
-            if (!summary.startTime || createdAt < summary.startTime) {
-              summary.startTime = createdAt
-            }
-            if (!summary.endTime || createdAt > summary.endTime) {
-              summary.endTime = createdAt
-            }
+            byDate.set(dateKey, existing)
           }
 
-          dailySummaries.set(dateKey, summary)
+          existing.totalSales += total
+          existing.totalTax += taxTotal
+          existing.receiptCount += 1
+
+          if (
+            !existing.firstSaleAt ||
+            createdAt < existing.firstSaleAt
+          ) {
+            existing.firstSaleAt = createdAt
+          }
+          if (!existing.lastSaleAt || createdAt > existing.lastSaleAt) {
+            existing.lastSaleAt = createdAt
+          }
         })
 
-        const rows = Array.from(dailySummaries.values()).sort((a, b) => {
-          const aTime = a.businessDate?.getTime() ?? 0
-          const bTime = b.businessDate?.getTime() ?? 0
-          if (aTime !== bTime) return bTime - aTime
-          return b.id.localeCompare(a.id)
-        })
+        const rows = Array.from(byDate.values()).sort(
+          (a, b) => b.date.getTime() - a.date.getTime(),
+        )
 
         setSummaries(rows)
-        setIsLoading(false)
+        setLoading(false)
+        setLoadError(null)
       },
-      err => {
-        console.error('[reports] Unable to load sales summaries', err)
-        setError('We could not load day summaries. Please try again.')
-        setIsLoading(false)
+      error => {
+        console.error('[reports] Failed to subscribe to sales', error)
+        if (cancelled) return
+        setLoading(false)
+        setSummaries([])
+        setLoadError(
+          'We could not load today’s summary. Please try again.',
+        )
       },
     )
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [storeId])
 
-  const heading = useMemo(
-    () => new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric', year: 'numeric' }),
-    [],
+  const todaySummary = useMemo(
+    () => summaries.find(s => s.dateKey === new Date().toISOString().slice(0, 10)) ?? null,
+    [summaries],
   )
 
+  if (storeError) {
+    return (
+      <div className="reports-page" role="alert">
+        {storeError}
+      </div>
+    )
+  }
+
+  if (!storeId && !storeLoading) {
+    return (
+      <div className="reports-page" role="status">
+        <h2>Daily summary</h2>
+        <p>Select a workspace to see sales performance.</p>
+      </div>
+    )
+  }
+
   return (
-    <div className="reports-page">
-      <PageSection title="Day summaries" subtitle="Review totals captured when you close the day.">
-        {!storeId ? (
-          <div className="empty-state" role="status" aria-live="polite">
-            <h3 className="empty-state__title">Choose a workspace</h3>
-            <p>You&apos;ll see past close days after selecting a workspace.</p>
+    <div className="page reports-page">
+      <header className="page__header">
+        <div>
+          <h2 className="page__title">Daily summary</h2>
+          <p className="page__subtitle">
+            See how today is performing at a glance.
+          </p>
+        </div>
+      </header>
+
+      {loadError && (
+        <div className="reports-page__error" role="alert">
+          {loadError}
+        </div>
+      )}
+
+      {loading && (
+        <p className="reports-page__loading" role="status">
+          Loading summary…
+        </p>
+      )}
+
+      {/* Today’s headline numbers */}
+      <section className="card reports-page__headline">
+        <h3 className="card__title">
+          Today • {formatDate(new Date())}
+        </h3>
+
+        <div className="reports-page__headline-grid">
+          <div>
+            <p className="reports-page__headline-label">Total sales</p>
+            <p className="reports-page__headline-value">
+              {formatCurrency(todaySummary?.totalSales ?? 0)}
+            </p>
           </div>
-        ) : isLoading ? (
-          <p>Loading summaries…</p>
-        ) : error ? (
-          <p style={{ color: '#b91c1c' }}>{error}</p>
-        ) : summaries.length === 0 ? (
-          <div className="empty-state" role="status" aria-live="polite">
-            <h3 className="empty-state__title">No day summaries yet</h3>
-            <p>Close the day to capture totals for reporting.</p>
+          <div>
+            <p className="reports-page__headline-label">Total tax</p>
+            <p className="reports-page__headline-value">
+              {formatCurrency(todaySummary?.totalTax ?? 0)}
+            </p>
           </div>
+          <div>
+            <p className="reports-page__headline-label">Number of receipts</p>
+            <p className="reports-page__headline-value">
+              {todaySummary?.receiptCount ?? 0}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Table of recent days */}
+      <section className="card reports-page__card">
+        <h3 className="card__title">Recent days</h3>
+
+        {summaries.length === 0 && !loading ? (
+          <p className="reports-page__empty" role="status">
+            No sales recorded yet for this workspace.
+          </p>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="reports-page__table-wrapper">
+            <table className="reports-page__table">
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Date</th>
-                  <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Sales</th>
-                  <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Tax</th>
-                  <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Receipts</th>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Start time</th>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>End time</th>
+                  <th scope="col">Date</th>
+                  <th scope="col">Total sales</th>
+                  <th scope="col">Total tax</th>
+                  <th scope="col">Receipts</th>
+                  <th scope="col">First sale</th>
+                  <th scope="col">Last sale</th>
                 </tr>
               </thead>
               <tbody>
-                {summaries.map(summary => {
-                  const dateLabel = summary.businessDate ? heading.format(summary.businessDate) : summary.id
-                  const startLabel = summary.startTime ? summary.startTime.toLocaleTimeString() : '—'
-                  const endLabel = summary.endTime ? summary.endTime.toLocaleTimeString() : '—'
-                  return (
-                    <tr key={summary.id}>
-                      <td style={{ padding: '8px 6px' }}>{dateLabel}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatCurrency(summary.totalSales)}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatCurrency(summary.totalTax)}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>{summary.receiptCount}</td>
-                      <td style={{ padding: '8px 6px' }}>{startLabel}</td>
-                      <td style={{ padding: '8px 6px' }}>{endLabel}</td>
-                    </tr>
-                  )
-                })}
+                {summaries.map(day => (
+                  <tr key={day.dateKey}>
+                    <th scope="row">{formatDate(day.date)}</th>
+                    <td>{formatCurrency(day.totalSales)}</td>
+                    <td>{formatCurrency(day.totalTax)}</td>
+                    <td>{day.receiptCount}</td>
+                    <td>{formatTime(day.firstSaleAt)}</td>
+                    <td>{formatTime(day.lastSaleAt)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
-      </PageSection>
-
-      <PageSection
-        title="Today"
-        subtitle="Track today’s performance and quick actions."
-      >
-        <div className="empty-state" role="status" aria-live="polite">
-          <h3 className="empty-state__title">Today’s snapshot is coming soon</h3>
-          <p>
-            Soon you&rsquo;ll see live sales, top products, and urgent follow-ups for the day in one convenient
-            spot.
-          </p>
-        </div>
-      </PageSection>
+      </section>
     </div>
   )
 }
