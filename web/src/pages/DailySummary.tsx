@@ -52,8 +52,7 @@ export default function DailySummary() {
     const { start, end } = getTodayRange()
 
     const q = query(
-      collection(db, 'sales'),
-      where('storeId', '==', storeId),
+      collection(db, 'workspaces', storeId, 'sales'),
       where('createdAt', '>=', start),
       where('createdAt', '<', end),
       orderBy('createdAt', 'desc'),
