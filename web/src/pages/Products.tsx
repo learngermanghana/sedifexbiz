@@ -175,6 +175,7 @@ export default function Products() {
   const [createStatus, setCreateStatus] = useState<StatusState | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [editForm, setEditForm] = useState(DEFAULT_EDIT_FORM)
+  const [initialEditForm, setInitialEditForm] = useState(DEFAULT_EDIT_FORM)
   const [editStatus, setEditStatus] = useState<StatusState | null>(null)
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
@@ -287,11 +288,12 @@ export default function Products() {
   useEffect(() => {
     if (!editingProductId) {
       setEditForm(DEFAULT_EDIT_FORM)
+      setInitialEditForm(DEFAULT_EDIT_FORM)
       return
     }
     const product = products.find(item => item.id === editingProductId)
     if (!product) return
-    setEditForm({
+    const nextForm = {
       name: product.name ?? '',
       sku: product.sku ?? '',
       price:
@@ -303,8 +305,20 @@ export default function Products() {
         Number.isFinite(product.reorderLevel)
           ? String(product.reorderLevel)
           : '',
-    })
+    }
+    setEditForm(nextForm)
+    setInitialEditForm(nextForm)
   }, [editingProductId, products])
+
+  const hasUnsavedEditChanges = useMemo(() => {
+    if (!editingProductId) return false
+    return (
+      editForm.name !== initialEditForm.name ||
+      editForm.sku !== initialEditForm.sku ||
+      editForm.price !== initialEditForm.price ||
+      editForm.reorderLevel !== initialEditForm.reorderLevel
+    )
+  }, [editForm.name, editForm.price, editForm.reorderLevel, editForm.sku, editingProductId, initialEditForm])
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = filterText.trim().toLowerCase()
@@ -327,6 +341,19 @@ export default function Products() {
   function handleCreateFieldChange(event: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = event.target
     setCreateForm(prev => ({ ...prev, [name]: value }))
+  }
+
+  function handleCancelEdit() {
+    if (hasUnsavedEditChanges) {
+      const confirmClose = window.confirm(
+        'You have unsaved changes. Close the editor without saving?',
+      )
+      if (!confirmClose) {
+        return
+      }
+    }
+    setEditStatus(null)
+    setEditingProductId(null)
   }
 
   function handleEditFieldChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -767,6 +794,7 @@ export default function Products() {
             <span className="field__label">Name</span>
             <input
               name="name"
+              autoFocus
               value={createForm.name}
               onChange={handleCreateFieldChange}
               placeholder="e.g. House Blend Coffee"
@@ -843,6 +871,7 @@ export default function Products() {
                 <span className="field__label">Name</span>
                 <input
                   name="name"
+                  autoFocus
                   value={editForm.name}
                   onChange={handleEditFieldChange}
                   required
@@ -885,7 +914,7 @@ export default function Products() {
                 <button
                   type="button"
                   className="products-page__cancel"
-                  onClick={() => setEditingProductId(null)}
+                  onClick={handleCancelEdit}
                   disabled={isUpdating}
                 >
                   Cancel
