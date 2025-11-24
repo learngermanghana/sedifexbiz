@@ -1,3 +1,6 @@
+/* PRODUCTS PAGE LAYOUT
+   ------------------------------------------------------------------ */
+
 .products-page {
   gap: 24px;
 }
@@ -5,6 +8,8 @@
 .products-page__card {
   margin-bottom: 24px;
 }
+
+/* Toolbar (search + low-stock toggle) ------------------------------ */
 
 .products-page__toolbar {
   display: flex;
@@ -22,18 +27,30 @@
   font-size: 14px;
 }
 
-.products-page__search input {
-  padding: 8px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  min-width: 220px;
-  color: #111827;            /* darker input text */
+.products-page__search-label {
+  font-weight: 500;
+  color: #111827;
 }
 
-/* Search placeholder more visible */
+.products-page__search input {
+  padding: 8px 10px;
+  border: 1px solid #9ca3af;          /* darker border */
+  border-radius: 6px;
+  min-width: 220px;
+  background-color: #f9fafb;          /* subtle grey bg */
+  color: #111827;                     /* dark text */
+  font-size: 14px;
+}
+
 .products-page__search input::placeholder {
-  color: #6b7280;
+  color: #4b5563;                     /* darker placeholder */
   opacity: 1;
+}
+
+.products-page__search input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px #2563eb33;
 }
 
 .products-page__filter {
@@ -41,12 +58,15 @@
   align-items: center;
   gap: 8px;
   font-size: 14px;
+  color: #111827;
 }
 
 .products-page__warning {
   margin-top: 8px;
   color: #b45309;
 }
+
+/* Receive link ----------------------------------------------------- */
 
 .products-page__receive-link {
   display: inline-flex;
@@ -63,6 +83,8 @@
   background-color: #111827;
 }
 
+/* TABLE ------------------------------------------------------------ */
+
 .products-page__table-wrapper {
   overflow-x: auto;
 }
@@ -78,7 +100,8 @@
   border-bottom: 1px solid #e5e7eb;
   text-align: left;
   vertical-align: top;
-  color: #111827;           /* stronger table text */
+  font-size: 14px;
+  color: #111827;
 }
 
 .products-page__product-name {
@@ -121,17 +144,20 @@
   background-color: #f9fafb;
 }
 
+/* STATUS + EMPTY STATES ------------------------------------------- */
+
 .products-page__loading,
 .products-page__empty,
 .products-page__error {
   margin: 16px 0;
   font-size: 14px;
-  color: #111827;           /* clearer status text */
 }
 
 .products-page__error {
   color: #b91c1c;
 }
+
+/* FORM STYLING (THIS IS WHERE THE INPUTS LIVE) -------------------- */
 
 .products-page__form {
   display: grid;
@@ -139,20 +165,48 @@
   max-width: 520px;
 }
 
-/* Form input text + placeholder darker and easier to read */
-.products-page__form input {
-  color: #111827;
+/* make labels darker + clearer */
+.field__label {
+  display: inline-block;
+  margin-bottom: 4px;
   font-size: 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  padding: 8px 10px;
+  font-weight: 600;
+  color: #111827;
 }
 
-.products-page__form input::placeholder {
-  color: #6b7280;
+/* STRONGER INPUT STYLING – higher contrast */
+.products-page__form input,
+.products-page__dialog input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #9ca3af;       /* darker than before */
+  background-color: #f9fafb;       /* light grey bg so box stands out */
+  color: #111827;
+  font-size: 14px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+
+/* darker placeholder text */
+.products-page__form input::placeholder,
+.products-page__dialog input::placeholder {
+  color: #4b5563;
   opacity: 1;
 }
 
+/* strong focus ring */
+.products-page__form input:focus,
+.products-page__dialog input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px #2563eb33;
+  background-color: #ffffff;
+}
+
+/* submit buttons */
 .products-page__submit {
   align-self: start;
   padding: 10px 18px;
@@ -169,6 +223,7 @@
   cursor: not-allowed;
 }
 
+/* inline status text */
 .products-page__status {
   font-size: 14px;
 }
@@ -180,6 +235,8 @@
 .products-page__status--error {
   color: #b91c1c;
 }
+
+/* EDIT DIALOG ------------------------------------------------------ */
 
 .products-page__dialog {
   position: fixed;
@@ -218,6 +275,8 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* RESPONSIVE ------------------------------------------------------ */
 
 @media (max-width: 640px) {
   .products-page__toolbar {
