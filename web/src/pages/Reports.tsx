@@ -10,7 +10,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
-import './Today.css' // or Reports.css – whatever you already use
+import './Reports.css'
 
 type DaySummary = {
   dateKey: string            // 'YYYY-MM-DD'
