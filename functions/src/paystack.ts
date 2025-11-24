@@ -2,6 +2,7 @@
 
 import * as functions from 'firebase-functions/v1'
 import * as crypto from 'crypto'
+import fetch from 'node-fetch'
 import { admin, defaultDb } from './firestore'
 
 /**
