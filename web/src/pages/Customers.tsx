@@ -55,6 +55,7 @@ type CustomerStats = {
 type CachedSaleRecord = {
   id: string
   customer?: { id?: string | null } | null
+  customerId?: unknown
   createdAt?: unknown
   total?: unknown
   payment?: { method?: unknown } | null
@@ -63,6 +64,7 @@ type CachedSaleRecord = {
 
 const RECENT_VISIT_DAYS = 90
 const HIGH_VALUE_THRESHOLD = 1000
+const SUGGESTED_TAGS = ['Friend', 'Wholesale', 'VIP']
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
   const displayName = customer.displayName?.trim()
@@ -322,11 +324,15 @@ export default function Customers() {
 
     records.forEach(record => {
       if (!record) return
-      const customer =
+      const customerData =
         record.customer && typeof record.customer === 'object'
           ? (record.customer as { id?: string | null })
           : null
-      const customerId = customer?.id ?? null
+      const explicitCustomerId =
+        typeof record.customerId === 'string' && record.customerId.trim()
+          ? record.customerId.trim()
+          : null
+      const customerId = customerData?.id ?? explicitCustomerId ?? null
       if (!customerId) return
 
       const createdAt = normalizeSaleDate(record.createdAt)
@@ -399,12 +405,8 @@ export default function Customers() {
         console.warn('[customers] Failed to load cached sales', error)
       })
 
-    const q = query(
-      collection(db, 'sales'),
-      where('storeId', '==', activeStoreId),
-      orderBy('createdAt', 'desc'),
-      limit(SALES_CACHE_LIMIT),
-    )
+    const salesCollection = collection(db, 'workspaces', activeStoreId, 'sales')
+    const q = query(salesCollection, orderBy('createdAt', 'desc'), limit(SALES_CACHE_LIMIT))
 
     const unsubscribe = onSnapshot(q, snapshot => {
       const rows = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as any) }))
@@ -471,7 +473,7 @@ export default function Customers() {
         : true
 
       const matchesTag = tagFilter ? customer.tags?.includes(tagFilter) : true
-      const stats = customerStats[customer.id]
+      const stats = customerStats[customer.id] ?? { visits: 0, totalSpend: 0, lastVisit: null }
 
       let matchesQuick = true
       switch (quickFilter) {
@@ -486,10 +488,10 @@ export default function Customers() {
           break
         }
         case 'noPurchases':
-          matchesQuick = (stats?.visits ?? 0) === 0
+          matchesQuick = stats.visits === 0
           break
         case 'highValue':
-          matchesQuick = (stats?.totalSpend ?? 0) >= HIGH_VALUE_THRESHOLD
+          matchesQuick = stats.totalSpend >= HIGH_VALUE_THRESHOLD
           break
         case 'untagged':
           matchesQuick = !(customer.tags?.length)
@@ -955,6 +957,22 @@ export default function Customers() {
             </div>
           </div>
 
+          <div className="customers-page__filters" role="group" aria-label="Suggested tags">
+            <span className="customers-page__filters-label">Suggested tags:</span>
+            <div className="customers-page__quick-filters">
+              {SUGGESTED_TAGS.map(tag => (
+                <button
+                  key={tag}
+                  type="button"
+                  className={`button button--ghost button--small${tagFilter === tag ? ' customers-page__quick-filter--active' : ''}`}
+                  onClick={() => setTagFilter(tag)}
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {allTags.length > 0 && (
             <div className="customers-page__tag-filters" role="group" aria-label="Tag filters">
               <span className="customers-page__filters-label">Tags:</span>
@@ -989,18 +1007,22 @@ export default function Customers() {
                     <th scope="col">Contact</th>
                     <th scope="col">Tags</th>
                     <th scope="col">Visits</th>
-                    <th scope="col">Last visit</th>
-                    <th scope="col">Total spend</th>
+                    <th scope="col">Last purchase</th>
+                    <th scope="col">Total spent</th>
                     <th scope="col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredCustomers.map(customer => {
                     const contactBits = [customer.phone, customer.email].filter(Boolean).join(' • ')
-                    const stats = customerStats[customer.id]
-                    const visitCount = stats?.visits ?? 0
-                    const lastVisit = stats?.lastVisit ?? null
-                    const totalSpend = stats?.totalSpend ?? 0
+                    const stats = customerStats[customer.id] ?? {
+                      visits: 0,
+                      totalSpend: 0,
+                      lastVisit: null,
+                    }
+                    const visitCount = stats.visits
+                    const lastVisit = stats.lastVisit
+                    const totalSpend = stats.totalSpend
                     const isSelected = selectedCustomerId === customer.id
                     const customerName = getCustomerDisplayName(customer)
                     return (
@@ -1023,8 +1045,8 @@ export default function Customers() {
                           )}
                         </td>
                         <td>{visitCount}</td>
-                        <td>{lastVisit ? lastVisit.toLocaleDateString() : '—'}</td>
-                        <td>{visitCount ? currencyFormatter.format(totalSpend) : '—'}</td>
+                        <td>{formatDate(lastVisit)}</td>
+                        <td>{currencyFormatter.format(totalSpend)}</td>
                         <td className="customers-page__table-actions">
                           <button
                             type="button"
@@ -1112,15 +1134,11 @@ export default function Customers() {
                   <dd>{selectedCustomerStats.visits}</dd>
                 </div>
                 <div>
-                  <dt>Total spend</dt>
-                  <dd>
-                    {selectedCustomerStats.visits
-                      ? currencyFormatter.format(selectedCustomerStats.totalSpend)
-                      : '—'}
-                  </dd>
+                  <dt>Total spent</dt>
+                  <dd>{currencyFormatter.format(selectedCustomerStats.totalSpend)}</dd>
                 </div>
                 <div>
-                  <dt>Last visit</dt>
+                  <dt>Last purchase</dt>
                   <dd>{formatDate(selectedCustomerStats.lastVisit)}</dd>
                 </div>
               </dl>

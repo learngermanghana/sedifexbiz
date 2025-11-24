@@ -70,6 +70,7 @@ type CommitSalePayload = {
   branchId: string | null
   saleId: string
   cashierId: string
+  customerId?: string | null
   totals: {
     total: number
     taxTotal: number
@@ -522,6 +523,7 @@ export default function Sell() {
       branchId: activeStoreId,
       saleId,
       cashierId: user.uid,
+      customerId: selectedCustomer?.id ?? null,
       totals: {
         total: subtotal,
         taxTotal: 0,
