@@ -198,6 +198,7 @@ export default function Products() {
     })
       .then(cached => {
         if (!cancelled && cached.length) {
+          setLoadError(null)
           setProducts(prev => {
             const optimistic = prev.filter(
               item => item.__optimistic && item.storeId === activeStoreId,
