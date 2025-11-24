@@ -30,7 +30,6 @@ const router = createHashRouter([
       { path: 'close-day', element: <Shell><CloseDay /></Shell> },
       { path: 'reports/daily-summary', element: <Shell><Reports /></Shell> },
       { path: 'onboarding', element: <Shell><Onboarding /></Shell> },
-      { path: 'workspace', element: <Shell><WorkspaceHub /></Shell> },
       { path: 'staff', element: <Shell><WorkspaceHub /></Shell> },
       { path: 'account',   element: <Shell><WorkspaceHub /></Shell> },
       { path: 'billing/verify', element: <BillingVerifyPage /> },
