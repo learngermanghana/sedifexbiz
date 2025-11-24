@@ -83,7 +83,12 @@ function toDate(value: unknown): Date | null {
     return Number.isFinite(value) ? new Date(value) : null
   }
   if (typeof value === 'object') {
-    const anyValue = value as { toDate?: () => Date; toMillis?: () => number; seconds?: number; nanoseconds?: number }
+    const anyValue = value as {
+      toDate?: () => Date
+      toMillis?: () => number
+      seconds?: number
+      nanoseconds?: number
+    }
     if (typeof anyValue.toDate === 'function') {
       try {
         return anyValue.toDate() ?? null
@@ -100,7 +105,9 @@ function toDate(value: unknown): Date | null {
       }
     }
     if (typeof anyValue.seconds === 'number') {
-      const millis = anyValue.seconds * 1000 + Math.round((anyValue.nanoseconds ?? 0) / 1_000_000)
+      const millis =
+        anyValue.seconds * 1000 +
+        Math.round((anyValue.nanoseconds ?? 0) / 1_000_000)
       return Number.isFinite(millis) ? new Date(millis) : null
     }
   }
@@ -120,7 +127,12 @@ function formatReceiptDetails(receipt: ReceiptDetails | null | undefined): strin
     parts.push(`from ${supplier}`)
   }
   if (receivedAt) {
-    parts.push(`on ${receivedAt.toLocaleDateString()} ${receivedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`)
+    parts.push(
+      `on ${receivedAt.toLocaleDateString()} ${receivedAt.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`,
+    )
   }
   if (!parts.length) {
     return 'Last receipt details unavailable'
@@ -129,7 +141,9 @@ function formatReceiptDetails(receipt: ReceiptDetails | null | undefined): strin
 }
 
 function sortProducts(products: ProductRecord[]): ProductRecord[] {
-  return [...products].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  return [...products].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+  )
 }
 
 function isOfflineError(error: unknown) {
@@ -179,7 +193,9 @@ export default function Products() {
 
     setIsLoadingProducts(true)
 
-    loadCachedProducts<Omit<ProductRecord, '__optimistic'>>({ storeId: activeStoreId })
+    loadCachedProducts<Omit<ProductRecord, '__optimistic'>>({
+      storeId: activeStoreId,
+    })
       .then(cached => {
         if (!cancelled && cached.length) {
           setProducts(prev => {
@@ -213,6 +229,10 @@ export default function Products() {
       q,
       snapshot => {
         if (cancelled) return
+
+        // ✅ Clear any previous error once we get a good snapshot
+        setLoadError(null)
+
         const rows = snapshot.docs.map(docSnap => ({
           id: docSnap.id,
           ...(docSnap.data() as Record<string, unknown>),
@@ -220,7 +240,8 @@ export default function Products() {
         const sanitizedRows = rows.map(row => {
           const typedRow = row as ProductRecord
           const resolvedReorderLevel =
-            typeof typedRow.reorderLevel === 'number' && Number.isFinite(typedRow.reorderLevel)
+            typeof typedRow.reorderLevel === 'number' &&
+            Number.isFinite(typedRow.reorderLevel)
               ? typedRow.reorderLevel
               : typeof typedRow.reorderThreshold === 'number' &&
                   Number.isFinite(typedRow.reorderThreshold)
@@ -277,7 +298,8 @@ export default function Products() {
           ? String(product.price)
           : '',
       reorderLevel:
-        typeof product.reorderLevel === 'number' && Number.isFinite(product.reorderLevel)
+        typeof product.reorderLevel === 'number' &&
+        Number.isFinite(product.reorderLevel)
           ? String(product.reorderLevel)
           : '',
     })
@@ -287,9 +309,12 @@ export default function Products() {
     const normalizedQuery = filterText.trim().toLowerCase()
     return sortProducts(
       products.filter(product => {
-        const stockCount = typeof product.stockCount === 'number' ? product.stockCount : 0
-        const reorder = typeof product.reorderLevel === 'number' ? product.reorderLevel : null
-        const matchesLowStock = !showLowStockOnly || (reorder !== null && stockCount <= reorder)
+        const stockCount =
+          typeof product.stockCount === 'number' ? product.stockCount : 0
+        const reorder =
+          typeof product.reorderLevel === 'number' ? product.reorderLevel : null
+        const matchesLowStock =
+          !showLowStockOnly || (reorder !== null && stockCount <= reorder)
         if (!matchesLowStock) return false
         if (!normalizedQuery) return true
         const haystack = `${product.name ?? ''} ${product.sku ?? ''}`.toLowerCase()
@@ -338,31 +363,50 @@ export default function Products() {
     const initialStock = validateNumbers(createForm.initialStock)
 
     if (!name) {
-      setCreateStatus({ tone: 'error', message: 'Name your product so the team recognises it on the shelf.' })
+      setCreateStatus({
+        tone: 'error',
+        message:
+          'Name your product so the team recognises it on the shelf.',
+      })
       return
     }
     if (price === null) {
-      setCreateStatus({ tone: 'error', message: 'Enter a valid price that is zero or greater.' })
+      setCreateStatus({
+        tone: 'error',
+        message: 'Enter a valid price that is zero or greater.',
+      })
       return
     }
     if (!sku) {
       setCreateStatus({
         tone: 'error',
-        message: 'Add a SKU that matches the barcode so you can scan it during checkout.',
+        message:
+          'Add a SKU that matches the barcode so you can scan it during checkout.',
       })
       return
     }
     if (createForm.reorderLevel && reorderLevel === null) {
-      setCreateStatus({ tone: 'error', message: 'Enter a valid reorder point that is zero or greater.' })
+      setCreateStatus({
+        tone: 'error',
+        message:
+          'Enter a valid reorder point that is zero or greater.',
+      })
       return
     }
     if (createForm.initialStock && initialStock === null) {
-      setCreateStatus({ tone: 'error', message: 'Enter a valid opening stock that is zero or greater.' })
+      setCreateStatus({
+        tone: 'error',
+        message:
+          'Enter a valid opening stock that is zero or greater.',
+      })
       return
     }
 
     if (!activeStoreId) {
-      setCreateStatus({ tone: 'error', message: 'Select a workspace before adding products.' })
+      setCreateStatus({
+        tone: 'error',
+        message: 'Select a workspace before adding products.',
+      })
       return
     }
 
@@ -404,7 +448,10 @@ export default function Products() {
             : product,
         ),
       )
-      setCreateStatus({ tone: 'success', message: 'Product created successfully.' })
+      setCreateStatus({
+        tone: 'success',
+        message: 'Product created successfully.',
+      })
       resetCreateForm()
     } catch (error) {
       console.error('[products] Failed to create product', error)
@@ -418,12 +465,18 @@ export default function Products() {
         )
         setCreateStatus({
           tone: 'success',
-          message: 'Offline — product saved locally and will sync when you reconnect.',
+          message:
+            'Offline — product saved locally and will sync when you reconnect.',
         })
         return
       }
-      setProducts(prev => prev.filter(product => product.id !== optimisticProduct.id))
-      setCreateStatus({ tone: 'error', message: 'Unable to create product. Please try again.' })
+      setProducts(prev =>
+        prev.filter(product => product.id !== optimisticProduct.id),
+      )
+      setCreateStatus({
+        tone: 'error',
+        message: 'Unable to create product. Please try again.',
+      })
     } finally {
       setIsCreating(false)
     }
@@ -432,7 +485,10 @@ export default function Products() {
   async function handleUpdateProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!editingProductId) {
-      setEditStatus({ tone: 'error', message: 'Select a product to edit before saving.' })
+      setEditStatus({
+        tone: 'error',
+        message: 'Select a product to edit before saving.',
+      })
       return
     }
     const name = editForm.name.trim()
@@ -441,33 +497,50 @@ export default function Products() {
     const reorderLevel = validateNumbers(editForm.reorderLevel)
 
     if (!name) {
-      setEditStatus({ tone: 'error', message: 'Name your product so staff know what to pick.' })
+      setEditStatus({
+        tone: 'error',
+        message: 'Name your product so staff know what to pick.',
+      })
       return
     }
     if (price === null) {
-      setEditStatus({ tone: 'error', message: 'Enter a valid price that is zero or greater.' })
+      setEditStatus({
+        tone: 'error',
+        message: 'Enter a valid price that is zero or greater.',
+      })
       return
     }
     if (!sku) {
       setEditStatus({
         tone: 'error',
-        message: 'Every product needs a SKU that matches its barcode for scanning.',
+        message:
+          'Every product needs a SKU that matches its barcode for scanning.',
       })
       return
     }
     if (editForm.reorderLevel && reorderLevel === null) {
-      setEditStatus({ tone: 'error', message: 'Enter a valid reorder point that is zero or greater.' })
+      setEditStatus({
+        tone: 'error',
+        message:
+          'Enter a valid reorder point that is zero or greater.',
+      })
       return
     }
 
     if (!activeStoreId) {
-      setEditStatus({ tone: 'error', message: 'Select a workspace before updating products.' })
+      setEditStatus({
+        tone: 'error',
+        message: 'Select a workspace before updating products.',
+      })
       return
     }
 
     const previous = products.find(product => product.id === editingProductId)
     if (!previous) {
-      setEditStatus({ tone: 'error', message: 'We could not find this product to update.' })
+      setEditStatus({
+        tone: 'error',
+        message: 'We could not find this product to update.',
+      })
       return
     }
 
@@ -502,10 +575,15 @@ export default function Products() {
         storeId: activeStoreId,
         updatedAt: serverTimestamp(),
       })
-      setEditStatus({ tone: 'success', message: 'Product details updated.' })
+      setEditStatus({
+        tone: 'success',
+        message: 'Product details updated.',
+      })
       setProducts(prev =>
         prev.map(product =>
-          product.id === editingProductId ? { ...product, __optimistic: false } : product,
+          product.id === editingProductId
+            ? { ...product, __optimistic: false }
+            : product,
         ),
       )
       setEditingProductId(null)
@@ -519,12 +597,16 @@ export default function Products() {
       if (isOfflineError(error)) {
         setEditStatus({
           tone: 'success',
-          message: 'Offline — product edits saved and will sync when you reconnect.',
+          message:
+            'Offline — product edits saved and will sync when you reconnect.',
         })
         setEditingProductId(null)
         return
       }
-      setEditStatus({ tone: 'error', message: 'Unable to update product. Please try again.' })
+      setEditStatus({
+        tone: 'error',
+        message: 'Unable to update product. Please try again.',
+      })
     } finally {
       setIsUpdating(false)
     }
@@ -533,12 +615,19 @@ export default function Products() {
   function renderStatus(status: StatusState | null) {
     if (!status) return null
     return (
-      <div className={`products-page__status products-page__status--${status.tone}`} role="status">
+      <div
+        className={`products-page__status products-page__status--${status.tone}`}
+        role="status"
+      >
         {status.message}
       </div>
     )
   }
 
+  // ✅ Only show the big error banner when there is an error AND
+  // we’re not loading AND there’s no data to show.
+  const hasBlockingError =
+    !!loadError && !isLoadingProducts && filteredProducts.length === 0
 
   return (
     <div className="page products-page">
@@ -546,7 +635,8 @@ export default function Products() {
         <div>
           <h2 className="page__title">Products</h2>
           <p className="page__subtitle">
-            Review inventory, monitor low stock alerts, and keep your catalogue tidy.
+            Review inventory, monitor low stock alerts, and keep your catalogue
+            tidy.
           </p>
         </div>
         <Link to="/receive" className="products-page__receive-link">
@@ -574,13 +664,21 @@ export default function Products() {
             <span>Show low stock only</span>
           </label>
         </div>
-        {loadError ? <div className="products-page__error">{loadError}</div> : null}
-        {isLoadingProducts ? <div className="products-page__loading">Loading products…</div> : null}
-        {!isLoadingProducts && filteredProducts.length === 0 ? (
+
+        {hasBlockingError ? (
+          <div className="products-page__error">{loadError}</div>
+        ) : null}
+
+        {isLoadingProducts ? (
+          <div className="products-page__loading">Loading products…</div>
+        ) : null}
+
+        {!isLoadingProducts && filteredProducts.length === 0 && !hasBlockingError ? (
           <div className="products-page__empty" role="status">
             No products found. Add your first item so you can track inventory.
           </div>
         ) : null}
+
         {filteredProducts.length > 0 ? (
           <div className="products-page__table-wrapper">
             <table className="products-page__table">
@@ -592,34 +690,50 @@ export default function Products() {
                   <th scope="col">On hand</th>
                   <th scope="col">Reorder point</th>
                   <th scope="col">Last receipt</th>
-                  <th scope="col" className="products-page__actions">Actions</th>
+                  <th scope="col" className="products-page__actions">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {filteredProducts.map(product => {
-                  const stockCount = typeof product.stockCount === 'number' ? product.stockCount : 0
+                  const stockCount =
+                    typeof product.stockCount === 'number'
+                      ? product.stockCount
+                      : 0
                   const reorderLevel =
-                    typeof product.reorderLevel === 'number' ? product.reorderLevel : null
-                  const isLowStock = reorderLevel !== null && stockCount <= reorderLevel
+                    typeof product.reorderLevel === 'number'
+                      ? product.reorderLevel
+                      : null
+                  const isLowStock =
+                    reorderLevel !== null && stockCount <= reorderLevel
                   return (
-                    <tr key={product.id} data-testid={`product-row-${product.id}`}>
+                    <tr
+                      key={product.id}
+                      data-testid={`product-row-${product.id}`}
+                    >
                       <th scope="row">
                         <div className="products-page__product-name">
                           {product.name}
                           {product.__optimistic ? (
-                            <span className="products-page__badge">Syncing…</span>
+                            <span className="products-page__badge">
+                              Syncing…
+                            </span>
                           ) : null}
                           {isLowStock ? (
-                            <span className="products-page__badge products-page__badge--alert">Low stock</span>
+                            <span className="products-page__badge products-page__badge--alert">
+                              Low stock
+                            </span>
                           ) : null}
                         </div>
                       </th>
                       <td>{product.sku || '—'}</td>
-                      <td>{
-                        typeof product.price === 'number' && Number.isFinite(product.price)
+                      <td>
+                        {typeof product.price === 'number' &&
+                        Number.isFinite(product.price)
                           ? `GHS ${product.price.toFixed(2)}`
-                          : '—'
-                      }</td>
+                          : '—'}
+                      </td>
                       <td>{stockCount}</td>
                       <td>{reorderLevel ?? '—'}</td>
                       <td>{formatReceiptDetails(product.lastReceipt)}</td>
@@ -644,8 +758,8 @@ export default function Products() {
       <section className="card products-page__card">
         <h3 className="card__title">Add product</h3>
         <p className="card__subtitle">
-          Capture items you stock so sales and receipts stay accurate. Give each one a SKU that
-          matches the barcode you plan to scan at checkout.
+          Capture items you stock so sales and receipts stay accurate. Give each
+          one a SKU that matches the barcode you plan to scan at checkout.
         </p>
         <form className="products-page__form" onSubmit={handleCreateProduct}>
           <label className="field">
@@ -670,7 +784,8 @@ export default function Products() {
             />
           </label>
           <p className="field__hint" id="create-sku-hint">
-            This must match the value encoded in your barcode so cashiers can scan products.
+            This must match the value encoded in your barcode so cashiers can
+            scan products.
           </p>
           <label className="field">
             <span className="field__label">Price</span>
@@ -703,7 +818,11 @@ export default function Products() {
               inputMode="numeric"
             />
           </label>
-          <button type="submit" className="products-page__submit" disabled={isCreating}>
+          <button
+            type="submit"
+            className="products-page__submit"
+            disabled={isCreating}
+          >
             {isCreating ? 'Saving…' : 'Add product'}
           </button>
           {renderStatus(createStatus)}
@@ -711,7 +830,11 @@ export default function Products() {
       </section>
 
       {editingProductId ? (
-        <div className="products-page__dialog" role="dialog" aria-modal="true">
+        <div
+          className="products-page__dialog"
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="products-page__dialog-content">
             <h3>Edit product</h3>
             <form className="products-page__form" onSubmit={handleUpdateProduct}>
@@ -735,7 +858,8 @@ export default function Products() {
                 />
               </label>
               <p className="field__hint" id="edit-sku-hint">
-                Update the SKU to mirror the barcode if you need to reprint or relabel items.
+                Update the SKU to mirror the barcode if you need to reprint or
+                relabel items.
               </p>
               <label className="field">
                 <span className="field__label">Price</span>
@@ -765,7 +889,11 @@ export default function Products() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="products-page__submit" disabled={isUpdating}>
+                <button
+                  type="submit"
+                  className="products-page__submit"
+                  disabled={isUpdating}
+                >
                   {isUpdating ? 'Saving…' : 'Save changes'}
                 </button>
               </div>
@@ -777,4 +905,3 @@ export default function Products() {
     </div>
   )
 }
-
