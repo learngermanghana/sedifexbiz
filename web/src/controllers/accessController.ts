@@ -78,6 +78,8 @@ const resolveStoreAccessCallable = httpsCallable<
   'resolveStoreAccess',
 )
 
+const AFTER_SIGNUP_BOOTSTRAP_TIMEOUT_MS = 1000 * 12 // 12 seconds
+
 export const INACTIVE_WORKSPACE_MESSAGE =
   'Your Sedifex workspace is inactive. Please contact the workspace owner or Sedifex support to reactivate it.'
 
@@ -205,5 +207,32 @@ export async function resolveStoreAccess(storeId?: string): Promise<ResolveStore
     workspaceSlug,
     role: normalizeRole(payload.role),
     claims: payload.claims,
+  }
+}
+
+/**
+ * Bootstraps a new workspace after signup while avoiding an indefinite loading state.
+ */
+export async function afterSignupBootstrap(options?: {
+  contact?: InitializeStoreContactPayload
+  storeId?: string | null
+}) {
+  const controller = new AbortController()
+
+  const timeout = setTimeout(() => {
+    controller.abort()
+  }, AFTER_SIGNUP_BOOTSTRAP_TIMEOUT_MS)
+
+  try {
+    const bootstrap = initializeStore(options?.contact, options?.storeId)
+    const abortPromise = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener('abort', () =>
+        reject(new Error('Workspace setup is taking longer than expected.')),
+      )
+    })
+
+    return await Promise.race([bootstrap, abortPromise])
+  } finally {
+    clearTimeout(timeout)
   }
 }
