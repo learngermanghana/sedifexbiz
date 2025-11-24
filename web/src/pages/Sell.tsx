@@ -641,6 +641,7 @@ export default function Sell() {
           <label className="field__label" htmlFor="sell-search">Find a product</label>
           <input
             id="sell-search"
+            autoFocus
             placeholder="Search by name"
             value={queryText}
             onChange={e => setQueryText(e.target.value)}
