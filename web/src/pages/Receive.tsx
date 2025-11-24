@@ -42,6 +42,7 @@ export default function Receive() {
   const [supplier, setSupplier] = useState('')
   const [reference, setReference] = useState('')
   const [unitCost, setUnitCost] = useState('')
+  const [note, setNote] = useState('')
   const [status, setStatus] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const statusTimeoutRef = useRef<number | null>(null)
@@ -148,6 +149,7 @@ export default function Receive() {
       supplier: supplierName,
       reference: referenceNumber,
       unitCost: parsedCost,
+      note: note.trim() || undefined,
     }
 
     try {
@@ -156,6 +158,7 @@ export default function Receive() {
       setSupplier('')
       setReference('')
       setUnitCost('')
+      setNote('')
       showStatus('success', 'Stock received successfully.')
     } catch (error) {
       console.error('[receive] Failed to update stock', error)
@@ -166,6 +169,7 @@ export default function Receive() {
           setSupplier('')
           setReference('')
           setUnitCost('')
+          setNote('')
           showStatus('success', 'Offline — receipt saved and will sync when you reconnect.')
           return
         }
@@ -246,6 +250,17 @@ export default function Receive() {
               value={unitCost}
               onChange={e => setUnitCost(e.target.value)}
             />
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="receive-note">Internal note</label>
+            <textarea
+              id="receive-note"
+              rows={3}
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="Add notes like damaged stock or delivery issues."
+            />
+            <p className="field__hint">Notes appear on reports and close day.</p>
           </div>
           <div className="receive-page__actions">
             <button

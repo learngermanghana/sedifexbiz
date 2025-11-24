@@ -62,10 +62,21 @@ async function run() {
     branchId: 'branch-1',
     cashierId: 'cashier-1',
     saleId: 'sale-123',
-    totals: { total: 100, taxTotal: 10 },
+    totals: { total: 85.5, taxTotal: 10, discountAmount: 14.5, discountPercent: 5 },
     payment: { method: 'cash' },
     customer: { name: 'Alice' },
-    items: [{ productId: 'prod-1', name: 'Widget', qty: 1, price: 100, taxRate: 0.1 }],
+    note: 'Paid via MoMo',
+    items: [
+      {
+        productId: 'prod-1',
+        name: 'Widget',
+        qty: 1,
+        price: 100,
+        taxRate: 0.1,
+        discountAmount: 10,
+        discountPercent: 0,
+      },
+    ],
   }
 
   const result = await commitSale.run(payload, context)
@@ -75,10 +86,15 @@ async function run() {
   const saleDoc = currentDb.getDoc('workspaces/branch-1/sales/sale-123')
   assert.ok(saleDoc)
   assert.strictEqual(saleDoc.branchId, 'branch-1')
+  assert.strictEqual(saleDoc.discountTotal, 14.5)
+  assert.strictEqual(saleDoc.itemDiscountTotal, 10)
+  assert.strictEqual(saleDoc.saleDiscountAmount, 4.5)
+  assert.strictEqual(saleDoc.note, 'Paid via MoMo')
 
   const saleItems = currentDb.listCollection('workspaces/branch-1/saleItems')
   assert.strictEqual(saleItems.length, 1)
   assert.strictEqual(saleItems[0].data.saleId, 'sale-123')
+  assert.strictEqual(saleItems[0].data.discountAmount, 10)
 
   const productDoc = currentDb.getDoc('products/prod-1')
   assert.strictEqual(productDoc.stockCount, 4)

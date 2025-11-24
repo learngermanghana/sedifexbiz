@@ -34,6 +34,7 @@ export default function DailySummary() {
   const [totalSales, setTotalSales] = useState(0)
   const [totalTax, setTotalTax] = useState(0)
   const [receiptCount, setReceiptCount] = useState(0)
+  const [totalDiscount, setTotalDiscount] = useState(0)
   const [topProducts, setTopProducts] = useState<ProductAggregate[]>([])
 
   useEffect(() => {
@@ -43,6 +44,7 @@ export default function DailySummary() {
       setTotalSales(0)
       setTotalTax(0)
       setReceiptCount(0)
+      setTotalDiscount(0)
       setTopProducts([])
       return () => {
         /* noop */
@@ -68,15 +70,18 @@ export default function DailySummary() {
         let salesTotal = 0
         let taxTotal = 0
         let receipts = 0
+        let discountTotal = 0
         const aggregate = new Map<string, ProductAggregate>()
 
         snapshot.forEach(docSnap => {
           const data = docSnap.data()
           const saleTotal = Number(data.total ?? 0) || 0
           const saleTax = Number(data.taxTotal ?? 0) || 0
+          const saleDiscount = Number((data as any)?.discountTotal ?? (data as any)?.discountAmount ?? 0) || 0
           salesTotal += saleTotal
           taxTotal += saleTax
           receipts += 1
+          discountTotal += saleDiscount
 
           const items = Array.isArray(data.items) ? data.items : []
           items.forEach(item => {
@@ -103,6 +108,7 @@ export default function DailySummary() {
         setTotalSales(salesTotal)
         setTotalTax(taxTotal)
         setReceiptCount(receipts)
+        setTotalDiscount(discountTotal)
         setTopProducts(top)
         setIsLoading(false)
       },
@@ -151,6 +157,10 @@ export default function DailySummary() {
             <div className="daily-summary__metric">
               <span className="daily-summary__metric-label">Total tax</span>
               <strong className="daily-summary__metric-value">{formatCurrency(totalTax)}</strong>
+            </div>
+            <div className="daily-summary__metric">
+              <span className="daily-summary__metric-label">Discounts given</span>
+              <strong className="daily-summary__metric-value">{formatCurrency(totalDiscount)}</strong>
             </div>
             <div className="daily-summary__metric">
               <span className="daily-summary__metric-label">Number of receipts</span>

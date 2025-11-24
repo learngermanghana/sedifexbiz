@@ -9,9 +9,12 @@ type DaySummary = {
   businessDate: Date | null
   totalSales: number
   totalTax: number
+  totalDiscount: number
   receiptCount: number
   startTime: Date | null
   endTime: Date | null
+  noteCount: number
+  notes: string[]
 }
 
 function formatCurrency(value: number) {
@@ -63,14 +66,27 @@ export default function Reports(): ReactElement {
         const rows: DaySummary[] = snapshot.docs.map(docSnap => {
           const data = docSnap.data()
           const businessDate = toDate(data.businessDate) ?? parseDateFromId(docSnap.id)
+          const noteSamplesRaw = Array.isArray((data as any)?.noteSamples)
+            ? (data as any).noteSamples
+            : []
+          const noteSamples = noteSamplesRaw
+            .map((entry: any) => {
+              if (typeof entry === 'string') return entry
+              if (entry && typeof entry.note === 'string') return entry.note
+              return ''
+            })
+            .filter(Boolean)
           return {
             id: docSnap.id,
             businessDate,
             totalSales: Number(data.totalSales ?? 0) || 0,
             totalTax: Number(data.totalTax ?? 0) || 0,
+            totalDiscount: Number((data as any)?.totalDiscount ?? 0) || 0,
             receiptCount: Number(data.receiptCount ?? 0) || 0,
             startTime: toDate(data.startTime),
             endTime: toDate(data.endTime),
+            noteCount: Number((data as any)?.noteCount ?? noteSamples.length) || 0,
+            notes: noteSamples,
           }
         })
         setSummaries(rows)
@@ -108,33 +124,44 @@ export default function Reports(): ReactElement {
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Date</th>
-                  <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Sales</th>
-                  <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Tax</th>
-                  <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Receipts</th>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Start time</th>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>End time</th>
-                </tr>
-              </thead>
-              <tbody>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Date</th>
+                    <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Sales</th>
+                    <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Tax</th>
+                    <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Discounts</th>
+                    <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Receipts</th>
+                    <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Start time</th>
+                    <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>End time</th>
+                    <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '8px 6px' }}>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
                 {summaries.map(summary => {
                   const dateLabel = summary.businessDate ? heading.format(summary.businessDate) : summary.id
                   const startLabel = summary.startTime ? summary.startTime.toLocaleTimeString() : '—'
                   const endLabel = summary.endTime ? summary.endTime.toLocaleTimeString() : '—'
-                  return (
-                    <tr key={summary.id}>
-                      <td style={{ padding: '8px 6px' }}>{dateLabel}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatCurrency(summary.totalSales)}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatCurrency(summary.totalTax)}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>{summary.receiptCount}</td>
-                      <td style={{ padding: '8px 6px' }}>{startLabel}</td>
-                      <td style={{ padding: '8px 6px' }}>{endLabel}</td>
-                    </tr>
-                  )
-                })}
+                    return (
+                      <tr key={summary.id}>
+                        <td style={{ padding: '8px 6px' }}>{dateLabel}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatCurrency(summary.totalSales)}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatCurrency(summary.totalTax)}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatCurrency(summary.totalDiscount)}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'right' }}>{summary.receiptCount}</td>
+                        <td style={{ padding: '8px 6px' }}>{startLabel}</td>
+                        <td style={{ padding: '8px 6px' }}>{endLabel}</td>
+                        <td style={{ padding: '8px 6px' }}>
+                          {summary.noteCount > 0 ? `${summary.noteCount} note${summary.noteCount === 1 ? '' : 's'}` : '—'}
+                          {summary.notes.length > 0 && (
+                            <div style={{ color: '#6b7280', fontSize: 12, marginTop: 4 }}>
+                              {summary.notes.join(' • ')}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
               </tbody>
             </table>
           </div>

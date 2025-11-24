@@ -53,6 +53,7 @@ export default function CloseDay() {
   const { storeId: activeStoreId } = useActiveStore()
 
   const [total, setTotal] = useState(0)
+  const [totalDiscount, setTotalDiscount] = useState(0)
   const [cashCounts, setCashCounts] = useState<CashCountState>(() => createInitialCashCountState())
   const [looseCash, setLooseCash] = useState('')
   const [cardAndDigital, setCardAndDigital] = useState('')
@@ -62,12 +63,17 @@ export default function CloseDay() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [saleNotes, setSaleNotes] = useState<
+    Array<{ id: string; note: string; total: number; discount: number }>
+  >([])
 
   useEffect(() => {
     const start = new Date()
     start.setHours(0, 0, 0, 0)
     if (!activeStoreId) {
       setTotal(0)
+      setTotalDiscount(0)
+      setSaleNotes([])
       return () => {
         /* noop */
       }
@@ -81,8 +87,22 @@ export default function CloseDay() {
     )
     return onSnapshot(q, snap => {
       let sum = 0
-      snap.forEach(d => sum += (d.data().total || 0))
+      let discountSum = 0
+      const notes: Array<{ id: string; note: string; total: number; discount: number }> = []
+      snap.forEach(d => {
+        const data = d.data()
+        const saleTotal = Number(data.total ?? 0) || 0
+        const saleDiscount = Number((data as any)?.discountTotal ?? (data as any)?.discountAmount ?? 0) || 0
+        const note = typeof data.note === 'string' ? data.note.trim() : ''
+        sum += saleTotal
+        discountSum += saleDiscount
+        if (note) {
+          notes.push({ id: d.id, note, total: saleTotal, discount: saleDiscount })
+        }
+      })
       setTotal(sum)
+      setTotalDiscount(discountSum)
+      setSaleNotes(notes)
     })
   }, [activeStoreId])
 
@@ -149,16 +169,20 @@ export default function CloseDay() {
       let totalSales = 0
       let totalTax = 0
       let receiptCount = 0
+      let totalDiscountAmount = 0
       let startTime: Timestamp | null = null
       let endTime: Timestamp | null = null
       const cashierBreakdown: Record<string, { receiptCount: number; totalSales: number; totalTax: number }> = {}
+      const saleNotesForDay: Array<{ saleId: string; note: string }> = []
 
       salesSnapshot.forEach(docSnap => {
         const data = docSnap.data()
         const saleTotal = Number(data.total ?? 0) || 0
         const saleTax = Number(data.taxTotal ?? 0) || 0
+        const saleDiscount = Number((data as any)?.discountTotal ?? (data as any)?.discountAmount ?? 0) || 0
         totalSales += saleTotal
         totalTax += saleTax
+        totalDiscountAmount += saleDiscount
         receiptCount += 1
 
         const createdAt = data.createdAt instanceof Timestamp ? data.createdAt : null
@@ -175,6 +199,11 @@ export default function CloseDay() {
         entry.totalSales += saleTotal
         entry.totalTax += saleTax
         cashierBreakdown[cashierId] = entry
+
+        const saleNote = typeof data.note === 'string' ? data.note.trim() : ''
+        if (saleNote) {
+          saleNotesForDay.push({ saleId: docSnap.id, note: saleNote })
+        }
       })
 
       const daySummaryId = `${activeStoreId}_${getDayKey(start)}`
@@ -184,10 +213,16 @@ export default function CloseDay() {
         businessDate: Timestamp.fromDate(start),
         totalSales,
         totalTax,
+        totalDiscount: totalDiscountAmount,
         receiptCount,
         startTime,
         endTime,
         updatedAt: serverTimestamp(),
+      }
+
+      if (saleNotesForDay.length > 0) {
+        summaryPayload.noteCount = saleNotesForDay.length
+        summaryPayload.noteSamples = saleNotesForDay.slice(0, 5)
       }
 
       if (Object.keys(cashierBreakdown).length > 0) {
@@ -199,6 +234,7 @@ export default function CloseDay() {
       const closePayload = {
         businessDay: Timestamp.fromDate(start),
         salesTotal: totalSales,
+        discountTotal: totalDiscountAmount,
         expectedCash,
         countedCash,
         variance,
@@ -274,6 +310,35 @@ export default function CloseDay() {
           <h3 style={{ marginBottom: 8 }}>Sales Summary</h3>
           <p style={{ marginBottom: 8 }}>Today’s sales total</p>
           <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 16 }}>GHS {total.toFixed(2)}</div>
+          <div style={{ fontSize: 14, color: '#047857', marginBottom: 12 }}>
+            Discounts today: GHS {totalDiscount.toFixed(2)}
+          </div>
+          {saleNotes.length > 0 && (
+            <div
+              style={{
+                border: '1px solid #e5e7eb',
+                background: '#f9fafb',
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 12,
+                display: 'grid',
+                gap: 8,
+              }}
+            >
+              <strong style={{ fontSize: 14 }}>Sale notes ({saleNotes.length})</strong>
+              <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
+                {saleNotes.slice(0, 6).map(entry => (
+                  <li key={entry.id} style={{ color: '#374151' }}>
+                    <div>{entry.note}</div>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>
+                      Sale #{entry.id} • GHS {entry.total.toFixed(2)}
+                      {entry.discount > 0 ? ` • Saved GHS ${entry.discount.toFixed(2)}` : ''}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div style={{ display: 'grid', gap: 12, maxWidth: 420 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span>Card &amp; digital payments</span>

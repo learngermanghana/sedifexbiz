@@ -28,7 +28,14 @@ type Product = {
   createdAt?: unknown
   updatedAt?: unknown
 }
-type CartLine = { productId: string; name: string; price: number; qty: number }
+type CartLine = {
+  productId: string
+  name: string
+  price: number
+  qty: number
+  discountAmount?: number
+  discountPercent?: number
+}
 type Customer = {
   id: string
   name: string
@@ -44,6 +51,8 @@ type ReceiptData = {
   createdAt: Date
   items: CartLine[]
   subtotal: number
+  discountTotal: number
+  totalDue: number
   payment: {
     method: string
     amountPaid: number
@@ -54,6 +63,7 @@ type ReceiptData = {
     phone?: string
     email?: string
   }
+  note?: string | null
 }
 
 type ReceiptSharePayload = {
@@ -73,6 +83,8 @@ type CommitSalePayload = {
   totals: {
     total: number
     taxTotal: number
+    discountAmount?: number
+    discountPercent?: number
   }
   payment: {
     method: string
@@ -91,7 +103,10 @@ type CommitSalePayload = {
     price: number
     qty: number
     taxRate?: number
+    discountAmount?: number
+    discountPercent?: number
   }>
+  note?: string
 }
 
 type CommitSaleResponse = {
@@ -193,6 +208,9 @@ export default function Sell() {
   const [selectedCustomerId, setSelectedCustomerId] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobile' | 'card'>('cash')
   const [amountTendered, setAmountTendered] = useState('')
+  const [saleDiscountAmount, setSaleDiscountAmount] = useState('')
+  const [saleDiscountPercent, setSaleDiscountPercent] = useState('')
+  const [saleNote, setSaleNote] = useState('')
   const [saleError, setSaleError] = useState<string | null>(null)
   const [saleSuccess, setSaleSuccess] = useState<string | null>(null)
   const [isRecording, setIsRecording] = useState(false)
@@ -203,6 +221,25 @@ export default function Sell() {
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
+  const itemDiscountTotal = cart.reduce((sum, line) => {
+    const lineSubtotal = line.price * line.qty
+    const percentDiscount = line.discountPercent
+      ? lineSubtotal * Math.max(0, line.discountPercent) / 100
+      : 0
+    const discount = Math.max(0, line.discountAmount ?? 0, percentDiscount)
+    return sum + Math.min(lineSubtotal, discount)
+  }, 0)
+  const subtotalAfterItemDiscount = Math.max(0, subtotal - itemDiscountTotal)
+  const saleDiscountAmountValue = Math.max(0, Number(saleDiscountAmount) || 0)
+  const saleDiscountPercentValue = Math.max(0, Number(saleDiscountPercent) || 0)
+  const saleDiscountFromPercent =
+    saleDiscountPercentValue > 0 ? subtotalAfterItemDiscount * (saleDiscountPercentValue / 100) : 0
+  const saleDiscountApplied = Math.min(
+    subtotalAfterItemDiscount,
+    saleDiscountAmountValue || saleDiscountFromPercent,
+  )
+  const discountTotal = itemDiscountTotal + saleDiscountApplied
+  const totalDue = Math.max(0, subtotal - discountTotal)
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
   const selectedCustomerDisplayName = selectedCustomer
     ? getCustomerDisplayName(selectedCustomer)
@@ -210,9 +247,9 @@ export default function Sell() {
   const selectedCustomerDataName = selectedCustomer
     ? getCustomerNameForData(selectedCustomer)
     : ''
-  const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : subtotal
-  const changeDue = Math.max(0, amountPaid - subtotal)
-  const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0
+  const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : totalDue
+  const changeDue = Math.max(0, amountPaid - totalDue)
+  const isCashShort = paymentMethod === 'cash' && amountPaid < totalDue && totalDue > 0
 
   useEffect(() => {
     let cancelled = false
@@ -366,13 +403,26 @@ export default function Sell() {
     lines.push('')
     lines.push('Items:')
     receipt.items.forEach(line => {
-      lines.push(`  • ${line.qty} × ${line.name} — GHS ${(line.qty * line.price).toFixed(2)}`)
+      const lineTotals = getLineTotals(line)
+      const discountText = lineTotals.discount > 0
+        ? ` (saved GHS ${lineTotals.discount.toFixed(2)})`
+        : ''
+      lines.push(`  • ${line.qty} × ${line.name} — GHS ${lineTotals.total.toFixed(2)}${discountText}`)
     })
 
     lines.push('')
     lines.push(`Subtotal: GHS ${receipt.subtotal.toFixed(2)}`)
+    if (receipt.discountTotal > 0) {
+      lines.push(`Discounts: -GHS ${receipt.discountTotal.toFixed(2)}`)
+    }
+    lines.push(`Total: GHS ${receipt.totalDue.toFixed(2)}`)
     lines.push(`Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`)
     lines.push(`Change: GHS ${receipt.payment.changeDue.toFixed(2)}`)
+    if (receipt.note) {
+      lines.push('')
+      lines.push('Note:')
+      lines.push(`  ${receipt.note}`)
+    }
     lines.push('')
     lines.push(`Sale #${receipt.saleId}`)
     lines.push('Thank you for shopping with us!')
@@ -498,6 +548,26 @@ export default function Sell() {
   function setQty(id: string, qty: number) {
     setCart(cs => cs.map(l => l.productId === id ? { ...l, qty: Math.max(0, qty) } : l).filter(l => l.qty > 0))
   }
+  function setLineDiscount(id: string, field: 'amount' | 'percent', value: number) {
+    setCart(cs =>
+      cs.map(l => {
+        if (l.productId !== id) return l
+        if (field === 'amount') {
+          return { ...l, discountAmount: Math.max(0, value) }
+        }
+        return { ...l, discountPercent: Math.max(0, value) }
+      }),
+    )
+  }
+  function getLineTotals(line: CartLine) {
+    const lineSubtotal = line.price * line.qty
+    const percentDiscount = line.discountPercent
+      ? lineSubtotal * Math.max(0, line.discountPercent) / 100
+      : 0
+    const discount = Math.min(lineSubtotal, Math.max(0, line.discountAmount ?? 0, percentDiscount))
+    const total = Math.max(0, lineSubtotal - discount)
+    return { lineSubtotal, discount, total }
+  }
   async function recordSale() {
     if (cart.length === 0) return
     if (!activeStoreId) {
@@ -523,20 +593,25 @@ export default function Sell() {
       saleId,
       cashierId: user.uid,
       totals: {
-        total: subtotal,
+        total: totalDue,
         taxTotal: 0,
+        discountAmount: discountTotal,
+        discountPercent: saleDiscountPercentValue || undefined,
       },
       payment: {
         method: paymentMethod,
         amountPaid,
         changeDue,
       },
+      note: saleNote.trim() || undefined,
       items: cart.map(line => ({
         productId: line.productId,
         name: line.name,
         price: line.price,
         qty: line.qty,
         taxRate: 0,
+        discountAmount: getLineTotals(line).discount,
+        discountPercent: line.discountPercent,
       })),
     }
     if (selectedCustomer) {
@@ -561,6 +636,8 @@ export default function Sell() {
         createdAt: new Date(),
         items: receiptItems,
         subtotal,
+        discountTotal,
+        totalDue,
         payment: {
           method: paymentMethod,
           amountPaid,
@@ -573,10 +650,14 @@ export default function Sell() {
               email: selectedCustomer.email,
             }
           : undefined,
+        note: saleNote.trim() || null,
       })
       setCart([])
       setSelectedCustomerId('')
       setAmountTendered('')
+      setSaleDiscountAmount('')
+      setSaleDiscountPercent('')
+      setSaleNote('')
       setSaleSuccess(`Sale recorded #${data.saleId}. Receipt sent to printer.`)
     } catch (err) {
       console.error('[sell] Unable to record sale', err)
@@ -588,6 +669,8 @@ export default function Sell() {
             createdAt: new Date(),
             items: receiptItems,
             subtotal,
+            discountTotal,
+            totalDue,
             payment: {
               method: paymentMethod,
               amountPaid,
@@ -600,10 +683,14 @@ export default function Sell() {
                   email: selectedCustomer.email,
                 }
               : undefined,
+            note: saleNote.trim() || null,
           })
           setCart([])
           setSelectedCustomerId('')
           setAmountTendered('')
+          setSaleDiscountAmount('')
+          setSaleDiscountPercent('')
+          setSaleNote('')
           setSaleSuccess(`Sale queued offline #${saleId}. We'll sync it once you're back online.`)
           return
         }
@@ -629,8 +716,11 @@ export default function Sell() {
           <p className="page__subtitle">Build a cart from your product list and record the sale in seconds.</p>
         </div>
         <div className="sell-page__total" aria-live="polite">
-          <span className="sell-page__total-label">Subtotal</span>
-          <span className="sell-page__total-value">GHS {subtotal.toFixed(2)}</span>
+          <span className="sell-page__total-label">Amount due</span>
+          <span className="sell-page__total-value">GHS {totalDue.toFixed(2)}</span>
+          {discountTotal > 0 && (
+            <span className="sell-page__total-saved">You saved GHS {discountTotal.toFixed(2)}</span>
+          )}
         </div>
       </header>
 
@@ -720,31 +810,106 @@ export default function Sell() {
                       <th scope="col">Item</th>
                       <th scope="col" className="sell-page__numeric">Qty</th>
                       <th scope="col" className="sell-page__numeric">Price</th>
+                      <th scope="col" className="sell-page__numeric">Discount</th>
+                      <th scope="col" className="sell-page__numeric">Line total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {cart.map(line => (
-                      <tr key={line.productId}>
-                        <td>{line.name}</td>
-                        <td className="sell-page__numeric">
-                          <input
-                            className="input--inline input--align-right"
-                            type="number"
-                            min={0}
-                            value={line.qty}
-                            onChange={e => setQty(line.productId, Number(e.target.value))}
-                          />
-                        </td>
-                        <td className="sell-page__numeric">GHS {(line.price * line.qty).toFixed(2)}</td>
-                      </tr>
-                    ))}
+                    {cart.map(line => {
+                      const lineTotals = getLineTotals(line)
+                      return (
+                        <tr key={line.productId}>
+                          <td>{line.name}</td>
+                          <td className="sell-page__numeric">
+                            <input
+                              className="input--inline input--align-right"
+                              type="number"
+                              min={0}
+                              value={line.qty}
+                              onChange={e => setQty(line.productId, Number(e.target.value))}
+                            />
+                          </td>
+                          <td className="sell-page__numeric">GHS {lineTotals.lineSubtotal.toFixed(2)}</td>
+                          <td className="sell-page__numeric">
+                            <div className="sell-page__discount-inputs">
+                              <input
+                                className="input--inline input--align-right"
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={line.discountAmount ?? ''}
+                                placeholder="GHS"
+                                onChange={e => setLineDiscount(line.productId, 'amount', Number(e.target.value))}
+                              />
+                              <span className="sell-page__discount-separator">or</span>
+                              <input
+                                className="input--inline input--align-right"
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={line.discountPercent ?? ''}
+                                placeholder="%"
+                                onChange={e => setLineDiscount(line.productId, 'percent', Number(e.target.value))}
+                              />
+                            </div>
+                          </td>
+                          <td className="sell-page__numeric">
+                            <div>
+                              <div>GHS {lineTotals.total.toFixed(2)}</div>
+                              {lineTotals.discount > 0 && (
+                                <small className="sell-page__savings">Saved GHS {lineTotals.discount.toFixed(2)}</small>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
 
-              <div className="sell-page__summary">
-                <span>Total</span>
-                <strong>GHS {subtotal.toFixed(2)}</strong>
+              <div className="sell-page__summary-list">
+                <div className="sell-page__summary">
+                  <span>Subtotal</span>
+                  <strong>GHS {subtotal.toFixed(2)}</strong>
+                </div>
+                <div className="sell-page__summary">
+                  <span>Discounts</span>
+                  <strong className="sell-page__summary-saved">-GHS {discountTotal.toFixed(2)}</strong>
+                </div>
+                <div className="sell-page__summary">
+                  <span>Amount due</span>
+                  <strong>GHS {totalDue.toFixed(2)}</strong>
+                </div>
+              </div>
+
+              <div className="sell-page__discount-fields">
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-discount-amount">Sale discount (GHS)</label>
+                  <input
+                    id="sell-discount-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={saleDiscountAmount}
+                    onChange={event => setSaleDiscountAmount(event.target.value)}
+                    className="sell-page__input"
+                  />
+                  <p className="field__hint">Apply a whole-order discount by amount.</p>
+                </div>
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-discount-percent">Sale discount (%)</label>
+                  <input
+                    id="sell-discount-percent"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={saleDiscountPercent}
+                    onChange={event => setSaleDiscountPercent(event.target.value)}
+                    className="sell-page__input"
+                  />
+                  <p className="field__hint">Or apply a percentage discount across the sale.</p>
+                </div>
               </div>
 
               <div className="sell-page__form-grid">
@@ -818,7 +983,10 @@ export default function Sell() {
               <div className="sell-page__payment-summary" aria-live="polite">
                 <div>
                   <span className="sell-page__summary-label">Amount due</span>
-                  <strong>GHS {subtotal.toFixed(2)}</strong>
+                  <strong>GHS {totalDue.toFixed(2)}</strong>
+                  {discountTotal > 0 && (
+                    <div className="sell-page__savings">Saved GHS {discountTotal.toFixed(2)}</div>
+                  )}
                 </div>
                 <div>
                   <span className="sell-page__summary-label">Paid</span>
@@ -828,6 +996,19 @@ export default function Sell() {
                   <span className="sell-page__summary-label">{isCashShort ? 'Short' : 'Change due'}</span>
                   <strong>GHS {changeDue.toFixed(2)}</strong>
                 </div>
+              </div>
+
+              <div className="sell-page__field-group">
+                <label className="field__label" htmlFor="sell-note">Internal note</label>
+                <textarea
+                  id="sell-note"
+                  rows={3}
+                  value={saleNote}
+                  onChange={event => setSaleNote(event.target.value)}
+                  className="sell-page__textarea"
+                  placeholder="Add context like paid via MoMo, discount reason, return, or damage."
+                />
+                <p className="field__hint">Notes are saved with the sale and appear in reports.</p>
               </div>
 
               {saleError && <p className="sell-page__message sell-page__message--error">{saleError}</p>}
@@ -930,13 +1111,16 @@ export default function Sell() {
                 </tr>
               </thead>
               <tbody>
-                {receipt.items.map(line => (
-                  <tr key={line.productId}>
-                    <td>{line.name}</td>
-                    <td>{line.qty}</td>
-                    <td>GHS {(line.qty * line.price).toFixed(2)}</td>
-                  </tr>
-                ))}
+                {receipt.items.map(line => {
+                  const lineTotals = getLineTotals(line)
+                  return (
+                    <tr key={line.productId}>
+                      <td>{line.name}</td>
+                      <td>{line.qty}</td>
+                      <td>GHS {lineTotals.total.toFixed(2)}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
 
@@ -944,6 +1128,16 @@ export default function Sell() {
               <div>
                 <span>Subtotal</span>
                 <strong>GHS {receipt.subtotal.toFixed(2)}</strong>
+              </div>
+              {receipt.discountTotal > 0 && (
+                <div>
+                  <span>Discounts</span>
+                  <strong>-GHS {receipt.discountTotal.toFixed(2)}</strong>
+                </div>
+              )}
+              <div>
+                <span>Total</span>
+                <strong>GHS {receipt.totalDue.toFixed(2)}</strong>
               </div>
               <div>
                 <span>Paid ({receipt.payment.method})</span>
@@ -954,8 +1148,17 @@ export default function Sell() {
                 <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
               </div>
             </div>
-
-            <p className="receipt-print__footer">Sale #{receipt.saleId} — Thank you for shopping with us!</p>
+            {receipt.note && (
+              <p className="receipt-print__note">Note: {receipt.note}</p>
+            )}
+            <p className="receipt-print__footer">
+              Sale #{receipt.saleId} — Thank you for shopping with us!
+              {receipt.discountTotal > 0 && (
+                <>
+                  <br />You saved GHS {receipt.discountTotal.toFixed(2)} today.
+                </>
+              )}
+            </p>
           </div>
         )}
       </div>

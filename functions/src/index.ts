@@ -1379,6 +1379,7 @@ export const commitSale = functions.https.onCall(async (data, context) => {
     saleId: saleIdRaw,
     payment,
     customer,
+    note: saleNoteRaw,
   } = data || {}
 
   const normalizedBranchIdRaw = typeof branchId === 'string' ? branchId.trim() : ''
@@ -1424,16 +1425,57 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       )
     }
 
-    const normalizedItems = Array.isArray(items)
-      ? items.map((it: any) => {
-          const productId = typeof it?.productId === 'string' ? it.productId : null
-          const name = typeof it?.name === 'string' ? it.name : null
-          const qty = Number(it?.qty ?? 0) || 0
-          const price = Number(it?.price ?? 0) || 0
-          const taxRate = Number(it?.taxRate ?? 0) || 0
-          return { productId, name, qty, price, taxRate }
-        })
-      : []
+  const normalizedItems = Array.isArray(items)
+    ? items.map((it: any) => {
+        const productId = typeof it?.productId === 'string' ? it.productId : null
+        const name = typeof it?.name === 'string' ? it.name : null
+        const qty = Number(it?.qty ?? 0) || 0
+        const price = Number(it?.price ?? 0) || 0
+        const taxRate = Number(it?.taxRate ?? 0) || 0
+        const discountAmount = Number.isFinite(it?.discountAmount)
+          ? Number(it.discountAmount)
+          : 0
+        const discountPercent = Number.isFinite(it?.discountPercent)
+          ? Number(it.discountPercent)
+          : 0
+        return { productId, name, qty, price, taxRate, discountAmount, discountPercent }
+      })
+    : []
+
+  const saleDiscountPercentRaw = totals?.discountPercent
+  const saleDiscountPercent = Number.isFinite(saleDiscountPercentRaw)
+    ? Number(saleDiscountPercentRaw)
+    : 0
+  const saleDiscountAmountRaw = totals?.discountAmount
+  const saleDiscountAmount = Number.isFinite(saleDiscountAmountRaw)
+    ? Number(saleDiscountAmountRaw)
+    : 0
+  const saleNoteCandidate = typeof saleNoteRaw === 'string' ? saleNoteRaw.trim() : ''
+  const saleNote = saleNoteCandidate || null
+
+  const subtotal = normalizedItems.reduce((acc, item) => acc + item.price * item.qty, 0)
+  const itemDiscountTotal = normalizedItems.reduce((acc, item) => {
+    const lineSubtotal = item.price * item.qty
+    const percentDiscount =
+      item.discountPercent && Number.isFinite(item.discountPercent)
+        ? Math.max(0, lineSubtotal * (item.discountPercent / 100))
+        : 0
+    const discount = Math.max(0, item.discountAmount || percentDiscount)
+    return acc + Math.min(lineSubtotal, discount)
+  }, 0)
+  const subtotalAfterItemDiscount = Math.max(0, subtotal - itemDiscountTotal)
+  const salePercentAmount =
+    saleDiscountPercent > 0 ? subtotalAfterItemDiscount * (saleDiscountPercent / 100) : 0
+  const normalizedSaleDiscountAmount = Math.max(
+    0,
+    saleDiscountAmount || salePercentAmount,
+  )
+  const saleDiscountApplied = Math.min(subtotalAfterItemDiscount, normalizedSaleDiscountAmount)
+  const discountTotal = itemDiscountTotal + saleDiscountApplied
+  const providedTotal = Number.isFinite(totals?.total) ? Number(totals.total) : null
+  const netTotal = Math.max(0, subtotalAfterItemDiscount - saleDiscountApplied)
+  const total = providedTotal !== null ? Math.max(0, providedTotal) : netTotal
+  const taxTotal = Number(totals?.taxTotal ?? 0) || 0
 
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
@@ -1442,10 +1484,16 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       branchId: resolvedStoreId,
       storeId: resolvedStoreId,
       cashierId,
-      total: totals?.total ?? 0,
-      taxTotal: totals?.taxTotal ?? 0,
+      total,
+      subtotal,
+      itemDiscountTotal,
+      saleDiscountAmount: saleDiscountApplied,
+      saleDiscountPercent,
+      discountTotal,
+      taxTotal,
       payment: payment ?? null,
       customer: customer ?? null,
+      note: saleNote,
       items: normalizedItems,
       createdBy: context.auth?.uid ?? null,
       createdAt: timestamp,
@@ -1462,6 +1510,8 @@ export const commitSale = functions.https.onCall(async (data, context) => {
         qty: it.qty,
         price: it.price,
         taxRate: it.taxRate,
+        discountAmount: Math.min(Math.max(0, it.discountAmount || 0), it.price * it.qty),
+        discountPercent: Number.isFinite(it.discountPercent) ? Number(it.discountPercent) : 0,
         storeId: resolvedStoreId,
         workspaceId: resolvedWorkspaceId,
         createdAt: timestamp,
@@ -1522,6 +1572,7 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
     workspaceId: workspaceIdRaw,
     storeId: storeIdRaw,
     branchId: branchIdRaw,
+    note: receiptNoteRaw,
   } = data || {}
 
   const productIdStr = typeof productId === 'string' ? productId : null
@@ -1597,6 +1648,9 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
   const receiptRef = workspaceRef.collection('receipts').doc()
   const ledgerRef = workspaceRef.collection('ledger').doc()
   const alertsCollection = db.collection('alerts')
+  const receiptNote = typeof receiptNoteRaw === 'string' && receiptNoteRaw.trim()
+    ? receiptNoteRaw.trim()
+    : null
 
   await db.runTransaction(async tx => {
     const pSnap = await tx.get(productRef)
@@ -1638,6 +1692,7 @@ export const receiveStock = functions.https.onCall(async (data, context) => {
       unitCost: normalizedUnitCost,
       totalCost,
       receivedBy: context.auth?.uid ?? null,
+      note: receiptNote,
       createdAt: timestamp,
       storeId: productStoreId || resolvedStoreId,
       workspaceId: resolvedWorkspaceId,

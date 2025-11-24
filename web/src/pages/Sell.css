@@ -23,6 +23,12 @@
   color: #312e81;
 }
 
+.sell-page__total-saved {
+  color: #047857;
+  font-weight: 600;
+  font-size: 12px;
+}
+
 .sell-page__grid {
   display: grid;
   gap: 24px;
@@ -93,9 +99,24 @@
   font-size: 16px;
 }
 
+.sell-page__summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.sell-page__summary-saved {
+  color: #047857;
+}
+
 .sell-page__summary strong {
   font-size: 20px;
   color: #111827;
+}
+
+.sell-page__summary-list .sell-page__summary {
+  margin-top: 0;
 }
 
 .sell-page__numeric {
@@ -106,6 +127,18 @@
   display: grid;
   gap: 16px;
   margin-top: 20px;
+}
+
+.sell-page__discount-fields {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+@media (min-width: 640px) {
+  .sell-page__discount-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (min-width: 960px) {
@@ -141,6 +174,22 @@
   font-weight: 600;
 }
 
+.sell-page__discount-inputs {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.sell-page__discount-inputs input {
+  width: 90px;
+}
+
+.sell-page__discount-separator {
+  color: #6b7280;
+  font-size: 12px;
+}
+
 .sell-page__payment-summary {
   display: flex;
   flex-direction: column;
@@ -172,6 +221,11 @@
 
 .sell-page__change.is-short {
   color: #b91c1c;
+}
+
+.sell-page__savings {
+  color: #047857;
+  font-size: 12px;
 }
 
 .sell-page__message {
@@ -216,6 +270,22 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.sell-page__textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  font-size: 15px;
+  resize: vertical;
+  min-height: 72px;
+}
+
+.sell-page__textarea:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.6);
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.35);
 }
 
 .sell-page__engagement {
@@ -326,6 +396,12 @@
 .receipt-print__summary div {
   display: flex;
   justify-content: space-between;
+}
+
+.receipt-print__note {
+  margin: 0 0 12px;
+  font-size: 13px;
+  text-align: center;
 }
 
 .receipt-print__footer {
