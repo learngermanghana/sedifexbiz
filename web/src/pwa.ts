@@ -8,7 +8,20 @@ if ('serviceWorker' in navigator) {
 
   window.addEventListener('load', () => {
     const swUrl = `${baseUrl}sw.js`
-    navigator.serviceWorker.register(swUrl, { scope: baseUrl })
+    navigator.serviceWorker
+      .register(swUrl, { scope: baseUrl })
+      .catch(error => {
+        console.error('Service worker registration failed:', error)
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('service-worker-registration-error', { detail: error })
+          )
+          window.alert?.(
+            'Offline support could not be enabled. Some features may not work until you refresh.'
+          )
+        }
+      })
   })
 
   window.addEventListener('online', () => {
