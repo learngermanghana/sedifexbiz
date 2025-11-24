@@ -27,6 +27,13 @@
   border: 1px solid #d1d5db;
   border-radius: 6px;
   min-width: 220px;
+  color: #111827;            /* darker input text */
+}
+
+/* Search placeholder more visible */
+.products-page__search input::placeholder {
+  color: #6b7280;
+  opacity: 1;
 }
 
 .products-page__filter {
@@ -71,6 +78,7 @@
   border-bottom: 1px solid #e5e7eb;
   text-align: left;
   vertical-align: top;
+  color: #111827;           /* stronger table text */
 }
 
 .products-page__product-name {
@@ -118,6 +126,7 @@
 .products-page__error {
   margin: 16px 0;
   font-size: 14px;
+  color: #111827;           /* clearer status text */
 }
 
 .products-page__error {
@@ -128,6 +137,20 @@
   display: grid;
   gap: 16px;
   max-width: 520px;
+}
+
+/* Form input text + placeholder darker and easier to read */
+.products-page__form input {
+  color: #111827;
+  font-size: 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.products-page__form input::placeholder {
+  color: #6b7280;
+  opacity: 1;
 }
 
 .products-page__submit {
