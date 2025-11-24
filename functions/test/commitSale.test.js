@@ -64,7 +64,7 @@ async function run() {
     saleId: 'sale-123',
     totals: { total: 100, taxTotal: 10 },
     payment: { method: 'cash' },
-    customer: { name: 'Alice' },
+    customer: { id: 'cust-1', name: 'Alice' },
     items: [{ productId: 'prod-1', name: 'Widget', qty: 1, price: 100, taxRate: 0.1 }],
   }
 
@@ -75,6 +75,7 @@ async function run() {
   const saleDoc = currentDb.getDoc('workspaces/branch-1/sales/sale-123')
   assert.ok(saleDoc)
   assert.strictEqual(saleDoc.branchId, 'branch-1')
+  assert.strictEqual(saleDoc.customerId, 'cust-1')
 
   const saleItems = currentDb.listCollection('workspaces/branch-1/saleItems')
   assert.strictEqual(saleItems.length, 1)

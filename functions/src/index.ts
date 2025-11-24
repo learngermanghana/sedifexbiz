@@ -1436,6 +1436,15 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       : []
 
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const customerId =
+      typeof (customer as any)?.id === 'string' && (customer as any).id.trim()
+        ? (customer as any).id.trim()
+        : null
+    const explicitCustomerId =
+      typeof (data as any)?.customerId === 'string' && (data as any).customerId.trim()
+        ? (data as any).customerId.trim()
+        : null
+    const resolvedCustomerId = customerId ?? explicitCustomerId
 
     tx.set(saleRef, {
       workspaceId: resolvedWorkspaceId,
@@ -1446,6 +1455,7 @@ export const commitSale = functions.https.onCall(async (data, context) => {
       taxTotal: totals?.taxTotal ?? 0,
       payment: payment ?? null,
       customer: customer ?? null,
+      customerId: resolvedCustomerId,
       items: normalizedItems,
       createdBy: context.auth?.uid ?? null,
       createdAt: timestamp,
