@@ -94,7 +94,7 @@ export const AccountBillingSection: React.FC<Props> = ({
 
   if (!isOwner) {
     return (
-      <section>
+      <section id="account-overview-contract">
         <h2>Contract &amp; billing</h2>
         <p className="text-sm text-gray-600">
           Only the workspace owner can manage billing. Ask your owner to start the subscription
@@ -105,7 +105,7 @@ export const AccountBillingSection: React.FC<Props> = ({
   }
 
   return (
-    <section>
+    <section id="account-overview-contract">
       <h2>Contract &amp; billing</h2>
 
       <dl className="account-overview__grid">

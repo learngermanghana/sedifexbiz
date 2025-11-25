@@ -138,10 +138,7 @@ describe('Onboarding page', () => {
       screen.getByRole('heading', { name: /confirm your owner account/i }),
     ).toBeInTheDocument()
     expect(
-      screen.getByText(/need to update access later/i),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(/let's get your workspace ready/i),
+      screen.getByText(/let's confirm your workspace details/i),
     ).toBeInTheDocument()
     expect(
       screen.getByText(/review your workspace details/i),
@@ -163,7 +160,7 @@ describe('Onboarding page', () => {
     ).toBeInTheDocument()
   })
 
-  it('links the team step to the roster screen', async () => {
+  it('links the contract step to the billing section', async () => {
     const user = userEvent.setup()
 
     render(
@@ -172,11 +169,13 @@ describe('Onboarding page', () => {
       </MemoryRouter>,
     )
 
-    await user.click(screen.getByRole('button', { name: /add my team now/i }))
+    await user.click(
+      screen.getByRole('button', { name: /view contract & billing/i }),
+    )
 
     expect(mockNavigate).toHaveBeenCalledWith({
       pathname: '/account',
-      hash: '#account-overview-roster',
+      hash: '#account-overview-contract',
     })
   })
 })
