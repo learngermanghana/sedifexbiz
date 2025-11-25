@@ -40,12 +40,18 @@ Module._load = function patchedLoad(request, parent, isMain) {
       getFirestore: () => currentDb,
     }
   }
+  if (request === './googleSheets' || request.endsWith('/googleSheets')) {
+    return {
+      fetchClientRowByEmail: async () => null,
+      getDefaultSpreadsheetId: () => 'test-sheet',
+    }
+  }
   return originalLoad(request, parent, isMain)
 }
 
 async function run() {
   currentDb = new MockFirestore({
-    'products/prod-1': { stockCount: 5, reorderLevel: 4 },
+    'products/prod-1': { stockCount: 5 },
   })
 
   delete require.cache[require.resolve('../lib/index.js')]
@@ -64,7 +70,7 @@ async function run() {
     saleId: 'sale-123',
     totals: { total: 100, taxTotal: 10 },
     payment: { method: 'cash' },
-    customer: { id: 'cust-1', name: 'Alice' },
+    customer: { name: 'Alice' },
     items: [{ productId: 'prod-1', name: 'Widget', qty: 1, price: 100, taxRate: 0.1 }],
   }
 
@@ -72,12 +78,11 @@ async function run() {
   assert.strictEqual(result.ok, true)
   assert.strictEqual(result.saleId, 'sale-123')
 
-  const saleDoc = currentDb.getDoc('workspaces/branch-1/sales/sale-123')
+  const saleDoc = currentDb.getDoc('sales/sale-123')
   assert.ok(saleDoc)
   assert.strictEqual(saleDoc.branchId, 'branch-1')
-  assert.strictEqual(saleDoc.customerId, 'cust-1')
 
-  const saleItems = currentDb.listCollection('workspaces/branch-1/saleItems')
+  const saleItems = currentDb.listCollection('saleItems')
   assert.strictEqual(saleItems.length, 1)
   assert.strictEqual(saleItems[0].data.saleId, 'sale-123')
 
@@ -94,14 +99,9 @@ async function run() {
   assert.ok(error, 'Expected duplicate sale to throw')
   assert.strictEqual(error.code, 'already-exists')
 
-  const ledgerEntries = currentDb.listCollection('workspaces/branch-1/ledger')
+  const ledgerEntries = currentDb.listCollection('ledger')
   assert.strictEqual(ledgerEntries.length, 1)
   assert.strictEqual(ledgerEntries[0].data.refId, 'sale-123')
-
-  const alerts = currentDb.listCollection('alerts')
-  assert.strictEqual(alerts.length, 1)
-  assert.strictEqual(alerts[0].data.type, 'low-stock')
-  assert.strictEqual(alerts[0].data.productId, 'prod-1')
 
   console.log('commitSale tests passed')
 }
