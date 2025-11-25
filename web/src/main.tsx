@@ -8,7 +8,6 @@ import Products from './pages/Products'
 import Sell from './pages/Sell'
 import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
-import Reports from './pages/Reports'
 import Customers from './pages/Customers'
 import ActivityFeed from './pages/ActivityFeed'
 import Onboarding from './pages/Onboarding'
@@ -31,7 +30,6 @@ const router = createHashRouter([
       { path: 'customers', element: <Shell><Customers /></Shell> },
       { path: 'activity',  element: <Shell><ActivityFeed /></Shell> },
       { path: 'close-day', element: <Shell><CloseDay /></Shell> },
-      { path: 'reports/daily-summary', element: <Shell><Reports /></Shell> },
       { path: 'onboarding', element: <Shell><Onboarding /></Shell> },
       { path: 'staff', element: <Shell><StaffManagement /></Shell> },
       { path: 'account',   element: <Shell><AccountOverview /></Shell> },
