@@ -75,6 +75,8 @@ const DEFAULT_EDIT_FORM = {
   reorderLevel: '',
 }
 
+const LAST_EXPORT_KEY = 'products:lastExportedAt'
+
 function toDate(value: unknown): Date | null {
   if (!value) return null
   if (value instanceof Date) return value
@@ -184,6 +186,18 @@ export default function Products() {
   const [editStatus, setEditStatus] = useState<StatusState | null>(null)
   const [editingProductId, setEditingProductId] = useState<string | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
+  const [exportStatus, setExportStatus] = useState<StatusState | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [lastExportedAt, setLastExportedAt] = useState<Date | null>(null)
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(LAST_EXPORT_KEY)
+    if (!stored) return
+    const parsed = Number(stored)
+    if (Number.isFinite(parsed)) {
+      setLastExportedAt(new Date(parsed))
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -325,23 +339,164 @@ export default function Products() {
     )
   }, [editForm.name, editForm.price, editForm.reorderLevel, editForm.sku, editingProductId, initialEditForm])
 
+  const productDataMap = useMemo(() => {
+    return products.reduce<Record<string, ProductRecord>>((acc, product) => {
+      acc[product.id] = product
+      return acc
+    }, {})
+  }, [products])
+
+  const lowStockProducts = useMemo(() => {
+    return Object.values(productDataMap).filter(product => {
+      const stockCount =
+        typeof product.stockCount === 'number' ? product.stockCount : 0
+      const reorder =
+        typeof product.reorderLevel === 'number' ? product.reorderLevel : null
+      return reorder !== null && stockCount <= reorder
+    })
+  }, [productDataMap])
+
+  const lowStockCount = lowStockProducts.length
+
   const filteredProducts = useMemo(() => {
     const normalizedQuery = filterText.trim().toLowerCase()
     return sortProducts(
       products.filter(product => {
-        const stockCount =
-          typeof product.stockCount === 'number' ? product.stockCount : 0
-        const reorder =
-          typeof product.reorderLevel === 'number' ? product.reorderLevel : null
         const matchesLowStock =
-          !showLowStockOnly || (reorder !== null && stockCount <= reorder)
+          !showLowStockOnly || lowStockProducts.some(item => item.id === product.id)
         if (!matchesLowStock) return false
         if (!normalizedQuery) return true
         const haystack = `${product.name ?? ''} ${product.sku ?? ''}`.toLowerCase()
         return haystack.includes(normalizedQuery)
       }),
     )
-  }, [filterText, products, showLowStockOnly])
+  }, [filterText, lowStockProducts, products, showLowStockOnly])
+
+  function formatLastExportedAt(date: Date | null) {
+    if (!date) return 'Never'
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    })}`
+  }
+
+  function buildCsv(rows: ProductRecord[]) {
+    const header = ['Product', 'SKU', 'On hand', 'Reorder point', 'Last receipt']
+    const body = rows.map(product => {
+      const stockCount =
+        typeof product.stockCount === 'number' ? product.stockCount : 0
+      const reorder =
+        typeof product.reorderLevel === 'number' ? product.reorderLevel : ''
+      const receipt = formatReceiptDetails(product.lastReceipt)
+      return [product.name ?? '', product.sku ?? '', stockCount, reorder, receipt]
+    })
+    return [header, ...body]
+      .map(columns =>
+        columns
+          .map(value => {
+            const normalized = `${value ?? ''}`
+            if (normalized.includes(',') || normalized.includes('"')) {
+              return `"${normalized.replace(/"/g, '""')}"`
+            }
+            return normalized
+          })
+          .join(','),
+      )
+      .join('\n')
+  }
+
+  function openPrintPreview(rows: ProductRecord[]) {
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer')
+    if (!printWindow) {
+      throw new Error('Unable to open print preview window')
+    }
+
+    const tableRows = rows
+      .map(product => {
+        const stockCount =
+          typeof product.stockCount === 'number' ? product.stockCount : 0
+        const reorder =
+          typeof product.reorderLevel === 'number' ? product.reorderLevel : '—'
+        const receipt = formatReceiptDetails(product.lastReceipt)
+        return `<tr><td>${product.name ?? ''}</td><td>${product.sku ?? '—'}</td><td>${stockCount}</td><td>${reorder}</td><td>${receipt}</td></tr>`
+      })
+      .join('')
+
+    const html = `<!doctype html>
+      <html>
+        <head>
+          <title>Reorder list</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; }
+            h1 { margin-bottom: 16px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; font-size: 14px; }
+            th { background: #f3f4f6; }
+          </style>
+        </head>
+        <body>
+          <h1>Low stock reorder list</h1>
+          <p>Exported ${new Date().toLocaleString()}</p>
+          <table>
+            <thead><tr><th>Product</th><th>SKU</th><th>On hand</th><th>Reorder point</th><th>Last receipt</th></tr></thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </body>
+      </html>`
+
+    printWindow.document.write(html)
+    printWindow.document.close()
+    printWindow.focus()
+    printWindow.print()
+  }
+
+  function handleExportReorderList() {
+    if (isExporting) return
+    if (!navigator.onLine) {
+      setExportStatus({
+        tone: 'error',
+        message: 'Reconnect to the internet to download a fresh reorder list.',
+      })
+      return
+    }
+    if (!lowStockProducts.length) {
+      setExportStatus({
+        tone: 'error',
+        message: 'All items are above their reorder points right now.',
+      })
+      return
+    }
+    setIsExporting(true)
+    setExportStatus(null)
+    try {
+      const csv = buildCsv(lowStockProducts)
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const downloadUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = `reorder-list-${new Date().toISOString().slice(0, 10)}.csv`
+      link.click()
+      URL.revokeObjectURL(downloadUrl)
+
+      openPrintPreview(lowStockProducts)
+
+      const now = new Date()
+      window.localStorage.setItem(LAST_EXPORT_KEY, String(now.getTime()))
+      setLastExportedAt(now)
+      setExportStatus({
+        tone: 'success',
+        message: 'Reorder list downloaded. Print to save a PDF copy.',
+      })
+    } catch (error) {
+      console.error('[products] Failed to export reorder list', error)
+      setExportStatus({
+        tone: 'error',
+        message: 'Unable to export reorder list. Try again when online.',
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   function handleCreateFieldChange(event: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = event.target
@@ -736,15 +891,46 @@ export default function Products() {
               onChange={event => setFilterText(event.target.value)}
             />
           </label>
-          <label className="products-page__filter">
-            <input
-              type="checkbox"
-              checked={showLowStockOnly}
-              onChange={event => setShowLowStockOnly(event.target.checked)}
-            />
-            <span>Show low stock only</span>
-          </label>
+          <div className="products-page__toolbar-actions">
+            <label className="products-page__filter">
+              <input
+                type="checkbox"
+                checked={showLowStockOnly}
+                onChange={event => setShowLowStockOnly(event.target.checked)}
+              />
+              <span className="products-page__filter-label">
+                Show low stock only
+                {lowStockCount ? (
+                  <span className="products-page__pill">{lowStockCount}</span>
+                ) : null}
+              </span>
+            </label>
+
+            <div className="products-page__export">
+              <button
+                type="button"
+                className="products-page__export-button"
+                onClick={handleExportReorderList}
+                disabled={isExporting || isLoadingProducts}
+              >
+                {isExporting ? 'Preparing…' : 'Download reorder list'}
+              </button>
+              <div className="products-page__export-meta">
+                Last export: {formatLastExportedAt(lastExportedAt)}
+              </div>
+            </div>
+          </div>
         </div>
+
+        {lowStockCount ? (
+          <div className="products-page__low-stock-alert" role="status">
+            <strong>{lowStockCount} item{lowStockCount === 1 ? '' : 's'}</strong>{' '}
+            at or below the reorder point. Download the reorder list to restock
+            before you run out.
+          </div>
+        ) : null}
+
+        {renderStatus(exportStatus)}
 
         {hasBlockingError ? (
           <div className="products-page__error">{loadError}</div>
