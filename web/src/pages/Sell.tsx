@@ -965,6 +965,72 @@ export default function Sell() {
             <p className="card__subtitle">Adjust quantities before recording the sale.</p>
           </div>
 
+          {isSubscriptionInactive && (
+            <p className="sell-page__message sell-page__message--error" role="status">
+              Reactivate your subscription to commit sales.
+            </p>
+          )}
+
+          {saleError && <p className="sell-page__message sell-page__message--error">{saleError}</p>}
+
+          {saleSuccess && (
+            <div className="sell-page__message sell-page__message--success">
+              <span>{saleSuccess}</span>
+              <div className="sell-page__engagement-actions">
+                <button
+                  type="button"
+                  className="button button--ghost button--small"
+                  onClick={() => window.print()}
+                >
+                  Print again
+                </button>
+                {receiptSharePayload && (
+                  <>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => handleShareChannel('email')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
+                    >
+                      Email receipt
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => handleShareChannel('sms')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
+                    >
+                      Text receipt
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => handleShareChannel('whatsapp')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
+                    >
+                      WhatsApp receipt
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {cart.length ? (
             <>
               {hasInsufficientStockInCart ? (
@@ -1102,71 +1168,6 @@ export default function Sell() {
                 <strong>GHS {changeDue.toFixed(2)}</strong>
               </div>
               </div>
-
-              {isSubscriptionInactive && (
-                <p className="sell-page__message sell-page__message--error" role="status">
-                  Reactivate your subscription to commit sales.
-                </p>
-              )}
-
-              {saleError && <p className="sell-page__message sell-page__message--error">{saleError}</p>}
-              {saleSuccess && (
-                <div className="sell-page__message sell-page__message--success">
-                  <span>{saleSuccess}</span>
-                  <div className="sell-page__engagement-actions">
-                    <button
-                      type="button"
-                      className="button button--ghost button--small"
-                      onClick={() => window.print()}
-                    >
-                      Print again
-                    </button>
-                    {receiptSharePayload && (
-                      <>
-                        <button
-                          type="button"
-                          className="button button--ghost button--small"
-                          onClick={() => handleShareChannel('email')}
-                          disabled={!canShareReceipt}
-                          title={
-                            canShareReceipt
-                              ? undefined
-                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
-                          }
-                        >
-                          Email receipt
-                        </button>
-                        <button
-                          type="button"
-                          className="button button--ghost button--small"
-                          onClick={() => handleShareChannel('sms')}
-                          disabled={!canShareReceipt}
-                          title={
-                            canShareReceipt
-                              ? undefined
-                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
-                          }
-                        >
-                          Text receipt
-                        </button>
-                        <button
-                          type="button"
-                          className="button button--ghost button--small"
-                          onClick={() => handleShareChannel('whatsapp')}
-                          disabled={!canShareReceipt}
-                          title={
-                            canShareReceipt
-                              ? undefined
-                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
-                          }
-                        >
-                          WhatsApp receipt
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
 
               {saleSuccess && receiptSharePayload && (
                 <section className="sell-page__engagement" aria-live="polite">
