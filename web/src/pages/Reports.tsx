@@ -12,7 +12,7 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import './Reports.css'
 
 type DaySummary = {
-  dateKey: string
+  dateKey: string // 'YYYY-MM-DD'
   date: Date
   totalSales: number
   totalTax: number
@@ -21,7 +21,67 @@ type DaySummary = {
   lastSaleAt: Date | null
 }
 
-// ... toDate / formatDate / formatTime / formatCurrency unchanged ...
+function toDate(value: unknown): Date | null {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? null : new Date(parsed)
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? new Date(value) : null
+  }
+  if (typeof value === 'object') {
+    const anyValue = value as {
+      toDate?: () => Date
+      toMillis?: () => number
+      seconds?: number
+      nanoseconds?: number
+    }
+    if (typeof anyValue.toDate === 'function') {
+      try {
+        return anyValue.toDate() ?? null
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof anyValue.toMillis === 'function') {
+      try {
+        const ms = anyValue.toMillis()
+        return Number.isFinite(ms) ? new Date(ms) : null
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof anyValue.seconds === 'number') {
+      const ms =
+        anyValue.seconds * 1000 +
+        Math.round((anyValue.nanoseconds ?? 0) / 1_000_000)
+      return Number.isFinite(ms) ? new Date(ms) : null
+    }
+  }
+  return null
+}
+
+function formatDate(date: Date | null) {
+  if (!date) return '—'
+  return date.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function formatTime(date: Date | null) {
+  if (!date) return '—'
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatCurrency(amount: number) {
+  if (!Number.isFinite(amount)) return '—'
+  return `GHS ${amount.toFixed(2)}`
+}
 
 export default function Today() {
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
@@ -46,14 +106,8 @@ export default function Today() {
 
     const salesRef = collection(db, 'sales')
 
-    // 🔴 OLD – requires composite index and was throwing:
-    // const q = query(
-    //   salesRef,
-    //   where('storeId', '==', storeId),
-    //   orderBy('createdAt', 'desc'),
-    // )
-
-    // ✅ NEW – filter only, sort later in memory
+    // filter only by store to avoid requiring composite Firestore indexes;
+    // we sort in memory after receiving the snapshot.
     const q = query(salesRef, where('storeId', '==', storeId))
 
     const unsubscribe = onSnapshot(
@@ -110,7 +164,6 @@ export default function Today() {
           }
         })
 
-        // still sorting here – no change
         const rows = Array.from(byDate.values()).sort(
           (a, b) => b.date.getTime() - a.date.getTime(),
         )
@@ -144,5 +197,111 @@ export default function Today() {
     [summaries],
   )
 
-  // …rest of the component unchanged …
+  if (storeError) {
+    return (
+      <div className="reports-page" role="alert">
+        {storeError}
+      </div>
+    )
+  }
+
+  if (!storeId && !storeLoading) {
+    return (
+      <div className="reports-page" role="status">
+        <h2>Daily summary</h2>
+        <p>Select a workspace to see sales performance.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="page reports-page">
+      <header className="page__header">
+        <div>
+          <h2 className="page__title">Daily summary</h2>
+          <p className="page__subtitle">
+            See how today is performing at a glance.
+          </p>
+        </div>
+      </header>
+
+      {loadError && (
+        <div className="reports-page__error" role="alert">
+          {loadError}
+        </div>
+      )}
+
+      {loading && (
+        <p className="reports-page__loading" role="status">
+          Loading summary…
+        </p>
+      )}
+
+      {/* Today’s headline numbers */}
+      <section className="card reports-page__headline">
+        <h3 className="card__title">
+          Today • {formatDate(new Date())}
+        </h3>
+
+        <div className="reports-page__headline-grid">
+          <div>
+            <p className="reports-page__headline-label">Total sales</p>
+            <p className="reports-page__headline-value">
+              {formatCurrency(todaySummary?.totalSales ?? 0)}
+            </p>
+          </div>
+          <div>
+            <p className="reports-page__headline-label">Total tax</p>
+            <p className="reports-page__headline-value">
+              {formatCurrency(todaySummary?.totalTax ?? 0)}
+            </p>
+          </div>
+          <div>
+            <p className="reports-page__headline-label">Number of receipts</p>
+            <p className="reports-page__headline-value">
+              {todaySummary?.receiptCount ?? 0}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Table of recent days */}
+      <section className="card reports-page__card">
+        <h3 className="card__title">Recent days</h3>
+
+        {summaries.length === 0 && !loading ? (
+          <p className="reports-page__empty" role="status">
+            No sales recorded yet for this workspace.
+          </p>
+        ) : (
+          <div className="reports-page__table-wrapper">
+            <table className="reports-page__table">
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Total sales</th>
+                  <th scope="col">Total tax</th>
+                  <th scope="col">Receipts</th>
+                  <th scope="col">First sale</th>
+                  <th scope="col">Last sale</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summaries.map(day => (
+                  <tr key={day.dateKey}>
+                    <th scope="row">{formatDate(day.date)}</th>
+                    <td>{formatCurrency(day.totalSales)}</td>
+                    <td>{formatCurrency(day.totalTax)}</td>
+                    <td>{day.receiptCount}</td>
+                    <td>{formatTime(day.firstSaleAt)}</td>
+                    <td>{formatTime(day.lastSaleAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  )
 }
