@@ -7,6 +7,7 @@ import './App.css'
 import './pwa'
 import { auth } from './firebase'
 import { configureAuthPersistence } from './controllers/sessionController'
+import { bootstrapStoreContext } from './controllers/accessController'
 import { AuthUserContext } from './hooks/useAuthUser'
 import AuthPage from './pages/AuthPage'
 import { useOnboardingRedirect } from './hooks/useOnboardingRedirect'
@@ -25,6 +26,9 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, nextUser => {
       setUser(nextUser)
       setIsAuthReady(true)
+      if (nextUser) {
+        void bootstrapStoreContext()
+      }
     })
     return unsubscribe
   }, [])
