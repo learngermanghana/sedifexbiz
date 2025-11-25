@@ -106,6 +106,7 @@ export default function AuthPage() {
   const [phone, setPhone] = useState('')
   const [country, setCountry] = useState('')
   const [town, setTown] = useState('')
+  const [address, setAddress] = useState('')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
 
   const isLoading = status.tone === 'loading'
@@ -119,6 +120,7 @@ export default function AuthPage() {
   const normalizedPhone = sanitizePhone(phone)
   const normalizedCountry = country.trim()
   const normalizedTown = town.trim()
+  const normalizedAddress = address.trim()
   const normalizedStoreId = storeId.trim()
 
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
@@ -144,7 +146,8 @@ export default function AuthPage() {
     normalizedBusinessName.length > 0 &&
     normalizedPhone.length > 0 &&
     normalizedCountry.length > 0 &&
-    normalizedTown.length > 0
+    normalizedTown.length > 0 &&
+    normalizedAddress.length > 0
 
   const isLoginFormValid = EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
@@ -169,6 +172,7 @@ export default function AuthPage() {
     setPhone('')
     setCountry('')
     setTown('')
+    setAddress('')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -185,6 +189,7 @@ export default function AuthPage() {
     const sanitizedBusinessName = businessName.trim()
     const sanitizedCountry = country.trim()
     const sanitizedTown = town.trim()
+    const sanitizedAddress = address.trim()
     const sanitizedStoreId = storeId.trim()
 
     const validationError = mode === 'login' ? getLoginValidationError(sanitizedEmail, sanitizedPassword) : null
@@ -195,6 +200,7 @@ export default function AuthPage() {
       setBusinessName(sanitizedBusinessName)
       setCountry(sanitizedCountry)
       setTown(sanitizedTown)
+      setAddress(sanitizedAddress)
       setStoreId(sanitizedStoreId)
 
       if (!doesPasswordMeetAllChecks) {
@@ -253,6 +259,7 @@ export default function AuthPage() {
               businessName: sanitizedBusinessName || null,
               country: sanitizedCountry || null,
               town: sanitizedTown || null,
+              address: sanitizedAddress || null,
               signupRole: signupRoleForWorkspace,
             },
             signupRoleForWorkspace === 'team-member' ? sanitizedStoreId : null,
@@ -298,6 +305,7 @@ export default function AuthPage() {
               ownerName: resolvedOwnerName,
               country: sanitizedCountry || null,
               town: sanitizedTown || null,
+              address: sanitizedAddress || null,
               status: 'active',
               role: 'client',
               createdAt: serverTimestamp(),
@@ -328,6 +336,7 @@ export default function AuthPage() {
       setPhone('')
       setCountry('')
       setTown('')
+      setAddress('')
       setStoreId('')
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
@@ -496,6 +505,28 @@ export default function AuthPage() {
                 />
                 <p className="form__hint" id="town-hint">
                   We’ll adapt recommendations for your local market.
+                </p>
+              </div>
+            )}
+
+            {mode === 'signup' && (
+              <div className="form__field">
+                <label htmlFor="address">Business address</label>
+                <textarea
+                  id="address"
+                  value={address}
+                  onChange={event => setAddress(event.target.value)}
+                  onBlur={() => setAddress(current => current.trim())}
+                  autoComplete="street-address"
+                  placeholder="123 Market Street, Suite 5"
+                  required
+                  disabled={isLoading}
+                  aria-invalid={address.length > 0 && normalizedAddress.length === 0}
+                  aria-describedby="address-hint"
+                  rows={3}
+                />
+                <p className="form__hint" id="address-hint">
+                  Helps us set up invoices and receipts with your mailing details.
                 </p>
               </div>
             )}
