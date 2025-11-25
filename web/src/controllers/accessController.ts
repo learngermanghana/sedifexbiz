@@ -3,6 +3,7 @@ import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '../firebase'
 
+// Used only for signup UI, NOT backend result
 export type SignupRoleOption = 'owner' | 'team-member'
 
 export type InitializeStoreContactPayload = {
@@ -15,15 +16,19 @@ export type InitializeStoreContactPayload = {
   signupRole?: SignupRoleOption | null
 }
 
+// 🔹 Profile payload that goes to Cloud Function
 export type InitializeStoreProfilePayload = {
   phone?: string | null
   ownerName?: string | null
   businessName?: string | null
   country?: string | null
-  town?: string | null
+  city?: string | null      // mapped from "town" for backend
+  town?: string | null      // kept for backwards compatibility
 }
 
-function normalizeSignupRoleInput(value: SignupRoleOption | null | undefined): SignupRoleOption | null {
+function normalizeSignupRoleInput(
+  value: SignupRoleOption | null | undefined,
+): SignupRoleOption | null {
   if (value === 'team-member') {
     return 'team-member'
   }
@@ -43,7 +48,7 @@ type RawInitializeStoreResponse = {
   ok?: unknown
   storeId?: unknown
   claims?: unknown
-  role?: unknown
+  role?: unknown // backend: 'owner' | 'staff'
 }
 
 type RawResolveStoreAccessResponse = {
@@ -62,6 +67,7 @@ export type ResolveStoreAccessResult = {
   claims?: unknown
 }
 
+// 🔹 Normalizes backend role -> 'owner' | 'staff'
 function normalizeRole(value: unknown): 'owner' | 'staff' {
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase()
@@ -82,10 +88,7 @@ const initializeStoreCallable = httpsCallable<
 const resolveStoreAccessCallable = httpsCallable<
   ResolveStoreAccessPayload,
   RawResolveStoreAccessResponse
->(
-  functions,
-  'resolveStoreAccess',
-)
+>(functions, 'resolveStoreAccess')
 
 const AFTER_SIGNUP_BOOTSTRAP_TIMEOUT_MS = 1000 * 12 // 12 seconds
 
@@ -120,10 +123,17 @@ export function extractCallableErrorMessage(error: FirebaseError): string | null
   return normalized || null
 }
 
+// 🔹 RESULT TYPE for initializeStore
+export type InitializeStoreResult = {
+  storeId: string
+  claims?: unknown
+  role: 'owner' | 'staff'
+}
+
 export async function initializeStore(
   contact?: InitializeStoreContactPayload,
   storeId?: string | null,
-) {
+): Promise<InitializeStoreResult> {
   let payload: InitializeStorePayload | undefined
 
   if (contact) {
@@ -163,6 +173,7 @@ export async function initializeStore(
     if (contact.town !== undefined) {
       payloadContact.town = contact.town ?? null
       payloadProfile.town = contact.town ?? null
+      payloadProfile.city = contact.town ?? null // 🔹 map town -> city for backend
       hasContactField = true
       hasProfileField = true
     }
@@ -189,7 +200,7 @@ export async function initializeStore(
 
   const ok = data.ok === true
   const resolvedStoreId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
-  const role = normalizeSignupRoleInput((data as any).role) ?? 'owner'
+  const role = normalizeRole((data as any).role)
 
   if (!ok || !resolvedStoreId) {
     throw new Error('Unable to initialize the Sedifex workspace.')
@@ -202,7 +213,9 @@ export async function initializeStore(
   }
 }
 
-export async function resolveStoreAccess(storeId?: string): Promise<ResolveStoreAccessResult> {
+export async function resolveStoreAccess(
+  storeId?: string,
+): Promise<ResolveStoreAccessResult> {
   let response
   try {
     const trimmedStoreId = typeof storeId === 'string' ? storeId.trim() : ''
@@ -210,7 +223,8 @@ export async function resolveStoreAccess(storeId?: string): Promise<ResolveStore
     response = await resolveStoreAccessCallable(payload)
   } catch (error) {
     if (error instanceof FirebaseError && error.code === 'functions/permission-denied') {
-      const message = extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
+      const message =
+        extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
       throw new Error(message)
     }
     throw error
@@ -220,7 +234,9 @@ export async function resolveStoreAccess(storeId?: string): Promise<ResolveStore
   const ok = payload.ok === true
   const resolvedStoreId = typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
   const workspaceSlug =
-    typeof payload.workspaceSlug === 'string' ? payload.workspaceSlug.trim() : ''
+    typeof payload.workspaceSlug === 'string'
+      ? payload.workspaceSlug.trim()
+      : ''
 
   if (!ok || !resolvedStoreId || !workspaceSlug) {
     throw new Error('Unable to resolve store access for this account.')
