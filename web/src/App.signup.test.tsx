@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { User } from 'firebase/auth'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -84,6 +84,21 @@ vi.mock('firebase/firestore', () => ({
   doc: (...args: Parameters<typeof firestore.docMock>) => firestore.docMock(...args),
   setDoc: (...args: Parameters<typeof firestore.setDocMock>) => firestore.setDocMock(...args),
   updateDoc: (...args: Parameters<typeof firestore.updateDocMock>) => firestore.updateDocMock(...args),
+  collection: (_db: unknown, path: string) => ({ __type: 'collection', path }),
+  query: (collectionRef: unknown, ...constraints: unknown[]) => ({
+    __type: 'query',
+    collectionRef,
+    constraints,
+  }),
+  where: (fieldPath: string, opStr: string, value: unknown) => ({
+    __type: 'where',
+    fieldPath,
+    opStr,
+    value,
+  }),
+  limit: (count: number) => ({ __type: 'limit', count }),
+  getDocs: async (_query: unknown) => ({ docs: [] }),
+  getDoc: async (_ref: unknown) => ({ exists: () => false, id: 'mock-doc', data: () => ({}) }),
   serverTimestamp: (
     ...args: Parameters<typeof firestore.serverTimestampMock>
   ) => firestore.serverTimestampMock(...args),
@@ -120,6 +135,22 @@ vi.mock('./controllers/accessController', () => ({
 }))
 
 import App from './App'
+import Onboarding from './pages/Onboarding'
+
+function renderApp() {
+  const router = createMemoryRouter([
+    {
+      path: '/',
+      element: <App />,
+      children: [
+        { index: true, element: <div>Home</div> },
+        { path: 'onboarding', element: <Onboarding /> },
+      ],
+    },
+  ])
+
+  return render(<RouterProvider router={router} />)
+}
 
 function createTestUser() {
   const deleteFn = vi.fn(async () => {})
@@ -145,11 +176,7 @@ describe('App signup cleanup', () => {
   it('prevents signup when passwords do not match', async () => {
     const user = userEvent.setup()
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderApp()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
@@ -179,11 +206,7 @@ describe('App signup cleanup', () => {
   it('disables signup until passwords match and meet strength requirements', async () => {
     const user = userEvent.setup()
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderApp()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByText(/Checking your session/i)).not.toBeInTheDocument())
@@ -232,11 +255,7 @@ describe('App signup cleanup', () => {
 
     mocks.persistSession.mockRejectedValueOnce(new Error('Unable to persist session'))
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderApp()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() =>
@@ -286,11 +305,7 @@ describe('App signup cleanup', () => {
       claims: {},
     })
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderApp()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() =>
@@ -359,8 +374,14 @@ describe('App signup cleanup', () => {
     })
     expect(unrelatedWrites).toHaveLength(0)
 
-    await waitFor(() => expect(mocks.auth.signOut).toHaveBeenCalled())
-    expect(mocks.auth.currentUser).toBeNull()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /Welcome to Sedifex/i }),
+      ).toBeInTheDocument(),
+    )
+
+    expect(mocks.auth.signOut).not.toHaveBeenCalled()
+    expect(mocks.auth.currentUser).toBe(createdUser)
 
     expect(mocks.publish).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -387,11 +408,7 @@ describe('App signup cleanup', () => {
       ),
     )
 
-    render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
-    )
+    renderApp()
 
     await waitFor(() => expect(mocks.configureAuthPersistence).toHaveBeenCalled())
     await waitFor(() =>
