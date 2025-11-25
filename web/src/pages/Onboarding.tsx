@@ -189,8 +189,8 @@ export default function Onboarding() {
     navigate('/', { replace: true })
   }
 
-  function goToTeamRoster() {
-    navigate({ pathname: '/account', hash: '#account-overview-roster' })
+  function goToContractAndBilling() {
+    navigate({ pathname: '/account', hash: '#account-overview-contract' })
   }
 
   return (
@@ -205,8 +205,8 @@ export default function Onboarding() {
             Welcome to Sedifex
           </h1>
           <p className="page__subtitle">
-            Let&apos;s get your workspace ready before you invite the rest of
-            your team.
+            Let&apos;s confirm your workspace details and walk through your
+            contract next steps.
           </p>
         </div>
         {hasCompleted && (
@@ -349,31 +349,29 @@ export default function Onboarding() {
         <header className="onboarding-card__header">
           <span className="onboarding-card__step">Step 2</span>
           <h2 className="onboarding-card__title" id="onboarding-step-2">
-            Invite your team and assign roles
+            Review your contract
           </h2>
         </header>
         <p>
-          Use the team access workspace to create login credentials for every
-          teammate who needs Sedifex. Assign each person a role so they only see
-          the tools they need.
+          Your Sedifex contract outlines workspace ownership, billing,
+          and support expectations. Review the terms to understand renewal
+          timelines and who to contact for updates.
         </p>
         <ul className="onboarding-card__list">
-          <li>Managers can run inventory and day-close workflows.</li>
-          <li>
-            Cashiers can sell, receive stock, and view customer history.
-          </li>
-          <li>Owners always retain full admin and billing access.</li>
+          <li>Confirm the active contract status for this store.</li>
+          <li>Note your billing plan and renewal cadence.</li>
+          <li>Keep your account manager details handy for changes.</li>
         </ul>
         <p className="onboarding-card__cta">
-          Need to update access later? Your Sedifex account manager can help
-          tailor roles for your team.
+          Need to adjust the contract? Your Sedifex account manager can help
+          with renewals, plan changes, or updated contacts.
         </p>
         <button
           type="button"
           className="button button--primary onboarding-card__cta"
-          onClick={goToTeamRoster}
+          onClick={goToContractAndBilling}
         >
-          Add my team now
+          View contract &amp; billing
         </button>
       </section>
 
@@ -388,16 +386,16 @@ export default function Onboarding() {
           </h2>
         </header>
         <p>
-          Once you&apos;ve added your teammates, you&apos;re ready to jump into
-          the dashboard. You can always revisit staff access later to make
-          changes.
+          When you&apos;re ready, head to the dashboard to start using Sedifex.
+          You can return to your contract details anytime from the Account
+          page.
         </p>
         <button
           type="button"
           className="secondary-button onboarding-card__cta"
           onClick={handleComplete}
         >
-          {hasCompleted ? 'Return to dashboard' : 'I’ve added my team'}
+          {hasCompleted ? 'Return to dashboard' : 'I’m ready to continue'}
         </button>
       </section>
     </div>
