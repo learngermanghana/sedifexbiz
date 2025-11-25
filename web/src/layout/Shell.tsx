@@ -18,7 +18,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/customers', label: 'Customers' },
   { to: '/activity', label: 'Activity' },
   { to: '/close-day', label: 'Close Day' },
-  { to: '/reports/daily-summary', label: 'Reports' },
   { to: '/account', label: 'Account' },
 ]
 
