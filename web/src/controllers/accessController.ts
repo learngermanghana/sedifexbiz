@@ -13,6 +13,7 @@ export type InitializeStoreContactPayload = {
   businessName?: string | null
   country?: string | null
   town?: string | null
+  address?: string | null
   signupRole?: SignupRoleOption | null
 }
 
@@ -24,6 +25,7 @@ export type InitializeStoreProfilePayload = {
   country?: string | null
   city?: string | null      // mapped from "town" for backend
   town?: string | null      // kept for backwards compatibility
+  address?: string | null
 }
 
 function normalizeSignupRoleInput(
@@ -167,6 +169,12 @@ export async function initializeStore(
     if (contact.country !== undefined) {
       payloadContact.country = contact.country ?? null
       payloadProfile.country = contact.country ?? null
+      hasContactField = true
+      hasProfileField = true
+    }
+    if (contact.address !== undefined) {
+      payloadContact.address = contact.address ?? null
+      payloadProfile.address = contact.address ?? null
       hasContactField = true
       hasProfileField = true
     }
