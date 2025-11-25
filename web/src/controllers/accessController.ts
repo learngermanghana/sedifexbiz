@@ -2,20 +2,6 @@
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '../firebase'
-import { resolveStoreAccess } from './controllers/accessController'
-
-async function bootstrapStoreContext() {
-  try {
-    const result = await resolveStoreAccess()
-    localStorage.setItem('storeId', result.storeId)
-    localStorage.setItem('workspaceSlug', result.workspaceSlug)
-    console.log('Store restored:', result.storeId)
-  } catch (err) {
-    console.error('Failed to resolve store access:', err)
-  }
-}
-
-
 // Used only for signup UI, NOT backend result
 export type SignupRoleOption = 'owner' | 'team-member'
 
@@ -80,6 +66,17 @@ export type ResolveStoreAccessResult = {
   workspaceSlug: string
   role: 'owner' | 'staff'
   claims?: unknown
+}
+
+export async function bootstrapStoreContext(): Promise<void> {
+  try {
+    const result = await resolveStoreAccess()
+    localStorage.setItem('storeId', result.storeId)
+    localStorage.setItem('workspaceSlug', result.workspaceSlug)
+    console.log('Store restored:', result.storeId)
+  } catch (err) {
+    console.error('Failed to resolve store access:', err)
+  }
 }
 
 // 🔹 Normalizes backend role -> 'owner' | 'staff'

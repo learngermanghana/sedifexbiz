@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
     refreshSessionHeartbeat: vi.fn(async () => {}),
     publish: vi.fn(),
     initializeStore: vi.fn(),
+    bootstrapStoreContext: vi.fn(async () => {}),
     resolveStoreAccess: vi.fn(),
   }
   return state
@@ -131,6 +132,7 @@ vi.mock('./components/ToastProvider', () => ({
 
 vi.mock('./controllers/accessController', () => ({
   initializeStore: (...args: unknown[]) => mocks.initializeStore(...args),
+  bootstrapStoreContext: (...args: unknown[]) => mocks.bootstrapStoreContext(...args),
   resolveStoreAccess: (...args: unknown[]) => mocks.resolveStoreAccess(...args),
 }))
 
