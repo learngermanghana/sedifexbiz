@@ -327,11 +327,6 @@ export default function AuthPage() {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
         setOnboardingStatus(nextUser.uid, 'pending')
-        try {
-          await auth.signOut()
-        } catch (error) {
-          console.warn('[signup] Unable to sign out after successful signup', error)
-        }
         setMode('login')
       }
 
