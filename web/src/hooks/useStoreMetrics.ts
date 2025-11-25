@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, where, type Timestamp } from 'firebase/firestore'
+import { collectionGroup, doc, limit, onSnapshot, orderBy, query, setDoc, where, type Timestamp } from 'firebase/firestore'
 
 import { db } from '../firebase'
 import { useAuthUser } from './useAuthUser'
@@ -341,7 +341,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
       })
 
     const q = query(
-      collection(db, 'sales'),
+      collectionGroup(db, 'sales'),
       where('storeId', '==', activeStoreId),
       orderBy('createdAt', 'desc'),
       limit(SALES_CACHE_LIMIT),
