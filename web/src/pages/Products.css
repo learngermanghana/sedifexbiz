@@ -15,6 +15,14 @@
   margin-bottom: 16px;
 }
 
+.products-page__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .products-page__search {
   display: flex;
   flex-direction: column;
@@ -40,6 +48,67 @@
   align-items: center;
   gap: 8px;
   font-size: 14px;
+}
+
+.products-page__filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.products-page__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background-color: #fef3c7;
+  color: #92400e;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.products-page__export {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  text-align: right;
+}
+
+.products-page__export-button {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #1f2937;
+  background: #111827;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.products-page__export-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.products-page__export-button:hover:not(:disabled) {
+  background: #0b1220;
+}
+
+.products-page__export-meta {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.products-page__low-stock-alert {
+  margin: 8px 0 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .products-page__warning {
