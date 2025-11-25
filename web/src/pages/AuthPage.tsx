@@ -42,10 +42,6 @@ function sanitizePhone(value: string): string {
   return value.replace(/\D+/g, '')
 }
 
-function normalizeSignupRole(value: string | SignupRoleOption): SignupRoleOption {
-  return value === 'team-member' ? 'team-member' : 'owner'
-}
-
 function evaluatePasswordStrength(password: string): PasswordStrength {
   return {
     isLongEnough: password.length >= PASSWORD_MIN_LENGTH,
@@ -110,7 +106,6 @@ export default function AuthPage() {
   const [phone, setPhone] = useState('')
   const [country, setCountry] = useState('')
   const [town, setTown] = useState('')
-  const [signupRole, setSignupRole] = useState<SignupRoleOption>('owner')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
 
   const isLoading = status.tone === 'loading'
@@ -149,8 +144,7 @@ export default function AuthPage() {
     normalizedBusinessName.length > 0 &&
     normalizedPhone.length > 0 &&
     normalizedCountry.length > 0 &&
-    normalizedTown.length > 0 &&
-    (signupRole === 'team-member' ? normalizedStoreId.length > 0 : true)
+    normalizedTown.length > 0
 
   const isLoginFormValid = EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
   const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
@@ -175,7 +169,6 @@ export default function AuthPage() {
     setPhone('')
     setCountry('')
     setTown('')
-    setSignupRole('owner')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -192,7 +185,6 @@ export default function AuthPage() {
     const sanitizedBusinessName = businessName.trim()
     const sanitizedCountry = country.trim()
     const sanitizedTown = town.trim()
-    const sanitizedSignupRole = normalizeSignupRole(signupRole)
     const sanitizedStoreId = storeId.trim()
 
     const validationError = mode === 'login' ? getLoginValidationError(sanitizedEmail, sanitizedPassword) : null
@@ -203,7 +195,6 @@ export default function AuthPage() {
       setBusinessName(sanitizedBusinessName)
       setCountry(sanitizedCountry)
       setTown(sanitizedTown)
-      setSignupRole(sanitizedSignupRole)
       setStoreId(sanitizedStoreId)
 
       if (!doesPasswordMeetAllChecks) {
@@ -223,11 +214,6 @@ export default function AuthPage() {
 
     if (validationError) {
       setStatus({ tone: 'error', message: validationError })
-      return
-    }
-
-    if (mode === 'signup' && sanitizedSignupRole === 'team-member' && !sanitizedStoreId) {
-      setStatus({ tone: 'error', message: 'Enter your store ID to continue.' })
       return
     }
 
@@ -257,6 +243,7 @@ export default function AuthPage() {
         await persistSession(nextUser)
 
         let initializedStoreId: string | undefined
+        const signupRoleForWorkspace: SignupRoleOption = sanitizedStoreId ? 'team-member' : 'owner'
         try {
           const initialization = await initializeStore(
             {
@@ -266,9 +253,9 @@ export default function AuthPage() {
               businessName: sanitizedBusinessName || null,
               country: sanitizedCountry || null,
               town: sanitizedTown || null,
-              signupRole: sanitizedSignupRole,
+              signupRole: signupRoleForWorkspace,
             },
-            sanitizedSignupRole === 'team-member' ? sanitizedStoreId : null,
+            signupRoleForWorkspace === 'team-member' ? sanitizedStoreId : null,
           )
           initializedStoreId = initialization.storeId
         } catch (error) {
@@ -342,7 +329,6 @@ export default function AuthPage() {
       setCountry('')
       setTown('')
       setStoreId('')
-      setSignupRole('owner')
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
     }
@@ -515,39 +501,8 @@ export default function AuthPage() {
             )}
 
             {mode === 'signup' && (
-              <fieldset className="form__field form__field--choices">
-                <legend>Are you the owner or joining a team?</legend>
-                <div className="form__choice-group" role="radiogroup" aria-label="Signup role">
-                  <label className="form__choice" data-selected={signupRole === 'owner'}>
-                    <input
-                      type="radio"
-                      name="signup-role"
-                      value="owner"
-                      checked={signupRole === 'owner'}
-                      onChange={() => setSignupRole('owner')}
-                      disabled={isLoading}
-                    />
-                    <span>I’m the business owner</span>
-                  </label>
-                  <label className="form__choice" data-selected={signupRole === 'team-member'}>
-                    <input
-                      type="radio"
-                      name="signup-role"
-                      value="team-member"
-                      checked={signupRole === 'team-member'}
-                      onChange={() => setSignupRole('team-member')}
-                      disabled={isLoading}
-                    />
-                    <span>I’m joining as a team member</span>
-                  </label>
-                </div>
-                <p className="form__hint">We’ll customize onboarding tips based on your role.</p>
-              </fieldset>
-            )}
-
-            {mode === 'signup' && signupRole === 'team-member' && (
               <div className="form__field">
-                <label htmlFor="store-id">Store ID</label>
+                <label htmlFor="store-id">Store ID (optional)</label>
                 <input
                   id="store-id"
                   value={storeId}
@@ -555,14 +510,13 @@ export default function AuthPage() {
                   onBlur={() => setStoreId(current => current.trim())}
                   type="text"
                   autoComplete="off"
-                  placeholder="Enter the store ID from your owner"
-                  required
+                  placeholder="Enter a store ID to join an existing workspace"
                   disabled={isLoading}
                   aria-invalid={storeId.length > 0 && normalizedStoreId.length === 0}
                   aria-describedby="store-id-hint"
                 />
                 <p className="form__hint" id="store-id-hint">
-                  Ask your workspace owner for the store ID to join their team.
+                  Have a store ID from your workspace owner? Enter it to join their team automatically.
                 </p>
               </div>
             )}

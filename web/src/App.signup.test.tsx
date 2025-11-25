@@ -320,7 +320,7 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/Phone/i), ' (555) 123-4567 ')
       await user.type(screen.getByLabelText(/Country/i), 'United States')
       await user.type(screen.getByLabelText(/Town or city/i), 'Seattle')
-      await user.click(screen.getByLabelText(/team member/i))
+      await user.type(screen.getByLabelText(/Store ID/i), 'workspace-store-id')
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
 
@@ -340,15 +340,18 @@ describe('App signup cleanup', () => {
       role: 'staff',
     })
     await waitFor(() =>
-      expect(mocks.initializeStore).toHaveBeenCalledWith({
-        phone: '5551234567',
-        firstSignupEmail: 'owner@example.com',
-        ownerName: 'Morgan Owner',
-        businessName: 'Morgan Retail Co',
-        country: 'United States',
-        town: 'Seattle',
-        signupRole: 'team-member',
-      }),
+      expect(mocks.initializeStore).toHaveBeenCalledWith(
+        {
+          phone: '5551234567',
+          firstSignupEmail: 'owner@example.com',
+          ownerName: 'Morgan Owner',
+          businessName: 'Morgan Retail Co',
+          country: 'United States',
+          town: 'Seattle',
+          signupRole: 'team-member',
+        },
+        'workspace-store-id',
+      ),
     )
     await waitFor(() =>
       expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('workspace-store-id'),
@@ -430,15 +433,18 @@ describe('App signup cleanup', () => {
     })
 
     await waitFor(() =>
-      expect(mocks.initializeStore).toHaveBeenCalledWith({
-        phone: '5551234567',
-        firstSignupEmail: 'owner@example.com',
-        ownerName: 'Morgan Owner',
-        businessName: 'Morgan Retail Co',
-        country: 'Kenya',
-        town: 'Nairobi',
-        signupRole: 'owner',
-      }),
+      expect(mocks.initializeStore).toHaveBeenCalledWith(
+        {
+          phone: '5551234567',
+          firstSignupEmail: 'owner@example.com',
+          ownerName: 'Morgan Owner',
+          businessName: 'Morgan Retail Co',
+          country: 'Kenya',
+          town: 'Nairobi',
+          signupRole: 'owner',
+        },
+        null,
+      ),
     )
     await waitFor(() => expect(mocks.resolveStoreAccess).toHaveBeenCalledWith('store-001'))
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Timestamp,
   collection,
@@ -14,15 +15,11 @@ import {
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
-import { useSubscriptionStatus } from '../hooks/useSubscriptionStatus'
-import { manageStaffAccount } from '../controllers/storeController'
 import { useToast } from '../components/ToastProvider'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { AccountBillingSection } from '../components/AccountBillingSection'
 import { getStoreIdFromRecord } from '../utils/storeId'
 import { SubscriptionButton } from '../components/SubscriptionButton' // ⬅️ NEW
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 type StoreProfile = {
   name: string | null
@@ -146,7 +143,6 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships()
   const { publish } = useToast()
   const user = useAuthUser()
-  const { isInactive: isSubscriptionInactive } = useSubscriptionStatus()
 
   const [profile, setProfile] = useState<StoreProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
@@ -155,13 +151,6 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const [roster, setRoster] = useState<RosterMember[]>([])
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterError, setRosterError] = useState<string | null>(null)
-  const [rosterVersion, setRosterVersion] = useState(0)
-
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState<Membership['role']>('staff')
-  const [password, setPassword] = useState('')
-  const [formError, setFormError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
 
   const activeMembership = useMemo(() => {
     if (!storeId) return null
@@ -262,79 +251,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     return () => {
       cancelled = true
     }
-  }, [storeId, rosterVersion, publish])
-
-  function validateForm() {
-    if (!storeId) {
-      return 'A storeId is required to manage staff.'
-    }
-
-    const normalizedEmail = email.trim().toLowerCase()
-    if (!normalizedEmail) {
-      return 'Enter the teammate’s email address.'
-    }
-
-    if (!EMAIL_PATTERN.test(normalizedEmail)) {
-      return 'Enter a valid email address.'
-    }
-
-    const normalizedRole = role?.trim()
-    if (!normalizedRole) {
-      return 'Select a role for this teammate.'
-    }
-
-    if (normalizedRole !== 'owner' && normalizedRole !== 'staff') {
-      return 'Choose either owner or staff for the role.'
-    }
-
-    return null
-  }
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (submitting) return
-
-    if (isSubscriptionInactive) {
-      const message = 'Your subscription is inactive. Reactivate to invite teammates.'
-      setFormError(message)
-      publish({ message, tone: 'error' })
-      return
-    }
-
-    const error = validateForm()
-    if (error) {
-      setFormError(error)
-      publish({ message: error, tone: 'error' })
-      return
-    }
-
-    if (!storeId) return
-
-    const payload = {
-      storeId,
-      email: email.trim().toLowerCase(),
-      role,
-      password: password.trim() || undefined,
-    }
-
-    setSubmitting(true)
-    setFormError(null)
-    try {
-      await manageStaffAccount(payload)
-      publish({ message: 'Team member updated.', tone: 'success' })
-      setEmail('')
-      setRole('staff')
-      setPassword('')
-      setRosterVersion(version => version + 1)
-    } catch (error) {
-      console.error('Failed to manage staff account', error)
-      const message = error instanceof Error ? error.message : 'We could not submit the request.'
-      setFormError(message)
-      publish({ message, tone: 'error' })
-    } finally {
-      setSubmitting(false)
-    }
-  }
+  }, [storeId, publish])
 
   if (storeError) {
     return <div role="alert">{storeError}</div>
@@ -451,64 +368,22 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         <h2 id="account-overview-roster">Team roster</h2>
 
         {isOwner ? (
-          <form
-            onSubmit={handleSubmit}
-            data-testid="account-invite-form"
-            className="account-overview__form"
-          >
-            <fieldset disabled={submitting}>
-              <legend className="sr-only">Invite or update a teammate</legend>
-              <div className="account-overview__form-grid">
-                <label>
-                  <span>Email</span>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={event => setEmail(event.target.value)}
-                    required
-                    autoComplete="email"
-                  />
-                </label>
-                <label>
-                  <span>Role</span>
-                  <select
-                    value={role}
-                    onChange={event =>
-                      setRole(event.target.value as Membership['role'])
-                    }
-                  >
-                    <option value="owner">Owner</option>
-                    <option value="staff">Staff</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Password (optional)</span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={event => setPassword(event.target.value)}
-                    autoComplete="new-password"
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="button button--primary"
-                  disabled={submitting || isSubscriptionInactive}
-                >
-                  {isSubscriptionInactive ? '🔒 ' : ''}
-                  {submitting ? 'Sending…' : 'Send invite'}
-                </button>
-              </div>
-              {isSubscriptionInactive && (
-                <p className="account-overview__form-error" role="note">
-                  Reactivate your subscription to invite teammates.
-                </p>
-              )}
-              {formError && (
-                <p className="account-overview__form-error">{formError}</p>
-              )}
-            </fieldset>
-          </form>
+          !rosterLoading && roster.length > 0 ? (
+            <div className="account-overview__actions">
+              <p className="account-overview__subtitle">
+                Team members are saved in Firebase. Edit existing teammates directly.
+              </p>
+              <Link
+                to="/staff"
+                className="button button--secondary"
+                data-testid="account-edit-team"
+              >
+                Edit team members
+              </Link>
+            </div>
+          ) : (
+            <p role="note">Team members will appear here once they are available.</p>
+          )
         ) : (
           <p role="note">You have read-only access to the team roster.</p>
         )}

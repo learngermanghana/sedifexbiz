@@ -1,6 +1,5 @@
 import React from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import AccountOverview from '../AccountOverview'
 
 const mockPublish = vi.fn()
@@ -19,22 +18,6 @@ vi.mock('../../hooks/useMemberships', () => ({
   useMemberships: () => mockUseMemberships(),
 }))
 
-const mockUseSubscriptionStatus = vi.fn(() => ({
-  loading: false,
-  billing: null,
-  error: null,
-  status: 'active',
-  isInactive: false,
-}))
-vi.mock('../../hooks/useSubscriptionStatus', () => ({
-  useSubscriptionStatus: () => mockUseSubscriptionStatus(),
-}))
-
-const mockManageStaffAccount = vi.fn()
-vi.mock('../../controllers/storeController', () => ({
-  manageStaffAccount: (...args: Parameters<typeof mockManageStaffAccount>) =>
-    mockManageStaffAccount(...args),
-}))
 
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
 const docMock = vi.fn((_db: unknown, path: string, id?: string) => ({
@@ -83,8 +66,6 @@ describe('AccountOverview', () => {
     mockPublish.mockReset()
     mockUseActiveStore.mockReset()
     mockUseMemberships.mockReset()
-    mockUseSubscriptionStatus.mockReset()
-    mockManageStaffAccount.mockReset()
     collectionMock.mockClear()
     docMock.mockClear()
     getDocMock.mockReset()
@@ -93,13 +74,6 @@ describe('AccountOverview', () => {
     whereMock.mockClear()
 
     mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
-    mockUseSubscriptionStatus.mockReturnValue({
-      loading: false,
-      billing: null,
-      error: null,
-      status: 'active',
-      isInactive: false,
-    })
     getDocMock.mockResolvedValue({
       exists: () => true,
       data: () => ({
@@ -131,7 +105,7 @@ describe('AccountOverview', () => {
     })
   })
 
-  it('allows owners to manage team invitations', async () => {
+  it('shows an edit control for owners when roster data is available', async () => {
     mockUseMemberships.mockReturnValue({
       memberships: [
         {
@@ -165,29 +139,12 @@ describe('AccountOverview', () => {
     expect(rosterRow).toHaveAttribute('data-phone', '+233201234567')
     expect(rosterRow).toHaveAttribute('data-first-signup-email', 'owner-invite@example.com')
 
-    const form = await screen.findByTestId('account-invite-form')
-    expect(form).toBeInTheDocument()
-
-    const user = userEvent.setup()
-    await user.type(screen.getByLabelText(/email/i), 'new-user@example.com')
-    await user.selectOptions(screen.getByLabelText(/role/i), 'staff')
-    await user.type(screen.getByLabelText(/password/i), 'Secret123!')
-    await user.click(screen.getByRole('button', { name: /send invite/i }))
-
-    await waitFor(() => {
-      expect(mockManageStaffAccount).toHaveBeenCalledWith({
-        storeId: 'store-123',
-        email: 'new-user@example.com',
-        role: 'staff',
-        password: 'Secret123!',
-      })
-    })
-
-    await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
-    expect(mockPublish).toHaveBeenCalledWith({ message: 'Team member updated.', tone: 'success' })
+    expect(await screen.findByTestId('account-edit-team')).toBeInTheDocument()
+    expect(screen.queryByTestId('account-invite-form')).not.toBeInTheDocument()
   })
 
-  it('disables team invites when the subscription is inactive', async () => {
+  it('hides team editing until roster data is available', async () => {
+    getDocsMock.mockResolvedValueOnce({ docs: [] })
     mockUseMemberships.mockReturnValue({
       memberships: [
         {
@@ -206,23 +163,14 @@ describe('AccountOverview', () => {
       loading: false,
       error: null,
     })
-    mockUseSubscriptionStatus.mockReturnValue({
-      loading: false,
-      billing: null,
-      error: null,
-      status: 'inactive',
-      isInactive: true,
-    })
 
     render(<AccountOverview />)
     await act(async () => {
       await Promise.resolve()
     })
 
-    const inviteButton = await screen.findByRole('button', { name: /send invite/i })
-    expect(inviteButton).toBeDisabled()
-    expect(inviteButton).toHaveTextContent(/🔒/)
-    expect(screen.getByText(/Reactivate your subscription to invite teammates/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Team members will appear here once they are available/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('account-edit-team')).not.toBeInTheDocument()
   })
 
   it('renders a read-only roster for staff members', async () => {
@@ -255,6 +203,7 @@ describe('AccountOverview', () => {
 
     expect(screen.queryByTestId('account-invite-form')).not.toBeInTheDocument()
     expect(screen.getByText(/read-only access/i)).toBeInTheDocument()
+    expect(screen.queryByTestId('account-edit-team')).not.toBeInTheDocument()
   })
 
   it('falls back to ownerId lookup when the store document id differs from the storeId', async () => {
