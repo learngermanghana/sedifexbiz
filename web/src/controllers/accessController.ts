@@ -15,6 +15,14 @@ export type InitializeStoreContactPayload = {
   signupRole?: SignupRoleOption | null
 }
 
+export type InitializeStoreProfilePayload = {
+  phone?: string | null
+  ownerName?: string | null
+  businessName?: string | null
+  country?: string | null
+  town?: string | null
+}
+
 function normalizeSignupRoleInput(value: SignupRoleOption | null | undefined): SignupRoleOption | null {
   if (value === 'team-member') {
     return 'team-member'
@@ -27,6 +35,7 @@ function normalizeSignupRoleInput(value: SignupRoleOption | null | undefined): S
 
 type InitializeStorePayload = {
   contact?: InitializeStoreContactPayload
+  profile?: InitializeStoreProfilePayload
   storeId?: string | null
 }
 
@@ -119,11 +128,15 @@ export async function initializeStore(
 
   if (contact) {
     const payloadContact: InitializeStoreContactPayload = {}
+    const payloadProfile: InitializeStoreProfilePayload = {}
     let hasContactField = false
+    let hasProfileField = false
 
     if (contact.phone !== undefined) {
       payloadContact.phone = contact.phone ?? null
+      payloadProfile.phone = contact.phone ?? null
       hasContactField = true
+      hasProfileField = true
     }
     if (contact.firstSignupEmail !== undefined) {
       payloadContact.firstSignupEmail = contact.firstSignupEmail ?? null
@@ -131,27 +144,39 @@ export async function initializeStore(
     }
     if (contact.ownerName !== undefined) {
       payloadContact.ownerName = contact.ownerName ?? null
+      payloadProfile.ownerName = contact.ownerName ?? null
       hasContactField = true
+      hasProfileField = true
     }
     if (contact.businessName !== undefined) {
       payloadContact.businessName = contact.businessName ?? null
+      payloadProfile.businessName = contact.businessName ?? null
       hasContactField = true
+      hasProfileField = true
     }
     if (contact.country !== undefined) {
       payloadContact.country = contact.country ?? null
+      payloadProfile.country = contact.country ?? null
       hasContactField = true
+      hasProfileField = true
     }
     if (contact.town !== undefined) {
       payloadContact.town = contact.town ?? null
+      payloadProfile.town = contact.town ?? null
       hasContactField = true
+      hasProfileField = true
     }
     if (contact.signupRole !== undefined) {
       payloadContact.signupRole = normalizeSignupRoleInput(contact.signupRole)
       hasContactField = true
     }
 
-    if (hasContactField) {
-      payload = { contact: payloadContact }
+    if (hasContactField || hasProfileField) {
+      payload = {
+        ...(payload ?? {}),
+        contact: hasContactField ? payloadContact : undefined,
+        profile: hasProfileField ? payloadProfile : undefined,
+      }
     }
   }
 
