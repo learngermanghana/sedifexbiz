@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { collection, query, orderBy, limit, onSnapshot, doc, where } from 'firebase/firestore'
+import {
+  collection,
+  query,
+  orderBy,
+  limit,
+  onSnapshot,
+  doc,
+  where,
+  getDoc,
+} from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions as cloudFunctions } from '../firebase'
@@ -24,12 +33,13 @@ type Product = {
   id: string
   name: string
   price: number | null
+  taxRate?: number | null
   sku?: string | null
   stockCount?: number
   createdAt?: unknown
   updatedAt?: unknown
 }
-type CartLine = { productId: string; name: string; price: number; qty: number }
+type CartLine = { productId: string; name: string; price: number; qty: number; taxRate?: number }
 type Customer = {
   id: string
   name: string
@@ -40,11 +50,32 @@ type Customer = {
   createdAt?: unknown
   updatedAt?: unknown
 }
+
+type StoreProfile = {
+  id: string
+  name: string | null
+  displayName: string | null
+  email: string | null
+  phone: string | null
+  addressLine1: string | null
+  addressLine2: string | null
+  city: string | null
+  region: string | null
+  postalCode: string | null
+  country: string | null
+}
 type ReceiptData = {
   saleId: string
   createdAt: Date
   items: CartLine[]
   subtotal: number
+  store?: {
+    id: string | null
+    name: string | null
+    email: string | null
+    phone: string | null
+    addressLines: string[]
+  }
   payment: {
     method: string
     amountPaid: number
@@ -66,6 +97,21 @@ type ReceiptSharePayload = {
   pdfUrl: string
   pdfFileName: string
 }
+
+type ShareChannel = 'email' | 'sms' | 'whatsapp'
+
+type LogReceiptSharePayload = {
+  storeId: string
+  saleId: string
+  channel: ShareChannel
+  status: 'attempt' | 'failed'
+  contact: string | null
+  customerId?: string | null
+  customerName?: string | null
+  errorMessage?: string | null
+}
+
+type LogReceiptShareResponse = { ok: boolean; shareId: string }
 
 type CommitSalePayload = {
   branchId: string | null
@@ -184,6 +230,71 @@ function sanitizePrice(value: unknown): number | null {
   return null
 }
 
+function sanitizeTaxRate(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value
+  }
+  return null
+}
+
+function toNullableString(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed || null
+}
+
+function mapStoreProfile(
+  id: string,
+  data: Record<string, unknown> | undefined,
+): StoreProfile {
+  const safeData = data || {}
+
+  return {
+    id,
+    name: toNullableString(safeData.name),
+    displayName: toNullableString(safeData.displayName),
+    email: toNullableString(safeData.email),
+    phone: toNullableString(safeData.phone),
+    addressLine1: toNullableString(safeData.addressLine1),
+    addressLine2: toNullableString(safeData.addressLine2),
+    city: toNullableString(safeData.city),
+    region: toNullableString(safeData.region),
+    postalCode: toNullableString(safeData.postalCode),
+    country: toNullableString(safeData.country),
+  }
+}
+
+function buildReceiptStore(
+  storeProfile: StoreProfile | null,
+  activeStoreId: string | null,
+): ReceiptData['store'] {
+  const addressLines: string[] = []
+  if (storeProfile?.addressLine1) addressLines.push(storeProfile.addressLine1)
+  if (storeProfile?.addressLine2) addressLines.push(storeProfile.addressLine2)
+
+  const cityParts = [storeProfile?.city, storeProfile?.region]
+    .filter(Boolean)
+    .map(part => part as string)
+  if (cityParts.length) {
+    addressLines.push(cityParts.join(', '))
+  }
+
+  const countryParts = [storeProfile?.postalCode, storeProfile?.country]
+    .filter(Boolean)
+    .map(part => part as string)
+  if (countryParts.length) {
+    addressLines.push(countryParts.join(' '))
+  }
+
+  return {
+    id: storeProfile?.id ?? activeStoreId ?? null,
+    name: storeProfile?.displayName ?? storeProfile?.name ?? null,
+    email: storeProfile?.email ?? null,
+    phone: storeProfile?.phone ?? null,
+    addressLines,
+  }
+}
+
 export default function Sell() {
   const user = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
@@ -203,8 +314,11 @@ export default function Sell() {
     tone: 'success' | 'error'
     message: string
   } | null>(null)
+  const [storeProfile, setStoreProfile] = useState<StoreProfile | null>(null)
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [receiptSharePayload, setReceiptSharePayload] = useState<ReceiptSharePayload | null>(null)
+  const canShareReceipt =
+    Boolean(receiptSharePayload) && (typeof navigator === 'undefined' || navigator.onLine)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
   const selectedCustomerDisplayName = selectedCustomer
@@ -216,6 +330,54 @@ export default function Sell() {
   const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : subtotal
   const changeDue = Math.max(0, amountPaid - subtotal)
   const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0
+  const cartTaxTotal = useMemo(
+    () => cart.reduce((sum, line) => sum + (line.taxRate ?? 0) * line.price * line.qty, 0),
+    [cart],
+  )
+  const receiptStore = useMemo(
+    () => buildReceiptStore(storeProfile, activeStoreId),
+    [activeStoreId, storeProfile],
+  )
+  const logReceiptShare = useMemo(
+    () =>
+      httpsCallable<LogReceiptSharePayload, LogReceiptShareResponse>(
+        cloudFunctions,
+        'logReceiptShare',
+      ),
+    [],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (!activeStoreId) {
+      setStoreProfile(null)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const ref = doc(db, 'stores', activeStoreId)
+    getDoc(ref)
+      .then(snapshot => {
+        if (cancelled) return
+        if (!snapshot.exists()) {
+          setStoreProfile(null)
+          return
+        }
+
+        setStoreProfile(mapStoreProfile(snapshot.id, snapshot.data() as Record<string, unknown>))
+      })
+      .catch(error => {
+        if (cancelled) return
+        console.error('[sell] Failed to load store profile', error)
+        setStoreProfile(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeStoreId])
 
   useEffect(() => {
     let cancelled = false
@@ -233,6 +395,7 @@ export default function Sell() {
           const sanitized = cached.map(item => ({
             ...(item as Product),
             price: sanitizePrice((item as Product).price),
+            taxRate: sanitizeTaxRate((item as Product).taxRate),
           }))
           setProducts(
             sanitized.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
@@ -259,6 +422,7 @@ export default function Sell() {
       const sanitizedRows = rows.map(row => ({
         ...(row as Product),
         price: sanitizePrice((row as Product).price),
+        taxRate: sanitizeTaxRate((row as Product).taxRate),
       }))
       saveCachedProducts(sanitizedRows, { storeId: activeStoreId }).catch(error => {
         console.warn('[sell] Failed to cache products', error)
@@ -347,10 +511,14 @@ export default function Sell() {
       return
     }
 
-    const contactLine = user?.email ?? 'sales@sedifex.app'
+    const receiptStoreInfo = receipt.store ?? buildReceiptStore(storeProfile, activeStoreId)
+    const storeName = receiptStoreInfo?.name || 'Sedifex POS'
+    const contactLine =
+      receiptStoreInfo?.email || receiptStoreInfo?.phone || user?.email || 'sales@sedifex.app'
 
     const lines: string[] = []
-    lines.push('Sedifex POS')
+    lines.push(storeName)
+    receiptStoreInfo?.addressLines.forEach(line => lines.push(line))
     lines.push(contactLine)
     lines.push(receipt.createdAt.toLocaleString())
 
@@ -368,12 +536,22 @@ export default function Sell() {
 
     lines.push('')
     lines.push('Items:')
+    const taxTotal = receipt.items.reduce(
+      (sum, line) => sum + (line.taxRate ?? 0) * line.price * line.qty,
+      0,
+    )
     receipt.items.forEach(line => {
-      lines.push(`  • ${line.qty} × ${line.name} — GHS ${(line.qty * line.price).toFixed(2)}`)
+      const lineTotal = line.qty * line.price
+      const lineTax = lineTotal * (line.taxRate ?? 0)
+      const taxLabel = lineTax > 0 ? ` (Tax: GHS ${lineTax.toFixed(2)})` : ''
+      lines.push(`  • ${line.qty} × ${line.name} — GHS ${lineTotal.toFixed(2)}${taxLabel}`)
     })
 
     lines.push('')
     lines.push(`Subtotal: GHS ${receipt.subtotal.toFixed(2)}`)
+    if (taxTotal > 0) {
+      lines.push(`Tax: GHS ${taxTotal.toFixed(2)}`)
+    }
     lines.push(`Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`)
     lines.push(`Change: GHS ${receipt.payment.changeDue.toFixed(2)}`)
     lines.push('')
@@ -390,7 +568,7 @@ export default function Sell() {
     const whatsappHref = `https://wa.me/?text=${encodedBody}`
 
     const pdfLines = lines.slice(1)
-    const pdfBytes = buildSimplePdf('Sedifex POS', pdfLines)
+    const pdfBytes = buildSimplePdf(storeName, pdfLines)
     const pdfBuffer = pdfBytes.slice().buffer
     const pdfBlob = new Blob([pdfBuffer], { type: 'application/pdf' })
     const pdfUrl = URL.createObjectURL(pdfBlob)
@@ -406,7 +584,7 @@ export default function Sell() {
     return () => {
       URL.revokeObjectURL(pdfUrl)
     }
-  }, [receipt, user?.email])
+  }, [activeStoreId, receipt, storeProfile, user?.email])
 
   const handleDownloadPdf = useCallback(() => {
     setReceiptSharePayload(prev => {
@@ -425,6 +603,46 @@ export default function Sell() {
       return { ...prev, pdfUrl: refreshedUrl }
     })
   }, [])
+
+  const handleShareChannel = useCallback(
+    (channel: ShareChannel) => {
+      if (!receiptSharePayload || !receipt || !activeStoreId) return
+
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine
+      if (!isOnline) {
+        setSaleError('You appear to be offline. Reconnect to share receipts.')
+        return
+      }
+
+      const hrefMap: Record<ShareChannel, string> = {
+        email: receiptSharePayload.emailHref,
+        sms: receiptSharePayload.smsHref,
+        whatsapp: receiptSharePayload.whatsappHref,
+      }
+
+      const logPayload: LogReceiptSharePayload = {
+        storeId: activeStoreId,
+        saleId: receipt.saleId,
+        channel,
+        status: 'attempt',
+        contact: receipt.customer?.email ?? receipt.customer?.phone ?? null,
+        customerId: selectedCustomer?.id ?? receipt.customer?.name ?? null,
+        customerName: receipt.customer?.name ?? null,
+      }
+
+      logReceiptShare(logPayload).catch(error => {
+        console.error('[sell] Failed to log share attempt', error)
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        logReceiptShare({ ...logPayload, status: 'failed', errorMessage }).catch(secondaryError => {
+          console.error('[sell] Failed to log share failure', secondaryError)
+        })
+      })
+
+      const target = channel === 'sms' ? '_self' : '_blank'
+      window.open(hrefMap[channel], target, 'noopener,noreferrer')
+    },
+    [activeStoreId, logReceiptShare, receipt, receiptSharePayload, selectedCustomer?.id],
+  )
 
   useEffect(() => {
     const url = receiptSharePayload?.pdfUrl
@@ -473,7 +691,8 @@ export default function Sell() {
         copy[i] = { ...copy[i], qty: copy[i].qty + 1 }
         return copy
       }
-      return [...cs, { productId: p.id, name: p.name, price: p.price, qty: 1 }]
+      const taxRate = typeof p.taxRate === 'number' && Number.isFinite(p.taxRate) ? p.taxRate : undefined
+      return [...cs, { productId: p.id, name: p.name, price: p.price, qty: 1, taxRate }]
     })
   }, [])
 
@@ -556,7 +775,7 @@ export default function Sell() {
       customerId: selectedCustomer?.id ?? null,
       totals: {
         total: subtotal,
-        taxTotal: 0,
+        taxTotal: cartTaxTotal,
       },
       payment: {
         method: paymentMethod,
@@ -568,7 +787,7 @@ export default function Sell() {
         name: line.name,
         price: line.price,
         qty: line.qty,
-        taxRate: 0,
+        taxRate: line.taxRate ?? 0,
       })),
     }
     if (selectedCustomer) {
@@ -580,7 +799,7 @@ export default function Sell() {
       }
     }
 
-    const receiptItems = cart.map(line => ({ ...line }))
+    const receiptItems = cart.map(line => ({ ...line, taxRate: line.taxRate ?? 0 }))
 
     try {
       const { data } = await commitSale(payload)
@@ -593,6 +812,7 @@ export default function Sell() {
         createdAt: new Date(),
         items: receiptItems,
         subtotal,
+        store: receiptStore,
         payment: {
           method: paymentMethod,
           amountPaid,
@@ -620,6 +840,7 @@ export default function Sell() {
             createdAt: new Date(),
             items: receiptItems,
             subtotal,
+            store: receiptStore,
             payment: {
               method: paymentMethod,
               amountPaid,
@@ -892,13 +1113,58 @@ export default function Sell() {
               {saleSuccess && (
                 <div className="sell-page__message sell-page__message--success">
                   <span>{saleSuccess}</span>
-                  <button
-                    type="button"
-                    className="button button--small"
-                    onClick={() => window.print()}
-                  >
-                    Print again
-                  </button>
+                  <div className="sell-page__engagement-actions">
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => window.print()}
+                    >
+                      Print again
+                    </button>
+                    {receiptSharePayload && (
+                      <>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleShareChannel('email')}
+                          disabled={!canShareReceipt}
+                          title={
+                            canShareReceipt
+                              ? undefined
+                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                          }
+                        >
+                          Email receipt
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleShareChannel('sms')}
+                          disabled={!canShareReceipt}
+                          title={
+                            canShareReceipt
+                              ? undefined
+                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                          }
+                        >
+                          Text receipt
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleShareChannel('whatsapp')}
+                          disabled={!canShareReceipt}
+                          title={
+                            canShareReceipt
+                              ? undefined
+                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                          }
+                        >
+                          WhatsApp receipt
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -916,24 +1182,45 @@ export default function Sell() {
                     >
                       Download PDF
                     </button>
-                    <a
+                    <button
+                      type="button"
                       className="button button--ghost button--small"
-                      href={receiptSharePayload.whatsappHref}
+                      onClick={() => handleShareChannel('whatsapp')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
                     >
                       WhatsApp receipt
-                    </a>
-                    <a
+                    </button>
+                    <button
+                      type="button"
                       className="button button--ghost button--small"
-                      href={receiptSharePayload.emailHref}
+                      onClick={() => handleShareChannel('email')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
                     >
                       Email receipt
-                    </a>
-                    <a
+                    </button>
+                    <button
+                      type="button"
                       className="button button--ghost button--small"
-                      href={receiptSharePayload.smsHref}
+                      onClick={() => handleShareChannel('sms')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
                     >
                       Text receipt
-                    </a>
+                    </button>
                   </div>
                   <details className="sell-page__engagement-details">
                     <summary>Preview message</summary>

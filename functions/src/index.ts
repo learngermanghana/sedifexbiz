@@ -830,6 +830,78 @@ export const receiveStock = functions.https.onCall(
 )
 
 /** ============================================================================
+ *  CALLABLE: logReceiptShare (staff)
+ * ==========================================================================*/
+
+const RECEIPT_SHARE_CHANNELS = new Set(['email', 'sms', 'whatsapp'])
+const RECEIPT_SHARE_STATUSES = new Set(['attempt', 'failed'])
+
+function normalizeReceiptSharePayload(data: LogReceiptSharePayload) {
+  const storeId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
+  if (!storeId) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'A valid storeId is required',
+    )
+  }
+
+  const saleId = typeof data.saleId === 'string' ? data.saleId.trim() : ''
+  if (!saleId) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'A valid saleId is required',
+    )
+  }
+
+  const channel =
+    typeof data.channel === 'string' ? data.channel.trim().toLowerCase() : ''
+  if (!RECEIPT_SHARE_CHANNELS.has(channel)) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'A valid share channel is required',
+    )
+  }
+
+  const statusRaw =
+    typeof data.status === 'string' ? data.status.trim().toLowerCase() : 'attempt'
+  const status = RECEIPT_SHARE_STATUSES.has(statusRaw) ? statusRaw : 'attempt'
+
+  const contact =
+    typeof data.contact === 'string' && data.contact.trim() ? data.contact.trim() : null
+  const customerId =
+    typeof data.customerId === 'string' && data.customerId.trim()
+      ? data.customerId.trim()
+      : null
+  const customerName =
+    typeof data.customerName === 'string' && data.customerName.trim()
+      ? data.customerName.trim()
+      : null
+  const errorMessage =
+    typeof data.errorMessage === 'string' && data.errorMessage.trim()
+      ? data.errorMessage.trim()
+      : null
+
+  return { storeId, saleId, channel, status, contact, customerId, customerName, errorMessage }
+}
+
+export const logReceiptShare = functions.https.onCall(
+  async (data: any, context: functions.https.CallableContext) => {
+    assertStaffAccess(context)
+
+    const payload = normalizeReceiptSharePayload(data as LogReceiptSharePayload)
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+
+    const docRef = await db.collection('receiptShares').add({
+      ...payload,
+      createdAt: timestamp,
+      createdBy: context.auth?.uid ?? null,
+    })
+
+    return { ok: true, shareId: docRef.id }
+  },
+)
+
+/** ============================================================================
  *  PAYSTACK HELPERS
  * ==========================================================================*/
 
@@ -841,6 +913,17 @@ const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'USD'
 type CreateCheckoutPayload = {
   storeId?: string
   returnUrl?: string
+}
+
+type LogReceiptSharePayload = {
+  storeId?: string
+  saleId?: string
+  channel?: string
+  status?: string
+  contact?: string | null
+  customerId?: string | null
+  customerName?: string | null
+  errorMessage?: string | null
 }
 
 function ensurePaystackConfig() {
