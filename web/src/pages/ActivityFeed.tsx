@@ -1,59 +1,32 @@
-import React, { useMemo, useState } from 'react'
+// web/src/pages/ActivityFeed.tsx (or wherever it lives)
+import React, { useEffect, useMemo, useState } from 'react'
+import {
+  addDoc,
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+  limit,
+  serverTimestamp,
+  type DocumentData,
+  type QuerySnapshot,
+} from 'firebase/firestore'
+import { db } from '../firebase'
+import { useActiveStore } from '../hooks/useActiveStore'
 import './ActivityFeed.css'
 
 type ActivityType = 'sale' | 'customer' | 'inventory' | 'task'
 
 type Activity = {
   id: string
+  storeId: string
   type: ActivityType
   summary: string
   detail: string
   actor: string
   timestamp: Date
 }
-
-const INITIAL_ACTIVITIES: Activity[] = [
-  {
-    id: '1',
-    type: 'sale',
-    summary: 'Sold 3 x Wireless Headphones',
-    detail: 'Processed by register #2, paid with card.',
-    actor: 'Rita A.',
-    timestamp: new Date(Date.now() - 1000 * 60 * 9),
-  },
-  {
-    id: '2',
-    type: 'customer',
-    summary: 'New customer added: Jason Lee',
-    detail: 'Added phone number and opted into SMS receipts.',
-    actor: 'Marcus O.',
-    timestamp: new Date(Date.now() - 1000 * 60 * 22),
-  },
-  {
-    id: '3',
-    type: 'inventory',
-    summary: 'Received 24 x Cold Brew Cans',
-    detail: 'Checked into back room and ready for shelf stock.',
-    actor: 'Ava T.',
-    timestamp: new Date(Date.now() - 1000 * 60 * 45),
-  },
-  {
-    id: '4',
-    type: 'task',
-    summary: 'Completed daily till check',
-    detail: 'Cash counted and matched expected float.',
-    actor: 'Andre P.',
-    timestamp: new Date(Date.now() - 1000 * 60 * 90),
-  },
-  {
-    id: '5',
-    type: 'sale',
-    summary: 'Refunded 1 x Coffee Grinder',
-    detail: 'Issued store credit and updated inventory.',
-    actor: 'Rita A.',
-    timestamp: new Date(Date.now() - 1000 * 60 * 120),
-  },
-]
 
 const TYPE_LABELS: Record<ActivityType, string> = {
   sale: 'Sale',
@@ -67,6 +40,20 @@ const TYPE_COLORS: Record<ActivityType, string> = {
   customer: '#10B981',
   inventory: '#0EA5E9',
   task: '#F59E0B',
+}
+
+function toDate(value: any): Date | null {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (typeof value?.toDate === 'function') {
+    try {
+      return value.toDate()
+    } catch {
+      return null
+    }
+  }
+  const ms = Date.parse(String(value))
+  return Number.isNaN(ms) ? null : new Date(ms)
 }
 
 function formatTimestamp(date: Date) {
@@ -92,24 +79,71 @@ function buildCsvValue(value: string) {
 }
 
 export default function ActivityFeed() {
-  const [activities, setActivities] = useState<Activity[]>(() =>
-    INITIAL_ACTIVITIES.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()),
-  )
+  const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
+
+  const [activities, setActivities] = useState<Activity[]>([])
   const [filter, setFilter] = useState<ActivityType | 'all'>('all')
   const [search, setSearch] = useState('')
   const [newSummary, setNewSummary] = useState('')
   const [newDetail, setNewDetail] = useState('')
   const [newType, setNewType] = useState<ActivityType>('sale')
   const [actor, setActor] = useState('You')
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  // 🔴 LIVE SUBSCRIPTION TO FIRESTORE
+  useEffect(() => {
+    if (!storeId) {
+      setActivities([])
+      return
+    }
+
+    setLoading(true)
+    setLoadError(null)
+
+    const activityRef = collection(db, 'activity')
+    const q = query(
+      activityRef,
+      where('storeId', '==', storeId),
+      orderBy('createdAt', 'desc'),
+      limit(200),
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot: QuerySnapshot<DocumentData>) => {
+        const rows: Activity[] = snapshot.docs.map(docSnap => {
+          const data = docSnap.data() || {}
+          return {
+            id: docSnap.id,
+            storeId: data.storeId ?? storeId,
+            type: (data.type as ActivityType) ?? 'task',
+            summary: data.summary ?? '',
+            detail: data.detail ?? '',
+            actor: data.actor ?? 'Team member',
+            timestamp: toDate(data.createdAt) ?? new Date(),
+          }
+        })
+        setActivities(rows)
+        setLoading(false)
+      },
+      error => {
+        console.error('[activity] Failed to subscribe', error)
+        setActivities([])
+        setLoading(false)
+        setLoadError('Unable to load activity right now. Please try again.')
+      },
+    )
+
+    return () => unsubscribe()
+  }, [storeId])
 
   const filteredActivities = useMemo(() => {
     const normalizedQuery = search.trim().toLowerCase()
     return activities.filter(activity => {
       const matchesType = filter === 'all' || activity.type === filter
       const matchesQuery = normalizedQuery
-        ? `${activity.summary} ${activity.detail} ${activity.actor}`
-            .toLowerCase()
-            .includes(normalizedQuery)
+        ? `${activity.summary} ${activity.detail} ${activity.actor}`.toLowerCase().includes(normalizedQuery)
         : true
       return matchesType && matchesQuery
     })
@@ -125,23 +159,28 @@ export default function ActivityFeed() {
     )
   }, [activities])
 
-  function addActivity(event: React.FormEvent) {
+  // 🟢 WRITE NEW ACTIVITY TO FIRESTORE
+  async function addActivity(event: React.FormEvent) {
     event.preventDefault()
-    if (!newSummary.trim()) return
+    if (!newSummary.trim() || !storeId) return
 
-    const nextActivity: Activity = {
-      id: crypto.randomUUID(),
-      type: newType,
-      summary: newSummary.trim(),
-      detail: newDetail.trim() || 'Noted in activity feed.',
-      actor: actor.trim() || 'Team member',
-      timestamp: new Date(),
+    try {
+      await addDoc(collection(db, 'activity'), {
+        storeId,
+        type: newType,
+        summary: newSummary.trim(),
+        detail: newDetail.trim() || 'Noted in activity feed.',
+        actor: actor.trim() || 'Team member',
+        createdAt: serverTimestamp(),
+      })
+      // onSnapshot will bring it into the list
+      setNewSummary('')
+      setNewDetail('')
+      setActor('You')
+    } catch (error) {
+      console.error('[activity] Failed to add activity', error)
+      setLoadError('Unable to log activity. Please try again.')
     }
-
-    setActivities(prev => [nextActivity, ...prev])
-    setNewSummary('')
-    setNewDetail('')
-    setActor('You')
   }
 
   function downloadCsv() {
@@ -163,10 +202,10 @@ export default function ActivityFeed() {
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = window.URL.createObjectURL(blob)
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
     const link = document.createElement('a')
     link.href = url
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
-    link.download = `activity-feed-${timestamp}.csv`
+    link.download = `activity-feed-${ts}.csv`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -186,11 +225,20 @@ export default function ActivityFeed() {
         </div>
         <div className="activity-actions">
           <div className="activity-pill">Live</div>
-          <button type="button" className="button button--primary" onClick={downloadCsv} disabled={!filteredActivities.length}>
+          <button
+            type="button"
+            className="button button--primary"
+            onClick={downloadCsv}
+            disabled={!filteredActivities.length}
+          >
             Download CSV
           </button>
         </div>
       </header>
+
+      {storeError && <div className="activity-error">{storeError}</div>}
+      {loadError && <div className="activity-error">{loadError}</div>}
+      {loading && <p className="activity-loading">Loading activity…</p>}
 
       <section className="activity-controls" aria-label="Activity controls">
         <div className="activity-filters" role="group" aria-label="Activity type filters">
@@ -228,7 +276,9 @@ export default function ActivityFeed() {
       <section className="activity-add" aria-label="Log activity">
         <div>
           <h3>Log something that just happened</h3>
-          <p className="activity-subtext">Keep everyone aligned by adding the sale, customer, or task you just completed.</p>
+          <p className="activity-subtext">
+            Keep everyone aligned by adding the sale, customer, or task you just completed.
+          </p>
         </div>
         <form className="activity-form" onSubmit={addActivity}>
           <label className="activity-form__field">
@@ -268,14 +318,18 @@ export default function ActivityFeed() {
               placeholder="Name"
             />
           </label>
-          <button type="submit" className="button button--primary" disabled={!newSummary.trim()}>
+          <button
+            type="submit"
+            className="button button--primary"
+            disabled={!newSummary.trim() || !storeId}
+          >
             Add to feed
           </button>
         </form>
       </section>
 
       <section className="activity-feed" aria-live="polite">
-        {filteredActivities.length === 0 ? (
+        {filteredActivities.length === 0 && !loading ? (
           <div className="activity-empty">
             <p>No activity yet. Try adding a new entry or adjust your filters.</p>
           </div>
@@ -283,13 +337,18 @@ export default function ActivityFeed() {
           filteredActivities.map(activity => (
             <article key={activity.id} className="activity-item">
               <div className="activity-type" style={{ color: TYPE_COLORS[activity.type] }}>
-                <span className="activity-type__dot" style={{ background: TYPE_COLORS[activity.type] }} />
+                <span
+                  className="activity-type__dot"
+                  style={{ background: TYPE_COLORS[activity.type] }}
+                />
                 {TYPE_LABELS[activity.type]}
               </div>
               <div className="activity-body">
                 <div className="activity-body__row">
                   <h4>{activity.summary}</h4>
-                  <span className="activity-timestamp">{formatTimestamp(activity.timestamp)}</span>
+                  <span className="activity-timestamp">
+                    {formatTimestamp(activity.timestamp)}
+                  </span>
                 </div>
                 <p className="activity-detail">{activity.detail}</p>
                 <div className="activity-meta">By {activity.actor}</div>
