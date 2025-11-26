@@ -31,6 +31,7 @@ import {
 } from '../utils/offlineCache'
 import { buildSimplePdf } from '../utils/pdf'
 import { ensureCustomerLoyalty } from '../utils/customerLoyalty'
+import { payWithPaystack } from '../lib/paystack'
 
 type Product = {
   id: string
@@ -82,11 +83,7 @@ type ReceiptData = {
     phone: string | null
     addressLines: string[]
   }
-  payment: {
-    method: string
-    amountPaid: number
-    changeDue: number
-  }
+  payment: Payment
   customer?: {
     name: string
     phone?: string
@@ -130,11 +127,7 @@ type CommitSalePayload = {
     total: number
     taxTotal: number
   }
-  payment: {
-    method: string
-    amountPaid: number
-    changeDue: number
-  }
+  payment: Payment
   customer?: {
     id?: string
     name: string
@@ -148,6 +141,15 @@ type CommitSalePayload = {
     qty: number
     taxRate?: number
   }>
+}
+
+type Payment = {
+  method: string
+  amountPaid: number
+  changeDue: number
+  provider?: string
+  providerRef?: string | null
+  status?: string | null
 }
 
 type CommitSaleResponse = {
@@ -313,7 +315,7 @@ export default function Sell() {
   const [queryText, setQueryText] = useState('')
   const [cart, setCart] = useState<CartLine[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobile' | 'card'>('cash')
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'paystack'>('cash')
   const [amountTendered, setAmountTendered] = useState('')
   const [loyaltyEarnedInput, setLoyaltyEarnedInput] = useState('')
   const [loyaltyAppliedInput, setLoyaltyAppliedInput] = useState('')
@@ -364,6 +366,7 @@ export default function Sell() {
   const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : subtotal
   const changeDue = Math.max(0, amountPaid - subtotal)
   const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0
+  const paymentMethodLabel = paymentMethod === 'paystack' ? 'card/mobile' : paymentMethod
   const cartTaxTotal = useMemo(
     () => cart.reduce((sum, line) => sum + (line.taxRate ?? 0) * line.price * line.qty, 0),
     [cart],
@@ -818,6 +821,38 @@ export default function Sell() {
     const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
     const loyaltyEarnedValue = selectedCustomer ? loyaltyEarned : null
     const loyaltyCurrentPointsValue = selectedCustomer ? loyaltyCurrentPoints : null
+    const payment: Payment = {
+      method: paymentMethod === 'paystack' ? 'card' : paymentMethod,
+      amountPaid,
+      changeDue,
+    }
+
+    if (paymentMethod === 'paystack') {
+      if (!navigator.onLine) {
+        setSaleError('Card/Mobile payments need an internet connection. Please reconnect and try again.')
+        setIsRecording(false)
+        return
+      }
+
+      const paystackBuyer = selectedCustomer
+        ? {
+            email: selectedCustomer.email,
+            phone: selectedCustomer.phone,
+            name: selectedCustomerDataName || selectedCustomer.id,
+          }
+        : undefined
+      const paystackResponse = await payWithPaystack(subtotal, paystackBuyer)
+      if (!paystackResponse.ok || !paystackResponse.reference) {
+        setSaleError(paystackResponse.error ?? 'Card/Mobile payment was cancelled.')
+        setIsRecording(false)
+        return
+      }
+
+      payment.provider = 'paystack'
+      payment.providerRef = paystackResponse.reference
+      payment.status = paystackResponse.status ?? 'success'
+    }
+
     const payload: CommitSalePayload = {
       branchId: activeStoreId,
       saleId,
@@ -829,11 +864,7 @@ export default function Sell() {
         total: subtotal,
         taxTotal: cartTaxTotal,
       },
-      payment: {
-        method: paymentMethod,
-        amountPaid,
-        changeDue,
-      },
+      payment,
       items: cart.map(line => ({
         productId: line.productId,
         name: line.name,
@@ -861,16 +892,16 @@ export default function Sell() {
 
       const cashierNameOrEmail = user.displayName || user.email || 'Cashier'
       try {
-        if (activeStoreId) {
-          await addDoc(collection(db, 'activity'), {
-            storeId: activeStoreId,
-            type: 'sale',
-            summary: `Sold ${totalQty} items for GHS ${subtotal.toFixed(2)}`,
-            detail: `Paid with ${paymentMethod}`,
-            actor: cashierNameOrEmail,
-            createdAt: serverTimestamp(),
-          })
-        }
+            if (activeStoreId) {
+              await addDoc(collection(db, 'activity'), {
+                storeId: activeStoreId,
+                type: 'sale',
+                summary: `Sold ${totalQty} items for GHS ${subtotal.toFixed(2)}`,
+                detail: `Paid with ${paymentMethodLabel}`,
+                actor: cashierNameOrEmail,
+                createdAt: serverTimestamp(),
+              })
+            }
       } catch (err) {
         console.warn('[activity] Failed to log sale activity', err)
       }
@@ -883,11 +914,7 @@ export default function Sell() {
         loyaltyEarned: loyaltyEarnedValue,
         currentPoints: loyaltyCurrentPointsValue,
         store: receiptStore,
-        payment: {
-          method: paymentMethod,
-          amountPaid,
-          changeDue,
-        },
+        payment: payload.payment,
         customer: selectedCustomer
           ? {
               name: selectedCustomerDataName || selectedCustomer.id,
@@ -905,7 +932,12 @@ export default function Sell() {
     } catch (err) {
       console.error('[sell] Unable to record sale', err)
       if (isOfflineError(err)) {
-        const queued = await queueCallableRequest('commitSale', payload, 'sale')
+        const queuedPayment =
+          paymentMethod === 'paystack'
+            ? { ...payload.payment, status: payload.payment.status ?? 'pending' }
+            : payload.payment
+        const queuedPayload = { ...payload, payment: queuedPayment }
+        const queued = await queueCallableRequest('commitSale', queuedPayload, 'sale')
         if (queued) {
           setReceipt({
             saleId,
@@ -915,11 +947,7 @@ export default function Sell() {
             loyaltyEarned: loyaltyEarnedValue,
             currentPoints: loyaltyCurrentPointsValue,
             store: receiptStore,
-            payment: {
-              method: paymentMethod,
-              amountPaid,
-              changeDue,
-            },
+            payment: queuedPayment,
             customer: selectedCustomer
               ? {
                   name: selectedCustomerDataName || selectedCustomer.id,
@@ -1189,12 +1217,11 @@ export default function Sell() {
                   <select
                     id="sell-payment-method"
                     value={paymentMethod}
-                    onChange={event => setPaymentMethod(event.target.value as 'cash' | 'mobile' | 'card')}
+                    onChange={event => setPaymentMethod(event.target.value as 'cash' | 'paystack')}
                     className="sell-page__select"
                   >
                     <option value="cash">Cash</option>
-                    <option value="mobile">Mobile money</option>
-                    <option value="card">Card</option>
+                    <option value="paystack">Card/Mobile (Paystack)</option>
                   </select>
                 </div>
 

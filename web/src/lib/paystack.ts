@@ -27,6 +27,7 @@ interface PaystackSetupOptions {
 
 interface PaystackCallbackResponse {
   reference: string
+  status?: string
 }
 
 export interface PaystackBuyer {
@@ -38,6 +39,7 @@ export interface PaystackBuyer {
 export interface PaystackResult {
   ok: boolean
   reference: string | null
+  status?: string | null
   error?: string
 }
 
@@ -116,8 +118,9 @@ export async function payWithPaystack(
       currency: 'GHS',
       ref: `SFX_${Date.now()}`,
       metadata: { phone, name },
-      callback: resp => resolve({ ok: true, reference: resp.reference }),
-      onClose: () => resolve({ ok: false, reference: null }),
+      callback: resp =>
+        resolve({ ok: true, reference: resp.reference, status: resp.status ?? 'success' }),
+      onClose: () => resolve({ ok: false, reference: null, status: 'cancelled' }),
     })
 
     handler.openIframe()
