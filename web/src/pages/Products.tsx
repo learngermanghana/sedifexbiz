@@ -13,7 +13,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
@@ -173,6 +173,7 @@ function isOfflineError(error: unknown) {
 export default function Products() {
   const { user } = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
+  const location = useLocation()
   const activityActor = user?.displayName || user?.email || 'Team member'
   const subscription = useSubscriptionStatus()
   const isSubscriptionInactive = subscription.isInactive
@@ -192,6 +193,11 @@ export default function Products() {
   const [exportStatus, setExportStatus] = useState<StatusState | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [lastExportedAt, setLastExportedAt] = useState<Date | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    setShowLowStockOnly(params.get('lowStock') === '1')
+  }, [location.search])
 
   useEffect(() => {
     const stored = window.localStorage.getItem(LAST_EXPORT_KEY)
@@ -1012,6 +1018,7 @@ export default function Products() {
                     : 'No receipt recorded yet'
                   return (
                     <tr
+                      id={`product-${product.id}`}
                       key={product.id}
                       data-testid={`product-row-${product.id}`}
                     >
