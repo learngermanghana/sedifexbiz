@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import Sparkline from '../components/Sparkline'
 import { useStoreMetrics } from '../hooks/useStoreMetrics'
+import { triggerQueueProcessing } from '../utils/offlineQueue'
 
 const QUICK_LINKS: Array<{
   to: string
@@ -65,12 +66,197 @@ export default function Dashboard() {
     teamCallouts,
   } = useStoreMetrics()
 
+  const [queueState, setQueueState] = React.useState({
+    status: 'idle',
+    pending: 0,
+    counts: { sale: 0, receipt: 0 } as Record<string, number>,
+    lastAttemptAt: null as number | null,
+    error: null as string | null,
+  })
+
+  const requestQueueSnapshot = React.useCallback(() => {
+    if (!('serviceWorker' in navigator)) return
+    navigator.serviceWorker.ready
+      .then(registration => {
+        const controller = registration.active ?? registration.waiting ?? registration.installing
+        controller?.postMessage({ type: 'REQUEST_QUEUE_DETAILS' })
+      })
+      .catch(() => {})
+  }, [])
+
+  React.useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+
+    function handleMessage(event: MessageEvent) {
+      const data = event.data
+      if (!data || typeof data !== 'object') return
+
+      if (data.type === 'QUEUE_STATUS' || data.type === 'QUEUE_DETAILS') {
+        setQueueState(prev => ({
+          status: data.status ?? prev.status,
+          pending: typeof data.pending === 'number' ? data.pending : prev.pending,
+          counts: {
+            sale: data.counts?.sale ?? 0,
+            receipt: data.counts?.receipt ?? 0,
+            ...Object.fromEntries(
+              Object.entries(data.counts ?? {}).filter(([key]) => key !== 'sale' && key !== 'receipt')
+            ),
+          },
+          lastAttemptAt: typeof data.lastAttemptAt === 'number' ? data.lastAttemptAt : prev.lastAttemptAt,
+          error: typeof data.error === 'string' ? data.error : null,
+        }))
+
+        if (data.type === 'QUEUE_STATUS' && !data.counts) {
+          requestQueueSnapshot()
+        }
+      }
+    }
+
+    navigator.serviceWorker.addEventListener('message', handleMessage)
+    requestQueueSnapshot()
+
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage)
+    }
+  }, [requestQueueSnapshot])
+
+  const hasUnsentSales = queueState.counts.sale > 0
+
+  const lastAttemptLabel = queueState.lastAttemptAt
+    ? new Date(queueState.lastAttemptAt).toLocaleString()
+    : 'No attempts yet'
+
   return (
     <div>
       <h2 style={{ color: '#4338CA', marginBottom: 8 }}>Dashboard</h2>
       <p style={{ color: '#475569', marginBottom: 24 }}>
         Welcome back! Choose what you’d like to work on — the most important Sedifex pages are just one tap away.
       </p>
+
+      <section
+        style={{
+          display: 'grid',
+          gap: 12,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          marginBottom: 24,
+        }}
+        aria-label="Sync Center"
+      >
+        <article
+          style={{
+            background: '#FFFFFF',
+            borderRadius: 16,
+            border: '1px solid #E2E8F0',
+            padding: '16px 18px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            boxShadow: '0 6px 16px rgba(15, 23, 42, 0.06)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0F172A' }}>Sync Center</h3>
+              <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+                Track offline queue status and resend anything that’s waiting.
+              </p>
+            </div>
+            <span
+              style={{
+                padding: '6px 10px',
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 700,
+                background: queueState.status === 'error' ? '#FEF2F2' : queueState.status === 'processing' ? '#EFF6FF' : '#F8FAFC',
+                color: queueState.status === 'error' ? '#DC2626' : queueState.status === 'processing' ? '#1D4ED8' : '#0F172A',
+                border: '1px solid #E2E8F0',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {queueState.status === 'processing' && 'Syncing now'}
+              {queueState.status === 'pending' && 'Queued items'}
+              {queueState.status === 'error' && 'Needs attention'}
+              {queueState.status === 'idle' && 'Up to date'}
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+            <div style={{ display: 'grid', gap: 4 }}>
+              <span style={{ fontSize: 12, color: '#64748B', fontWeight: 600 }}>Queued sales</span>
+              <span style={{ fontSize: 22, fontWeight: 700, color: '#0F172A' }}>{queueState.counts.sale}</span>
+            </div>
+            <div style={{ display: 'grid', gap: 4 }}>
+              <span style={{ fontSize: 12, color: '#64748B', fontWeight: 600 }}>Queued receipts</span>
+              <span style={{ fontSize: 22, fontWeight: 700, color: '#0F172A' }}>{queueState.counts.receipt}</span>
+            </div>
+            <div style={{ display: 'grid', gap: 4 }}>
+              <span style={{ fontSize: 12, color: '#64748B', fontWeight: 600 }}>Last attempt</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{lastAttemptLabel}</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            {hasUnsentSales && (
+              <span
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 10,
+                  background: '#FEF2F2',
+                  color: '#B91C1C',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                ⚠️ Unsent sales remain — sync before closing the day.
+              </span>
+            )}
+            {queueState.error && (
+              <span style={{ color: '#B91C1C', fontSize: 12, fontWeight: 600 }}>{queueState.error}</span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => {
+                triggerQueueProcessing()
+                requestQueueSnapshot()
+              }}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 10,
+                border: '1px solid #4338CA',
+                background: '#4338CA',
+                color: '#FFFFFF',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Retry now
+            </button>
+            <button
+              type="button"
+              onClick={requestQueueSnapshot}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 10,
+                border: '1px solid #E2E8F0',
+                background: '#F8FAFC',
+                color: '#1E293B',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Refresh status
+            </button>
+          </div>
+        </article>
+      </section>
 
       <section
         style={{

@@ -95,6 +95,10 @@ self.addEventListener('message', event => {
   if (data.type === 'REQUEST_QUEUE_STATUS') {
     event.waitUntil(respondQueueStatus(event.source))
   }
+
+  if (data.type === 'REQUEST_QUEUE_DETAILS') {
+    event.waitUntil(respondQueueDetails(event.source))
+  }
 })
 
 self.addEventListener('sync', event => {
@@ -241,6 +245,25 @@ async function updateQueueEntry(id, updates) {
   })
 }
 
+async function getQueueSnapshot() {
+  const entries = await getQueueEntries()
+  const counts = {}
+  let lastAttemptAt = null
+
+  for (const entry of entries) {
+    if (!entry) continue
+    const key = entry.requestType || 'unknown'
+    counts[key] = (counts[key] || 0) + 1
+
+    const attempt = entry.updatedAt || entry.createdAt || null
+    if (attempt && (!lastAttemptAt || attempt > lastAttemptAt)) {
+      lastAttemptAt = attempt
+    }
+  }
+
+  return { pending: entries.length, counts, lastAttemptAt }
+}
+
 async function processQueue() {
   if (isProcessingQueue) return
   isProcessingQueue = true
@@ -350,7 +373,8 @@ function notifyClients(message) {
 }
 
 async function broadcastQueueState(status, details = {}, target) {
-  let pending = typeof details.pending === 'number' ? details.pending : await getQueueCount().catch(() => 0)
+  const snapshot = await getQueueSnapshot().catch(() => ({ pending: 0, counts: {}, lastAttemptAt: null }))
+  let pending = typeof details.pending === 'number' ? details.pending : snapshot.pending
   if (pending <= 0 && status !== 'error') {
     pending = 0
     status = 'idle'
@@ -366,7 +390,7 @@ async function broadcastQueueState(status, details = {}, target) {
 
   lastQueueStatus = status
 
-  const message = { type: 'QUEUE_STATUS', status, pending }
+  const message = { type: 'QUEUE_STATUS', status, pending, counts: snapshot.counts, lastAttemptAt: snapshot.lastAttemptAt }
   if (status === 'error' && lastQueueError) {
     message.error = lastQueueError
   }
@@ -380,6 +404,7 @@ async function broadcastQueueState(status, details = {}, target) {
 }
 
 async function respondQueueStatus(target) {
+  const snapshot = await getQueueSnapshot().catch(() => ({ pending: 0, counts: {}, lastAttemptAt: null }))
   let status = lastQueueStatus
   let error = lastQueueError
 
@@ -387,14 +412,14 @@ async function respondQueueStatus(target) {
     status = 'processing'
   }
 
-  let pending = await getQueueCount().catch(() => 0)
+  let pending = snapshot.pending
   if (pending <= 0 && status !== 'error') {
     pending = 0
     status = 'idle'
     error = null
   }
 
-  const message = { type: 'QUEUE_STATUS', status, pending }
+  const message = { type: 'QUEUE_STATUS', status, pending, counts: snapshot.counts, lastAttemptAt: snapshot.lastAttemptAt }
   if (status === 'error' && error) {
     message.error = error
   }
@@ -405,4 +430,24 @@ async function respondQueueStatus(target) {
   }
 
   await notifyClients(message)
+}
+
+async function respondQueueDetails(target) {
+  const snapshot = await getQueueSnapshot().catch(() => ({ pending: 0, counts: {}, lastAttemptAt: null }))
+  const status = isProcessingQueue ? 'processing' : lastQueueStatus
+  const message = {
+    type: 'QUEUE_DETAILS',
+    status,
+    pending: snapshot.pending,
+    counts: snapshot.counts,
+    lastAttemptAt: snapshot.lastAttemptAt,
+  }
+
+  if (status === 'error' && lastQueueError) {
+    message.error = lastQueueError
+  }
+
+  if (target && typeof target.postMessage === 'function') {
+    target.postMessage(message)
+  }
 }
