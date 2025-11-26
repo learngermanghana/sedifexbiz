@@ -1264,6 +1264,8 @@ export const handlePaystackWebhook = functions.https.onRequest(
                 lastEventAt: timestamp,
                 lastChargeReference: data.reference || null,
               },
+              paymentStatus: 'active',
+              contractStatus: 'active',
             },
             { merge: true },
           )
