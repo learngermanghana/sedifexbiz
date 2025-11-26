@@ -38,6 +38,7 @@ exports.handlePaystackWebhook = exports.createCheckout = exports.createPaystackC
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 const crypto = __importStar(require("crypto"));
+const params_1 = require("firebase-functions/params");
 /**
  * SINGLE FIRESTORE INSTANCE
  */
@@ -772,9 +773,16 @@ exports.receiveStock = functions.https.onCall(async (data, context) => {
  *  PAYSTACK HELPERS
  * ==========================================================================*/
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
-const PAYSTACK_STANDARD_PLAN_CODE = process.env.PAYSTACK_STANDARD_PLAN_CODE || '';
-const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'USD';
+const PAYSTACK_SECRET_KEY = (0, params_1.defineString)('PAYSTACK_SECRET_KEY').value() || process.env.PAYSTACK_SECRET_KEY || '';
+const PAYSTACK_STANDARD_PLAN_CODE = (0, params_1.defineString)('PAYSTACK_STANDARD_PLAN_CODE').value() ||
+    process.env.PAYSTACK_STANDARD_PLAN_CODE ||
+    '';
+const PAYSTACK_CURRENCY = (0, params_1.defineString)('PAYSTACK_CURRENCY').value() || process.env.PAYSTACK_CURRENCY || 'GHS';
+console.log('[paystack] startup config', {
+    hasSecret: !!PAYSTACK_SECRET_KEY,
+    hasPlan: !!PAYSTACK_STANDARD_PLAN_CODE,
+    currency: PAYSTACK_CURRENCY,
+});
 function ensurePaystackConfig() {
     if (!PAYSTACK_SECRET_KEY) {
         console.error('[paystack] Missing PAYSTACK_SECRET_KEY env');
@@ -799,7 +807,7 @@ exports.createPaystackCheckout = functions.https.onCall(async (data, context) =>
     const memberRef = db.collection('teamMembers').doc(uid);
     const memberSnap = await memberRef.get();
     const memberData = (memberSnap.data() ?? {});
-    let resolvedStoreId = null;
+    let resolvedStoreId = '';
     if (requestedStoreId) {
         resolvedStoreId = requestedStoreId;
     }
@@ -815,7 +823,8 @@ exports.createPaystackCheckout = functions.https.onCall(async (data, context) =>
     const storeSnap = await storeRef.get();
     const storeData = (storeSnap.data() ?? {});
     const billing = (storeData.billing || {});
-    const amountMinorUnits = 1000; // 10.00 in minor units
+    // Amount is in minor units (pesewas). 1000 = GHS 10.00
+    const amountMinorUnits = 1000;
     const body = {
         email: email || storeData.ownerEmail || undefined,
         amount: amountMinorUnits,
@@ -848,7 +857,8 @@ exports.createPaystackCheckout = functions.https.onCall(async (data, context) =>
         console.error('[paystack] initialize error', error);
         throw new functions.https.HttpsError('unknown', 'Unable to start checkout with Paystack.');
     }
-    const authUrl = responseJson.data && typeof responseJson.data.authorization_url === 'string'
+    const authUrl = responseJson.data &&
+        typeof responseJson.data.authorization_url === 'string'
         ? responseJson.data.authorization_url
         : null;
     if (!authUrl) {

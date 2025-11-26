@@ -2,6 +2,7 @@
 
 import * as functions from 'firebase-functions/v1'
 import * as crypto from 'crypto'
+import { defineString } from 'firebase-functions/params'
 import { admin, defaultDb } from './firestore'
 
 /**
@@ -47,10 +48,12 @@ type PaystackEvent = {
 /**
  * Config
  */
-const CFG = functions.config() as any
-const PAYSTACK_SECRET: string = CFG?.paystack?.secret || ''
-const PAYSTACK_PUBLIC: string = CFG?.paystack?.public || ''
-const APP_BASE_URL: string = CFG?.app?.base_url || ''
+const PAYSTACK_SECRET: string =
+  defineString('PAYSTACK_SECRET_KEY').value() || process.env.PAYSTACK_SECRET_KEY || ''
+const PAYSTACK_PUBLIC: string =
+  defineString('PAYSTACK_PUBLIC_KEY').value() || process.env.PAYSTACK_PUBLIC_KEY || ''
+const APP_BASE_URL: string =
+  defineString('APP_BASE_URL').value() || process.env.APP_BASE_URL || ''
 
 if (!PAYSTACK_SECRET) {
   functions.logger.warn(
