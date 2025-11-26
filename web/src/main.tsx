@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { createHashRouter, RouterProvider } from 'react-router-dom'
 import App from './App'
-import Shell from './layout/Shell'
+import ShellLayout from './layout/ShellLayout'
 import Dashboard from './pages/Dashboard'
 import Products from './pages/Products'
 import Sell from './pages/Sell'
@@ -22,19 +22,24 @@ const router = createHashRouter([
     path: '/',
     element: <App />,
     children: [
-      { index: true, element: <Shell><Dashboard /></Shell> },
-      { path: 'dashboard', element: <Shell><Dashboard /></Shell> },
-      { path: 'products',  element: <Shell><Products /></Shell> },
-      { path: 'sell',      element: <Shell><Sell /></Shell> },
-      { path: 'receive',   element: <Shell><Receive /></Shell> },
-      { path: 'customers', element: <Shell><Customers /></Shell> },
-      { path: 'activity',  element: <Shell><ActivityFeed /></Shell> },
-      { path: 'close-day', element: <Shell><CloseDay /></Shell> },
-      { path: 'onboarding', element: <Shell><Onboarding /></Shell> },
-      { path: 'staff', element: <Shell><StaffManagement /></Shell> },
-      { path: 'account',   element: <Shell><AccountOverview /></Shell> },
+      {
+        element: <ShellLayout />,
+        children: [
+          { index: true, element: <Dashboard /> },
+          { path: 'dashboard', element: <Dashboard /> },
+          { path: 'products', element: <Products /> },
+          { path: 'sell', element: <Sell /> },
+          { path: 'receive', element: <Receive /> },
+          { path: 'customers', element: <Customers /> },
+          { path: 'activity', element: <ActivityFeed /> },
+          { path: 'close-day', element: <CloseDay /> },
+          { path: 'onboarding', element: <Onboarding /> },
+          { path: 'staff', element: <StaffManagement /> },
+          { path: 'account', element: <AccountOverview /> },
+          { path: 'support', element: <Support /> },
+        ],
+      },
       { path: 'billing/verify', element: <BillingVerifyPage /> },
-      { path: 'support', element: <Shell><Support /></Shell> },
     ],
   },
 ])

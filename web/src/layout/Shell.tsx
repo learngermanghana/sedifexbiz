@@ -1,9 +1,11 @@
-import React, { useMemo } from 'react'
-import { NavLink } from 'react-router-dom'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Link, NavLink } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
+import { useStoreBilling } from '../hooks/useStoreBilling'
+import { useActiveStore } from '../hooks/useActiveStore'
 import SupportTicketLauncher from '../components/SupportTicketLauncher'
 import './Shell.css'
 import './Workspace.css'
@@ -39,6 +41,15 @@ type BannerState =
   | { variant: BannerVariant; message: string; pulse?: boolean }
   | null
 
+type BillingNotice = {
+  tone: 'warning' | 'critical'
+  title: string
+  message: string
+}
+
+const CONTRACT_END_WARNING_DAYS = 14
+const DISMISS_KEY_PREFIX = 'sedifex-billing-dismissed-'
+
 function formatRequestCount(count: number) {
   if (count <= 0) return 'queued request'
   return count === 1 ? 'queued request' : 'queued requests'
@@ -70,11 +81,74 @@ function buildBannerMessage(queueStatus: ReturnType<typeof useConnectivityStatus
 }
 
 export default function Shell({ children }: { children: React.ReactNode }) {
+  const { storeId } = useActiveStore()
   const user = useAuthUser()
   const userEmail = user?.email ?? 'Account'
   const connectivity = useConnectivityStatus()
+  const { billing } = useStoreBilling()
 
   const { isOnline, isReachable, queue } = connectivity
+
+  const [dismissedOn, setDismissedOn] = useState<string | null>(null)
+
+  const billingNotice = useMemo<BillingNotice | null>(() => {
+    if (!billing) return null
+
+    if (billing.paymentStatus === 'past_due') {
+      return {
+        tone: 'critical',
+        title: 'Billing past due',
+        message:
+          'Your Sedifex billing is past due. Update your payment method to avoid workspace interruptions.',
+      }
+    }
+
+    const contractEndDate = billing.contractEnd?.toDate?.()
+    if (contractEndDate) {
+      const today = new Date()
+      const timeRemainingMs = contractEndDate.getTime() - today.getTime()
+      const daysRemaining = Math.floor(timeRemainingMs / (1000 * 60 * 60 * 24))
+
+      if (daysRemaining <= CONTRACT_END_WARNING_DAYS) {
+        const formattedDate = contractEndDate.toLocaleDateString()
+        return {
+          tone: 'warning',
+          title: 'Contract ending soon',
+          message: `Your workspace contract ends on ${formattedDate}. Confirm billing to avoid service interruptions.`,
+        }
+      }
+    }
+
+    return null
+  }, [billing])
+
+  useEffect(() => {
+    if (!storeId) {
+      setDismissedOn(null)
+      return
+    }
+
+    const key = `${DISMISS_KEY_PREFIX}${storeId}`
+    const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null
+    setDismissedOn(stored)
+  }, [storeId])
+
+  const todayStamp = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const isBillingNoticeDismissed = dismissedOn === todayStamp
+
+  const showBillingNotice = Boolean(billingNotice && !isBillingNoticeDismissed)
+
+  function handleDismissBillingNotice() {
+    setDismissedOn(todayStamp)
+
+    if (storeId) {
+      try {
+        localStorage.setItem(`${DISMISS_KEY_PREFIX}${storeId}`, todayStamp)
+      } catch (error) {
+        console.warn('[shell] Unable to persist billing notice dismissal', error)
+      }
+    }
+  }
 
   const banner = useMemo<BannerState>(() => {
     if (!isOnline) {
@@ -110,9 +184,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return null
   }, [isOnline, isReachable, queue.lastError, queue.pending, queue.status])
 
-
-  const workspaceStatus = 'Workspace ready'
-
+  const workspaceStatus = billing?.planKey ?? 'Workspace ready'
 
   return (
     <div className="shell">
@@ -177,6 +249,32 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </div>
 
         </div>
+
+        {showBillingNotice && billingNotice && (
+          <div
+            className="shell__billing-banner"
+            role="status"
+            aria-live="polite"
+            data-tone={billingNotice.tone}
+          >
+            <div>
+              <p className="shell__billing-title">{billingNotice.title}</p>
+              <p className="shell__billing-message">{billingNotice.message}</p>
+            </div>
+            <div className="shell__billing-actions">
+              <Link className="button button--primary button--small" to="/account">
+                Update payment
+              </Link>
+              <button
+                type="button"
+                className="button button--ghost button--small"
+                onClick={handleDismissBillingNotice}
+              >
+                Dismiss reminder
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="shell__main">{children}</main>

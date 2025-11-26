@@ -24,6 +24,42 @@
   flex-wrap: wrap;
 }
 
+.shell__billing-banner {
+  background: linear-gradient(90deg, rgba(255, 204, 153, 0.2), rgba(255, 102, 0, 0.2));
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 12px clamp(18px, 4vw, 48px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shell__billing-banner[data-tone='critical'] {
+  background: linear-gradient(90deg, rgba(255, 186, 173, 0.25), rgba(240, 68, 56, 0.2));
+  border-color: rgba(240, 68, 56, 0.25);
+}
+
+.shell__billing-banner p {
+  margin: 0;
+}
+
+.shell__billing-title {
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.shell__billing-message {
+  color: #334155;
+}
+
+.shell__billing-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .shell__brand {
   display: flex;
   align-items: center;
