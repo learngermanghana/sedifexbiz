@@ -40,6 +40,12 @@ type StoreProfile = {
   updatedAt: Timestamp | null
 }
 
+type SubscriptionProfile = {
+  status: string | null
+  plan: string | null
+  provider: string | null
+}
+
 type RosterMember = {
   id: string
   uid: string
@@ -89,6 +95,19 @@ function mapStoreSnapshot(
     country: toNullableString(data.country),
     createdAt: isTimestamp(data.createdAt) ? data.createdAt : null,
     updatedAt: isTimestamp(data.updatedAt) ? data.updatedAt : null,
+  }
+}
+
+function mapSubscriptionSnapshot(
+  snapshot: DocumentSnapshot<DocumentData> | QueryDocumentSnapshot<DocumentData> | null,
+): SubscriptionProfile | null {
+  if (!snapshot) return null
+  const data = snapshot.data() || {}
+
+  return {
+    status: toNullableString(data.status),
+    plan: toNullableString(data.plan),
+    provider: toNullableString(data.provider),
   }
 }
 
@@ -146,6 +165,10 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const [profile, setProfile] = useState<StoreProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
+
+  const [subscriptionProfile, setSubscriptionProfile] = useState<SubscriptionProfile | null>(null)
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false)
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
 
   const [roster, setRoster] = useState<RosterMember[]>([])
   const [rosterLoading, setRosterLoading] = useState(false)
@@ -217,6 +240,49 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
 
   useEffect(() => {
     if (!storeId) {
+      setSubscriptionProfile(null)
+      setSubscriptionError(null)
+      return
+    }
+
+    let cancelled = false
+
+    async function loadSubscription() {
+      setSubscriptionLoading(true)
+      setSubscriptionError(null)
+
+      try {
+        const ref = doc(db, 'subscriptions', storeId)
+        const snapshot = await getDoc(ref)
+        if (cancelled) return
+
+        if (!snapshot.exists()) {
+          setSubscriptionProfile(null)
+          return
+        }
+
+        const mapped = mapSubscriptionSnapshot(snapshot)
+        setSubscriptionProfile(mapped)
+      } catch (error) {
+        if (cancelled) return
+        console.error('Failed to load subscription', error)
+        setSubscriptionProfile(null)
+        setSubscriptionError('We could not load the billing information.')
+        publish({ message: 'Unable to load billing information.', tone: 'error' })
+      } finally {
+        if (!cancelled) setSubscriptionLoading(false)
+      }
+    }
+
+    void loadSubscription()
+
+    return () => {
+      cancelled = true
+    }
+  }, [storeId, publish])
+
+  useEffect(() => {
+    if (!storeId) {
       setRoster([])
       setRosterError(null)
       return
@@ -267,16 +333,22 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     )
   }
 
-  const isBusy = storeLoading || membershipsLoading || profileLoading || rosterLoading
+  const isBusy =
+    storeLoading ||
+    membershipsLoading ||
+    profileLoading ||
+    subscriptionLoading ||
+    rosterLoading
 
   return (
     <div className="account-overview">
       <Heading>Account overview</Heading>
 
-      {(membershipsError || profileError || rosterError) && (
+      {(membershipsError || profileError || subscriptionError || rosterError) && (
         <div className="account-overview__error" role="alert">
           {membershipsError && <p>We could not load your memberships.</p>}
           {profileError && <p>{profileError}</p>}
+          {subscriptionError && <p>{subscriptionError}</p>}
           {rosterError && <p>{rosterError}</p>}
         </div>
       )}
@@ -346,9 +418,9 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         storeId={storeId ?? null}
         ownerEmail={user?.email ?? null}
         isOwner={isOwner}
-        contractStatus={profile?.status ?? null}
-        billingPlan={profile?.billingPlan ?? null}
-        paymentProvider={profile?.paymentProvider ?? null}
+        contractStatus={subscriptionProfile?.status ?? profile?.status ?? null}
+        billingPlan={subscriptionProfile?.plan ?? profile?.billingPlan ?? null}
+        paymentProvider={subscriptionProfile?.provider ?? profile?.paymentProvider ?? null}
       />
 
       <section aria-labelledby="account-overview-roster">
