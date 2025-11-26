@@ -24,6 +24,45 @@
   flex-wrap: wrap;
 }
 
+.shell__toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+.shell__menu-toggle {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #4338ca;
+  font-weight: 700;
+  box-shadow: 0 10px 28px -18px rgba(15, 23, 42, 0.25);
+}
+
+.shell__menu-icon {
+  display: inline-grid;
+  gap: 4px;
+}
+
+.shell__menu-icon span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.shell__menu-label {
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
 .shell__billing-banner {
   background: linear-gradient(90deg, rgba(255, 204, 153, 0.2), rgba(255, 102, 0, 0.2));
   border-top: 1px solid rgba(0, 0, 0, 0.05);
@@ -286,5 +325,79 @@
   50% {
     transform: scale(1.2);
     opacity: 0.65;
+  }
+}
+
+@media (max-width: 960px) {
+  .shell__header-inner {
+    align-items: flex-start;
+  }
+
+  .shell__brand {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .shell__tagline {
+    font-size: 12px;
+  }
+
+  .shell__menu-toggle {
+    display: inline-flex;
+    margin-left: auto;
+  }
+
+  .shell__toolbar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    width: 100%;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+    display: none;
+  }
+
+  .shell__toolbar.is-open {
+    display: grid;
+  }
+
+  .shell__nav {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    gap: 10px;
+  }
+
+  .shell__nav-link {
+    flex: 0 0 auto;
+  }
+
+  .shell__controls {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .shell__account {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .shell__billing-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .shell__billing-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .shell__main {
+    padding: 24px 16px 36px;
   }
 }

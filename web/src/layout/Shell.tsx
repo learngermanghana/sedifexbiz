@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
@@ -86,6 +86,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const userEmail = user?.email ?? 'Account'
   const connectivity = useConnectivityStatus()
   const { billing } = useStoreBilling()
+  const location = useLocation()
 
   const { isOnline, isReachable, queue } = connectivity
 
@@ -137,6 +138,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const isBillingNoticeDismissed = dismissedOn === todayStamp
 
   const showBillingNotice = Boolean(billingNotice && !isBillingNoticeDismissed)
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+
+  useEffect(() => {
+    setIsMenuOpen(false)
+  }, [location.pathname])
 
   function handleDismissBillingNotice() {
     setDismissedOn(todayStamp)
@@ -195,59 +202,73 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <span className="shell__tagline">Sell faster. Count smarter.</span>
           </div>
 
-          <nav className="shell__nav" aria-label="Primary">
-            {NAV_ITEMS.map(item => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) => navLinkClass(isActive)}
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
+          <button
+            type="button"
+            className="shell__menu-toggle"
+            aria-expanded={isMenuOpen}
+            aria-controls="primary-nav"
+            onClick={() => setIsMenuOpen(open => !open)}
+          >
+            <span className="shell__menu-icon" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+            <span className="shell__menu-label">{isMenuOpen ? 'Close' : 'Menu'}</span>
+            <span className="shell__sr-only">Toggle navigation</span>
+          </button>
 
-          <div className="shell__controls">
+          <div className={`shell__toolbar${isMenuOpen ? ' is-open' : ''}`}>
+            <nav className="shell__nav" aria-label="Primary" id="primary-nav">
+              {NAV_ITEMS.map(item => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) => navLinkClass(isActive)}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
 
-            <div className="shell__store-switcher" role="status" aria-live="polite">
-              <span className="shell__store-label">Workspace</span>
-              <span className="shell__store-select" data-readonly>{workspaceStatus}</span>
-            </div>
-
-
-            {banner && (
-              <div
-                className="shell__status-badge"
-                data-variant={banner.variant}
-                role="status"
-                aria-live="polite"
-                title={banner.message}
-              >
-                <span
-                  className={`shell__status-dot${banner.pulse ? ' is-pulsing' : ''}`}
-                  aria-hidden="true"
-                />
-                <span className="shell__status-label">{BADGE_LABELS[banner.variant]}</span>
-                <span className="shell__sr-only">{banner.message}</span>
+            <div className="shell__controls">
+              <div className="shell__store-switcher" role="status" aria-live="polite">
+                <span className="shell__store-label">Workspace</span>
+                <span className="shell__store-select" data-readonly>{workspaceStatus}</span>
               </div>
-            )}
 
-            <SupportTicketLauncher />
+              {banner && (
+                <div
+                  className="shell__status-badge"
+                  data-variant={banner.variant}
+                  role="status"
+                  aria-live="polite"
+                  title={banner.message}
+                >
+                  <span
+                    className={`shell__status-dot${banner.pulse ? ' is-pulsing' : ''}`}
+                    aria-hidden="true"
+                  />
+                  <span className="shell__status-label">{BADGE_LABELS[banner.variant]}</span>
+                  <span className="shell__sr-only">{banner.message}</span>
+                </div>
+              )}
 
-            <div className="shell__account">
-              <span className="shell__account-email">{userEmail}</span>
-              <button
-                type="button"
-                className="button button--primary button--small"
-                onClick={() => signOut(auth)}
-              >
-                Sign out
-              </button>
+              <SupportTicketLauncher />
+
+              <div className="shell__account">
+                <span className="shell__account-email">{userEmail}</span>
+                <button
+                  type="button"
+                  className="button button--primary button--small"
+                  onClick={() => signOut(auth)}
+                >
+                  Sign out
+                </button>
+              </div>
             </div>
-
-            </div>
-
+          </div>
         </div>
 
         {showBillingNotice && billingNotice && (
