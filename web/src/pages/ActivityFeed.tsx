@@ -17,6 +17,7 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import './ActivityFeed.css'
 
 type ActivityType = 'sale' | 'customer' | 'inventory' | 'task'
+type TimeRange = 'any' | '24h' | '7d' | '30d'
 
 type Activity = {
   id: string
@@ -84,6 +85,8 @@ export default function ActivityFeed() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [filter, setFilter] = useState<ActivityType | 'all'>('all')
   const [search, setSearch] = useState('')
+  const [actorFilter, setActorFilter] = useState('all')
+  const [timeRange, setTimeRange] = useState<TimeRange>('any')
   const [newSummary, setNewSummary] = useState('')
   const [newDetail, setNewDetail] = useState('')
   const [newType, setNewType] = useState<ActivityType>('sale')
@@ -138,6 +141,11 @@ export default function ActivityFeed() {
     return () => unsubscribe()
   }, [storeId])
 
+  const actorOptions = useMemo(() => {
+    const uniqueActors = Array.from(new Set(activities.map(activity => activity.actor.trim()).filter(Boolean)))
+    return ['all', ...uniqueActors]
+  }, [activities])
+
   const filteredActivities = useMemo(() => {
     const normalizedQuery = search.trim().toLowerCase()
     return activities.filter(activity => {
@@ -145,9 +153,29 @@ export default function ActivityFeed() {
       const matchesQuery = normalizedQuery
         ? `${activity.summary} ${activity.detail} ${activity.actor}`.toLowerCase().includes(normalizedQuery)
         : true
-      return matchesType && matchesQuery
+      const matchesActor = actorFilter === 'all' || activity.actor === actorFilter
+
+      if (timeRange === 'any') {
+        return matchesType && matchesQuery && matchesActor
+      }
+
+      const now = Date.now()
+      const cutoff = (() => {
+        switch (timeRange) {
+          case '24h':
+            return now - 24 * 60 * 60 * 1000
+          case '7d':
+            return now - 7 * 24 * 60 * 60 * 1000
+          case '30d':
+            return now - 30 * 24 * 60 * 60 * 1000
+          default:
+            return now
+        }
+      })()
+
+      return matchesType && matchesQuery && matchesActor && activity.timestamp.getTime() >= cutoff
     })
-  }, [activities, filter, search])
+  }, [activities, filter, search, actorFilter, timeRange])
 
   const counts = useMemo(() => {
     return activities.reduce<Record<ActivityType, number>>(
@@ -260,16 +288,41 @@ export default function ActivityFeed() {
           })}
         </div>
 
-        <div className="activity-search">
-          <label className="activity-search__label">
-            <span className="activity-search__hint">Search feed</span>
-            <input
-              type="search"
-              placeholder="Find a product, customer, or teammate"
-              value={search}
-              onChange={event => setSearch(event.target.value)}
-            />
-          </label>
+        <div className="activity-utilities">
+          <div className="activity-selects">
+            <label className="activity-select">
+              <span className="activity-select__label">Actor</span>
+              <select value={actorFilter} onChange={event => setActorFilter(event.target.value)}>
+                {actorOptions.map(option => (
+                  <option key={option} value={option}>
+                    {option === 'all' ? 'Anyone' : option}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="activity-select">
+              <span className="activity-select__label">Time</span>
+              <select value={timeRange} onChange={event => setTimeRange(event.target.value as TimeRange)}>
+                <option value="any">Any time</option>
+                <option value="24h">Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="activity-search">
+            <label className="activity-search__label">
+              <span className="activity-search__hint">Search feed</span>
+              <input
+                type="search"
+                placeholder="Find a product, customer, or teammate"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+              />
+            </label>
+          </div>
         </div>
       </section>
 
