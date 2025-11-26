@@ -15,6 +15,7 @@ import {
 import { Timestamp } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Customers.css'
 import {
@@ -192,7 +193,9 @@ function buildCsvValue(value: string): string {
 }
 
 export default function Customers() {
+  const { user } = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
+  const activityActor = user?.displayName || user?.email || 'Team member'
   const [customers, setCustomers] = useState<Customer[]>([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -556,6 +559,22 @@ export default function Customers() {
         updatePayload.notes = notes.trim() ? notes.trim() : null
         updatePayload.tags = parsedTags
         await updateDoc(doc(db, 'customers', editingCustomerId), updatePayload)
+        try {
+          if (activeStoreId) {
+            await addDoc(collection(db, 'activity'), {
+              storeId: activeStoreId,
+              type: 'customer',
+              summary: `Updated customer ${trimmedName}`,
+              detail: parsedTags.length
+                ? `Tags: ${parsedTags.join(', ')}`
+                : 'Details refreshed',
+              actor: activityActor,
+              createdAt: serverTimestamp(),
+            })
+          }
+        } catch (activityError) {
+          console.warn('[activity] Failed to log customer update', activityError)
+        }
         setSelectedCustomerId(editingCustomerId)
         showSuccess('Customer updated successfully.')
       } else {
@@ -569,6 +588,20 @@ export default function Customers() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
+        try {
+          if (activeStoreId) {
+            await addDoc(collection(db, 'activity'), {
+              storeId: activeStoreId,
+              type: 'customer',
+              summary: `Added customer ${trimmedName}`,
+              detail: phone.trim() ? `Phone: ${phone.trim()}` : 'New customer record',
+              actor: activityActor,
+              createdAt: serverTimestamp(),
+            })
+          }
+        } catch (activityError) {
+          console.warn('[activity] Failed to log customer creation', activityError)
+        }
         showSuccess('Customer saved successfully.')
       }
       resetForm()
@@ -588,6 +621,20 @@ export default function Customers() {
     setBusy(true)
     try {
       await deleteDoc(doc(db, 'customers', id))
+      try {
+        if (activeStoreId) {
+          await addDoc(collection(db, 'activity'), {
+            storeId: activeStoreId,
+            type: 'customer',
+            summary: 'Deleted customer',
+            detail: selectedCustomerName || id,
+            actor: activityActor,
+            createdAt: serverTimestamp(),
+          })
+        }
+      } catch (activityError) {
+        console.warn('[activity] Failed to log customer deletion', activityError)
+      }
       showSuccess('Customer removed.')
       if (selectedCustomerId === id) {
         setSelectedCustomerId(null)

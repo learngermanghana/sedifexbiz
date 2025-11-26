@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  addDoc,
   collection,
   query,
   orderBy,
@@ -8,6 +9,7 @@ import {
   doc,
   where,
   getDoc,
+  serverTimestamp,
 } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
@@ -320,6 +322,7 @@ export default function Sell() {
   const canShareReceipt =
     Boolean(receiptSharePayload) && (typeof navigator === 'undefined' || navigator.onLine)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
+  const totalQty = cart.reduce((s, l) => s + l.qty, 0)
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
   const selectedCustomerDisplayName = selectedCustomer
     ? getCustomerDisplayName(selectedCustomer)
@@ -805,6 +808,22 @@ export default function Sell() {
       const { data } = await commitSale(payload)
       if (!data?.ok) {
         throw new Error('Sale was not recorded')
+      }
+
+      const cashierNameOrEmail = user.displayName || user.email || 'Cashier'
+      try {
+        if (activeStoreId) {
+          await addDoc(collection(db, 'activity'), {
+            storeId: activeStoreId,
+            type: 'sale',
+            summary: `Sold ${totalQty} items for GHS ${subtotal.toFixed(2)}`,
+            detail: `Paid with ${paymentMethod}`,
+            actor: cashierNameOrEmail,
+            createdAt: serverTimestamp(),
+          })
+        }
+      } catch (err) {
+        console.warn('[activity] Failed to log sale activity', err)
       }
 
       setReceipt({

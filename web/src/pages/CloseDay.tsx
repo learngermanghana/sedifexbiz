@@ -227,6 +227,19 @@ export default function CloseDay() {
       }
 
       await addDoc(collection(db, 'closeouts'), closePayload)
+      const actor = user?.displayName || user?.email || 'Team member'
+      try {
+        await addDoc(collection(db, 'activity'), {
+          storeId: activeStoreId,
+          type: 'task',
+          summary: `Closed day ${getDayKey(start)}`,
+          detail: `Variance: GHS ${variance.toFixed(2)} · Cash counted: GHS ${countedCash.toFixed(2)}`,
+          actor,
+          createdAt: serverTimestamp(),
+        })
+      } catch (activityError) {
+        console.warn('[activity] Failed to log close day', activityError)
+      }
       setSubmitSuccess(true)
       setCashCounts(createInitialCashCountState())
       setLooseCash('')
