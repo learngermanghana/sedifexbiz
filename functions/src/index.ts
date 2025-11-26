@@ -20,10 +20,24 @@ type ContactPayload = {
   firstSignupEmail?: unknown
 }
 
+type StoreProfilePayload = {
+  phone?: unknown
+  ownerName?: unknown
+  businessName?: unknown
+  country?: unknown
+  town?: unknown
+  city?: unknown
+  addressLine1?: unknown
+  address?: unknown
+}
+
 type InitializeStorePayload = {
   contact?: ContactPayload
+  profile?: StoreProfilePayload
   storeId?: unknown
 }
+
+
 
 type ManageStaffPayload = {
   storeId?: unknown
@@ -83,6 +97,78 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
   }
 
   return { phone, hasPhone, firstSignupEmail, hasFirstSignupEmail }
+}
+
+// 🔹 NEW: normalize store profile fields from signup
+function normalizeStoreProfile(profile: StoreProfilePayload | undefined) {
+  let businessName: string | null | undefined
+  let country: string | null | undefined
+  let city: string | null | undefined
+  let phone: string | null | undefined
+
+  if (profile && typeof profile === 'object') {
+    if ('businessName' in profile) {
+      const raw = profile.businessName
+      if (raw === null || raw === undefined || raw === '') {
+        businessName = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        businessName = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Business name must be a string when provided',
+        )
+      }
+    }
+
+    if ('country' in profile) {
+      const raw = profile.country
+      if (raw === null || raw === undefined || raw === '') {
+        country = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        country = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Country must be a string when provided',
+        )
+      }
+    }
+
+    if ('city' in profile) {
+      const raw = profile.city
+      if (raw === null || raw === undefined || raw === '') {
+        city = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        city = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'City must be a string when provided',
+        )
+      }
+    }
+
+    if ('phone' in profile) {
+      const raw = profile.phone
+      if (raw === null || raw === undefined || raw === '') {
+        phone = null
+      } else if (typeof raw === 'string') {
+        const trimmed = raw.trim()
+        phone = trimmed ? trimmed : null
+      } else {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Store phone must be a string when provided',
+        )
+      }
+    }
+  }
+
+  return { businessName, country, city, phone }
 }
 
 function getRoleFromToken(token: Record<string, unknown> | undefined) {
@@ -173,6 +259,45 @@ function timestampDaysFromNow(days: number) {
   return admin.firestore.Timestamp.fromDate(now)
 }
 
+function normalizeStoreProfilePayload(profile: StoreProfilePayload | undefined) {
+  let phone: string | null | undefined
+  let ownerName: string | null | undefined
+  let businessName: string | null | undefined
+  let country: string | null | undefined
+  let city: string | null | undefined
+  let addressLine1: string | null | undefined
+
+  if (profile && typeof profile === 'object') {
+    const normalize = (value: unknown) => {
+      if (value === null || value === undefined || value === '') return null
+      if (typeof value === 'string') {
+        const trimmed = value.trim()
+        return trimmed ? trimmed : null
+      }
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Profile fields must be strings when provided',
+      )
+    }
+
+    if ('phone' in profile) phone = normalize(profile.phone)
+    if ('ownerName' in profile) ownerName = normalize(profile.ownerName)
+    if ('businessName' in profile) businessName = normalize(profile.businessName)
+    if ('country' in profile) country = normalize(profile.country)
+
+    // prefer explicit city, but allow town as source
+    if ('city' in profile) city = normalize(profile.city)
+    if (!city && 'town' in profile) city = normalize(profile.town)
+
+    // address: accept addressLine1 or address
+    if ('addressLine1' in profile) addressLine1 = normalize(profile.addressLine1)
+    if (!addressLine1 && 'address' in profile) addressLine1 = normalize(profile.address)
+  }
+
+  return { phone, ownerName, businessName, country, city, addressLine1 }
+}
+
+
 /** ============================================================================
  *  AUTH TRIGGER: seed teamMembers on first user creation
  * ==========================================================================*/
@@ -203,12 +328,13 @@ export const initializeStore = functions.https.onCall(
 
     const uid = context.auth!.uid
     const token = context.auth!.token as Record<string, unknown>
-    const email = typeof token.email === 'string' ? (token.email as string) : null
+    const email = typeof token.email === 'string' ? token.email : null
     const tokenPhone =
-      typeof token.phone_number === 'string' ? (token.phone_number as string) : null
+      typeof token.phone_number === 'string' ? token.phone_number : null
 
     const payload = (data ?? {}) as InitializeStorePayload
     const contact = normalizeContactPayload(payload.contact)
+    const profile = normalizeStoreProfilePayload(payload.profile)
 
     const requestedStoreIdRaw = payload.storeId
     const requestedStoreId =
@@ -221,8 +347,11 @@ export const initializeStore = functions.https.onCall(
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
     let existingStoreId: string | null = null
-    if (typeof existingData.storeId === 'string' && existingData.storeId.trim() !== '') {
-      existingStoreId = existingData.storeId as string
+    if (
+      typeof existingData.storeId === 'string' &&
+      existingData.storeId.trim() !== ''
+    ) {
+      existingStoreId = existingData.storeId
     }
 
     let storeId = existingStoreId
@@ -230,28 +359,37 @@ export const initializeStore = functions.https.onCall(
       storeId = requestedStoreId || uid
     }
 
+    // --- Determine role ---
     const role: 'owner' | 'staff' = requestedStoreId ? 'staff' : 'owner'
     const workspaceSlug = storeId
 
+    // --- Validate store existence when joining as team-member ---
+    const storeRef = db.collection('stores').doc(storeId)
+    const storeSnap = await storeRef.get()
+
+    if (requestedStoreId && !storeSnap.exists) {
+      throw new functions.https.HttpsError(
+        'not-found',
+        'No company was found with that Store ID. Please check with your admin.',
+      )
+    }
+
+    // --- Determine contact info for teamMembers ---
     const existingPhone =
-      typeof existingData.phone === 'string' ? (existingData.phone as string) : null
+      typeof existingData.phone === 'string' ? existingData.phone : null
     const resolvedPhone = contact.hasPhone
-      ? contact.phone !== undefined
-        ? contact.phone
-        : null
+      ? contact.phone ?? null
       : existingPhone || tokenPhone || null
 
     const existingFirstSignupEmail =
       typeof existingData.firstSignupEmail === 'string'
-        ? (existingData.firstSignupEmail as string)
+        ? existingData.firstSignupEmail
         : null
     const resolvedFirstSignupEmail = contact.hasFirstSignupEmail
-      ? contact.firstSignupEmail !== undefined
-        ? contact.firstSignupEmail
-        : null
+      ? contact.firstSignupEmail ?? null
       : existingFirstSignupEmail || (email ? email.toLowerCase() : null)
 
-    // ----- teamMembers -----
+    // --- Save team member info ---
     const memberData: admin.firestore.DocumentData = {
       uid,
       email,
@@ -263,102 +401,120 @@ export const initializeStore = functions.https.onCall(
       updatedAt: timestamp,
     }
 
-    if (!memberSnap.exists) {
-      memberData.createdAt = timestamp
-    }
-
+    if (!memberSnap.exists) memberData.createdAt = timestamp
     await memberRef.set(memberData, { merge: true })
 
-    // ----- stores -----
-    const storeRef = db.collection('stores').doc(storeId)
-    const storeSnap = await storeRef.get()
-    const baseStoreData = storeSnap.data() ?? {}
-    const previousBilling = (baseStoreData.billing || {}) as Record<string, any>
+    // --- If owner, create/merge store + workspace profile info ---
+    if (role === 'owner') {
+      const baseStoreData = storeSnap.data() ?? {}
+      const previousBilling = (baseStoreData.billing || {}) as Record<
+        string,
+        any
+      >
 
-    const nowTs = admin.firestore.Timestamp.now()
+      const nowTs = admin.firestore.Timestamp.now()
+      const trialEndsAt =
+        previousBilling.trialEndsAt ||
+        previousBilling.trialEnd ||
+        timestampDaysFromNow(TRIAL_DAYS)
+      const graceEndsAt =
+        previousBilling.graceEndsAt ||
+        previousBilling.graceEnd ||
+        timestampDaysFromNow(TRIAL_DAYS + GRACE_DAYS)
 
-    const trialEndsAt =
-      previousBilling.trialEndsAt ||
-      previousBilling.trialEnd ||
-      timestampDaysFromNow(TRIAL_DAYS)
-    const graceEndsAt =
-      previousBilling.graceEndsAt ||
-      previousBilling.graceEnd ||
-      timestampDaysFromNow(TRIAL_DAYS + GRACE_DAYS)
+      const billingStatus: BillingStatus =
+        previousBilling.status === 'active' ||
+        previousBilling.status === 'past_due'
+          ? previousBilling.status
+          : 'trial'
 
-    const billingStatus: BillingStatus =
-      previousBilling.status === 'active' || previousBilling.status === 'past_due'
-        ? previousBilling.status
-        : 'trial'
+      const billingData: admin.firestore.DocumentData = {
+        planKey: previousBilling.planKey || 'standard',
+        status: billingStatus,
+        trialEndsAt,
+        graceEndsAt,
+        paystackCustomerCode:
+          previousBilling.paystackCustomerCode !== undefined
+            ? previousBilling.paystackCustomerCode
+            : null,
+        paystackSubscriptionCode:
+          previousBilling.paystackSubscriptionCode !== undefined
+            ? previousBilling.paystackSubscriptionCode
+            : null,
+        paystackPlanCode:
+          previousBilling.paystackPlanCode !== undefined
+            ? previousBilling.paystackPlanCode
+            : null,
+        currentPeriodEnd:
+          previousBilling.currentPeriodEnd !== undefined
+            ? previousBilling.currentPeriodEnd
+            : null,
+        lastEventAt: nowTs,
+        lastChargeReference:
+          previousBilling.lastChargeReference !== undefined
+            ? previousBilling.lastChargeReference
+            : null,
+      }
 
-    const billingData: admin.firestore.DocumentData = {
-      planKey: previousBilling.planKey || 'standard',
-      status: billingStatus,
-      trialEndsAt,
-      graceEndsAt,
-      paystackCustomerCode:
-        previousBilling.paystackCustomerCode !== undefined
-          ? previousBilling.paystackCustomerCode
-          : null,
-      paystackSubscriptionCode:
-        previousBilling.paystackSubscriptionCode !== undefined
-          ? previousBilling.paystackSubscriptionCode
-          : null,
-      paystackPlanCode:
-        previousBilling.paystackPlanCode !== undefined
-          ? previousBilling.paystackPlanCode
-          : null,
-      currentPeriodEnd:
-        previousBilling.currentPeriodEnd !== undefined
-          ? previousBilling.currentPeriodEnd
-          : null,
-      lastEventAt: nowTs,
-      lastChargeReference:
-        previousBilling.lastChargeReference !== undefined
-          ? previousBilling.lastChargeReference
-          : null,
+      const displayName =
+        baseStoreData.displayName ||
+        profile.businessName ||
+        profile.ownerName ||
+        null
+
+      const storeData: admin.firestore.DocumentData = {
+        id: storeId,
+        storeId,
+        ownerUid: baseStoreData.ownerUid || uid,
+        ownerEmail: baseStoreData.ownerEmail || email || null,
+        email: baseStoreData.email || email || null,
+
+        // 🔹 profile fields
+        name: baseStoreData.name || profile.businessName || null,
+        displayName,
+        phone: profile.phone ?? baseStoreData.phone ?? resolvedPhone ?? null,
+        country: profile.country ?? baseStoreData.country ?? null,
+        city: profile.city ?? baseStoreData.city ?? null,
+        addressLine1:
+          profile.addressLine1 ?? baseStoreData.addressLine1 ?? null,
+
+        status: baseStoreData.status || 'active',
+        workspaceSlug,
+        contractStatus: baseStoreData.contractStatus || 'trial',
+        productCount:
+          typeof baseStoreData.productCount === 'number'
+            ? baseStoreData.productCount
+            : 0,
+        totalStockCount:
+          typeof baseStoreData.totalStockCount === 'number'
+            ? baseStoreData.totalStockCount
+            : 0,
+        createdAt: baseStoreData.createdAt || timestamp,
+        updatedAt: timestamp,
+        billing: billingData,
+      }
+
+      await storeRef.set(storeData, { merge: true })
+
+      const wsRef = db.collection('workspaces').doc(storeId)
+      const wsSnap = await wsRef.get()
+      const wsBase = wsSnap.data() ?? {}
+
+      const workspaceData: admin.firestore.DocumentData = {
+        id: storeId,
+        slug: wsBase.slug || workspaceSlug,
+        storeId,
+        ownerUid: wsBase.ownerUid || uid,
+        ownerEmail: wsBase.ownerEmail || email || null,
+        status: wsBase.status || 'active',
+        createdAt: wsBase.createdAt || timestamp,
+        updatedAt: timestamp,
+      }
+
+      await wsRef.set(workspaceData, { merge: true })
     }
 
-    const storeData: admin.firestore.DocumentData = {
-      id: storeId,
-      ownerUid: baseStoreData.ownerUid || uid,
-      ownerEmail: baseStoreData.ownerEmail || email || null,
-      status: baseStoreData.status || 'active',
-      workspaceSlug,
-      contractStatus: baseStoreData.contractStatus || 'trial',
-      productCount:
-        typeof baseStoreData.productCount === 'number'
-          ? baseStoreData.productCount
-          : 0,
-      totalStockCount:
-        typeof baseStoreData.totalStockCount === 'number'
-          ? baseStoreData.totalStockCount
-          : 0,
-      createdAt: baseStoreData.createdAt || timestamp,
-      updatedAt: timestamp,
-      billing: billingData,
-    }
-
-    await storeRef.set(storeData, { merge: true })
-
-    // ----- workspaces -----
-    const wsRef = db.collection('workspaces').doc(storeId)
-    const wsSnap = await wsRef.get()
-    const wsBase = wsSnap.data() ?? {}
-
-    const workspaceData: admin.firestore.DocumentData = {
-      id: storeId,
-      slug: wsBase.slug || workspaceSlug,
-      storeId,
-      ownerUid: wsBase.ownerUid || uid,
-      ownerEmail: wsBase.ownerEmail || email || null,
-      status: wsBase.status || 'active',
-      createdAt: wsBase.createdAt || timestamp,
-      updatedAt: timestamp,
-    }
-
-    await wsRef.set(workspaceData, { merge: true })
-
+    // --- Update custom claims with role ---
     const claims = await updateUserClaims(uid, role)
 
     return {
@@ -370,6 +526,7 @@ export const initializeStore = functions.https.onCall(
     }
   },
 )
+
 
 /** ============================================================================
  *  CALLABLE: resolveStoreAccess
@@ -478,7 +635,8 @@ export const resolveStoreAccess = functions.https.onCall(
 
     const storeData: admin.firestore.DocumentData = {
       id: storeId,
-      ownerUid: baseStore.ownerUid || (role === 'owner' ? uid : baseStore.ownerUid || uid),
+      ownerUid:
+        baseStore.ownerUid || (role === 'owner' ? uid : baseStore.ownerUid || uid),
       ownerEmail: baseStore.ownerEmail || email || null,
       status: baseStore.status || 'active',
       workspaceSlug: baseStore.workspaceSlug || workspaceSlug,
@@ -589,6 +747,7 @@ export const manageStaffAccount = functions.https.onCall(
   },
 )
 
+
 /** ============================================================================
  *  CALLABLE: commitSale (staff)
  * ==========================================================================*/
@@ -623,13 +782,38 @@ export const commitSale = functions.https.onCall(
         'A valid branch identifier is required',
       )
     }
-
     const normalizedBranchId = normalizedBranchIdRaw
+
+    // Normalize items ONCE outside the transaction
+    const normalizedItems = Array.isArray(items)
+      ? items.map((it: any) => {
+          const productId =
+            typeof it?.productId === 'string' ? it.productId.trim() : null
+          const name = typeof it?.name === 'string' ? it.name : null
+          const qty = Number(it?.qty ?? 0) || 0
+          const price = Number(it?.price ?? 0) || 0
+          const taxRate = Number(it?.taxRate ?? 0) || 0
+          return { productId, name, qty, price, taxRate }
+        })
+      : []
+
+    // Validate products before we even touch Firestore
+    for (const it of normalizedItems) {
+      if (!it.productId) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Bad product',
+        )
+      }
+    }
 
     const saleRef = db.collection('sales').doc(saleId)
     const saleItemsRef = db.collection('saleItems')
 
     await db.runTransaction(async (tx) => {
+      // 1️⃣ ALL READS FIRST
+
+      // sale doc (prevent duplicates)
       const existingSale = await tx.get(saleRef)
       if (existingSale.exists) {
         throw new functions.https.HttpsError(
@@ -638,16 +822,27 @@ export const commitSale = functions.https.onCall(
         )
       }
 
-      const normalizedItems = Array.isArray(items)
-        ? items.map((it: any) => {
-            const productId = typeof it?.productId === 'string' ? it.productId : null
-            const name = typeof it?.name === 'string' ? it.name : null
-            const qty = Number(it?.qty ?? 0) || 0
-            const price = Number(it?.price ?? 0) || 0
-            const taxRate = Number(it?.taxRate ?? 0) || 0
-            return { productId, name, qty, price, taxRate }
-          })
-        : []
+      // product docs
+      const productSnaps: Record<string, admin.firestore.DocumentSnapshot> = {}
+      const productRefs: Record<string, admin.firestore.DocumentReference> = {}
+
+      for (const it of normalizedItems) {
+        const productId = it.productId as string
+        const pRef = db.collection('products').doc(productId)
+        productRefs[productId] = pRef
+
+        const pSnap = await tx.get(pRef)
+        if (!pSnap.exists) {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'Bad product',
+          )
+        }
+
+        productSnaps[productId] = pSnap
+      }
+
+      // 2️⃣ THEN ALL WRITES
 
       const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
@@ -665,17 +860,13 @@ export const commitSale = functions.https.onCall(
       })
 
       for (const it of normalizedItems) {
-        if (!it.productId) {
-          throw new functions.https.HttpsError(
-            'failed-precondition',
-            'Bad product',
-          )
-        }
+        const productId = it.productId as string
 
+        // saleItems row
         const itemId = db.collection('_').doc().id
         tx.set(saleItemsRef.doc(itemId), {
           saleId,
-          productId: it.productId,
+          productId,
           qty: it.qty,
           price: it.price,
           taxRate: it.taxRate,
@@ -683,22 +874,18 @@ export const commitSale = functions.https.onCall(
           createdAt: timestamp,
         })
 
-        const pRef = db.collection('products').doc(it.productId)
-        const pSnap = await tx.get(pRef)
-        if (!pSnap.exists) {
-          throw new functions.https.HttpsError(
-            'failed-precondition',
-            'Bad product',
-          )
-        }
-
+        // product stock update
+        const pRef = productRefs[productId]
+        const pSnap = productSnaps[productId]
         const curr = Number(pSnap.get('stockCount') || 0)
         const next = curr - Math.abs(it.qty || 0)
+
         tx.update(pRef, { stockCount: next, updatedAt: timestamp })
 
+        // ledger entry
         const ledgerId = db.collection('_').doc().id
         tx.set(db.collection('ledger').doc(ledgerId), {
-          productId: it.productId,
+          productId,
           qtyChange: -Math.abs(it.qty || 0),
           type: 'sale',
           refId: saleId,
@@ -830,78 +1017,6 @@ export const receiveStock = functions.https.onCall(
 )
 
 /** ============================================================================
- *  CALLABLE: logReceiptShare (staff)
- * ==========================================================================*/
-
-const RECEIPT_SHARE_CHANNELS = new Set(['email', 'sms', 'whatsapp'])
-const RECEIPT_SHARE_STATUSES = new Set(['attempt', 'failed'])
-
-function normalizeReceiptSharePayload(data: LogReceiptSharePayload) {
-  const storeId = typeof data.storeId === 'string' ? data.storeId.trim() : ''
-  if (!storeId) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'A valid storeId is required',
-    )
-  }
-
-  const saleId = typeof data.saleId === 'string' ? data.saleId.trim() : ''
-  if (!saleId) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'A valid saleId is required',
-    )
-  }
-
-  const channel =
-    typeof data.channel === 'string' ? data.channel.trim().toLowerCase() : ''
-  if (!RECEIPT_SHARE_CHANNELS.has(channel)) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'A valid share channel is required',
-    )
-  }
-
-  const statusRaw =
-    typeof data.status === 'string' ? data.status.trim().toLowerCase() : 'attempt'
-  const status = RECEIPT_SHARE_STATUSES.has(statusRaw) ? statusRaw : 'attempt'
-
-  const contact =
-    typeof data.contact === 'string' && data.contact.trim() ? data.contact.trim() : null
-  const customerId =
-    typeof data.customerId === 'string' && data.customerId.trim()
-      ? data.customerId.trim()
-      : null
-  const customerName =
-    typeof data.customerName === 'string' && data.customerName.trim()
-      ? data.customerName.trim()
-      : null
-  const errorMessage =
-    typeof data.errorMessage === 'string' && data.errorMessage.trim()
-      ? data.errorMessage.trim()
-      : null
-
-  return { storeId, saleId, channel, status, contact, customerId, customerName, errorMessage }
-}
-
-export const logReceiptShare = functions.https.onCall(
-  async (data: any, context: functions.https.CallableContext) => {
-    assertStaffAccess(context)
-
-    const payload = normalizeReceiptSharePayload(data as LogReceiptSharePayload)
-    const timestamp = admin.firestore.FieldValue.serverTimestamp()
-
-    const docRef = await db.collection('receiptShares').add({
-      ...payload,
-      createdAt: timestamp,
-      createdBy: context.auth?.uid ?? null,
-    })
-
-    return { ok: true, shareId: docRef.id }
-  },
-)
-
-/** ============================================================================
  *  PAYSTACK HELPERS
  * ==========================================================================*/
 
@@ -913,17 +1028,6 @@ const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'GHS'
 type CreateCheckoutPayload = {
   storeId?: string
   returnUrl?: string
-}
-
-type LogReceiptSharePayload = {
-  storeId?: string
-  saleId?: string
-  channel?: string
-  status?: string
-  contact?: string | null
-  customerId?: string | null
-  customerName?: string | null
-  errorMessage?: string | null
 }
 
 function ensurePaystackConfig() {
@@ -983,7 +1087,7 @@ export const createPaystackCheckout = functions.https.onCall(
     const storeData = (storeSnap.data() ?? {}) as any
     const billing = (storeData.billing || {}) as any
 
-    const amountMinorUnits = 6000 // 60.00 GHS in minor units (pesewas)
+    const amountMinorUnits = 1000 // 10.00 in minor units
 
     const body: any = {
       email: email || storeData.ownerEmail || undefined,
@@ -1061,6 +1165,10 @@ export const createPaystackCheckout = functions.https.onCall(
   },
 )
 
+// 🔹 Alias so the frontend name still works
+export const createCheckout = createPaystackCheckout
+
+
 /** ============================================================================
  *  HTTP: handlePaystackWebhook
  * ==========================================================================*/
@@ -1084,7 +1192,10 @@ export const handlePaystackWebhook = functions.https.onRequest(async (req, res) 
   }
 
   const rawBody = (req as any).rawBody as Buffer
-  const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY).update(rawBody).digest('hex')
+  const hash = crypto
+    .createHmac('sha512', PAYSTACK_SECRET_KEY)
+    .update(rawBody)
+    .digest('hex')
 
   if (hash !== signature) {
     console.error('[paystack] Signature mismatch')

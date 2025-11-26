@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.handlePaystackWebhook = exports.createPaystackCheckout = exports.receiveStock = exports.commitSale = exports.manageStaffAccount = exports.resolveStoreAccess = exports.initializeStore = exports.handleUserCreate = void 0;
+exports.handlePaystackWebhook = exports.createCheckout = exports.createPaystackCheckout = exports.receiveStock = exports.commitSale = exports.manageStaffAccount = exports.resolveStoreAccess = exports.initializeStore = exports.handleUserCreate = void 0;
 // functions/src/index.ts
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
@@ -87,6 +87,68 @@ function normalizeContactPayload(contact) {
         }
     }
     return { phone, hasPhone, firstSignupEmail, hasFirstSignupEmail };
+}
+// 🔹 NEW: normalize store profile fields from signup
+function normalizeStoreProfile(profile) {
+    let businessName;
+    let country;
+    let city;
+    let phone;
+    if (profile && typeof profile === 'object') {
+        if ('businessName' in profile) {
+            const raw = profile.businessName;
+            if (raw === null || raw === undefined || raw === '') {
+                businessName = null;
+            }
+            else if (typeof raw === 'string') {
+                const trimmed = raw.trim();
+                businessName = trimmed ? trimmed : null;
+            }
+            else {
+                throw new functions.https.HttpsError('invalid-argument', 'Business name must be a string when provided');
+            }
+        }
+        if ('country' in profile) {
+            const raw = profile.country;
+            if (raw === null || raw === undefined || raw === '') {
+                country = null;
+            }
+            else if (typeof raw === 'string') {
+                const trimmed = raw.trim();
+                country = trimmed ? trimmed : null;
+            }
+            else {
+                throw new functions.https.HttpsError('invalid-argument', 'Country must be a string when provided');
+            }
+        }
+        if ('city' in profile) {
+            const raw = profile.city;
+            if (raw === null || raw === undefined || raw === '') {
+                city = null;
+            }
+            else if (typeof raw === 'string') {
+                const trimmed = raw.trim();
+                city = trimmed ? trimmed : null;
+            }
+            else {
+                throw new functions.https.HttpsError('invalid-argument', 'City must be a string when provided');
+            }
+        }
+        if ('phone' in profile) {
+            const raw = profile.phone;
+            if (raw === null || raw === undefined || raw === '') {
+                phone = null;
+            }
+            else if (typeof raw === 'string') {
+                const trimmed = raw.trim();
+                phone = trimmed ? trimmed : null;
+            }
+            else {
+                throw new functions.https.HttpsError('invalid-argument', 'Store phone must be a string when provided');
+            }
+        }
+    }
+    return { businessName, country, city, phone };
 }
 function getRoleFromToken(token) {
     const role = typeof token?.role === 'string' ? token.role : null;
@@ -160,6 +222,44 @@ function timestampDaysFromNow(days) {
     now.setDate(now.getDate() + days);
     return admin.firestore.Timestamp.fromDate(now);
 }
+function normalizeStoreProfilePayload(profile) {
+    let phone;
+    let ownerName;
+    let businessName;
+    let country;
+    let city;
+    let addressLine1;
+    if (profile && typeof profile === 'object') {
+        const normalize = (value) => {
+            if (value === null || value === undefined || value === '')
+                return null;
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                return trimmed ? trimmed : null;
+            }
+            throw new functions.https.HttpsError('invalid-argument', 'Profile fields must be strings when provided');
+        };
+        if ('phone' in profile)
+            phone = normalize(profile.phone);
+        if ('ownerName' in profile)
+            ownerName = normalize(profile.ownerName);
+        if ('businessName' in profile)
+            businessName = normalize(profile.businessName);
+        if ('country' in profile)
+            country = normalize(profile.country);
+        // prefer explicit city, but allow town as source
+        if ('city' in profile)
+            city = normalize(profile.city);
+        if (!city && 'town' in profile)
+            city = normalize(profile.town);
+        // address: accept addressLine1 or address
+        if ('addressLine1' in profile)
+            addressLine1 = normalize(profile.addressLine1);
+        if (!addressLine1 && 'address' in profile)
+            addressLine1 = normalize(profile.address);
+    }
+    return { phone, ownerName, businessName, country, city, addressLine1 };
+}
 /** ============================================================================
  *  AUTH TRIGGER: seed teamMembers on first user creation
  * ==========================================================================*/
@@ -185,6 +285,7 @@ exports.initializeStore = functions.https.onCall(async (data, context) => {
     const tokenPhone = typeof token.phone_number === 'string' ? token.phone_number : null;
     const payload = (data ?? {});
     const contact = normalizeContactPayload(payload.contact);
+    const profile = normalizeStoreProfilePayload(payload.profile);
     const requestedStoreIdRaw = payload.storeId;
     const requestedStoreId = typeof requestedStoreIdRaw === 'string' ? requestedStoreIdRaw.trim() : '';
     const memberRef = db.collection('teamMembers').doc(uid);
@@ -192,30 +293,35 @@ exports.initializeStore = functions.https.onCall(async (data, context) => {
     const existingData = (memberSnap.data() ?? {});
     const timestamp = admin.firestore.FieldValue.serverTimestamp();
     let existingStoreId = null;
-    if (typeof existingData.storeId === 'string' && existingData.storeId.trim() !== '') {
+    if (typeof existingData.storeId === 'string' &&
+        existingData.storeId.trim() !== '') {
         existingStoreId = existingData.storeId;
     }
     let storeId = existingStoreId;
     if (!storeId) {
         storeId = requestedStoreId || uid;
     }
+    // --- Determine role ---
     const role = requestedStoreId ? 'staff' : 'owner';
     const workspaceSlug = storeId;
+    // --- Validate store existence when joining as team-member ---
+    const storeRef = db.collection('stores').doc(storeId);
+    const storeSnap = await storeRef.get();
+    if (requestedStoreId && !storeSnap.exists) {
+        throw new functions.https.HttpsError('not-found', 'No company was found with that Store ID. Please check with your admin.');
+    }
+    // --- Determine contact info for teamMembers ---
     const existingPhone = typeof existingData.phone === 'string' ? existingData.phone : null;
     const resolvedPhone = contact.hasPhone
-        ? contact.phone !== undefined
-            ? contact.phone
-            : null
+        ? contact.phone ?? null
         : existingPhone || tokenPhone || null;
     const existingFirstSignupEmail = typeof existingData.firstSignupEmail === 'string'
         ? existingData.firstSignupEmail
         : null;
     const resolvedFirstSignupEmail = contact.hasFirstSignupEmail
-        ? contact.firstSignupEmail !== undefined
-            ? contact.firstSignupEmail
-            : null
+        ? contact.firstSignupEmail ?? null
         : existingFirstSignupEmail || (email ? email.toLowerCase() : null);
-    // ----- teamMembers -----
+    // --- Save team member info ---
     const memberData = {
         uid,
         email,
@@ -226,80 +332,93 @@ exports.initializeStore = functions.https.onCall(async (data, context) => {
         invitedBy: existingData.invitedBy || uid,
         updatedAt: timestamp,
     };
-    if (!memberSnap.exists) {
+    if (!memberSnap.exists)
         memberData.createdAt = timestamp;
-    }
     await memberRef.set(memberData, { merge: true });
-    // ----- stores -----
-    const storeRef = db.collection('stores').doc(storeId);
-    const storeSnap = await storeRef.get();
-    const baseStoreData = storeSnap.data() ?? {};
-    const previousBilling = (baseStoreData.billing || {});
-    const nowTs = admin.firestore.Timestamp.now();
-    const trialEndsAt = previousBilling.trialEndsAt ||
-        previousBilling.trialEnd ||
-        timestampDaysFromNow(TRIAL_DAYS);
-    const graceEndsAt = previousBilling.graceEndsAt ||
-        previousBilling.graceEnd ||
-        timestampDaysFromNow(TRIAL_DAYS + GRACE_DAYS);
-    const billingStatus = previousBilling.status === 'active' || previousBilling.status === 'past_due'
-        ? previousBilling.status
-        : 'trial';
-    const billingData = {
-        planKey: previousBilling.planKey || 'standard',
-        status: billingStatus,
-        trialEndsAt,
-        graceEndsAt,
-        paystackCustomerCode: previousBilling.paystackCustomerCode !== undefined
-            ? previousBilling.paystackCustomerCode
-            : null,
-        paystackSubscriptionCode: previousBilling.paystackSubscriptionCode !== undefined
-            ? previousBilling.paystackSubscriptionCode
-            : null,
-        paystackPlanCode: previousBilling.paystackPlanCode !== undefined
-            ? previousBilling.paystackPlanCode
-            : null,
-        currentPeriodEnd: previousBilling.currentPeriodEnd !== undefined
-            ? previousBilling.currentPeriodEnd
-            : null,
-        lastEventAt: nowTs,
-        lastChargeReference: previousBilling.lastChargeReference !== undefined
-            ? previousBilling.lastChargeReference
-            : null,
-    };
-    const storeData = {
-        id: storeId,
-        ownerUid: baseStoreData.ownerUid || uid,
-        ownerEmail: baseStoreData.ownerEmail || email || null,
-        status: baseStoreData.status || 'active',
-        workspaceSlug,
-        contractStatus: baseStoreData.contractStatus || 'trial',
-        productCount: typeof baseStoreData.productCount === 'number'
-            ? baseStoreData.productCount
-            : 0,
-        totalStockCount: typeof baseStoreData.totalStockCount === 'number'
-            ? baseStoreData.totalStockCount
-            : 0,
-        createdAt: baseStoreData.createdAt || timestamp,
-        updatedAt: timestamp,
-        billing: billingData,
-    };
-    await storeRef.set(storeData, { merge: true });
-    // ----- workspaces -----
-    const wsRef = db.collection('workspaces').doc(storeId);
-    const wsSnap = await wsRef.get();
-    const wsBase = wsSnap.data() ?? {};
-    const workspaceData = {
-        id: storeId,
-        slug: wsBase.slug || workspaceSlug,
-        storeId,
-        ownerUid: wsBase.ownerUid || uid,
-        ownerEmail: wsBase.ownerEmail || email || null,
-        status: wsBase.status || 'active',
-        createdAt: wsBase.createdAt || timestamp,
-        updatedAt: timestamp,
-    };
-    await wsRef.set(workspaceData, { merge: true });
+    // --- If owner, create/merge store + workspace profile info ---
+    if (role === 'owner') {
+        const baseStoreData = storeSnap.data() ?? {};
+        const previousBilling = (baseStoreData.billing || {});
+        const nowTs = admin.firestore.Timestamp.now();
+        const trialEndsAt = previousBilling.trialEndsAt ||
+            previousBilling.trialEnd ||
+            timestampDaysFromNow(TRIAL_DAYS);
+        const graceEndsAt = previousBilling.graceEndsAt ||
+            previousBilling.graceEnd ||
+            timestampDaysFromNow(TRIAL_DAYS + GRACE_DAYS);
+        const billingStatus = previousBilling.status === 'active' ||
+            previousBilling.status === 'past_due'
+            ? previousBilling.status
+            : 'trial';
+        const billingData = {
+            planKey: previousBilling.planKey || 'standard',
+            status: billingStatus,
+            trialEndsAt,
+            graceEndsAt,
+            paystackCustomerCode: previousBilling.paystackCustomerCode !== undefined
+                ? previousBilling.paystackCustomerCode
+                : null,
+            paystackSubscriptionCode: previousBilling.paystackSubscriptionCode !== undefined
+                ? previousBilling.paystackSubscriptionCode
+                : null,
+            paystackPlanCode: previousBilling.paystackPlanCode !== undefined
+                ? previousBilling.paystackPlanCode
+                : null,
+            currentPeriodEnd: previousBilling.currentPeriodEnd !== undefined
+                ? previousBilling.currentPeriodEnd
+                : null,
+            lastEventAt: nowTs,
+            lastChargeReference: previousBilling.lastChargeReference !== undefined
+                ? previousBilling.lastChargeReference
+                : null,
+        };
+        const displayName = baseStoreData.displayName ||
+            profile.businessName ||
+            profile.ownerName ||
+            null;
+        const storeData = {
+            id: storeId,
+            storeId,
+            ownerUid: baseStoreData.ownerUid || uid,
+            ownerEmail: baseStoreData.ownerEmail || email || null,
+            email: baseStoreData.email || email || null,
+            // 🔹 profile fields
+            name: baseStoreData.name || profile.businessName || null,
+            displayName,
+            phone: profile.phone ?? baseStoreData.phone ?? resolvedPhone ?? null,
+            country: profile.country ?? baseStoreData.country ?? null,
+            city: profile.city ?? baseStoreData.city ?? null,
+            addressLine1: profile.addressLine1 ?? baseStoreData.addressLine1 ?? null,
+            status: baseStoreData.status || 'active',
+            workspaceSlug,
+            contractStatus: baseStoreData.contractStatus || 'trial',
+            productCount: typeof baseStoreData.productCount === 'number'
+                ? baseStoreData.productCount
+                : 0,
+            totalStockCount: typeof baseStoreData.totalStockCount === 'number'
+                ? baseStoreData.totalStockCount
+                : 0,
+            createdAt: baseStoreData.createdAt || timestamp,
+            updatedAt: timestamp,
+            billing: billingData,
+        };
+        await storeRef.set(storeData, { merge: true });
+        const wsRef = db.collection('workspaces').doc(storeId);
+        const wsSnap = await wsRef.get();
+        const wsBase = wsSnap.data() ?? {};
+        const workspaceData = {
+            id: storeId,
+            slug: wsBase.slug || workspaceSlug,
+            storeId,
+            ownerUid: wsBase.ownerUid || uid,
+            ownerEmail: wsBase.ownerEmail || email || null,
+            status: wsBase.status || 'active',
+            createdAt: wsBase.createdAt || timestamp,
+            updatedAt: timestamp,
+        };
+        await wsRef.set(workspaceData, { merge: true });
+    }
+    // --- Update custom claims with role ---
     const claims = await updateUserClaims(uid, role);
     return {
         ok: true,
@@ -488,23 +607,46 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError('invalid-argument', 'A valid branch identifier is required');
     }
     const normalizedBranchId = normalizedBranchIdRaw;
+    // Normalize items ONCE outside the transaction
+    const normalizedItems = Array.isArray(items)
+        ? items.map((it) => {
+            const productId = typeof it?.productId === 'string' ? it.productId.trim() : null;
+            const name = typeof it?.name === 'string' ? it.name : null;
+            const qty = Number(it?.qty ?? 0) || 0;
+            const price = Number(it?.price ?? 0) || 0;
+            const taxRate = Number(it?.taxRate ?? 0) || 0;
+            return { productId, name, qty, price, taxRate };
+        })
+        : [];
+    // Validate products before we even touch Firestore
+    for (const it of normalizedItems) {
+        if (!it.productId) {
+            throw new functions.https.HttpsError('failed-precondition', 'Bad product');
+        }
+    }
     const saleRef = db.collection('sales').doc(saleId);
     const saleItemsRef = db.collection('saleItems');
     await db.runTransaction(async (tx) => {
+        // 1️⃣ ALL READS FIRST
+        // sale doc (prevent duplicates)
         const existingSale = await tx.get(saleRef);
         if (existingSale.exists) {
             throw new functions.https.HttpsError('already-exists', 'Sale has already been committed');
         }
-        const normalizedItems = Array.isArray(items)
-            ? items.map((it) => {
-                const productId = typeof it?.productId === 'string' ? it.productId : null;
-                const name = typeof it?.name === 'string' ? it.name : null;
-                const qty = Number(it?.qty ?? 0) || 0;
-                const price = Number(it?.price ?? 0) || 0;
-                const taxRate = Number(it?.taxRate ?? 0) || 0;
-                return { productId, name, qty, price, taxRate };
-            })
-            : [];
+        // product docs
+        const productSnaps = {};
+        const productRefs = {};
+        for (const it of normalizedItems) {
+            const productId = it.productId;
+            const pRef = db.collection('products').doc(productId);
+            productRefs[productId] = pRef;
+            const pSnap = await tx.get(pRef);
+            if (!pSnap.exists) {
+                throw new functions.https.HttpsError('failed-precondition', 'Bad product');
+            }
+            productSnaps[productId] = pSnap;
+        }
+        // 2️⃣ THEN ALL WRITES
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
         tx.set(saleRef, {
             branchId: normalizedBranchId,
@@ -519,30 +661,28 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
             createdAt: timestamp,
         });
         for (const it of normalizedItems) {
-            if (!it.productId) {
-                throw new functions.https.HttpsError('failed-precondition', 'Bad product');
-            }
+            const productId = it.productId;
+            // saleItems row
             const itemId = db.collection('_').doc().id;
             tx.set(saleItemsRef.doc(itemId), {
                 saleId,
-                productId: it.productId,
+                productId,
                 qty: it.qty,
                 price: it.price,
                 taxRate: it.taxRate,
                 storeId: normalizedBranchId,
                 createdAt: timestamp,
             });
-            const pRef = db.collection('products').doc(it.productId);
-            const pSnap = await tx.get(pRef);
-            if (!pSnap.exists) {
-                throw new functions.https.HttpsError('failed-precondition', 'Bad product');
-            }
+            // product stock update
+            const pRef = productRefs[productId];
+            const pSnap = productSnaps[productId];
             const curr = Number(pSnap.get('stockCount') || 0);
             const next = curr - Math.abs(it.qty || 0);
             tx.update(pRef, { stockCount: next, updatedAt: timestamp });
+            // ledger entry
             const ledgerId = db.collection('_').doc().id;
             tx.set(db.collection('ledger').doc(ledgerId), {
-                productId: it.productId,
+                productId,
                 qtyChange: -Math.abs(it.qty || 0),
                 type: 'sale',
                 refId: saleId,
@@ -729,6 +869,8 @@ exports.createPaystackCheckout = functions.https.onCall(async (data, context) =>
         authorizationUrl: authUrl,
     };
 });
+// 🔹 Alias so the frontend name still works
+exports.createCheckout = exports.createPaystackCheckout;
 /** ============================================================================
  *  HTTP: handlePaystackWebhook
  * ==========================================================================*/
@@ -748,7 +890,10 @@ exports.handlePaystackWebhook = functions.https.onRequest(async (req, res) => {
         return;
     }
     const rawBody = req.rawBody;
-    const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY).update(rawBody).digest('hex');
+    const hash = crypto
+        .createHmac('sha512', PAYSTACK_SECRET_KEY)
+        .update(rawBody)
+        .digest('hex');
     if (hash !== signature) {
         console.error('[paystack] Signature mismatch');
         res.status(401).send('Invalid signature');
