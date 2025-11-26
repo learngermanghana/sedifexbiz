@@ -1020,15 +1020,28 @@ export const receiveStock = functions.https.onCall(
  *  PAYSTACK HELPERS
  * ==========================================================================*/
 
-const PAYSTACK_BASE_URL = 'https://api.paystack.co'
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || ''
-const PAYSTACK_STANDARD_PLAN_CODE = process.env.PAYSTACK_STANDARD_PLAN_CODE || ''
-const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'GHS'
-
-type CreateCheckoutPayload = {
-  storeId?: string
-  returnUrl?: string
+// Read from Firebase Functions runtime config
+const runtimeConfig = functions.config() as {
+  paystack?: {
+    secret_key?: string
+    public_key?: string
+    standard_plan_code?: string
+    currency?: string
+  }
 }
+
+const paystackConfig = runtimeConfig.paystack ?? {}
+
+const PAYSTACK_BASE_URL = 'https://api.paystack.co'
+const PAYSTACK_SECRET_KEY = paystackConfig.secret_key || ''
+const PAYSTACK_STANDARD_PLAN_CODE = paystackConfig.standard_plan_code || ''
+const PAYSTACK_CURRENCY = paystackConfig.currency || 'GHS'
+
+console.log('[paystack] startup config', {
+  hasSecret: !!PAYSTACK_SECRET_KEY,
+  hasPlan: !!PAYSTACK_STANDARD_PLAN_CODE,
+  currency: PAYSTACK_CURRENCY,
+})
 
 function ensurePaystackConfig() {
   if (!PAYSTACK_SECRET_KEY) {
@@ -1059,7 +1072,8 @@ export const createPaystackCheckout = functions.https.onCall(
 
     const uid = context.auth!.uid
     const token = context.auth!.token as Record<string, unknown>
-    const email = typeof token.email === 'string' ? (token.email as string) : null
+    const email =
+      typeof token.email === 'string' ? (token.email as string) : null
 
     const payload = (data ?? {}) as CreateCheckoutPayload
     const requestedStoreId =
@@ -1087,7 +1101,8 @@ export const createPaystackCheckout = functions.https.onCall(
     const storeData = (storeSnap.data() ?? {}) as any
     const billing = (storeData.billing || {}) as any
 
-    const amountMinorUnits = 1000 // 10.00 in minor units
+    // Amount is in minor units (pesewas). 1000 = GHS 10.00
+    const amountMinorUnits = 1000
 
     const body: any = {
       email: email || storeData.ownerEmail || undefined,
@@ -1105,14 +1120,17 @@ export const createPaystackCheckout = functions.https.onCall(
 
     let responseJson: any
     try {
-      const response = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        `${PAYSTACK_BASE_URL}/transaction/initialize`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
         },
-        body: JSON.stringify(body),
-      })
+      )
 
       responseJson = await response.json()
 
@@ -1132,7 +1150,8 @@ export const createPaystackCheckout = functions.https.onCall(
     }
 
     const authUrl =
-      responseJson.data && typeof responseJson.data.authorization_url === 'string'
+      responseJson.data &&
+      typeof responseJson.data.authorization_url === 'string'
         ? responseJson.data.authorization_url
         : null
 
@@ -1168,82 +1187,91 @@ export const createPaystackCheckout = functions.https.onCall(
 // 🔹 Alias so the frontend name still works
 export const createCheckout = createPaystackCheckout
 
-
 /** ============================================================================
  *  HTTP: handlePaystackWebhook
  * ==========================================================================*/
 
-export const handlePaystackWebhook = functions.https.onRequest(async (req, res) => {
-  if (req.method !== 'POST') {
-    res.status(405).send('Method Not Allowed')
-    return
-  }
-
-  if (!PAYSTACK_SECRET_KEY) {
-    console.error('[paystack] Missing PAYSTACK_SECRET_KEY for webhook')
-    res.status(500).send('PAYSTACK_SECRET_KEY_NOT_CONFIGURED')
-    return
-  }
-
-  const signature = req.headers['x-paystack-signature'] as string | undefined
-  if (!signature) {
-    res.status(401).send('Missing signature')
-    return
-  }
-
-  const rawBody = (req as any).rawBody as Buffer
-  const hash = crypto
-    .createHmac('sha512', PAYSTACK_SECRET_KEY)
-    .update(rawBody)
-    .digest('hex')
-
-  if (hash !== signature) {
-    console.error('[paystack] Signature mismatch')
-    res.status(401).send('Invalid signature')
-    return
-  }
-
-  const event = req.body as any
-  const eventName = event && event.event
-
-  try {
-    if (eventName === 'charge.success') {
-      const data = event.data || {}
-      const metadata = data.metadata || {}
-      const storeId =
-        typeof metadata.storeId === 'string' ? metadata.storeId.trim() : ''
-
-      if (!storeId) {
-        console.warn('[paystack] charge.success missing storeId in metadata')
-      } else {
-        const storeRef = db.collection('stores').doc(storeId)
-        const timestamp = admin.firestore.FieldValue.serverTimestamp()
-
-        const customer = data.customer || {}
-        const subscription = data.subscription || {}
-        const plan = data.plan || {}
-
-        await storeRef.set(
-          {
-            billing: {
-              planKey: 'standard',
-              status: 'active',
-              paystackCustomerCode: customer.customer_code || null,
-              paystackSubscriptionCode: subscription.subscription_code || null,
-              paystackPlanCode: plan.plan_code || PAYSTACK_STANDARD_PLAN_CODE,
-              currentPeriodEnd: data.paid_at || null,
-              lastEventAt: timestamp,
-              lastChargeReference: data.reference || null,
-            },
-          },
-          { merge: true },
-        )
-      }
+export const handlePaystackWebhook = functions.https.onRequest(
+  async (req, res) => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed')
+      return
     }
 
-    res.status(200).send('ok')
-  } catch (error) {
-    console.error('[paystack] webhook handling error', error)
-    res.status(500).send('error')
-  }
-})
+    if (!PAYSTACK_SECRET_KEY) {
+      console.error('[paystack] Missing PAYSTACK_SECRET_KEY for webhook')
+      res.status(500).send('PAYSTACK_SECRET_KEY_NOT_CONFIGURED')
+      return
+    }
+
+    const signature = req.headers['x-paystack-signature'] as
+      | string
+      | undefined
+    if (!signature) {
+      res.status(401).send('Missing signature')
+      return
+    }
+
+    const rawBody = (req as any).rawBody as Buffer
+    const hash = crypto
+      .createHmac('sha512', PAYSTACK_SECRET_KEY)
+      .update(rawBody)
+      .digest('hex')
+
+    if (hash !== signature) {
+      console.error('[paystack] Signature mismatch')
+      res.status(401).send('Invalid signature')
+      return
+    }
+
+    const event = req.body as any
+    const eventName = event && event.event
+
+    try {
+      if (eventName === 'charge.success') {
+        const data = event.data || {}
+        const metadata = data.metadata || {}
+        const storeId =
+          typeof metadata.storeId === 'string' ? metadata.storeId.trim() : ''
+
+        if (!storeId) {
+          console.warn(
+            '[paystack] charge.success missing storeId in metadata',
+          )
+        } else {
+          const storeRef = db.collection('stores').doc(storeId)
+          const timestamp = admin.firestore.FieldValue.serverTimestamp()
+
+          const customer = data.customer || {}
+          const subscription = data.subscription || {}
+          const plan = data.plan || {}
+
+          await storeRef.set(
+            {
+              billing: {
+                planKey: 'standard',
+                status: 'active',
+                paystackCustomerCode: customer.customer_code || null,
+                paystackSubscriptionCode:
+                  subscription.subscription_code || null,
+                paystackPlanCode:
+                  plan.plan_code || PAYSTACK_STANDARD_PLAN_CODE,
+                currentPeriodEnd: data.paid_at || null,
+                lastEventAt: timestamp,
+                lastChargeReference: data.reference || null,
+              },
+            },
+            { merge: true },
+          )
+        }
+      }
+
+      res.status(200).send('ok')
+    } catch (error) {
+      console.error('[paystack] webhook handling error', error)
+      res.status(500).send('error')
+    }
+  },
+)
+
+
