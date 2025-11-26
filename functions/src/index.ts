@@ -908,7 +908,7 @@ export const logReceiptShare = functions.https.onCall(
 const PAYSTACK_BASE_URL = 'https://api.paystack.co'
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || ''
 const PAYSTACK_STANDARD_PLAN_CODE = process.env.PAYSTACK_STANDARD_PLAN_CODE || ''
-const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'USD'
+const PAYSTACK_CURRENCY = process.env.PAYSTACK_CURRENCY || 'GHS'
 
 type CreateCheckoutPayload = {
   storeId?: string
@@ -983,7 +983,7 @@ export const createPaystackCheckout = functions.https.onCall(
     const storeData = (storeSnap.data() ?? {}) as any
     const billing = (storeData.billing || {}) as any
 
-    const amountMinorUnits = 1000 // 10.00 in minor units
+    const amountMinorUnits = 6000 // 60.00 GHS in minor units (pesewas)
 
     const body: any = {
       email: email || storeData.ownerEmail || undefined,

@@ -13,12 +13,12 @@ type Props = {
 type PlanOption = {
   id: string
   label: string
-  amountUsd: number
+  amountGhs: number
 }
 
 const PLANS: PlanOption[] = [
-  { id: 'starter-monthly', label: 'Starter – Monthly', amountUsd: 10 },
-  { id: 'starter-yearly', label: 'Starter – Yearly', amountUsd: 100 },
+  { id: 'starter-monthly', label: 'Starter – Monthly', amountGhs: 60 },
+  { id: 'starter-yearly', label: 'Starter – Yearly', amountGhs: 600 },
 ]
 
 export const AccountBillingSection: React.FC<Props> = ({
@@ -68,7 +68,7 @@ export const AccountBillingSection: React.FC<Props> = ({
       const response = await startPaystackCheckout({
         email: ownerEmail,
         storeId,
-        amount: activePlan.amountUsd,
+        amount: activePlan.amountGhs,
         plan: activePlan.id,
         redirectUrl,
         metadata: {
@@ -138,7 +138,7 @@ export const AccountBillingSection: React.FC<Props> = ({
           >
             {PLANS.map(plan => (
               <option key={plan.id} value={plan.id}>
-                {plan.label} – ${plan.amountUsd.toFixed(2)}
+                {plan.label} – GHS {plan.amountGhs.toFixed(2)}
               </option>
             ))}
           </select>
