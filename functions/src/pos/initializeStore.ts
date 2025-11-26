@@ -65,7 +65,7 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
     )
 
     const baseTeamData = {
-      uid: context.auth.uid,
+      uid: context.auth!.uid,
       storeId,
       role: signupRole === 'team-member' ? 'staff' : 'owner',
       email: normalizeString(contact.firstSignupEmail),

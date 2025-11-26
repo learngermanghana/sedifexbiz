@@ -2,6 +2,7 @@
 import * as functions from 'firebase-functions/v1'
 import * as admin from 'firebase-admin'
 import * as crypto from 'crypto'
+import { defineString } from 'firebase-functions/params'
 
 /**
  * SINGLE FIRESTORE INSTANCE
@@ -47,6 +48,11 @@ type ManageStaffPayload = {
 }
 
 type BillingStatus = 'trial' | 'active' | 'past_due'
+
+type CreateCheckoutPayload = {
+  storeId?: unknown
+  returnUrl?: unknown
+}
 
 const VALID_ROLES = new Set(['owner', 'staff'])
 const TRIAL_DAYS = 14
@@ -1020,22 +1026,15 @@ export const receiveStock = functions.https.onCall(
  *  PAYSTACK HELPERS
  * ==========================================================================*/
 
-// Read from Firebase Functions runtime config
-const runtimeConfig = functions.config() as {
-  paystack?: {
-    secret_key?: string
-    public_key?: string
-    standard_plan_code?: string
-    currency?: string
-  }
-}
-
-const paystackConfig = runtimeConfig.paystack ?? {}
-
 const PAYSTACK_BASE_URL = 'https://api.paystack.co'
-const PAYSTACK_SECRET_KEY = paystackConfig.secret_key || ''
-const PAYSTACK_STANDARD_PLAN_CODE = paystackConfig.standard_plan_code || ''
-const PAYSTACK_CURRENCY = paystackConfig.currency || 'GHS'
+const PAYSTACK_SECRET_KEY =
+  defineString('PAYSTACK_SECRET_KEY').value() || process.env.PAYSTACK_SECRET_KEY || ''
+const PAYSTACK_STANDARD_PLAN_CODE =
+  defineString('PAYSTACK_STANDARD_PLAN_CODE').value() ||
+  process.env.PAYSTACK_STANDARD_PLAN_CODE ||
+  ''
+const PAYSTACK_CURRENCY =
+  defineString('PAYSTACK_CURRENCY').value() || process.env.PAYSTACK_CURRENCY || 'GHS'
 
 console.log('[paystack] startup config', {
   hasSecret: !!PAYSTACK_SECRET_KEY,
@@ -1083,7 +1082,7 @@ export const createPaystackCheckout = functions.https.onCall(
     const memberSnap = await memberRef.get()
     const memberData = (memberSnap.data() ?? {}) as Record<string, unknown>
 
-    let resolvedStoreId: string | null = null
+    let resolvedStoreId = ''
     if (requestedStoreId) {
       resolvedStoreId = requestedStoreId
     } else if (
