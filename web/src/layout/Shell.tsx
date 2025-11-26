@@ -195,6 +195,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="shell">
+      {isMenuOpen && <div className="shell__backdrop" onClick={() => setIsMenuOpen(false)} />}
       <header className="shell__header">
         <div className="shell__header-inner">
           <div className="shell__brand">
