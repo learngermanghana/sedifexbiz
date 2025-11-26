@@ -74,17 +74,35 @@ describe('AccountOverview', () => {
     whereMock.mockClear()
 
     mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
-    getDocMock.mockResolvedValue({
-      exists: () => true,
-      data: () => ({
-        displayName: 'Sedifex Coffee',
-        status: 'Active',
-        currency: 'GHS',
-        billingPlan: 'Monthly',
-        paymentProvider: 'Stripe',
-        createdAt: { toDate: () => new Date('2023-01-01T00:00:00Z') },
-        updatedAt: { toDate: () => new Date('2023-02-01T00:00:00Z') },
-      }),
+    getDocMock.mockImplementation(async ref => {
+      const path = (ref as { path?: string } | undefined)?.path
+      if (path === 'stores/store-123') {
+        return {
+          exists: () => true,
+          data: () => ({
+            displayName: 'Sedifex Coffee',
+            status: 'Active',
+            currency: 'GHS',
+            billingPlan: 'Monthly',
+            paymentProvider: 'Stripe',
+            createdAt: { toDate: () => new Date('2023-01-01T00:00:00Z') },
+            updatedAt: { toDate: () => new Date('2023-02-01T00:00:00Z') },
+          }),
+        }
+      }
+
+      if (path === 'subscriptions/store-123') {
+        return {
+          exists: () => true,
+          data: () => ({
+            status: 'active',
+            plan: 'starter-monthly',
+            provider: 'paystack',
+          }),
+        }
+      }
+
+      return { exists: () => false }
     })
     getDocsMock.mockResolvedValue({
       docs: [
@@ -130,7 +148,7 @@ describe('AccountOverview', () => {
       await Promise.resolve()
     })
 
-    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(1))
 
     const rosterRow = await screen.findByTestId('account-roster-member-1')
@@ -198,7 +216,7 @@ describe('AccountOverview', () => {
       await Promise.resolve()
     })
 
-    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(1))
 
     expect(screen.queryByTestId('account-invite-form')).not.toBeInTheDocument()
@@ -280,7 +298,7 @@ describe('AccountOverview', () => {
       await Promise.resolve()
     })
 
-    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(getDocMock).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(getDocsMock).toHaveBeenCalledTimes(2))
 
     expect(queryMock).toHaveBeenCalledWith(
