@@ -30,10 +30,9 @@ export function createSellSelectors(root: HTMLElement = document.body) {
       }
       return subtotalContainer as HTMLElement
     },
-    loyaltyNotice: () =>
-      queries.queryByRole('status', {
-        name: /keep .* coming back/i,
-      }),
+    loyaltyPanel: () => queries.getByRole('group', { name: /loyalty rewards/i }),
+    loyaltyApplyInput: () => queries.getByLabelText('Apply points'),
+    loyaltyEarnInput: () => queries.getByLabelText('Earn this sale'),
   }
 }
 

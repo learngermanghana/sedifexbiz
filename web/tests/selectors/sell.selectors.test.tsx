@@ -200,6 +200,8 @@ describe('Sell page selectors', () => {
     expect(within(subtotal).getByText('GHS 12.00')).toBeInTheDocument()
 
     expect(selectors.recordSaleButton()).not.toBeDisabled()
-    expect(selectors.loyaltyNotice()).toBeNull()
+    expect(selectors.loyaltyPanel()).toBeInTheDocument()
+    expect(selectors.loyaltyApplyInput()).toBeDisabled()
+    expect(selectors.loyaltyEarnInput()).toBeDisabled()
   })
 })
