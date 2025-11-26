@@ -32,6 +32,15 @@
   width: 100%;
 }
 
+.shell__backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 15;
+}
+
 .shell__menu-toggle {
   display: none;
   align-items: center;
@@ -329,6 +338,10 @@
 }
 
 @media (max-width: 960px) {
+  .shell__backdrop {
+    display: block;
+  }
+
   .shell__header-inner {
     align-items: flex-start;
   }
@@ -348,12 +361,21 @@
   }
 
   .shell__toolbar {
+    position: fixed;
+    top: 74px;
+    left: 12px;
+    right: 12px;
     grid-template-columns: 1fr;
     gap: 10px;
-    width: 100%;
-    padding-top: 10px;
-    border-top: 1px solid #e2e8f0;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    box-shadow: 0 24px 48px -28px rgba(15, 23, 42, 0.4);
     display: none;
+    z-index: 20;
+    max-height: calc(100dvh - 96px);
+    overflow-y: auto;
   }
 
   .shell__toolbar.is-open {
