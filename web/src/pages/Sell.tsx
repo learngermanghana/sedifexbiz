@@ -30,6 +30,7 @@ import {
   saveCachedProducts,
 } from '../utils/offlineCache'
 import { buildSimplePdf } from '../utils/pdf'
+import { ensureCustomerLoyalty } from '../utils/customerLoyalty'
 
 type Product = {
   id: string
@@ -49,6 +50,7 @@ type Customer = {
   phone?: string
   email?: string
   notes?: string
+  loyalty?: unknown
   createdAt?: unknown
   updatedAt?: unknown
 }
@@ -71,6 +73,8 @@ type ReceiptData = {
   createdAt: Date
   items: CartLine[]
   subtotal: number
+  loyaltyEarned?: number | null
+  currentPoints?: number | null
   store?: {
     id: string | null
     name: string | null
@@ -120,6 +124,8 @@ type CommitSalePayload = {
   saleId: string
   cashierId: string
   customerId?: string | null
+  loyaltyEarned?: number | null
+  currentPoints?: number | null
   totals: {
     total: number
     taxTotal: number
@@ -309,6 +315,8 @@ export default function Sell() {
   const [selectedCustomerId, setSelectedCustomerId] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'mobile' | 'card'>('cash')
   const [amountTendered, setAmountTendered] = useState('')
+  const [loyaltyEarnedInput, setLoyaltyEarnedInput] = useState('')
+  const [loyaltyAppliedInput, setLoyaltyAppliedInput] = useState('')
   const [saleError, setSaleError] = useState<string | null>(null)
   const [saleSuccess, setSaleSuccess] = useState<string | null>(null)
   const [isRecording, setIsRecording] = useState(false)
@@ -324,12 +332,35 @@ export default function Sell() {
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
   const totalQty = cart.reduce((s, l) => s + l.qty, 0)
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
+  const selectedCustomerLoyalty = useMemo(
+    () => (selectedCustomer ? ensureCustomerLoyalty(selectedCustomer).loyalty : null),
+    [selectedCustomer],
+  )
   const selectedCustomerDisplayName = selectedCustomer
     ? getCustomerDisplayName(selectedCustomer)
     : ''
   const selectedCustomerDataName = selectedCustomer
     ? getCustomerNameForData(selectedCustomer)
     : ''
+  const loyaltyEarned = useMemo(() => {
+    const parsed = Number(loyaltyEarnedInput)
+    if (!Number.isFinite(parsed) || parsed < 0) return 0
+    return parsed
+  }, [loyaltyEarnedInput])
+  const loyaltyApplied = useMemo(() => {
+    const parsed = Number(loyaltyAppliedInput)
+    if (!Number.isFinite(parsed) || parsed < 0) return 0
+    const available = selectedCustomerLoyalty?.points ?? 0
+    return Math.min(parsed, available)
+  }, [loyaltyAppliedInput, selectedCustomerLoyalty?.points])
+  const loyaltyCurrentPoints = useMemo(() => {
+    if (!selectedCustomer) return null
+    const available = selectedCustomerLoyalty?.points ?? 0
+    return Math.max(0, available - loyaltyApplied + loyaltyEarned)
+  }, [loyaltyApplied, loyaltyEarned, selectedCustomer, selectedCustomerLoyalty?.points])
+  const loyaltyBalanceAfterSale = selectedCustomer
+    ? loyaltyCurrentPoints ?? selectedCustomerLoyalty?.points ?? 0
+    : null
   const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : subtotal
   const changeDue = Math.max(0, amountPaid - subtotal)
   const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0
@@ -455,8 +486,9 @@ export default function Sell() {
     loadCachedCustomers<Customer>({ storeId: activeStoreId })
       .then(cached => {
         if (!cancelled && cached.length) {
+          const normalized = cached.map(customer => ensureCustomerLoyalty(customer))
           setCustomers(
-            [...cached].sort((a, b) =>
+            [...normalized].sort((a, b) =>
               getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
                 sensitivity: 'base',
               }),
@@ -477,7 +509,9 @@ export default function Sell() {
     )
 
     const unsubscribe = onSnapshot(q, snap => {
-      const rows = snap.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as Customer) }))
+      const rows = snap.docs.map(docSnap =>
+        ensureCustomerLoyalty({ id: docSnap.id, ...(docSnap.data() as Customer) }),
+      )
       saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[sell] Failed to cache customers', error)
       })
@@ -557,6 +591,12 @@ export default function Sell() {
     }
     lines.push(`Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`)
     lines.push(`Change: GHS ${receipt.payment.changeDue.toFixed(2)}`)
+    if (typeof receipt.loyaltyEarned === 'number' && receipt.loyaltyEarned !== null) {
+      lines.push(`Loyalty earned: ${receipt.loyaltyEarned} pts`)
+    }
+    if (typeof receipt.currentPoints === 'number' && receipt.currentPoints !== null) {
+      lines.push(`Current points: ${receipt.currentPoints} pts`)
+    }
     lines.push('')
     lines.push(`Sale #${receipt.saleId}`)
     lines.push('Thank you for shopping with us!')
@@ -661,6 +701,11 @@ export default function Sell() {
       setAmountTendered('')
     }
   }, [paymentMethod])
+
+  useEffect(() => {
+    setLoyaltyEarnedInput('')
+    setLoyaltyAppliedInput('')
+  }, [selectedCustomerId])
 
   const productStockById = useMemo(() => {
     const map = new Map<string, number>()
@@ -771,11 +816,15 @@ export default function Sell() {
     setIsRecording(true)
     const saleId = doc(collection(db, 'sales')).id
     const commitSale = httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
+    const loyaltyEarnedValue = selectedCustomer ? loyaltyEarned : null
+    const loyaltyCurrentPointsValue = selectedCustomer ? loyaltyCurrentPoints : null
     const payload: CommitSalePayload = {
       branchId: activeStoreId,
       saleId,
       cashierId: user.uid,
       customerId: selectedCustomer?.id ?? null,
+      loyaltyEarned: loyaltyEarnedValue,
+      currentPoints: loyaltyCurrentPointsValue,
       totals: {
         total: subtotal,
         taxTotal: cartTaxTotal,
@@ -831,6 +880,8 @@ export default function Sell() {
         createdAt: new Date(),
         items: receiptItems,
         subtotal,
+        loyaltyEarned: loyaltyEarnedValue,
+        currentPoints: loyaltyCurrentPointsValue,
         store: receiptStore,
         payment: {
           method: paymentMethod,
@@ -848,6 +899,8 @@ export default function Sell() {
       setCart([])
       setSelectedCustomerId('')
       setAmountTendered('')
+      setLoyaltyEarnedInput('')
+      setLoyaltyAppliedInput('')
       setSaleSuccess(`Sale recorded #${data.saleId}. Receipt sent to printer.`)
     } catch (err) {
       console.error('[sell] Unable to record sale', err)
@@ -859,6 +912,8 @@ export default function Sell() {
             createdAt: new Date(),
             items: receiptItems,
             subtotal,
+            loyaltyEarned: loyaltyEarnedValue,
+            currentPoints: loyaltyCurrentPointsValue,
             store: receiptStore,
             payment: {
               method: paymentMethod,
@@ -876,6 +931,8 @@ export default function Sell() {
           setCart([])
           setSelectedCustomerId('')
           setAmountTendered('')
+          setLoyaltyEarnedInput('')
+          setLoyaltyAppliedInput('')
           setSaleSuccess(`Sale queued offline #${saleId}. We'll sync it once you're back online.`)
           return
         }
@@ -1114,33 +1171,17 @@ export default function Sell() {
                     onChange={event => setSelectedCustomerId(event.target.value)}
                     className="sell-page__select"
                   >
-                    <option value="">Walk-in customer</option>
-                    {customers.map(customer => (
-                      <option key={customer.id} value={customer.id}>
-                        {getCustomerDisplayName(customer)}
-                      </option>
-                    ))}
-                  </select>
+                <option value="">Walk-in customer</option>
+                {customers.map(customer => (
+                  <option key={customer.id} value={customer.id}>
+                    {getCustomerDisplayName(customer)}
+                  </option>
+                ))}
+              </select>
               <p className="field__hint">
                 Need to add someone new? Manage records on the{' '}
                 <Link to="/customers" className="sell-page__customers-link">Customers page</Link>.
               </p>
-              {selectedCustomer && (
-                <div className="sell-page__loyalty" role="status" aria-live="polite">
-                  <strong className="sell-page__loyalty-title">Keep {selectedCustomerDisplayName} coming back</strong>
-                  <p className="sell-page__loyalty-text">
-                    Enroll them in your loyalty program or apply any available rewards before completing checkout.
-                  </p>
-                  <div className="sell-page__loyalty-actions">
-                    <Link to="/customers" className="button button--ghost button--small">
-                      Enroll customer
-                    </Link>
-                    <Link to="/customers" className="button button--ghost button--small">
-                      Apply rewards
-                    </Link>
-                  </div>
-                </div>
-              )}
             </div>
 
                 <div className="sell-page__field-group">
@@ -1171,6 +1212,63 @@ export default function Sell() {
                     />
                   </div>
                 )}
+              </div>
+
+              <div
+                className="sell-page__loyalty-panel"
+                role="group"
+                aria-label="Loyalty rewards"
+              >
+                <div className="sell-page__loyalty-header">
+                  <div>
+                    <p className="field__label">Loyalty rewards</p>
+                    <p className="sell-page__loyalty-hint">
+                      Apply available points or note how many they earned on this sale.
+                    </p>
+                  </div>
+                  <div className="sell-page__loyalty-balance" aria-live="polite">
+                    {selectedCustomer
+                      ? `Balance after sale: ${(loyaltyBalanceAfterSale ?? 0).toFixed(0)} pts`
+                      : 'Select a customer to track points'}
+                  </div>
+                </div>
+                <div className="sell-page__loyalty-grid">
+                  <label className="sell-page__loyalty-field">
+                    <span className="sell-page__loyalty-label">Apply points</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      max={selectedCustomerLoyalty?.points ?? undefined}
+                      value={loyaltyAppliedInput}
+                      onChange={event => setLoyaltyAppliedInput(event.target.value)}
+                      className="sell-page__input"
+                      disabled={!selectedCustomer}
+                    />
+                    <span className="sell-page__loyalty-help">
+                      {selectedCustomer
+                        ? `Available: ${(selectedCustomerLoyalty?.points ?? 0).toFixed(0)} pts`
+                        : 'Pick a customer to redeem points.'}
+                    </span>
+                  </label>
+                  <label className="sell-page__loyalty-field">
+                    <span className="sell-page__loyalty-label">Earn this sale</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={loyaltyEarnedInput}
+                      onChange={event => setLoyaltyEarnedInput(event.target.value)}
+                      className="sell-page__input"
+                      disabled={!selectedCustomer}
+                    />
+                    <span className="sell-page__loyalty-help">
+                      {selectedCustomer
+                        ? 'We will sync these points on the receipt and queued sale.'
+                        : 'Add a customer to award or track points.'}
+                    </span>
+                  </label>
+                </div>
               </div>
 
               <div className="sell-page__payment-summary" aria-live="polite">
@@ -1319,6 +1417,18 @@ export default function Sell() {
                 <span>Change</span>
                 <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
               </div>
+              {typeof receipt.loyaltyEarned === 'number' && receipt.loyaltyEarned !== null ? (
+                <div>
+                  <span>Loyalty earned</span>
+                  <strong>{receipt.loyaltyEarned} pts</strong>
+                </div>
+              ) : null}
+              {typeof receipt.currentPoints === 'number' && receipt.currentPoints !== null ? (
+                <div>
+                  <span>Points balance</span>
+                  <strong>{receipt.currentPoints} pts</strong>
+                </div>
+              ) : null}
             </div>
 
             <p className="receipt-print__footer">Sale #{receipt.saleId} — Thank you for shopping with us!</p>

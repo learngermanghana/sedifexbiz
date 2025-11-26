@@ -201,32 +201,64 @@
   margin-top: 6px;
 }
 
-.sell-page__loyalty {
+.sell-page__loyalty-panel {
   margin-top: 12px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px dashed rgba(67, 56, 202, 0.35);
   border-radius: 12px;
-  background: rgba(224, 231, 255, 0.4);
+  background: rgba(224, 231, 255, 0.35);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-.sell-page__loyalty-title {
-  font-size: 14px;
+.sell-page__loyalty-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.sell-page__loyalty-balance {
+  font-weight: 700;
+  color: #312e81;
+  background: rgba(67, 56, 202, 0.08);
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
+.sell-page__loyalty-hint {
+  margin: 4px 0 0;
+  color: #4338ca;
+  font-size: 13px;
+}
+
+.sell-page__loyalty-grid {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 720px) {
+  .sell-page__loyalty-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.sell-page__loyalty-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sell-page__loyalty-label {
+  font-weight: 600;
   color: #312e81;
 }
 
-.sell-page__loyalty-text {
-  font-size: 13px;
+.sell-page__loyalty-help {
+  font-size: 12px;
   color: #4338ca;
-  margin: 0;
-}
-
-.sell-page__loyalty-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .sell-page__engagement {
