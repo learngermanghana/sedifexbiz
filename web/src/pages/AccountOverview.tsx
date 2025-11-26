@@ -76,6 +76,17 @@ function mapStoreSnapshot(
 ): StoreProfile | null {
   if (!snapshot) return null
   const data = snapshot.data() || {}
+  const billingRaw = (data.billing ?? {}) as Record<string, unknown>
+
+  const billingPlan =
+    toNullableString(data.billingPlan) ??
+    toNullableString(data.planKey) ??
+    toNullableString(billingRaw.planKey)
+
+  const paymentProvider =
+    toNullableString(data.paymentProvider) ??
+    toNullableString(billingRaw.provider) ??
+    (toNullableString(data.paystackCustomerCode) ? 'Paystack' : null)
 
   return {
     name: toNullableString(data.name),
@@ -85,8 +96,8 @@ function mapStoreSnapshot(
     status: toNullableString(data.status),
     timezone: toNullableString(data.timezone),
     currency: toNullableString(data.currency),
-    billingPlan: toNullableString(data.billingPlan),
-    paymentProvider: toNullableString(data.paymentProvider),
+    billingPlan,
+    paymentProvider,
     addressLine1: toNullableString(data.addressLine1),
     addressLine2: toNullableString(data.addressLine2),
     city: toNullableString(data.city),
