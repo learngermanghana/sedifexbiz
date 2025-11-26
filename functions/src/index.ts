@@ -52,6 +52,7 @@ type BillingStatus = 'trial' | 'active' | 'past_due'
 type CreateCheckoutPayload = {
   storeId?: unknown
   returnUrl?: unknown
+  redirectUrl?: unknown
 }
 
 const VALID_ROLES = new Set(['owner', 'staff'])
@@ -1108,7 +1109,11 @@ export const createPaystackCheckout = functions.https.onCall(
       amount: amountMinorUnits,
       currency: PAYSTACK_CURRENCY,
       callback_url:
-        typeof payload.returnUrl === 'string' ? payload.returnUrl : undefined,
+        typeof payload.redirectUrl === 'string'
+          ? payload.redirectUrl
+          : typeof payload.returnUrl === 'string'
+            ? payload.returnUrl
+            : undefined,
       metadata: {
         storeId,
         userId: uid,
