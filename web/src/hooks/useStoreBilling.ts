@@ -6,10 +6,14 @@ import { useActiveStore } from './useActiveStore'
 
 export type BillingStatus = 'active' | 'trial' | 'inactive' | 'past_due' | 'unknown'
 
+export type PaymentStatus = BillingStatus | 'suspended'
+
 export type StoreBilling = {
   status: BillingStatus
   planKey: string | null
   trialEndsAt: Timestamp | null
+  paymentStatus: PaymentStatus
+  contractEnd: Timestamp | null
 }
 
 type BillingState = {
@@ -49,6 +53,7 @@ export function useStoreBilling(): BillingState {
       snapshot => {
         const data = snapshot.data() || {}
         const billingRaw = (data.billing || {}) as any
+        const paymentStatusRaw = typeof data.paymentStatus === 'string' ? data.paymentStatus : null
 
         const statusRaw = typeof billingRaw.status === 'string' ? billingRaw.status : null
         const planKey =
@@ -61,6 +66,11 @@ export function useStoreBilling(): BillingState {
           trialEndsAt = billingRaw.trialEndsAt
         }
 
+        let contractEnd: Timestamp | null = null
+        if (data.contractEnd instanceof Timestamp) {
+          contractEnd = data.contractEnd
+        }
+
         const status: BillingStatus =
           statusRaw === 'active' ||
           statusRaw === 'trial' ||
@@ -69,12 +79,21 @@ export function useStoreBilling(): BillingState {
             ? statusRaw
             : 'unknown'
 
+        const paymentStatus: PaymentStatus =
+          paymentStatusRaw === 'suspended'
+            ? 'suspended'
+            : paymentStatusRaw === 'past_due'
+              ? 'past_due'
+              : status
+
         setState({
           loading: false,
           billing: {
             status,
             planKey,
             trialEndsAt,
+            paymentStatus,
+            contractEnd,
           },
           error: null,
         })
