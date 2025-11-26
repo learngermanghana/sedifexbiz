@@ -23,7 +23,7 @@ export type CreateCheckoutResponse = {
 export async function startPaystackCheckout(
   payload: CreateCheckoutPayload,
 ): Promise<CreateCheckoutResponse> {
-  const callable = httpsCallable(functions, 'createCheckout')
+  const callable = httpsCallable(functions, 'createPaystackCheckout')
   const res = await callable(payload)
   return res.data as CreateCheckoutResponse
 }
