@@ -15,6 +15,7 @@ import {
 import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useSubscriptionStatus } from '../hooks/useSubscriptionStatus'
 import { SubscriptionBanner } from '../components/SubscriptionBanner'
@@ -170,7 +171,9 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Products() {
+  const { user } = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
+  const activityActor = user?.displayName || user?.email || 'Team member'
   const subscription = useSubscriptionStatus()
   const isSubscriptionInactive = subscription.isInactive
   const [products, setProducts] = useState<ProductRecord[]>([])
@@ -657,6 +660,19 @@ export default function Products() {
         updatedAt: serverTimestamp(),
       })
 
+      try {
+        await addDoc(collection(db, 'activity'), {
+          storeId: activeStoreId,
+          type: 'inventory',
+          summary: `Added product ${name}`,
+          detail: `SKU: ${sku || '—'} · Price: GHS ${price.toFixed(2)}`,
+          actor: activityActor,
+          createdAt: serverTimestamp(),
+        })
+      } catch (activityError) {
+        console.warn('[activity] Failed to log product creation', activityError)
+      }
+
       setProducts(prev =>
         prev.map(product =>
           product.id === optimisticProduct!.id
@@ -802,6 +818,18 @@ export default function Products() {
         storeId: activeStoreId,
         updatedAt: serverTimestamp(),
       })
+      try {
+        await addDoc(collection(db, 'activity'), {
+          storeId: activeStoreId,
+          type: 'inventory',
+          summary: `Updated product ${name}`,
+          detail: `SKU: ${sku || '—'} · Price: GHS ${price.toFixed(2)}`,
+          actor: activityActor,
+          createdAt: serverTimestamp(),
+        })
+      } catch (activityError) {
+        console.warn('[activity] Failed to log product update', activityError)
+      }
       setEditStatus({
         tone: 'success',
         message: 'Product details updated.',

@@ -1,8 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore'
+import {
+  addDoc,
+  collection,
+  query,
+  orderBy,
+  limit,
+  onSnapshot,
+  where,
+  serverTimestamp,
+} from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../firebase'
+import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Receive.css'
 import { queueCallableRequest } from '../utils/offlineQueue'
@@ -35,6 +45,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Receive() {
+  const { user } = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string>('')
@@ -161,6 +172,22 @@ export default function Receive() {
 
     try {
       await receiveStock(payload)
+      const productName = products.find(product => product.id === selected)?.name || 'product'
+      const actor = user?.displayName || user?.email || 'Team member'
+      try {
+        if (activeStoreId) {
+          await addDoc(collection(db, 'activity'), {
+            storeId: activeStoreId,
+            type: 'inventory',
+            summary: `Received ${amount} units of ${productName}`,
+            detail: `From ${supplierName} · Ref ${referenceNumber}`,
+            actor,
+            createdAt: serverTimestamp(),
+          })
+        }
+      } catch (err) {
+        console.warn('[activity] Failed to log receipt activity', err)
+      }
       setQty('')
       setSupplier('')
       setReference('')
