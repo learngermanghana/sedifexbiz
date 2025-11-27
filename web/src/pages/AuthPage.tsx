@@ -406,7 +406,6 @@ export default function AuthPage() {
   }
 
   const appStyle: React.CSSProperties = { minHeight: '100dvh' }
-
   return (
     <main className="app" style={appStyle}>
       <div className="app__layout">
@@ -444,7 +443,11 @@ export default function AuthPage() {
             </button>
           </div>
 
-          <form className="form" onSubmit={handleSubmit} aria-label={mode === 'login' ? 'Log in form' : 'Sign up form'}>
+          <form
+            className="form"
+            onSubmit={handleSubmit}
+            aria-label={mode === 'login' ? 'Log in form' : 'Sign up form'}
+          >
             <div className="form__field">
               <label htmlFor="email">Email</label>
               <input
@@ -609,7 +612,9 @@ export default function AuthPage() {
                   aria-describedby="store-id-hint"
                 />
                 <p className="form__hint" id="store-id-hint">
-                  Have a store ID from your workspace owner? Enter it to join their team automatically.
+                  {normalizedStoreId
+                    ? 'You will join this existing store as a team member. We will use the company details from that store.'
+                    : 'Leave this blank to create a new store where you are the owner.'}
                 </p>
               </div>
             )}
@@ -626,14 +631,22 @@ export default function AuthPage() {
                 placeholder="Use a strong password"
                 required
                 disabled={isLoading}
-                aria-invalid={mode === 'signup' && normalizedPassword.length > 0 && !doesPasswordMeetAllChecks}
+                aria-invalid={
+                  mode === 'signup' &&
+                  normalizedPassword.length > 0 &&
+                  !doesPasswordMeetAllChecks
+                }
                 aria-describedby={mode === 'signup' ? 'password-guidelines' : undefined}
               />
               {mode === 'signup' && (
                 <ul className="form__hint-list" id="password-guidelines">
                   {passwordChecklist.map(item => (
                     <li key={item.id} data-complete={item.passed}>
-                      <span className={`form__hint-indicator${item.passed ? ' is-valid' : ''}`}>
+                      <span
+                        className={`form__hint-indicator${
+                          item.passed ? ' is-valid' : ''
+                        }`}
+                      >
                         {item.passed ? '✓' : '•'}
                       </span>
                       {item.label}
@@ -656,13 +669,24 @@ export default function AuthPage() {
                   placeholder="Re-enter your password"
                   required
                   disabled={isLoading}
-                  aria-invalid={normalizedConfirmPassword.length > 0 && normalizedPassword !== normalizedConfirmPassword}
+                  aria-invalid={
+                    normalizedConfirmPassword.length > 0 &&
+                    normalizedPassword !== normalizedConfirmPassword
+                  }
                   aria-describedby="confirm-password-hint"
                 />
                 <p className="form__hint" id="confirm-password-hint">
                   Must match the password exactly.
                 </p>
               </div>
+            )}
+
+            {mode === 'signup' && (
+              <p className="form__hint" style={{ marginTop: 8 }}>
+                {normalizedStoreId
+                  ? 'Summary: You are creating a user account and joining an existing store as staff.'
+                  : 'Summary: You are creating a new store and will be the owner of this workspace.'}
+              </p>
             )}
 
             <button className="primary-button" type="submit" disabled={isSubmitDisabled}>
