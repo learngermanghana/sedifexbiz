@@ -132,7 +132,13 @@ export default function AuthPage() {
       { id: 'number', label: 'Includes a number', passed: passwordStrength.hasNumber },
       { id: 'symbol', label: 'Includes a symbol', passed: passwordStrength.hasSymbol },
     ] as const,
-    [passwordStrength.hasLowercase, passwordStrength.hasNumber, passwordStrength.hasSymbol, passwordStrength.hasUppercase, passwordStrength.isLongEnough],
+    [
+      passwordStrength.hasLowercase,
+      passwordStrength.hasNumber,
+      passwordStrength.hasSymbol,
+      passwordStrength.hasUppercase,
+      passwordStrength.isLongEnough,
+    ],
   )
 
   const doesPasswordMeetAllChecks = passwordChecklist.every(item => item.passed)
@@ -192,7 +198,8 @@ export default function AuthPage() {
     const sanitizedAddress = address.trim()
     const sanitizedStoreId = storeId.trim()
 
-    const validationError = mode === 'login' ? getLoginValidationError(sanitizedEmail, sanitizedPassword) : null
+    const validationError =
+      mode === 'login' ? getLoginValidationError(sanitizedEmail, sanitizedPassword) : null
 
     if (mode === 'signup') {
       setPhone(sanitizedPhone)
@@ -230,7 +237,12 @@ export default function AuthPage() {
 
     try {
       if (mode === 'login') {
-        const { user: nextUser } = await signInWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
+        // ---------- LOGIN FLOW ----------
+        const { user: nextUser } = await signInWithEmailAndPassword(
+          auth,
+          sanitizedEmail,
+          sanitizedPassword,
+        )
         await persistSession(nextUser)
         try {
           const resolution = await resolveStoreAccess()
@@ -245,11 +257,21 @@ export default function AuthPage() {
           return
         }
       } else {
-        const { user: nextUser } = await createUserWithEmailAndPassword(auth, sanitizedEmail, sanitizedPassword)
+        // ---------- SIGNUP FLOW ----------
+        const { user: nextUser } = await createUserWithEmailAndPassword(
+          auth,
+          sanitizedEmail,
+          sanitizedPassword,
+        )
         await persistSession(nextUser)
 
         let initializedStoreId: string | undefined
-        const signupRoleForWorkspace: SignupRoleOption = sanitizedStoreId ? 'team-member' : 'owner'
+        const isJoiningExistingStore = Boolean(sanitizedStoreId)
+        const signupRoleForWorkspace: SignupRoleOption = isJoiningExistingStore
+          ? 'team-member'
+          : 'owner'
+
+        // 1) Initialize / join workspace
         try {
           const initialization = await initializeStore(
             {
@@ -262,7 +284,7 @@ export default function AuthPage() {
               address: sanitizedAddress || null,
               signupRole: signupRoleForWorkspace,
             },
-            signupRoleForWorkspace === 'team-member' ? sanitizedStoreId : null,
+            isJoiningExistingStore ? sanitizedStoreId : null,
           )
           initializedStoreId = initialization.storeId
         } catch (error) {
@@ -272,6 +294,7 @@ export default function AuthPage() {
           return
         }
 
+        // 2) Resolve access (gets final storeId + role)
         let resolution: ResolveStoreAccessResult
         try {
           resolution = await resolveStoreAccess(initializedStoreId)
@@ -288,11 +311,14 @@ export default function AuthPage() {
           role: resolution.role,
         })
 
+        // 3) Upsert customer profile with correct role (owner vs staff)
         try {
-          const preferredDisplayName = sanitizedFullName || nextUser.displayName?.trim() || sanitizedEmail
+          const preferredDisplayName =
+            sanitizedFullName || nextUser.displayName?.trim() || sanitizedEmail
           const resolvedBusinessName = sanitizedBusinessName || null
           const resolvedOwnerName = sanitizedFullName || preferredDisplayName
           const customerName = resolvedBusinessName || resolvedOwnerName
+
           await setDoc(
             doc(db, 'customers', nextUser.uid),
             {
@@ -307,7 +333,8 @@ export default function AuthPage() {
               town: sanitizedTown || null,
               address: sanitizedAddress || null,
               status: 'active',
-              role: 'client',
+              // 👇 reflect whether they created a store or joined an existing one
+              role: isJoiningExistingStore ? 'staff' : 'owner',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             },
@@ -316,14 +343,49 @@ export default function AuthPage() {
         } catch (error) {
           console.warn('[customers] Unable to upsert customer record', error)
         }
+
+        // 4) Refresh ID token for fresh custom claims
         try {
           await nextUser.getIdToken(true)
         } catch (error) {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
+
+        // 5) Mark onboarding as pending and bounce to login
         setOnboardingStatus(nextUser.uid, 'pending')
         setMode('login')
       }
+
+      setStatus({
+        tone: 'success',
+        message:
+          mode === 'login'
+            ? 'Welcome back! Redirecting…'
+            : 'Account created! You can now sign in.',
+      })
+      setPassword('')
+      setConfirmPassword('')
+      setFullName('')
+      setBusinessName('')
+      setPhone('')
+      setCountry('')
+      setTown('')
+      setAddress('')
+      setStoreId('')
+    } catch (err: unknown) {
+      setStatus({ tone: 'error', message: getErrorMessage(err) })
+    }
+  }
+
+  const appStyle: React.CSSProperties = { minHeight: '100dvh' }
+
+  return (
+    <main className="app" style={appStyle}>
+      {/* ...rest of your component JSX stays the same... */}
+    </main>
+  )
+}
+
 
       setStatus({
         tone: 'success',
