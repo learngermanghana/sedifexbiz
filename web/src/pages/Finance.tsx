@@ -23,7 +23,8 @@ export default function Finance() {
             <Link to="/close-day">Close Day &amp; cash counts</Link>
           </li>
           <li>
-            <Link to="/expenses">Expenses &amp; payouts</Link>
+            {/* 🔁 point to the nested route */}
+            <Link to="/finance/expenses">Expenses &amp; payouts</Link>
           </li>
           <li>
             <Link to="/account">Billing &amp; subscription</Link>
