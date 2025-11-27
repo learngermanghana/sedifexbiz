@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
-import { renderHook } from '@testing-library/react'
+import { renderHook, waitFor } from '@testing-library/react'
 
 import { useOnboardingRedirect } from './useOnboardingRedirect'
 
 const mockNavigate = vi.fn()
-const mockGetOnboardingStatus = vi.fn<[], 'pending' | 'done' | null>(() => 'pending')
-const mockSetOnboardingStatus = vi.fn()
+const mockGetOnboardingStatus = vi.fn<[], 'pending' | 'completed' | null>(
+  () => 'pending',
+)
+const mockFetchOnboardingStatus = vi.fn(() => Promise.resolve<'pending' | 'completed' | null>('pending'))
+const mockSetOnboardingStatus = vi.fn(() => Promise.resolve())
 
 vi.mock('react-router-dom', async importOriginal => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
@@ -18,25 +21,30 @@ vi.mock('react-router-dom', async importOriginal => {
 
 vi.mock('../utils/onboarding', () => ({
   getOnboardingStatus: (..._args: unknown[]) => mockGetOnboardingStatus(),
+  fetchOnboardingStatus: (..._args: unknown[]) => mockFetchOnboardingStatus(),
   setOnboardingStatus: (...args: unknown[]) => mockSetOnboardingStatus(...args),
 }))
 
 describe('useOnboardingRedirect', () => {
-  it('flags onboarding as pending when missing and redirects to onboarding', () => {
+  it('flags onboarding as pending when missing and redirects to onboarding', async () => {
     renderHook(() => useOnboardingRedirect({ uid: 'user-1' } as any))
 
-    expect(mockGetOnboardingStatus).toHaveBeenCalledWith('user-1')
-    expect(mockSetOnboardingStatus).toHaveBeenCalledWith('user-1', 'pending')
-    expect(mockNavigate).toHaveBeenCalledWith('/onboarding', { replace: true })
+    await waitFor(() => {
+      expect(mockFetchOnboardingStatus).toHaveBeenCalledWith('user-1')
+      expect(mockSetOnboardingStatus).toHaveBeenCalledWith('user-1', 'pending')
+      expect(mockNavigate).toHaveBeenCalledWith('/onboarding', { replace: true })
+    })
   })
 
-  it('avoids redirecting when onboarding already completed', () => {
+  it('avoids redirecting when onboarding already completed', async () => {
     mockNavigate.mockReset()
-    mockGetOnboardingStatus.mockReturnValueOnce('done')
+    mockFetchOnboardingStatus.mockResolvedValueOnce('completed')
 
     renderHook(() => useOnboardingRedirect({ uid: 'user-2' } as any))
 
-    expect(mockSetOnboardingStatus).not.toHaveBeenCalled()
-    expect(mockNavigate).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(mockSetOnboardingStatus).toHaveBeenCalledWith('user-2', 'completed')
+      expect(mockNavigate).not.toHaveBeenCalled()
+    })
   })
 })

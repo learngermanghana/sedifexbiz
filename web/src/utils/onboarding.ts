@@ -1,3 +1,6 @@
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import { db } from '../firebase'
+
 const STORAGE_PREFIX = 'sedifex.onboarding.status.'
 
 export type OnboardingStatus = 'pending' | 'completed'
@@ -19,7 +22,7 @@ function canUseStorage(): boolean {
   }
 }
 
-export function getOnboardingStatus(uid: string | null): OnboardingStatus | null {
+function getCachedOnboardingStatus(uid: string | null): OnboardingStatus | null {
   if (!uid || !canUseStorage()) {
     return null
   }
@@ -36,7 +39,7 @@ export function getOnboardingStatus(uid: string | null): OnboardingStatus | null
   }
 }
 
-export function setOnboardingStatus(uid: string | null, status: OnboardingStatus) {
+function setCachedOnboardingStatus(uid: string | null, status: OnboardingStatus) {
   if (!uid || !canUseStorage()) {
     return
   }
@@ -48,7 +51,7 @@ export function setOnboardingStatus(uid: string | null, status: OnboardingStatus
   }
 }
 
-export function clearOnboardingStatus(uid: string | null) {
+export async function clearOnboardingStatus(uid: string | null) {
   if (!uid || !canUseStorage()) {
     return
   }
@@ -60,6 +63,54 @@ export function clearOnboardingStatus(uid: string | null) {
   }
 }
 
+export function getOnboardingStatus(uid: string | null): OnboardingStatus | null {
+  return getCachedOnboardingStatus(uid)
+}
+
+export async function fetchOnboardingStatus(
+  uid: string | null,
+): Promise<OnboardingStatus | null> {
+  if (!uid) return null
+
+  try {
+    const ref = doc(db, 'teamMembers', uid)
+    const snapshot = await getDoc(ref)
+    const rawValue = snapshot.data()?.onboardingStatus
+    if (rawValue === 'pending' || rawValue === 'completed') {
+      setCachedOnboardingStatus(uid, rawValue)
+      return rawValue
+    }
+    return getCachedOnboardingStatus(uid)
+  } catch (error) {
+    console.warn('[onboarding] Failed to read onboarding status from Firestore', error)
+    return getCachedOnboardingStatus(uid)
+  }
+}
+
+export async function setOnboardingStatus(
+  uid: string | null,
+  status: OnboardingStatus,
+) {
+  if (!uid) return
+
+  setCachedOnboardingStatus(uid, status)
+
+  try {
+    const ref = doc(db, 'teamMembers', uid)
+    await setDoc(
+      ref,
+      {
+        onboardingStatus: status,
+        onboardingCompletedAt: status === 'completed' ? serverTimestamp() : null,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    )
+  } catch (error) {
+    console.warn('[onboarding] Failed to persist onboarding status', error)
+  }
+}
+
 export function hasCompletedOnboarding(uid: string | null): boolean {
-  return getOnboardingStatus(uid) === 'completed'
+  return getCachedOnboardingStatus(uid) === 'completed'
 }

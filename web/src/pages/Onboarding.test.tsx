@@ -23,11 +23,15 @@ vi.mock('../hooks/useAuthUser', () => ({
 }))
 
 const mockGetOnboardingStatus = vi.fn()
-const mockSetOnboardingStatus = vi.fn()
+const mockFetchOnboardingStatus = vi.fn(() => Promise.resolve('pending'))
+const mockSetOnboardingStatus = vi.fn(() => Promise.resolve())
 vi.mock('../utils/onboarding', () => ({
   getOnboardingStatus: (
     ...args: Parameters<typeof mockGetOnboardingStatus>
   ) => mockGetOnboardingStatus(...args),
+  fetchOnboardingStatus: (
+    ...args: Parameters<typeof mockFetchOnboardingStatus>
+  ) => mockFetchOnboardingStatus(...args),
   setOnboardingStatus: (
     ...args: Parameters<typeof mockSetOnboardingStatus>
   ) => mockSetOnboardingStatus(...args),
@@ -67,6 +71,7 @@ describe('Onboarding page', () => {
   beforeEach(() => {
     mockUseAuthUser.mockReset()
     mockGetOnboardingStatus.mockReset()
+    mockFetchOnboardingStatus.mockReset()
     mockSetOnboardingStatus.mockReset()
     mockNavigate.mockReset()
 
@@ -86,6 +91,7 @@ describe('Onboarding page', () => {
 
     // Onboarding status
     mockGetOnboardingStatus.mockReturnValue('pending')
+    mockFetchOnboardingStatus.mockResolvedValue('pending')
 
     // Firestore collection/query helpers (shape doesn’t really matter)
     mockCollection.mockImplementation((_db, collectionName) => ({
