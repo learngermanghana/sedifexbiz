@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import Sparkline from '../components/Sparkline'
 import { useStoreMetrics } from '../hooks/useStoreMetrics'
+import { useLowStock } from '../hooks/useLowStock'
 
 const QUICK_LINKS: Array<{
   to: string
@@ -64,6 +65,72 @@ export default function Dashboard() {
     inventoryAlerts,
     teamCallouts,
   } = useStoreMetrics()
+  const {
+    lowStock,
+    topLowStock,
+    isLoading: isLoadingLowStock,
+    error: lowStockError,
+  } = useLowStock()
+  const [isExportingLowStock, setIsExportingLowStock] = useState(false)
+  const [lowStockExportMessage, setLowStockExportMessage] = useState<string | null>(
+    null,
+  )
+
+  function buildLowStockCsv() {
+    const header = ['Product', 'SKU', 'On hand', 'Reorder point']
+    const rows = lowStock.map(item => [
+      item.name,
+      item.sku ?? '—',
+      item.stockCount,
+      item.reorderLevel,
+    ])
+
+    return [header, ...rows]
+      .map(columns =>
+        columns
+          .map(value => {
+            const normalized = `${value ?? ''}`
+            if (normalized.includes(',') || normalized.includes('"')) {
+              return `"${normalized.replace(/"/g, '""')}"`
+            }
+            return normalized
+          })
+          .join(','),
+      )
+      .join('\n')
+  }
+
+  function handleLowStockExport() {
+    if (isExportingLowStock) return
+
+    if (!lowStock.length) {
+      setLowStockExportMessage('No low-stock SKUs to export right now.')
+      return
+    }
+
+    setIsExportingLowStock(true)
+    setLowStockExportMessage(null)
+
+    try {
+      const csv = buildLowStockCsv()
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const downloadUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = `low-stock-${new Date().toISOString().slice(0, 10)}.csv`
+      link.click()
+      URL.revokeObjectURL(downloadUrl)
+
+      setLowStockExportMessage(
+        'Low-stock CSV downloaded. Share it with suppliers to restock sooner.',
+      )
+    } catch (error) {
+      console.error('[dashboard] Failed to export low-stock CSV', error)
+      setLowStockExportMessage('Unable to export low-stock list. Try again soon.')
+    } finally {
+      setIsExportingLowStock(false)
+    }
+  }
 
   return (
     <div>
@@ -486,6 +553,133 @@ export default function Dashboard() {
               </li>
             ))}
           </ul>
+        </article>
+
+        <article
+          style={{
+            background: '#FFFFFF',
+            borderRadius: 20,
+            border: '1px solid #E2E8F0',
+            padding: '20px 22px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
+          }}
+        >
+          <div>
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', marginBottom: 4 }}>Restock soon</h3>
+            <p style={{ fontSize: 13, color: '#64748B' }}>
+              Products at or below their reorder point, ranked by urgency.
+            </p>
+          </div>
+
+          {isLoadingLowStock ? (
+            <p style={{ fontSize: 13, color: '#475569' }}>Loading low-stock products…</p>
+          ) : lowStockError ? (
+            <p style={{ fontSize: 13, color: '#DC2626' }}>{lowStockError}</p>
+          ) : lowStock.length ? (
+            <>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 12,
+                  flexWrap: 'wrap'
+                }}
+              >
+                <span style={{ fontSize: 13, color: '#475569' }}>
+                  Top {topLowStock.length} low-stock SKUs. Jump to Products to reorder.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleLowStockExport}
+                  disabled={isExportingLowStock}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: 10,
+                    border: '1px solid #4338CA',
+                    background: '#4338CA',
+                    color: '#FFFFFF',
+                    fontWeight: 600,
+                    cursor: isExportingLowStock ? 'wait' : 'pointer'
+                  }}
+                >
+                  {isExportingLowStock ? 'Preparing CSV…' : 'Export CSV'}
+                </button>
+              </div>
+
+              {lowStockExportMessage ? (
+                <p style={{ fontSize: 12, color: '#0F172A', margin: 0 }}>
+                  {lowStockExportMessage}
+                </p>
+              ) : null}
+
+              <ul
+                style={{
+                  listStyle: 'none',
+                  margin: 0,
+                  padding: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}
+              >
+                {topLowStock.map(item => (
+                  <li
+                    key={item.id}
+                    style={{
+                      border: '1px solid #E2E8F0',
+                      borderRadius: 12,
+                      padding: '12px 14px',
+                      display: 'flex',
+                      gap: 12,
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: '#F8FAFC'
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <Link
+                        to={`/products?lowStock=1#product-${item.id}`}
+                        style={{
+                          color: '#4338CA',
+                          fontWeight: 700,
+                          textDecoration: 'none',
+                        }}
+                      >
+                        {item.name}
+                      </Link>
+                      <span style={{ fontSize: 12, color: '#64748B' }}>
+                        SKU: {item.sku ?? '—'}
+                      </span>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 700, color: '#0F172A', fontSize: 14 }}>
+                        {item.stockCount} on hand
+                      </div>
+                      <div style={{ fontSize: 12, color: '#475569' }}>
+                        Reorder at {item.reorderLevel}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              {lowStock.length > topLowStock.length ? (
+                <Link
+                  to="/products?lowStock=1"
+                  style={{ fontSize: 13, fontWeight: 600, color: '#4338CA' }}
+                >
+                  View all {lowStock.length} low-stock products
+                </Link>
+              ) : null}
+            </>
+          ) : (
+            <p style={{ fontSize: 13, color: '#475569' }}>
+              All tracked products are above their reorder points.
+            </p>
+          )}
         </article>
 
         <article
