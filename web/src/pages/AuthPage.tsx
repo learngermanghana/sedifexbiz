@@ -381,33 +381,6 @@ export default function AuthPage() {
 
   return (
     <main className="app" style={appStyle}>
-      {/* ...rest of your component JSX stays the same... */}
-    </main>
-  )
-}
-
-
-      setStatus({
-        tone: 'success',
-        message: mode === 'login' ? 'Welcome back! Redirecting…' : 'Account created! You can now sign in.',
-      })
-      setPassword('')
-      setConfirmPassword('')
-      setFullName('')
-      setBusinessName('')
-      setPhone('')
-      setCountry('')
-      setTown('')
-      setAddress('')
-      setStoreId('')
-    } catch (err: unknown) {
-      setStatus({ tone: 'error', message: getErrorMessage(err) })
-    }
-  }
-
-  const appStyle: React.CSSProperties = { minHeight: '100dvh' }
-  return (
-    <main className="app" style={appStyle}>
       <div className="app__layout">
         <div className="app__card">
           <div className="app__brand">
@@ -730,8 +703,8 @@ export default function AuthPage() {
                 inventory alerts
               </Link>
               , and{' '}
-              <Link className="app__visual-link" to="/close-day">
-                smart counts
+              <Link className="app__visual-link" to="/finance">
+                smart finance
               </Link>{' '}
               help your whole team stay aligned from any device.
             </p>
@@ -849,9 +822,9 @@ const PAGE_FEATURES = [
     description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.',
   },
   {
-    path: '/close-day',
-    name: 'Close Day',
-    description: 'Tie out cash, settle registers, and share end-of-day reports with finance in one view.',
+    path: '/finance',
+    name: 'Finance',
+    description: 'Track cash-up, expenses, and profitability with one simple view.',
   },
 ] as const
 
