@@ -16,8 +16,7 @@ import AccountOverview from './pages/AccountOverview'
 import StaffManagement from './pages/StaffManagement'
 import { BillingVerifyPage } from './pages/BillingVerifyPage'
 import Support from './pages/Support'
-import Finance from './pages/Finance'      // 👈 NEW
-import { ToastProvider } from './components/ToastProvider'
+import Finance from './pages/Finance'   // 👈 ADD THIS IMPORT
 
 const router = createHashRouter([
   {
@@ -34,7 +33,10 @@ const router = createHashRouter([
           { path: 'receive', element: <Receive /> },
           { path: 'customers', element: <Customers /> },
           { path: 'activity', element: <ActivityFeed /> },
-          { path: 'finance', element: <Finance /> },     // 👈 NEW ROUTE
+
+          // 👇 NEW FINANCE ROUTE
+          { path: 'finance', element: <Finance /> },
+
           { path: 'close-day', element: <CloseDay /> },
           { path: 'onboarding', element: <Onboarding /> },
           { path: 'staff', element: <StaffManagement /> },
