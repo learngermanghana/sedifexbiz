@@ -19,7 +19,8 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/receive', label: 'Receive' },
   { to: '/customers', label: 'Customers' },
   { to: '/activity', label: 'Activity' },
-  { to: '/close-day', label: 'Close Day' },
+  // 🔁 Replaced Close Day with Finance
+  { to: '/finance', label: 'Finance' },
   { to: '/account', label: 'Account' },
 ]
 
@@ -58,9 +59,12 @@ function formatRequestCount(count: number) {
 function buildBannerMessage(queueStatus: ReturnType<typeof useConnectivityStatus>['queue']) {
   const pendingCount = queueStatus.pending
   if (queueStatus.status === 'error') {
-    const baseMessage = pendingCount > 0
-      ? `We couldn’t sync ${pendingCount} ${formatRequestCount(pendingCount)}. We’ll retry automatically.`
-      : 'We hit a snag syncing recent work. We’ll retry automatically.'
+    const baseMessage =
+      pendingCount > 0
+        ? `We couldn’t sync ${pendingCount} ${formatRequestCount(
+            pendingCount,
+          )}. We’ll retry automatically.`
+        : 'We hit a snag syncing recent work. We’ll retry automatically.'
 
     if (queueStatus.lastError) {
       return `${baseMessage} (${queueStatus.lastError})`
@@ -74,7 +78,9 @@ function buildBannerMessage(queueStatus: ReturnType<typeof useConnectivityStatus
   }
 
   if (queueStatus.status === 'pending' && pendingCount > 0) {
-    return `Waiting to sync ${pendingCount} ${formatRequestCount(pendingCount)}. We’ll send them once the connection stabilizes.`
+    return `Waiting to sync ${pendingCount} ${formatRequestCount(
+      pendingCount,
+    )}. We’ll send them once the connection stabilizes.`
   }
 
   return null
@@ -130,11 +136,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     }
 
     const key = `${DISMISS_KEY_PREFIX}${storeId}`
-    const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null
+    const stored =
+      typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null
     setDismissedOn(stored)
   }, [storeId])
 
-  const todayStamp = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const todayStamp = useMemo(
+    () => new Date().toISOString().slice(0, 10),
+    [],
+  )
   const isBillingNoticeDismissed = dismissedOn === todayStamp
 
   const showBillingNotice = Boolean(billingNotice && !isBillingNoticeDismissed)
@@ -161,14 +171,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     if (!isOnline) {
       return {
         variant: 'offline',
-        message: 'You appear to be offline. We’ll sync pending work when the connection returns.',
+        message:
+          'You appear to be offline. We’ll sync pending work when the connection returns.',
       }
     }
 
     if (!isReachable) {
       return {
         variant: 'degraded',
-        message: 'We’re having trouble reaching the network. We’ll keep retrying and sync queued work automatically.',
+        message:
+          'We’re having trouble reaching the network. We’ll keep retrying and sync queued work automatically.',
         pulse: true,
       }
     }
@@ -179,8 +191,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         queue.status === 'processing'
           ? 'processing'
           : queue.status === 'error'
-            ? 'error'
-            : 'pending'
+          ? 'error'
+          : 'pending'
       return {
         variant,
         message: queueMessage,
@@ -195,7 +207,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="shell">
-      {isMenuOpen && <div className="shell__backdrop" onClick={() => setIsMenuOpen(false)} />}
+      {isMenuOpen && (
+        <div
+          className="shell__backdrop"
+          onClick={() => setIsMenuOpen(false)}
+        />
+      )}
       <header className="shell__header">
         <div className="shell__header-inner">
           <div className="shell__brand">
@@ -215,12 +232,22 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <span />
               <span />
             </span>
-            <span className="shell__menu-label">{isMenuOpen ? 'Close' : 'Menu'}</span>
+            <span className="shell__menu-label">
+              {isMenuOpen ? 'Close' : 'Menu'}
+            </span>
             <span className="shell__sr-only">Toggle navigation</span>
           </button>
 
-          <div className={`shell__toolbar${isMenuOpen ? ' is-open' : ''}`}>
-            <nav className="shell__nav" aria-label="Primary" id="primary-nav">
+          <div
+            className={`shell__toolbar${
+              isMenuOpen ? ' is-open' : ''
+            }`}
+          >
+            <nav
+              className="shell__nav"
+              aria-label="Primary"
+              id="primary-nav"
+            >
               {NAV_ITEMS.map(item => (
                 <NavLink
                   key={item.to}
@@ -234,9 +261,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </nav>
 
             <div className="shell__controls">
-              <div className="shell__store-switcher" role="status" aria-live="polite">
+              <div
+                className="shell__store-switcher"
+                role="status"
+                aria-live="polite"
+              >
                 <span className="shell__store-label">Workspace</span>
-                <span className="shell__store-select" data-readonly>{workspaceStatus}</span>
+                <span
+                  className="shell__store-select"
+                  data-readonly
+                >
+                  {workspaceStatus}
+                </span>
               </div>
 
               {banner && (
@@ -248,18 +284,26 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   title={banner.message}
                 >
                   <span
-                    className={`shell__status-dot${banner.pulse ? ' is-pulsing' : ''}`}
+                    className={`shell__status-dot${
+                      banner.pulse ? ' is-pulsing' : ''
+                    }`}
                     aria-hidden="true"
                   />
-                  <span className="shell__status-label">{BADGE_LABELS[banner.variant]}</span>
-                  <span className="shell__sr-only">{banner.message}</span>
+                  <span className="shell__status-label">
+                    {BADGE_LABELS[banner.variant]}
+                  </span>
+                  <span className="shell__sr-only">
+                    {banner.message}
+                  </span>
                 </div>
               )}
 
               <SupportTicketLauncher />
 
               <div className="shell__account">
-                <span className="shell__account-email">{userEmail}</span>
+                <span className="shell__account-email">
+                  {userEmail}
+                </span>
                 <button
                   type="button"
                   className="button button--primary button--small"
@@ -280,11 +324,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             data-tone={billingNotice.tone}
           >
             <div>
-              <p className="shell__billing-title">{billingNotice.title}</p>
-              <p className="shell__billing-message">{billingNotice.message}</p>
+              <p className="shell__billing-title">
+                {billingNotice.title}
+              </p>
+              <p className="shell__billing-message">
+                {billingNotice.message}
+              </p>
             </div>
             <div className="shell__billing-actions">
-              <Link className="button button--primary button--small" to="/account">
+              <Link
+                className="button button--primary button--small"
+                to="/account"
+              >
                 Update payment
               </Link>
               <button
