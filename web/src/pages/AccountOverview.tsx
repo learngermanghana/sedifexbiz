@@ -372,146 +372,145 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         </div>
       )}
 
-      {isBusy && (
-        <p role="status" aria-live="polite">
-          Loading account details…
-        </p>
-      )}
+    {isBusy && (
+      <p role="status" aria-live="polite">
+        Loading account details…
+      </p>
+    )}
 
-      {profile && (
-        <section aria-labelledby="account-overview-profile">
-          <h2 id="account-overview-profile">Store profile</h2>
-          <dl className="account-overview__grid">
-            <div>
-              <dt>Workspace name</dt>
-              <dd>{formatValue(profile.displayName ?? profile.name)}</dd>
-            </div>
-            <div>
-              <dt>Email</dt>
-              <dd>{formatValue(profile.email)}</dd>
-            </div>
-            <div>
-              <dt>Phone</dt>
-              <dd>{formatValue(profile.phone)}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{formatValue(profile.status)}</dd>
-            </div>
-            <div>
-              <dt>Timezone</dt>
-              <dd>{formatValue(profile.timezone)}</dd>
-            </div>
-            <div>
-              <dt>Currency</dt>
-              <dd>{formatValue(profile.currency)}</dd>
-            </div>
-            <div>
-              <dt>Address</dt>
-              <dd>
-                {[
-                  profile.addressLine1,
-                  profile.addressLine2,
-                  profile.city,
-                  profile.region,
-                  profile.postalCode,
-                  profile.country,
-                ]
-                  .filter(Boolean)
-                  .join(', ') || '—'}
-              </dd>
-            </div>
-            <div>
-              <dt>Created</dt>
-              <dd>{formatTimestamp(profile.createdAt)}</dd>
-            </div>
-            <div>
-              <dt>Updated</dt>
-              <dd>{formatTimestamp(profile.updatedAt)}</dd>
-            </div>
-          </dl>
-        </section>
-      )}
-
-      <AccountBillingSection
-        storeId={storeId ?? null}
-        ownerEmail={user?.email ?? null}
-        isOwner={isOwner}
-        contractStatus={
-          subscriptionProfile?.status ??
-          profile?.contractStatus ??
-          profile?.status ??
-          null
-        }
-        billingPlan={subscriptionProfile?.plan ?? profile?.billingPlan ?? null}
-        paymentProvider={subscriptionProfile?.provider ?? profile?.paymentProvider ?? null}
-      />
-
-      <section aria-labelledby="account-overview-roster">
-        <h2 id="account-overview-roster">Team roster</h2>
-
-        {isOwner ? (
-          !rosterLoading && roster.length > 0 ? (
-            <div className="account-overview__actions">
-              <p className="account-overview__subtitle">
-                Team members are saved in Firebase. Edit existing teammates directly.
-              </p>
-              <Link
-                to="/staff"
-                className="button button--secondary"
-                data-testid="account-edit-team"
-              >
-                Edit team members
-              </Link>
-            </div>
-          ) : (
-            <p role="note">Team members will appear here once they are available.</p>
-          )
-        ) : (
-          <p role="note">You have read-only access to the team roster.</p>
-        )}
-
-        <div
-          className="account-overview__roster"
-          role="table"
-          aria-label="Team roster"
-        >
-          <div className="account-overview__roster-header" role="row">
-            <span role="columnheader">Email</span>
-            <span role="columnheader">Role</span>
-            <span role="columnheader">Invited by</span>
-            <span role="columnheader">Updated</span>
+    {profile && (
+      <section aria-labelledby="account-overview-profile">
+        <h2 id="account-overview-profile">Store profile</h2>
+        <dl className="account-overview__grid">
+          <div>
+            <dt>Workspace name</dt>
+            <dd>{formatValue(profile.displayName ?? profile.name)}</dd>
           </div>
-          {roster.length === 0 && !rosterLoading ? (
-            <div role="row" className="account-overview__roster-empty">
-              <span role="cell" colSpan={4}>
-                No team members found.
+          <div>
+            <dt>Email</dt>
+            <dd>{formatValue(profile.email)}</dd>
+          </div>
+          <div>
+            <dt>Phone</dt>
+            <dd>{formatValue(profile.phone)}</dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{formatValue(profile.status)}</dd>
+          </div>
+          <div>
+            <dt>Address</dt>
+            <dd>
+              {[
+                profile.addressLine1,
+                profile.addressLine2,
+                profile.city,
+                profile.region,
+                profile.postalCode,
+                profile.country,
+              ]
+                .filter(Boolean)
+                .join(', ') || '—'}
+            </dd>
+          </div>
+          <div>
+            <dt>Created</dt>
+            <dd>{formatTimestamp(profile.createdAt)}</dd>
+          </div>
+          <div>
+            <dt>Updated</dt>
+            <dd>{formatTimestamp(profile.updatedAt)}</dd>
+          </div>
+        </dl>
+      </section>
+    )}
+
+    <AccountBillingSection
+      storeId={storeId ?? null}
+      ownerEmail={user?.email ?? null}
+      isOwner={isOwner}
+      contractStatus={
+        subscriptionProfile?.status ??
+        profile?.contractStatus ??
+        profile?.status ??
+        null
+      }
+      billingPlan={subscriptionProfile?.plan ?? profile?.billingPlan ?? null}
+      paymentProvider={
+        subscriptionProfile?.provider ??
+        profile?.paymentProvider ??
+        'Paystack'
+      }
+    />
+
+    <section aria-labelledby="account-overview-roster">
+      <h2 id="account-overview-roster">Team roster</h2>
+
+      {isOwner ? (
+        !rosterLoading && roster.length > 0 ? (
+          <div className="account-overview__actions">
+            <p className="account-overview__subtitle">
+              Team members are saved in Firebase. Edit existing teammates
+              directly.
+            </p>
+            <Link
+              to="/staff"
+              className="button button--secondary"
+              data-testid="account-edit-team"
+            >
+              Edit team members
+            </Link>
+          </div>
+        ) : (
+          <p role="note">
+            Team members will appear here once they are available.
+          </p>
+        )
+      ) : (
+        <p role="note">You have read-only access to the team roster.</p>
+      )}
+
+      <div
+        className="account-overview__roster"
+        role="table"
+        aria-label="Team roster"
+      >
+        <div className="account-overview__roster-header" role="row">
+          <span role="columnheader">Email</span>
+          <span role="columnheader">Role</span>
+          <span role="columnheader">Invited by</span>
+          <span role="columnheader">Updated</span>
+        </div>
+        {roster.length === 0 && !rosterLoading ? (
+          <div role="row" className="account-overview__roster-empty">
+            <span role="cell" colSpan={4}>
+              No team members found.
+            </span>
+          </div>
+        ) : (
+          roster.map(member => (
+            <div
+              role="row"
+              key={member.id}
+              data-testid={`account-roster-${member.id}`}
+              data-uid={member.uid}
+              data-store-id={member.storeId ?? undefined}
+              data-phone={member.phone ?? undefined}
+              data-first-signup-email={member.firstSignupEmail ?? undefined}
+            >
+              <span role="cell">{formatValue(member.email)}</span>
+              <span role="cell">
+                {member.role === 'owner' ? 'Owner' : 'Staff'}
+              </span>
+              <span role="cell">{formatValue(member.invitedBy)}</span>
+              <span role="cell">
+                {formatTimestamp(member.updatedAt ?? member.createdAt)}
               </span>
             </div>
-          ) : (
-            roster.map(member => (
-              <div
-                role="row"
-                key={member.id}
-                data-testid={`account-roster-${member.id}`}
-                data-uid={member.uid}
-                data-store-id={member.storeId ?? undefined}
-                data-phone={member.phone ?? undefined}
-                data-first-signup-email={member.firstSignupEmail ?? undefined}
-              >
-                <span role="cell">{formatValue(member.email)}</span>
-                <span role="cell">
-                  {member.role === 'owner' ? 'Owner' : 'Staff'}
-                </span>
-                <span role="cell">{formatValue(member.invitedBy)}</span>
-                <span role="cell">
-                  {formatTimestamp(member.updatedAt ?? member.createdAt)}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
+          ))
+        )}
+      </div>
+    </section>
     </div>
   )
 }
