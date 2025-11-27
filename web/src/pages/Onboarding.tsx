@@ -15,6 +15,7 @@ import { useAuthUser } from '../hooks/useAuthUser'
 import { db } from '../firebase' // ✅ use only default Firestore
 import { getStoreIdFromRecord } from '../utils/storeId'
 import {
+  fetchOnboardingStatus,
   getOnboardingStatus,
   setOnboardingStatus,
   type OnboardingStatus,
@@ -105,16 +106,24 @@ export default function Onboarding() {
   const updatedAtLabel = formatTimestamp(storeDetails?.updatedAt ?? null)
 
   useEffect(() => {
-    const storedStatus = getOnboardingStatus(user?.uid ?? null)
-    if (!storedStatus) {
-      if (user?.uid) {
-        setOnboardingStatus(user.uid, 'pending')
-      }
-      setStatus('pending')
-      return
+    let isActive = true
+
+    const syncStatus = async () => {
+      const uid = user?.uid ?? null
+      const storedStatus = await fetchOnboardingStatus(uid)
+      const resolvedStatus = storedStatus ?? getOnboardingStatus(uid) ?? 'pending'
+
+      if (!isActive) return
+
+      setStatus(resolvedStatus)
+      await setOnboardingStatus(uid, resolvedStatus)
     }
 
-    setStatus(storedStatus)
+    void syncStatus()
+
+    return () => {
+      isActive = false
+    }
   }, [user?.uid])
 
   useEffect(() => {
@@ -184,9 +193,11 @@ export default function Onboarding() {
   function handleComplete() {
     if (!user) return
 
-    setOnboardingStatus(user.uid, 'completed')
-    setStatus('completed')
-    navigate('/', { replace: true })
+    void (async () => {
+      await setOnboardingStatus(user.uid, 'completed')
+      setStatus('completed')
+      navigate('/', { replace: true })
+    })()
   }
 
   function goToContractAndBilling() {
