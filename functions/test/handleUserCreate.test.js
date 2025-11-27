@@ -129,7 +129,7 @@ async function runHandleUserCreateSeedsDefaultStoreTest() {
   assert.strictEqual(storeDoc.ownerId, 'new-owner')
   assert.strictEqual(storeDoc.ownerEmail, 'Owner@example.com')
   assert.strictEqual(storeDoc.status, 'Active')
-  assert.strictEqual(storeDoc.contractStatus, 'Active')
+  assert.strictEqual(storeDoc.contractStatus, 'trial')
   assert.deepStrictEqual(storeDoc.inventorySummary, {
     trackedSkus: 0,
     lowStockSkus: 0,
