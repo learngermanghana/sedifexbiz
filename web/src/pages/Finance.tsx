@@ -15,14 +15,19 @@ export default function Finance() {
 
       <div className="card" style={{ display: 'grid', gap: 16 }}>
         <h3 className="card__title">Quick links</h3>
+        <p className="card__subtitle">
+          Jump straight to the main money pages for your business.
+        </p>
         <ul className="link-list">
           <li>
             <Link to="/close-day">Close Day &amp; cash counts</Link>
           </li>
           <li>
+            <Link to="/expenses">Expenses &amp; payouts</Link>
+          </li>
+          <li>
             <Link to="/account">Billing &amp; subscription</Link>
           </li>
-          {/* later you can add: <li><Link to="/expenses">Expenses</Link></li> */}
         </ul>
       </div>
     </div>
