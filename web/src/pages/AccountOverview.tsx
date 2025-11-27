@@ -26,6 +26,7 @@ type StoreProfile = {
   email: string | null
   phone: string | null
   status: string | null
+  contractStatus: string | null
   timezone: string | null
   currency: string | null
   billingPlan: string | null
@@ -83,10 +84,16 @@ function mapStoreSnapshot(
     toNullableString(data.planKey) ??
     toNullableString(billingRaw.planKey)
 
+  // Default payment provider is Paystack for this app
   const paymentProvider =
     toNullableString(data.paymentProvider) ??
     toNullableString(billingRaw.provider) ??
-    (toNullableString(data.paystackCustomerCode) ? 'Paystack' : null)
+    'Paystack'
+
+  const contractStatus =
+    toNullableString(data.contractStatus) ??
+    toNullableString(billingRaw.status) ??
+    toNullableString(data.status)
 
   return {
     name: toNullableString(data.name),
@@ -94,6 +101,7 @@ function mapStoreSnapshot(
     email: toNullableString(data.email),
     phone: toNullableString(data.phone),
     status: toNullableString(data.status),
+    contractStatus,
     timezone: toNullableString(data.timezone),
     currency: toNullableString(data.currency),
     billingPlan,
@@ -429,7 +437,12 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         storeId={storeId ?? null}
         ownerEmail={user?.email ?? null}
         isOwner={isOwner}
-        contractStatus={subscriptionProfile?.status ?? profile?.status ?? null}
+        contractStatus={
+          subscriptionProfile?.status ??
+          profile?.contractStatus ??
+          profile?.status ??
+          null
+        }
         billingPlan={subscriptionProfile?.plan ?? profile?.billingPlan ?? null}
         paymentProvider={subscriptionProfile?.provider ?? profile?.paymentProvider ?? null}
       />
