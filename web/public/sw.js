@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sedifex-static-v2'
+const CACHE_NAME = 'sedifex-static-v3'
 const SYNC_TAG = 'sync-pending-requests'
 const BASE_URL = new URL('./', self.location).pathname
 const PRECACHE_URLS = [
@@ -18,9 +18,12 @@ let lastQueueError = null
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE_URLS)).catch(error => {
-      console.warn('[sw] Precaching failed', error)
-    })
+    (async () => {
+      await caches.open(CACHE_NAME).then(cache => cache.addAll(PRECACHE_URLS)).catch(error => {
+        console.warn('[sw] Precaching failed', error)
+      })
+      await self.skipWaiting()
+    })()
   )
 })
 
@@ -51,34 +54,36 @@ self.addEventListener('fetch', event => {
     return
   }
 
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      caches.match(OFFLINE_FALLBACK).then(cached => cached || fetch(request).catch(() => cached))
-    )
-    return
-  }
-
   if (url.origin !== self.location.origin) {
     return
   }
 
-  event.respondWith(
-    caches.match(request).then(cached => {
-      const fetchPromise = fetch(request)
-        .then(response => {
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response
-          }
-          const copy = response.clone()
-          caches.open(CACHE_NAME).then(cache => cache.put(request, copy))
-          return response
-        })
-        .catch(() => cached)
+  if (request.mode === 'navigate') {
+    event.respondWith(networkFirst(request, OFFLINE_FALLBACK))
+    return
+  }
 
-      return cached || fetchPromise
-    })
-  )
+  event.respondWith(networkFirst(request))
 })
+
+async function networkFirst(request, fallbackUrl) {
+  try {
+    const response = await fetch(request)
+    if (response && response.status === 200 && response.type === 'basic') {
+      const copy = response.clone()
+      caches.open(CACHE_NAME).then(cache => cache.put(request, copy))
+    }
+    return response
+  } catch (error) {
+    const cached = await caches.match(request)
+    if (cached) return cached
+    if (fallbackUrl) {
+      const fallback = await caches.match(fallbackUrl)
+      if (fallback) return fallback
+    }
+    throw error
+  }
+}
 
 self.addEventListener('message', event => {
   const data = event.data
