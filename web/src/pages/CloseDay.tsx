@@ -18,6 +18,9 @@ import { useActiveStore } from '../hooks/useActiveStore'
 
 const DENOMINATIONS = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1] as const
 
+// How big a difference before we show a strong warning + require a note
+const LARGE_DIFFERENCE_THRESHOLD = 20 // GHS 20
+
 type CashCountState = Record<string, string>
 
 function createInitialCashCountState(): CashCountState {
@@ -53,7 +56,9 @@ export default function CloseDay() {
   const { storeId: activeStoreId } = useActiveStore()
 
   const [total, setTotal] = useState(0)
-  const [cashCounts, setCashCounts] = useState<CashCountState>(() => createInitialCashCountState())
+  const [cashCounts, setCashCounts] = useState<CashCountState>(() =>
+    createInitialCashCountState(),
+  )
   const [looseCash, setLooseCash] = useState('')
   const [cardAndDigital, setCardAndDigital] = useState('')
   const [cashRemoved, setCashRemoved] = useState('')
@@ -77,18 +82,21 @@ export default function CloseDay() {
       collection(db, 'sales'),
       where('storeId', '==', activeStoreId),
       where('createdAt', '>=', Timestamp.fromDate(start)),
-      orderBy('createdAt', 'desc')
+      orderBy('createdAt', 'desc'),
     )
     return onSnapshot(q, snap => {
       let sum = 0
-      snap.forEach(d => sum += (d.data().total || 0))
+      snap.forEach(d => {
+        sum += d.data().total || 0
+      })
       setTotal(sum)
     })
   }, [activeStoreId])
 
   useEffect(() => {
     const style = document.createElement('style')
-    style.textContent = `@media print { .no-print { display: none !important; } .print-summary { max-width: 100% !important; } }`
+    style.textContent =
+      '@media print { .no-print { display: none !important; } .print-summary { max-width: 100% !important; } }'
     document.head.appendChild(style)
     return () => {
       document.head.removeChild(style)
@@ -98,14 +106,22 @@ export default function CloseDay() {
   const looseCashTotal = useMemo(() => parseCurrency(looseCash), [looseCash])
 
   const countedCash = useMemo(() => {
-    return DENOMINATIONS.reduce((sum, denom) => {
-      const count = parseQuantity(cashCounts[String(denom)])
-      return sum + denom * count
-    }, 0) + looseCashTotal
+    return (
+      DENOMINATIONS.reduce((sum, denom) => {
+        const count = parseQuantity(cashCounts[String(denom)])
+        return sum + denom * count
+      }, 0) + looseCashTotal
+    )
   }, [cashCounts, looseCashTotal])
 
-  const cardTotal = useMemo(() => parseCurrency(cardAndDigital), [cardAndDigital])
-  const removedTotal = useMemo(() => parseCurrency(cashRemoved), [cashRemoved])
+  const cardTotal = useMemo(
+    () => parseCurrency(cardAndDigital),
+    [cardAndDigital],
+  )
+  const removedTotal = useMemo(
+    () => parseCurrency(cashRemoved),
+    [cashRemoved],
+  )
   const addedTotal = useMemo(() => parseCurrency(cashAdded), [cashAdded])
 
   const expectedCash = useMemo(() => {
@@ -113,7 +129,20 @@ export default function CloseDay() {
     return Number.isFinite(computed) ? computed : 0
   }, [addedTotal, cardTotal, removedTotal, total])
 
-  const variance = useMemo(() => countedCash - expectedCash, [countedCash, expectedCash])
+  const variance = useMemo(
+    () => countedCash - expectedCash,
+    [countedCash, expectedCash],
+  )
+
+  const differenceLabel =
+    Math.abs(variance) < 0.01
+      ? 'Matches'
+      : variance < 0
+      ? 'Short (missing cash)'
+      : 'Over (extra cash)'
+
+  const isLargeDifference =
+    Math.abs(variance) > LARGE_DIFFERENCE_THRESHOLD + 0.009
 
   const handleCountChange = (denom: number, value: string) => {
     setCashCounts(prev => ({ ...prev, [String(denom)]: value }))
@@ -133,8 +162,18 @@ export default function CloseDay() {
       if (!activeStoreId) {
         throw new Error('Select a workspace before recording a close-out.')
       }
-      const start = new Date(); start.setHours(0, 0, 0, 0)
-      const end = new Date(start); end.setDate(end.getDate() + 1)
+
+      // If difference is large, require a note
+      if (isLargeDifference && !notes.trim()) {
+        throw new Error(
+          'The difference is large. Please add a short note explaining what happened before saving.',
+        )
+      }
+
+      const start = new Date()
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(start)
+      end.setDate(end.getDate() + 1)
 
       const salesQuery = query(
         collection(db, 'sales'),
@@ -151,7 +190,10 @@ export default function CloseDay() {
       let receiptCount = 0
       let startTime: Timestamp | null = null
       let endTime: Timestamp | null = null
-      const cashierBreakdown: Record<string, { receiptCount: number; totalSales: number; totalTax: number }> = {}
+      const cashierBreakdown: Record<
+        string,
+        { receiptCount: number; totalSales: number; totalTax: number }
+      > = {}
 
       salesSnapshot.forEach(docSnap => {
         const data = docSnap.data()
@@ -161,16 +203,26 @@ export default function CloseDay() {
         totalTax += saleTax
         receiptCount += 1
 
-        const createdAt = data.createdAt instanceof Timestamp ? data.createdAt : null
+        const createdAt =
+          data.createdAt instanceof Timestamp ? data.createdAt : null
         if (createdAt) {
           const millis = createdAt.toMillis()
           if (!startTime || millis < startTime.toMillis()) startTime = createdAt
           if (!endTime || millis > endTime.toMillis()) endTime = createdAt
         }
 
-        const cashierIdRaw = typeof data.cashierId === 'string' ? data.cashierId.trim() : ''
-        const cashierId = cashierIdRaw || (typeof data.createdBy === 'string' ? data.createdBy : '') || 'unknown'
-        const entry = cashierBreakdown[cashierId] ?? { receiptCount: 0, totalSales: 0, totalTax: 0 }
+        const cashierIdRaw =
+          typeof data.cashierId === 'string' ? data.cashierId.trim() : ''
+        const cashierId =
+          cashierIdRaw ||
+          (typeof data.createdBy === 'string' ? data.createdBy : '') ||
+          'unknown'
+        const entry =
+          cashierBreakdown[cashierId] ?? {
+            receiptCount: 0,
+            totalSales: 0,
+            totalTax: 0,
+          }
         entry.receiptCount += 1
         entry.totalSales += saleTotal
         entry.totalTax += saleTax
@@ -233,7 +285,9 @@ export default function CloseDay() {
           storeId: activeStoreId,
           type: 'task',
           summary: `Closed day ${getDayKey(start)}`,
-          detail: `Variance: GHS ${variance.toFixed(2)} · Cash counted: GHS ${countedCash.toFixed(2)}`,
+          detail: `Difference: GHS ${variance.toFixed(
+            2,
+          )} · Cash counted: GHS ${countedCash.toFixed(2)}`,
           actor,
           createdAt: serverTimestamp(),
         })
@@ -247,15 +301,17 @@ export default function CloseDay() {
       setCashRemoved('')
       setCashAdded('')
       setNotes('')
-    } catch (error) {
+    } catch (error: any) {
       console.error('[close-day] Failed to record closeout', error)
-      setSubmitError('We were unable to save the close day record. Please retry.')
+      const message =
+        typeof error?.message === 'string'
+          ? error.message
+          : 'We were unable to save the close day record. Please retry.'
+      setSubmitError(message)
     } finally {
       setIsSubmitting(false)
     }
   }
-
-
 
   return (
     <div className="print-summary" style={{ maxWidth: 760 }}>
@@ -274,10 +330,17 @@ export default function CloseDay() {
         }}
       >
         <strong>How to use this page</strong>
-        <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>
+        <ul
+          style={{
+            margin: 0,
+            paddingLeft: 18,
+            display: 'grid',
+            gap: 4,
+          }}
+        >
           <li>Confirm the sales total is correct for today.</li>
-          <li>Enter card/digital payments and any cash removed or added.</li>
-          <li>Count each denomination, add loose coins, and review the variance.</li>
+          <li>Enter card / mobile money / transfers and any cash taken out or added.</li>
+          <li>Count each note and coin, add loose cash, then review the cash check.</li>
           <li>Add notes for the next shift, then save and print the summary.</li>
         </ul>
       </div>
@@ -286,10 +349,24 @@ export default function CloseDay() {
         <section style={{ marginTop: 24 }}>
           <h3 style={{ marginBottom: 8 }}>Sales Summary</h3>
           <p style={{ marginBottom: 8 }}>Today’s sales total</p>
-          <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 16 }}>GHS {total.toFixed(2)}</div>
+          <div
+            style={{
+              fontSize: 32,
+              fontWeight: 800,
+              marginBottom: 16,
+            }}
+          >
+            GHS {total.toFixed(2)}
+          </div>
           <div style={{ display: 'grid', gap: 12, maxWidth: 420 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span>Card &amp; digital payments</span>
+            <label
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+              }}
+            >
+              <span>Card / mobile money / transfers</span>
               <input
                 type="number"
                 inputMode="decimal"
@@ -300,8 +377,14 @@ export default function CloseDay() {
                 placeholder="0.00"
               />
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span>Cash removed (drops, payouts)</span>
+            <label
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+              }}
+            >
+              <span>Cash taken out (e.g. bank deposit, payouts)</span>
               <input
                 type="number"
                 inputMode="decimal"
@@ -312,8 +395,14 @@ export default function CloseDay() {
                 placeholder="0.00"
               />
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <span>Cash added (float top-ups)</span>
+            <label
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+              }}
+            >
+              <span>Cash put in drawer (float top-up)</span>
               <input
                 type="number"
                 inputMode="decimal"
@@ -333,9 +422,33 @@ export default function CloseDay() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '6px 4px' }}>Denomination</th>
-                  <th style={{ textAlign: 'left', borderBottom: '1px solid #d1d5db', padding: '6px 4px' }}>Quantity</th>
-                  <th style={{ textAlign: 'right', borderBottom: '1px solid #d1d5db', padding: '6px 4px' }}>Subtotal</th>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      borderBottom: '1px solid #d1d5db',
+                      padding: '6px 4px',
+                    }}
+                  >
+                    Denomination
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      borderBottom: '1px solid #d1d5db',
+                      padding: '6px 4px',
+                    }}
+                  >
+                    Quantity
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'right',
+                      borderBottom: '1px solid #d1d5db',
+                      padding: '6px 4px',
+                    }}
+                  >
+                    Subtotal
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -345,7 +458,9 @@ export default function CloseDay() {
                   const subtotal = denom * quantity
                   return (
                     <tr key={key}>
-                      <td style={{ padding: '6px 4px' }}>GHS {denom.toFixed(denom % 1 === 0 ? 0 : 2)}</td>
+                      <td style={{ padding: '6px 4px' }}>
+                        GHS {denom.toFixed(denom % 1 === 0 ? 0 : 2)}
+                      </td>
                       <td style={{ padding: '6px 4px' }}>
                         <input
                           type="number"
@@ -353,11 +468,20 @@ export default function CloseDay() {
                           min="0"
                           step="1"
                           value={cashCounts[key]}
-                          onChange={event => handleCountChange(denom, event.target.value)}
+                          onChange={event =>
+                            handleCountChange(denom, event.target.value)
+                          }
                           style={{ width: '100%' }}
                         />
                       </td>
-                      <td style={{ padding: '6px 4px', textAlign: 'right' }}>GHS {subtotal.toFixed(2)}</td>
+                      <td
+                        style={{
+                          padding: '6px 4px',
+                          textAlign: 'right',
+                        }}
+                      >
+                        GHS {subtotal.toFixed(2)}
+                      </td>
                     </tr>
                   )
                 })}
@@ -384,23 +508,68 @@ export default function CloseDay() {
         </section>
 
         <section style={{ marginTop: 32 }}>
-          <h3 style={{ marginBottom: 8 }}>Variance</h3>
+          <h3 style={{ marginBottom: 8 }}>Cash check</h3>
+          <p
+            style={{
+              marginTop: 0,
+              marginBottom: 8,
+              fontSize: 14,
+              color: '#4b5563',
+            }}
+          >
+            We compare what the system expects with what you counted in the
+            drawer.
+          </p>
           <div style={{ display: 'grid', gap: 6, maxWidth: 360 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Expected cash</span>
+              <span>Expected cash in drawer</span>
               <strong>GHS {expectedCash.toFixed(2)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Counted cash</span>
+              <span>Cash you counted</span>
               <strong>GHS {countedCash.toFixed(2)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Variance</span>
-              <strong style={{ color: Math.abs(variance) > 0.009 ? '#b91c1c' : '#047857' }}>
-                GHS {variance.toFixed(2)}
+              <span>Difference</span>
+              <strong
+                style={{
+                  color:
+                    Math.abs(variance) > 0.009 ? '#b91c1c' : '#047857',
+                }}
+              >
+                GHS {variance.toFixed(2)} · {differenceLabel}
               </strong>
             </div>
           </div>
+
+          {/* Traffic light style status */}
+          <p
+            style={{
+              marginTop: 8,
+              fontSize: 14,
+              color:
+                Math.abs(variance) < 0.01
+                  ? '#047857'
+                  : isLargeDifference
+                  ? '#b91c1c'
+                  : '#92400e',
+            }}
+          >
+            {Math.abs(variance) < 0.01 &&
+              '✅ All good – your cash matches the system.'}
+            {Math.abs(variance) >= 0.01 && !isLargeDifference && (
+              <>
+                ⚠️ Small difference. Please double-check the drawer and
+                amounts.
+              </>
+            )}
+            {isLargeDifference && (
+              <>
+                ⚠️ Large difference. You must add a note explaining what
+                happened before saving.
+              </>
+            )}
+          </p>
         </section>
 
         <section style={{ marginTop: 32 }}>
@@ -410,7 +579,11 @@ export default function CloseDay() {
             onChange={event => setNotes(event.target.value)}
             rows={4}
             style={{ width: '100%', resize: 'vertical' }}
-            placeholder="Include context for discrepancies or reminders for the next shift."
+            placeholder={
+              isLargeDifference
+                ? 'Large difference – explain what happened (e.g. payout, mistake, cash left in safe)...'
+                : 'Include context for differences or reminders for the next shift.'
+            }
           />
         </section>
 
@@ -418,16 +591,30 @@ export default function CloseDay() {
           <p style={{ color: '#b91c1c', marginTop: 16 }}>{submitError}</p>
         )}
         {submitSuccess && (
-          <p style={{ color: '#047857', marginTop: 16 }}>Close day record saved successfully.</p>
+          <p style={{ color: '#047857', marginTop: 16 }}>
+            Close day record saved successfully.
+          </p>
         )}
 
-        <div className="no-print" style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-          <button type="button" onClick={handlePrint} style={{ padding: '10px 16px' }}>
+        <div
+          className="no-print"
+          style={{ display: 'flex', gap: 12, marginTop: 24 }}
+        >
+          <button
+            type="button"
+            onClick={handlePrint}
+            style={{ padding: '10px 16px' }}
+          >
             Print summary
           </button>
           <button
             type="submit"
-            style={{ padding: '10px 16px', background: '#4338CA', color: 'white', border: 'none' }}
+            style={{
+              padding: '10px 16px',
+              background: '#4338CA',
+              color: 'white',
+              border: 'none',
+            }}
             disabled={isSubmitting}
           >
             {isSubmitting ? 'Saving…' : 'Save close day record'}
