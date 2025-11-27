@@ -87,7 +87,7 @@ async function runInitializeStoreCreatesWorkspaceTest() {
   assert.ok(storeDoc, 'Expected store document to be created')
   assert.strictEqual(storeDoc.ownerId, 'new-owner-uid')
   assert.strictEqual(storeDoc.status, 'Active')
-  assert.strictEqual(storeDoc.contractStatus, 'Active')
+  assert.strictEqual(storeDoc.contractStatus, 'trial')
   assert.strictEqual(storeDoc.ownerEmail, 'fresh.owner@example.com')
   assert.strictEqual(storeDoc.ownerName, 'Fresh Owner')
   assert.strictEqual(storeDoc.displayName, 'Fresh Retail')

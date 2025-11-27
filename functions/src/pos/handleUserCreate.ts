@@ -24,7 +24,7 @@ async function createOwnerStoreAndWorkspace(params: {
     {
       ownerId: uid,
       status: 'Active',
-      contractStatus: 'Active',
+      contractStatus: 'trial',
       inventorySummary: {
         trackedSkus: 0,
         lowStockSkus: 0,
@@ -57,7 +57,7 @@ async function createOwnerStoreAndWorkspace(params: {
       contactEmail: email,
       plan: 'Growth',
       billingCycle: 'annual',
-      paymentStatus: 'paid',
+      paymentStatus: 'trial',
       status: 'active',
       updatedAt: now,
     },
