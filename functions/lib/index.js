@@ -829,7 +829,11 @@ exports.createPaystackCheckout = functions.https.onCall(async (data, context) =>
         email: email || storeData.ownerEmail || undefined,
         amount: amountMinorUnits,
         currency: PAYSTACK_CURRENCY,
-        callback_url: typeof payload.returnUrl === 'string' ? payload.returnUrl : undefined,
+        callback_url: typeof payload.redirectUrl === 'string'
+            ? payload.redirectUrl
+            : typeof payload.returnUrl === 'string'
+                ? payload.returnUrl
+                : undefined,
         metadata: {
             storeId,
             userId: uid,
@@ -936,6 +940,8 @@ exports.handlePaystackWebhook = functions.https.onRequest(async (req, res) => {
                         lastEventAt: timestamp,
                         lastChargeReference: data.reference || null,
                     },
+                    paymentStatus: 'active',
+                    contractStatus: 'active',
                 }, { merge: true });
             }
         }

@@ -1,0 +1,11 @@
+# functions/params.yaml
+params:
+  - name: PAYSTACK_SECRET_KEY
+    type: string
+    required: true
+  - name: PAYSTACK_STANDARD_PLAN_CODE
+    type: string
+    required: true
+  - name: PAYSTACK_CURRENCY
+    type: string
+    default: GHS
