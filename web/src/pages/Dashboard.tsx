@@ -1,9 +1,20 @@
-import React, { useState } from 'react'
+// web/src/pages/Dashboard.tsx
+import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import Sparkline from '../components/Sparkline'
 import { useStoreMetrics } from '../hooks/useStoreMetrics'
 import { useLowStock } from '../hooks/useLowStock'
+import { useActiveStore } from '../hooks/useActiveStore'
+import { db } from '../firebase'
+import {
+  collection,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+  limit,
+} from 'firebase/firestore'
 
 const QUICK_LINKS: Array<{
   to: string
@@ -33,13 +44,48 @@ const QUICK_LINKS: Array<{
   {
     to: '/customers',
     title: 'Customers',
-    description: 'Look up purchase history, reward loyal shoppers, and keep profiles up to date.',
+    description:
+      'Look up purchase history, reward loyal shoppers, and keep profiles up to date.',
   },
 ]
 
 function formatPercent(value: number) {
   const sign = value > 0 ? '+' : ''
   return `${sign}${value.toFixed(1)}%`
+}
+
+// ---- Snapshot types & helpers ----
+type DashboardSaleItem = {
+  name: string
+  qty: number
+  price: number
+}
+
+type DashboardSale = {
+  id: string
+  branchId?: string | null
+  storeId?: string | null
+  total: number
+  createdAt: Date | null
+  items: DashboardSaleItem[]
+}
+
+type DashboardExpense = {
+  id: string
+  amount: number
+  date: string // yyyy-mm-dd
+}
+
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
+function isSameMonth(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()
 }
 
 export default function Dashboard() {
@@ -71,10 +117,160 @@ export default function Dashboard() {
     isLoading: isLoadingLowStock,
     error: lowStockError,
   } = useLowStock()
+
+  const { storeId } = useActiveStore()
+
   const [isExportingLowStock, setIsExportingLowStock] = useState(false)
-  const [lowStockExportMessage, setLowStockExportMessage] = useState<string | null>(
-    null,
-  )
+  const [lowStockExportMessage, setLowStockExportMessage] = useState<string | null>(null)
+
+  // ---- New snapshot state ----
+  const [sales, setSales] = useState<DashboardSale[]>([])
+  const [expenses, setExpenses] = useState<DashboardExpense[]>([])
+  const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(true)
+
+  const now = new Date()
+  const yesterday = useMemo(() => {
+    const d = new Date(now)
+    d.setDate(d.getDate() - 1)
+    return d
+  }, [now])
+
+  // ---- Load sales for snapshot (last ~500 records for this store) ----
+  useEffect(() => {
+    if (!storeId) {
+      setSales([])
+      setIsLoadingSnapshot(false)
+      return
+    }
+
+    setIsLoadingSnapshot(true)
+
+    const q = query(
+      collection(db, 'sales'),
+      where('branchId', '==', storeId),
+      orderBy('createdAt', 'desc'),
+      limit(500),
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      snap => {
+        const rows: DashboardSale[] = snap.docs.map(docSnap => {
+          const data = docSnap.data() as any
+          const createdAt =
+            data.createdAt && typeof data.createdAt.toDate === 'function'
+              ? (data.createdAt.toDate() as Date)
+              : null
+
+          const total =
+            typeof data.total === 'number'
+              ? data.total
+              : typeof data.totals?.total === 'number'
+                ? data.totals.total
+                : 0
+
+          const itemsRaw = Array.isArray(data.items) ? data.items : []
+
+          const items: DashboardSaleItem[] = itemsRaw.map((item: any, index: number) => ({
+            name: String(item.name ?? `Item ${index + 1}`),
+            qty: Number(item.qty) || 0,
+            price: Number(item.price) || 0,
+          }))
+
+          return {
+            id: docSnap.id,
+            branchId: data.branchId ?? null,
+            storeId: data.storeId ?? null,
+            total,
+            createdAt,
+            items,
+          }
+        })
+
+        setSales(rows)
+        setIsLoadingSnapshot(false)
+      },
+      () => {
+        setSales([])
+        setIsLoadingSnapshot(false)
+      },
+    )
+
+    return unsubscribe
+  }, [storeId])
+
+  // ---- Load expenses for snapshot ----
+  useEffect(() => {
+    if (!storeId) {
+      setExpenses([])
+      return
+    }
+
+    const q = query(
+      collection(db, 'expenses'),
+      where('storeId', '==', storeId),
+      orderBy('date', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(500),
+    )
+
+    const unsubscribe = onSnapshot(q, snap => {
+      const rows: DashboardExpense[] = snap.docs.map(docSnap => {
+        const data = docSnap.data() as any
+        return {
+          id: docSnap.id,
+          amount: Number(data.amount) || 0,
+          date: String(data.date ?? ''),
+        }
+      })
+      setExpenses(rows)
+    })
+
+    return unsubscribe
+  }, [storeId])
+
+  // ---- Aggregate snapshot metrics ----
+  const {
+    todaySalesTotal,
+    todaySalesCount,
+    yesterdaySalesTotal,
+    monthSalesTotal,
+  } = useMemo(() => {
+    let todayTotal = 0
+    let todayCount = 0
+    let yesterdayTotal = 0
+    let monthTotal = 0
+
+    for (const sale of sales) {
+      if (!sale.createdAt) continue
+
+      if (isSameMonth(sale.createdAt, now)) {
+        monthTotal += sale.total
+      }
+
+      if (isSameDay(sale.createdAt, now)) {
+        todayTotal += sale.total
+        todayCount += 1
+      } else if (isSameDay(sale.createdAt, yesterday)) {
+        yesterdayTotal += sale.total
+      }
+    }
+
+    return {
+      todaySalesTotal: todayTotal,
+      todaySalesCount: todayCount,
+      yesterdaySalesTotal: yesterdayTotal,
+      monthSalesTotal: monthTotal,
+    }
+  }, [now, sales, yesterday])
+
+  const monthExpensesTotal = useMemo(() => {
+    if (!expenses.length) return 0
+    const currentMonth = now.toISOString().slice(0, 7) // yyyy-mm
+    return expenses
+      .filter(exp => exp.date?.startsWith(currentMonth))
+      .reduce((sum, exp) => sum + exp.amount, 0)
+  }, [expenses, now])
 
   function buildLowStockCsv() {
     const header = ['Product', 'SKU', 'On hand', 'Reorder point']
@@ -136,9 +332,11 @@ export default function Dashboard() {
     <div>
       <h2 style={{ color: '#4338CA', marginBottom: 8 }}>Dashboard</h2>
       <p style={{ color: '#475569', marginBottom: 24 }}>
-        Welcome back! Choose what you’d like to work on — the most important Sedifex pages are just one tap away.
+        Welcome back! Choose what you’d like to work on — the most important Sedifex pages
+        are just one tap away.
       </p>
 
+      {/* 🔹 New "Today at a glance" snapshot card */}
       <section
         style={{
           background: '#FFFFFF',
@@ -148,7 +346,190 @@ export default function Dashboard() {
           display: 'flex',
           flexDirection: 'column',
           gap: 16,
-          marginBottom: 24
+          marginBottom: 24,
+        }}
+        aria-label="Today snapshot"
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <div>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: 18,
+                fontWeight: 700,
+                color: '#0F172A',
+              }}
+            >
+              Today at a glance
+            </h3>
+            <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+              See how today’s sales compare to yesterday and this month’s costs.
+            </p>
+          </div>
+          {!storeId && (
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                color: '#DC2626',
+                fontWeight: 500,
+              }}
+            >
+              Switch to a workspace to see live numbers.
+            </p>
+          )}
+        </div>
+
+        {isLoadingSnapshot ? (
+          <p style={{ fontSize: 13, color: '#475569' }}>Loading snapshot…</p>
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 16,
+              marginTop: 8,
+            }}
+          >
+            <article
+              style={{
+                background: '#F8FAFC',
+                borderRadius: 14,
+                padding: '14px 16px',
+                border: '1px solid #E2E8F0',
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.6,
+                  color: '#64748B',
+                  fontWeight: 600,
+                }}
+              >
+                Sales today
+              </p>
+              <p
+                style={{
+                  margin: '6px 0 2px',
+                  fontSize: 24,
+                  fontWeight: 700,
+                  color: '#0F172A',
+                }}
+              >
+                GHS {todaySalesTotal.toFixed(2)}
+              </p>
+              <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+                {todaySalesCount}{' '}
+                {todaySalesCount === 1 ? 'sale recorded' : 'sales recorded'}
+              </p>
+            </article>
+
+            <article
+              style={{
+                background: '#F8FAFC',
+                borderRadius: 14,
+                padding: '14px 16px',
+                border: '1px solid #E2E8F0',
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.6,
+                  color: '#64748B',
+                  fontWeight: 600,
+                }}
+              >
+                Yesterday
+              </p>
+              <p
+                style={{
+                  margin: '6px 0 2px',
+                  fontSize: 24,
+                  fontWeight: 700,
+                  color: '#0F172A',
+                }}
+              >
+                GHS {yesterdaySalesTotal.toFixed(2)}
+              </p>
+              <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+                {todaySalesTotal > yesterdaySalesTotal
+                  ? 'Today is ahead of yesterday.'
+                  : todaySalesTotal === yesterdaySalesTotal
+                    ? 'Today is matching yesterday so far.'
+                    : 'Yesterday is still ahead—push for more sales.'}
+              </p>
+            </article>
+
+            <article
+              style={{
+                background: '#F8FAFC',
+                borderRadius: 14,
+                padding: '14px 16px',
+                border: '1px solid #E2E8F0',
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.6,
+                  color: '#64748B',
+                  fontWeight: 600,
+                }}
+              >
+                This month
+              </p>
+              <p
+                style={{
+                  margin: '6px 0 2px',
+                  fontSize: 24,
+                  fontWeight: 700,
+                  color: '#0F172A',
+                }}
+              >
+                GHS {monthSalesTotal.toFixed(2)}
+              </p>
+              <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+                Expenses:{' '}
+                <strong>GHS {monthExpensesTotal.toFixed(2)}</strong>
+              </p>
+              <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+                Approx. gross margin:{' '}
+                <strong>
+                  GHS {(monthSalesTotal - monthExpensesTotal).toFixed(2)}
+                </strong>
+              </p>
+            </article>
+          </div>
+        )}
+      </section>
+
+      {/* Existing time range + analytics sections */}
+      <section
+        style={{
+          background: '#FFFFFF',
+          borderRadius: 20,
+          border: '1px solid #E2E8F0',
+          padding: '20px 22px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+          marginBottom: 24,
         }}
         aria-label="Time range controls"
       >
@@ -158,16 +539,29 @@ export default function Dashboard() {
             flexWrap: 'wrap',
             gap: 16,
             justifyContent: 'space-between',
-            alignItems: 'center'
+            alignItems: 'center',
           }}
         >
           <div>
-            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0F172A' }}>Time range</h3>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: 18,
+                fontWeight: 700,
+                color: '#0F172A',
+              }}
+            >
+              Time range
+            </h3>
             <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
               Pick the window you want to analyse. All charts and KPIs update instantly.
             </p>
           </div>
-          <div role="group" aria-label="Quick ranges" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div
+            role="group"
+            aria-label="Quick ranges"
+            style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
+          >
             {rangePresets.map(option => (
               <button
                 key={option.id}
@@ -177,13 +571,21 @@ export default function Dashboard() {
                 style={{
                   padding: '8px 14px',
                   borderRadius: 999,
-                  border: resolvedRangeId === option.id ? '1px solid #4338CA' : '1px solid #E2E8F0',
-                  background: resolvedRangeId === option.id ? '#4338CA' : '#F8FAFC',
-                  color: resolvedRangeId === option.id ? '#FFFFFF' : '#1E293B',
+                  border:
+                    resolvedRangeId === option.id
+                      ? '1px solid #4338CA'
+                      : '1px solid #E2E8F0',
+                  background:
+                    resolvedRangeId === option.id ? '#4338CA' : '#F8FAFC',
+                  color:
+                    resolvedRangeId === option.id ? '#FFFFFF' : '#1E293B',
                   fontSize: 13,
                   fontWeight: 600,
-                  boxShadow: resolvedRangeId === option.id ? '0 4px 12px rgba(67, 56, 202, 0.25)' : 'none',
-                  cursor: 'pointer'
+                  boxShadow:
+                    resolvedRangeId === option.id
+                      ? '0 4px 12px rgba(67, 56, 202, 0.25)'
+                      : 'none',
+                  cursor: 'pointer',
                 }}
               >
                 {option.label}
@@ -197,15 +599,25 @@ export default function Dashboard() {
             display: 'flex',
             flexWrap: 'wrap',
             gap: 16,
-            alignItems: 'center'
+            alignItems: 'center',
           }}
         >
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 13,
+              color: '#475569',
+            }}
+          >
             <span>From</span>
             <input
               type="date"
               value={customRange.start}
-              onChange={event => handleCustomDateChange('start', event.target.value)}
+              onChange={event =>
+                handleCustomDateChange('start', event.target.value)
+              }
               style={{
                 borderRadius: 8,
                 border: '1px solid #CBD5F5',
@@ -214,12 +626,22 @@ export default function Dashboard() {
               }}
             />
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#475569' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 13,
+              color: '#475569',
+            }}
+          >
             <span>To</span>
             <input
               type="date"
               value={customRange.end}
-              onChange={event => handleCustomDateChange('end', event.target.value)}
+              onChange={event =>
+                handleCustomDateChange('end', event.target.value)
+              }
               style={{
                 borderRadius: 8,
                 border: '1px solid #CBD5F5',
@@ -228,24 +650,33 @@ export default function Dashboard() {
               }}
             />
           </label>
-          <span style={{ fontSize: 13, color: '#1E293B', fontWeight: 600 }}>
+          <span
+            style={{
+              fontSize: 13,
+              color: '#1E293B',
+              fontWeight: 600,
+            }}
+          >
             Showing {rangeSummary} ({rangeDaysLabel})
           </span>
         </div>
 
         {showCustomHint && (
           <p style={{ margin: 0, fontSize: 12, color: '#DC2626' }}>
-            Select both start and end dates to apply your custom range. We’re showing today’s data until then.
+            Select both start and end dates to apply your custom range. We’re showing
+            today’s data until then.
           </p>
         )}
       </section>
+
+      {/* The rest of your original dashboard remains unchanged */}
 
       <section
         style={{
           display: 'flex',
           flexDirection: 'column',
           gap: 20,
-          marginBottom: 32
+          marginBottom: 32,
         }}
         aria-label="Business metrics overview"
       >
@@ -253,12 +684,13 @@ export default function Dashboard() {
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: 16
+            gap: 16,
           }}
         >
           {metrics.map(metric => {
             const change = metric.changePercent
-            const color = change === null ? '#475569' : change < 0 ? '#DC2626' : '#16A34A'
+            const color =
+              change === null ? '#475569' : change < 0 ? '#DC2626' : '#16A34A'
             const icon = change === null ? '▬' : change < 0 ? '▼' : '▲'
             const changeText = change !== null ? formatPercent(change) : '—'
             return (
@@ -272,16 +704,33 @@ export default function Dashboard() {
                   boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 12
+                  gap: 12,
                 }}
               >
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: '#64748B',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                  }}
+                >
                   {metric.title}
                 </div>
-                <div style={{ fontSize: 30, fontWeight: 700, color: '#0F172A', lineHeight: 1 }}>
+                <div
+                  style={{
+                    fontSize: 30,
+                    fontWeight: 700,
+                    color: '#0F172A',
+                    lineHeight: 1,
+                  }}
+                >
                   {metric.value}
                 </div>
-                <div style={{ fontSize: 13, color: '#64748B' }}>{metric.subtitle}</div>
+                <div style={{ fontSize: 13, color: '#64748B' }}>
+                  {metric.subtitle}
+                </div>
                 <div style={{ height: 56 }} aria-hidden="true">
                   {metric.sparkline && metric.sparkline.length ? (
                     <Sparkline
@@ -295,14 +744,16 @@ export default function Dashboard() {
                         color: '#94A3B8',
                         display: 'flex',
                         alignItems: 'center',
-                        height: '100%'
+                        height: '100%',
                       }}
                     >
                       Snapshot metric
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                >
                   <span
                     style={{
                       display: 'inline-flex',
@@ -320,8 +771,18 @@ export default function Dashboard() {
                   >
                     {icon}
                   </span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color }}>{changeText}</span>
-                  <span style={{ fontSize: 13, color: '#64748B' }}>{metric.changeDescription}</span>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color,
+                    }}
+                  >
+                    {changeText}
+                  </span>
+                  <span style={{ fontSize: 13, color: '#64748B' }}>
+                    {metric.changeDescription}
+                  </span>
                 </div>
               </article>
             )
@@ -336,7 +797,7 @@ export default function Dashboard() {
             display: 'flex',
             flexDirection: 'column',
             gap: 16,
-            padding: 20
+            padding: 20,
           }}
         >
           <div
@@ -345,16 +806,33 @@ export default function Dashboard() {
               flexWrap: 'wrap',
               gap: 16,
               justifyContent: 'space-between',
-              alignItems: 'center'
+              alignItems: 'center',
             }}
           >
             <div>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0F172A' }}>Monthly goals</h3>
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: '#0F172A',
+                }}
+              >
+                Monthly goals
+              </h3>
               <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
                 Set targets per branch and keep teams aligned on what success looks like.
               </p>
             </div>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#475569' }}>
+            <label
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                fontSize: 12,
+                color: '#475569',
+              }}
+            >
               <span style={{ fontWeight: 600 }}>Month</span>
               <input
                 type="month"
@@ -365,7 +843,7 @@ export default function Dashboard() {
                   border: '1px solid #CBD5F5',
                   padding: '6px 10px',
                   fontSize: 13,
-                  background: '#FFFFFF'
+                  background: '#FFFFFF',
                 }}
               />
             </label>
@@ -375,7 +853,7 @@ export default function Dashboard() {
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: 12
+              gap: 12,
             }}
           >
             {goals.map(goal => (
@@ -388,16 +866,33 @@ export default function Dashboard() {
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 12,
-                  border: '1px solid #E2E8F0'
+                  border: '1px solid #E2E8F0',
                 }}
               >
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: '#64748B',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                  }}
+                >
                   {goal.title}
                 </div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: '#0F172A', lineHeight: 1 }}>
+                <div
+                  style={{
+                    fontSize: 26,
+                    fontWeight: 700,
+                    color: '#0F172A',
+                    lineHeight: 1,
+                  }}
+                >
                   {goal.value}
                 </div>
-                <div style={{ fontSize: 13, color: '#475569' }}>{goal.target}</div>
+                <div style={{ fontSize: 13, color: '#475569' }}>
+                  {goal.target}
+                </div>
                 <div
                   role="progressbar"
                   aria-valuenow={Math.round(goal.progress * 100)}
@@ -408,7 +903,7 @@ export default function Dashboard() {
                     height: 8,
                     borderRadius: 999,
                     background: '#E2E8F0',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
                   }}
                 >
                   <div
@@ -416,7 +911,7 @@ export default function Dashboard() {
                       position: 'absolute',
                       inset: 0,
                       width: `${Math.round(goal.progress * 100)}%`,
-                      background: '#4338CA'
+                      background: '#4338CA',
                     }}
                   />
                 </div>
@@ -424,18 +919,23 @@ export default function Dashboard() {
             ))}
           </div>
 
-          <form
-            onSubmit={handleGoalSubmit}
-            style={{ display: 'grid', gap: 12 }}
-          >
+          <form onSubmit={handleGoalSubmit} style={{ display: 'grid', gap: 12 }}>
             <div
               style={{
                 display: 'grid',
                 gap: 12,
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))'
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
               }}
             >
-              <label style={{ display: 'grid', gap: 6, fontSize: 13, color: '#475569' }} htmlFor="goal-revenue">
+              <label
+                style={{
+                  display: 'grid',
+                  gap: 6,
+                  fontSize: 13,
+                  color: '#475569',
+                }}
+                htmlFor="goal-revenue"
+              >
                 <span style={{ fontWeight: 600 }}>Revenue goal (GHS)</span>
                 <input
                   id="goal-revenue"
@@ -444,17 +944,27 @@ export default function Dashboard() {
                   step="0.01"
                   inputMode="decimal"
                   value={goalFormValues.revenueTarget}
-                  onChange={event => handleGoalInputChange('revenueTarget', event.target.value)}
+                  onChange={event =>
+                    handleGoalInputChange('revenueTarget', event.target.value)
+                  }
                   style={{
                     borderRadius: 8,
                     border: '1px solid #CBD5F5',
                     padding: '8px 10px',
                     fontSize: 14,
-                    background: '#FFFFFF'
+                    background: '#FFFFFF',
                   }}
                 />
               </label>
-              <label style={{ display: 'grid', gap: 6, fontSize: 13, color: '#475569' }} htmlFor="goal-customers">
+              <label
+                style={{
+                  display: 'grid',
+                  gap: 6,
+                  fontSize: 13,
+                  color: '#475569',
+                }}
+                htmlFor="goal-customers"
+              >
                 <span style={{ fontWeight: 600 }}>New customers goal</span>
                 <input
                   id="goal-customers"
@@ -463,18 +973,27 @@ export default function Dashboard() {
                   step={1}
                   inputMode="numeric"
                   value={goalFormValues.customerTarget}
-                  onChange={event => handleGoalInputChange('customerTarget', event.target.value)}
+                  onChange={event =>
+                    handleGoalInputChange('customerTarget', event.target.value)
+                  }
                   style={{
                     borderRadius: 8,
                     border: '1px solid #CBD5F5',
                     padding: '8px 10px',
                     fontSize: 14,
-                    background: '#FFFFFF'
+                    background: '#FFFFFF',
                   }}
                 />
               </label>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
               <button
                 type="submit"
                 className="primary-button"
@@ -487,13 +1006,14 @@ export default function Dashboard() {
                   padding: '10px 18px',
                   fontSize: 14,
                   fontWeight: 600,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
                 }}
               >
                 {isSavingGoals ? 'Saving…' : 'Save goals'}
               </button>
               <span style={{ fontSize: 12, color: '#475569' }}>
-                Targets are saved for {goalMonthLabel}. Adjust them anytime to keep your team focused.
+                Targets are saved for {goalMonthLabel}. Adjust them anytime to keep your
+                team focused.
               </span>
             </div>
           </form>
@@ -505,7 +1025,7 @@ export default function Dashboard() {
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
           gap: 20,
-          marginBottom: 32
+          marginBottom: 32,
         }}
       >
         <article
@@ -516,17 +1036,42 @@ export default function Dashboard() {
             padding: '20px 22px',
             display: 'flex',
             flexDirection: 'column',
-            gap: 16
+            gap: 16,
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
             <div>
-              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', marginBottom: 4 }}>Quick links</h3>
-              <p style={{ fontSize: 13, color: '#64748B' }}>Hop straight into the workspace you need.</p>
+              <h3
+                style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: '#0F172A',
+                  marginBottom: 4,
+                }}
+              >
+                Quick links
+              </h3>
+              <p style={{ fontSize: 13, color: '#64748B' }}>
+                Hop straight into the workspace you need.
+              </p>
             </div>
           </div>
-          <ul style={{ display: 'grid', gap: 12, listStyle: 'none', margin: 0, padding: 0 }}>
-              {QUICK_LINKS.map(link => (
+          <ul
+            style={{
+              display: 'grid',
+              gap: 12,
+              listStyle: 'none',
+              margin: 0,
+              padding: 0,
+            }}
+          >
+            {QUICK_LINKS.map(link => (
               <li key={link.to}>
                 <Link
                   to={link.to}
@@ -539,14 +1084,25 @@ export default function Dashboard() {
                     padding: '14px 16px',
                     textDecoration: 'none',
                     color: '#1E3A8A',
-                    border: '1px solid transparent'
+                    border: '1px solid transparent',
                   }}
                 >
                   <div>
                     <div style={{ fontWeight: 600 }}>{link.title}</div>
-                    <p style={{ margin: 0, fontSize: 13, color: '#475569' }}>{link.description}</p>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 13,
+                        color: '#475569',
+                      }}
+                    >
+                      {link.description}
+                    </p>
                   </div>
-                  <span aria-hidden="true" style={{ fontWeight: 700, color: '#4338CA' }}>
+                  <span
+                    aria-hidden="true"
+                    style={{ fontWeight: 700, color: '#4338CA' }}
+                  >
                     →
                   </span>
                 </Link>
@@ -563,18 +1119,29 @@ export default function Dashboard() {
             padding: '20px 22px',
             display: 'flex',
             flexDirection: 'column',
-            gap: 12
+            gap: 12,
           }}
         >
           <div>
-            <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', marginBottom: 4 }}>Restock soon</h3>
+            <h3
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: '#0F172A',
+                marginBottom: 4,
+              }}
+            >
+              Restock soon
+            </h3>
             <p style={{ fontSize: 13, color: '#64748B' }}>
               Products at or below their reorder point, ranked by urgency.
             </p>
           </div>
 
           {isLoadingLowStock ? (
-            <p style={{ fontSize: 13, color: '#475569' }}>Loading low-stock products…</p>
+            <p style={{ fontSize: 13, color: '#475569' }}>
+              Loading low-stock products…
+            </p>
           ) : lowStockError ? (
             <p style={{ fontSize: 13, color: '#DC2626' }}>{lowStockError}</p>
           ) : lowStock.length ? (
@@ -585,7 +1152,7 @@ export default function Dashboard() {
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   gap: 12,
-                  flexWrap: 'wrap'
+                  flexWrap: 'wrap',
                 }}
               >
                 <span style={{ fontSize: 13, color: '#475569' }}>
@@ -602,7 +1169,7 @@ export default function Dashboard() {
                     background: '#4338CA',
                     color: '#FFFFFF',
                     fontWeight: 600,
-                    cursor: isExportingLowStock ? 'wait' : 'pointer'
+                    cursor: isExportingLowStock ? 'wait' : 'pointer',
                   }}
                 >
                   {isExportingLowStock ? 'Preparing CSV…' : 'Export CSV'}
@@ -636,10 +1203,16 @@ export default function Dashboard() {
                       gap: 12,
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      background: '#F8FAFC'
+                      background: '#F8FAFC',
                     }}
                   >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4,
+                      }}
+                    >
                       <Link
                         to={`/products?lowStock=1#product-${item.id}`}
                         style={{
@@ -650,15 +1223,31 @@ export default function Dashboard() {
                       >
                         {item.name}
                       </Link>
-                      <span style={{ fontSize: 12, color: '#64748B' }}>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: '#64748B',
+                        }}
+                      >
                         SKU: {item.sku ?? '—'}
                       </span>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 700, color: '#0F172A', fontSize: 14 }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          color: '#0F172A',
+                          fontSize: 14,
+                        }}
+                      >
                         {item.stockCount} on hand
                       </div>
-                      <div style={{ fontSize: 12, color: '#475569' }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                        }}
+                      >
                         Reorder at {item.reorderLevel}
                       </div>
                     </div>
@@ -669,7 +1258,11 @@ export default function Dashboard() {
               {lowStock.length > topLowStock.length ? (
                 <Link
                   to="/products?lowStock=1"
-                  style={{ fontSize: 13, fontWeight: 600, color: '#4338CA' }}
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: '#4338CA',
+                  }}
                 >
                   View all {lowStock.length} low-stock products
                 </Link>
@@ -690,18 +1283,37 @@ export default function Dashboard() {
             padding: '20px 22px',
             display: 'flex',
             flexDirection: 'column',
-            gap: 16
+            gap: 16,
           }}
         >
           <div>
-            <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', marginBottom: 4 }}>Inventory alerts</h3>
+            <h3
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: '#0F172A',
+                marginBottom: 4,
+              }}
+            >
+              Inventory alerts
+            </h3>
             <p style={{ fontSize: 13, color: '#64748B' }}>
-              Watch products that are running low so the floor team can replenish quickly.
+              Watch products that are running low so the floor team can replenish
+              quickly.
             </p>
           </div>
 
           {inventoryAlerts.length ? (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <ul
+              style={{
+                listStyle: 'none',
+                margin: 0,
+                padding: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+              }}
+            >
               {inventoryAlerts.map(item => (
                 <li
                   key={item.sku}
@@ -712,27 +1324,54 @@ export default function Dashboard() {
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 6,
-                    background: '#F8FAFC'
+                    background: '#F8FAFC',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 600, color: '#0F172A' }}>{item.name}</span>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color: '#0F172A',
+                      }}
+                    >
+                      {item.name}
+                    </span>
                     <span
                       style={{
                         fontSize: 12,
                         fontWeight: 600,
-                        color: item.severity === 'critical' ? '#DC2626' : item.severity === 'warning' ? '#C2410C' : '#2563EB'
+                        color:
+                          item.severity === 'critical'
+                            ? '#DC2626'
+                            : item.severity === 'warning'
+                              ? '#C2410C'
+                              : '#2563EB',
                       }}
                     >
                       {item.status}
                     </span>
                   </div>
-                  <span style={{ fontSize: 12, color: '#64748B' }}>SKU: {item.sku}</span>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: '#64748B',
+                    }}
+                  >
+                    SKU: {item.sku}
+                  </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p style={{ fontSize: 13, color: '#475569' }}>All inventory levels are healthy.</p>
+            <p style={{ fontSize: 13, color: '#475569' }}>
+              All inventory levels are healthy.
+            </p>
           )}
         </article>
 
@@ -744,17 +1383,33 @@ export default function Dashboard() {
             padding: '20px 22px',
             display: 'flex',
             flexDirection: 'column',
-            gap: 16
+            gap: 16,
           }}
         >
           <div>
-            <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', marginBottom: 4 }}>Team callouts</h3>
+            <h3
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                color: '#0F172A',
+                marginBottom: 4,
+              }}
+            >
+              Team callouts
+            </h3>
             <p style={{ fontSize: 13, color: '#64748B' }}>
-              Share insights with staff so everyone knows what needs attention in this range.
+              Share insights with staff so everyone knows what needs attention in this
+              range.
             </p>
           </div>
 
-          <dl style={{ margin: 0, display: 'grid', gap: 12 }}>
+          <dl
+            style={{
+              margin: 0,
+              display: 'grid',
+              gap: 12,
+            }}
+          >
             {teamCallouts.map(item => (
               <div
                 key={item.label}
@@ -764,89 +1419,44 @@ export default function Dashboard() {
                   background: '#F8FAFC',
                   borderRadius: 12,
                   border: '1px solid #E2E8F0',
-                  padding: '12px 14px'
+                  padding: '12px 14px',
                 }}
               >
-                <dt style={{ fontSize: 12, fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                <dt
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#64748B',
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                  }}
+                >
                   {item.label}
                 </dt>
-                <dd style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0F172A' }}>{item.value}</dd>
-                <dd style={{ margin: 0, fontSize: 13, color: '#475569' }}>{item.description}</dd>
+                <dd
+                  style={{
+                    margin: 0,
+                    fontSize: 16,
+                    fontWeight: 700,
+                    color: '#0F172A',
+                  }}
+                >
+                  {item.value}
+                </dd>
+                <dd
+                  style={{
+                    margin: 0,
+                    fontSize: 13,
+                    color: '#475569',
+                  }}
+                >
+                  {item.description}
+                </dd>
               </div>
             ))}
           </dl>
         </article>
       </section>
-
     </div>
   )
 }
-
-type SparklineProps = {
-  data: number[]
-  comparisonData?: number[]
-  color?: string
-  comparisonColor?: string
-}
-
-function Sparkline({
-  data,
-  comparisonData,
-  color = '#4338CA',
-  comparisonColor = '#A5B4FC',
-}: SparklineProps) {
-  if (!data.length) {
-    return null
-  }
-
-  const width = Math.max(80, data.length * 12)
-  const height = 48
-  const allValues = [...data, ...(comparisonData ?? [])]
-  const maxValue = Math.max(...allValues, 0)
-  const minValue = Math.min(...allValues, 0)
-  const range = maxValue - minValue || 1
-
-  const createPoints = (series: number[]) =>
-    series
-      .map((value, index) => {
-        const x = series.length > 1 ? (index / (series.length - 1)) * (width - 4) + 2 : width / 2
-        const normalized = (value - minValue) / range
-        const y = height - 4 - normalized * (height - 8)
-        return `${x.toFixed(1)},${y.toFixed(1)}`
-      })
-      .join(' ')
-
-  const primaryPoints = createPoints(data)
-  const comparisonPoints = comparisonData && comparisonData.length ? createPoints(comparisonData) : null
-
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      width="100%"
-      height="48"
-      preserveAspectRatio="none"
-      role="img"
-      aria-hidden="true"
-    >
-      {comparisonPoints && (
-        <polyline
-          points={comparisonPoints}
-          fill="none"
-          stroke={comparisonColor}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeDasharray="4 4"
-          opacity={0.7}
-        />
-      )}
-      <polyline
-        points={primaryPoints}
-        fill="none"
-        stroke={color}
-        strokeWidth={2.5}
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
