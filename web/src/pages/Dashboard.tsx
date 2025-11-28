@@ -136,68 +136,69 @@ export default function Dashboard() {
   }, [now])
 
   // ---- Load sales for snapshot (last ~500 records for this store) ----
-  useEffect(() => {
-    if (!storeId) {
+useEffect(() => {
+  if (!storeId) {
+    setSales([])
+    setIsLoadingSnapshot(false)
+    return
+  }
+
+  setIsLoadingSnapshot(true)
+
+  const q = query(
+    collection(db, 'sales'),
+    where('storeId', '==', storeId),   // 👈 changed from branchId
+    orderBy('createdAt', 'desc'),
+    limit(500),
+  )
+
+  const unsubscribe = onSnapshot(
+    q,
+    snap => {
+      const rows: DashboardSale[] = snap.docs.map(docSnap => {
+        const data = docSnap.data() as any
+        const createdAt =
+          data.createdAt && typeof data.createdAt.toDate === 'function'
+            ? (data.createdAt.toDate() as Date)
+            : null
+
+        const total =
+          typeof data.total === 'number'
+            ? data.total
+            : typeof data.totals?.total === 'number'
+              ? data.totals.total
+              : 0
+
+        const itemsRaw = Array.isArray(data.items) ? data.items : []
+
+        const items: DashboardSaleItem[] = itemsRaw.map((item: any, index: number) => ({
+          name: String(item.name ?? `Item ${index + 1}`),
+          qty: Number(item.qty) || 0,
+          price: Number(item.price) || 0,
+        }))
+
+        return {
+          id: docSnap.id,
+          branchId: data.branchId ?? null,
+          storeId: data.storeId ?? null,
+          total,
+          createdAt,
+          items,
+        }
+      })
+
+      setSales(rows)
+      setIsLoadingSnapshot(false)
+    },
+    () => {
       setSales([])
       setIsLoadingSnapshot(false)
-      return
-    }
+    },
+  )
 
-    setIsLoadingSnapshot(true)
+  return unsubscribe
+}, [storeId])
 
-    const q = query(
-      collection(db, 'sales'),
-      where('branchId', '==', storeId),
-      orderBy('createdAt', 'desc'),
-      limit(500),
-    )
-
-    const unsubscribe = onSnapshot(
-      q,
-      snap => {
-        const rows: DashboardSale[] = snap.docs.map(docSnap => {
-          const data = docSnap.data() as any
-          const createdAt =
-            data.createdAt && typeof data.createdAt.toDate === 'function'
-              ? (data.createdAt.toDate() as Date)
-              : null
-
-          const total =
-            typeof data.total === 'number'
-              ? data.total
-              : typeof data.totals?.total === 'number'
-                ? data.totals.total
-                : 0
-
-          const itemsRaw = Array.isArray(data.items) ? data.items : []
-
-          const items: DashboardSaleItem[] = itemsRaw.map((item: any, index: number) => ({
-            name: String(item.name ?? `Item ${index + 1}`),
-            qty: Number(item.qty) || 0,
-            price: Number(item.price) || 0,
-          }))
-
-          return {
-            id: docSnap.id,
-            branchId: data.branchId ?? null,
-            storeId: data.storeId ?? null,
-            total,
-            createdAt,
-            items,
-          }
-        })
-
-        setSales(rows)
-        setIsLoadingSnapshot(false)
-      },
-      () => {
-        setSales([])
-        setIsLoadingSnapshot(false)
-      },
-    )
-
-    return unsubscribe
-  }, [storeId])
 
   // ---- Load expenses for snapshot ----
   useEffect(() => {
