@@ -42,10 +42,16 @@ type Product = {
   stockCount?: number
   createdAt?: unknown
   updatedAt?: unknown
-  itemType?: 'product' | 'service' // 👈 supports services
+  itemType?: 'product' | 'service' // supports services
 }
 
-type CartLine = { productId: string; name: string; price: number; qty: number; taxRate?: number }
+type CartLine = {
+  productId: string
+  name: string
+  price: number
+  qty: number
+  taxRate?: number
+}
 
 type Customer = {
   id: string
@@ -330,9 +336,7 @@ export default function Sell() {
     () => (selectedCustomer ? ensureCustomerLoyalty(selectedCustomer).loyalty : null),
     [selectedCustomer],
   )
-  const selectedCustomerDisplayName = selectedCustomer
-    ? getCustomerDisplayName(selectedCustomer)
-    : ''
+
   const selectedCustomerDataName = selectedCustomer
     ? getCustomerNameForData(selectedCustomer)
     : ''
@@ -384,7 +388,7 @@ export default function Sell() {
     [],
   )
 
-  // store profile
+  // ---------- Store profile ----------
   useEffect(() => {
     let cancelled = false
 
@@ -417,7 +421,7 @@ export default function Sell() {
     }
   }, [activeStoreId])
 
-  // products (including services)
+  // ---------- Products (incl. services) ----------
   useEffect(() => {
     let cancelled = false
 
@@ -480,7 +484,7 @@ export default function Sell() {
     }
   }, [activeStoreId])
 
-  // customers
+  // ---------- Customers ----------
   useEffect(() => {
     let cancelled = false
 
@@ -537,7 +541,7 @@ export default function Sell() {
     }
   }, [activeStoreId])
 
-  // auto-print receipt
+  // ---------- Auto-print receipt ----------
   useEffect(() => {
     if (!receipt) return
     const timeout = window.setTimeout(() => {
@@ -546,7 +550,7 @@ export default function Sell() {
     return () => window.clearTimeout(timeout)
   }, [receipt])
 
-  // build receipt share payload
+  // ---------- Build receipt share payload ----------
   useEffect(() => {
     if (!receipt) {
       setReceiptSharePayload(prev => {
@@ -717,7 +721,8 @@ export default function Sell() {
     setLoyaltyAppliedInput('')
   }, [selectedCustomerId])
 
-  // ✅ Only track stock for physical products
+  // ---------- Stock helpers ----------
+  // Only track stock for physical products
   const productStockById = useMemo(() => {
     const map = new Map<string, number>()
     products.forEach(product => {
@@ -734,7 +739,7 @@ export default function Sell() {
     [productStockById],
   )
 
-  // ✅ Services are ignored for stock checks
+  // Services are ignored for stock checks
   const hasInsufficientStockInCart = useMemo(
     () =>
       cart.some(line => {
@@ -758,9 +763,7 @@ export default function Sell() {
         return copy
       }
       const taxRate =
-        typeof p.taxRate === 'number' && Number.isFinite(p.taxRate)
-          ? p.taxRate
-          : undefined
+        typeof p.taxRate === 'number' && Number.isFinite(p.taxRate) ? p.taxRate : undefined
       return [...cs, { productId: p.id, name: p.name, price: p.price, qty: 1, taxRate }]
     })
   }, [])
@@ -797,8 +800,8 @@ export default function Sell() {
         result.source === 'manual'
           ? 'manual entry'
           : result.source === 'camera'
-            ? 'the camera'
-            : 'the scanner'
+          ? 'the camera'
+          : 'the scanner'
       setScannerStatus({
         tone: 'success',
         message: `Added ${match.name} via ${friendlySource}.`,
@@ -810,13 +813,12 @@ export default function Sell() {
   function setQty(id: string, qty: number) {
     setCart(cs =>
       cs
-        .map(l =>
-          l.productId === id ? { ...l, qty: Math.max(0, qty) } : l,
-        )
+        .map(l => (l.productId === id ? { ...l, qty: Math.max(0, qty) } : l))
         .filter(l => l.qty > 0),
     )
   }
 
+  // ---------- Record sale ----------
   async function recordSale() {
     if (cart.length === 0) return
     if (isSubscriptionInactive) {
@@ -843,6 +845,7 @@ export default function Sell() {
     setSaleSuccess(null)
     setReceipt(null)
     setIsRecording(true)
+
     const saleId = doc(collection(db, 'sales')).id
     const commitSale =
       httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
@@ -1012,6 +1015,7 @@ export default function Sell() {
     p.name.toLowerCase().includes(queryText.toLowerCase()),
   )
 
+  // ---------- Render ----------
   return (
     <div className="page sell-page">
       <header className="page__header">
@@ -1023,9 +1027,7 @@ export default function Sell() {
         </div>
         <div className="sell-page__total" aria-live="polite">
           <span className="sell-page__total-label">Subtotal</span>
-          <span className="sell-page__total-value">
-            GHS {subtotal.toFixed(2)}
-          </span>
+          <span className="sell-page__total-value">GHS {subtotal.toFixed(2)}</span>
         </div>
       </header>
 
@@ -1042,8 +1044,7 @@ export default function Sell() {
             onChange={e => setQueryText(e.target.value)}
           />
           <p className="field__hint">
-            Tip: search or scan a barcode to add products and services to the cart
-            instantly.
+            Tip: search or scan a barcode to add products and services to the cart instantly.
           </p>
         </div>
         <BarcodeScanner
@@ -1065,32 +1066,23 @@ export default function Sell() {
       </section>
 
       <div className="sell-page__grid">
-        <section
-          className="card sell-page__catalog"
-          aria-label="Product and service list"
-        >
+        {/* Catalog */}
+        <section className="card sell-page__catalog" aria-label="Product and service list">
           <div className="sell-page__section-header">
             <h3 className="card__title">Products &amp; services</h3>
-            <p className="card__subtitle">
-              {filtered.length} items available to sell.
-            </p>
+            <p className="card__subtitle">{filtered.length} items available to sell.</p>
           </div>
           <div className="sell-page__catalog-list">
             {filtered.length ? (
               filtered.map(p => {
                 const itemType = p.itemType ?? 'product'
                 const isService = itemType === 'service'
-                const hasPrice =
-                  typeof p.price === 'number' && Number.isFinite(p.price)
-                const priceText = hasPrice
-                  ? `GHS ${p.price.toFixed(2)}`
-                  : 'Price unavailable'
+                const hasPrice = typeof p.price === 'number' && Number.isFinite(p.price)
+                const priceText = hasPrice ? `GHS ${p.price.toFixed(2)}` : 'Price unavailable'
                 const inventoryLabel = isService
                   ? 'Service • no stock tracking'
                   : `Stock ${p.stockCount ?? 0}`
-                const actionLabel = hasPrice
-                  ? 'Add'
-                  : 'Set price to sell'
+                const actionLabel = hasPrice ? 'Add' : 'Set price to sell'
 
                 return (
                   <button
@@ -1099,16 +1091,10 @@ export default function Sell() {
                     className="sell-page__product"
                     onClick={() => addToCart(p)}
                     disabled={!hasPrice}
-                    title={
-                      hasPrice
-                        ? undefined
-                        : 'Update the price before selling this item.'
-                    }
+                    title={hasPrice ? undefined : 'Update the price before selling this item.'}
                   >
                     <div>
-                      <span className="sell-page__product-name">
-                        {p.name}
-                      </span>
+                      <span className="sell-page__product-name">{p.name}</span>
                       <span className="sell-page__product-meta">
                         {priceText} • {inventoryLabel}
                       </span>
@@ -1123,36 +1109,28 @@ export default function Sell() {
               <div className="empty-state">
                 <h3 className="empty-state__title">No items found</h3>
                 <p>
-                  Try a different search term or add new products and services
-                  from the products page.
+                  Try a different search term or add new products and services from the products
+                  page.
                 </p>
               </div>
             )}
           </div>
         </section>
 
+        {/* Cart */}
         <section className="card sell-page__cart" aria-label="Cart">
           <div className="sell-page__section-header">
             <h3 className="card__title">Cart</h3>
-            <p className="card__subtitle">
-              Adjust quantities before recording the sale.
-            </p>
+            <p className="card__subtitle">Adjust quantities before recording the sale.</p>
           </div>
 
           {isSubscriptionInactive && (
-            <p
-              className="sell-page__message sell-page__message--error"
-              role="status"
-            >
+            <p className="sell-page__message sell-page__message--error" role="status">
               Reactivate your subscription to commit sales.
             </p>
           )}
 
-          {saleError && (
-            <p className="sell-page__message sell-page__message--error">
-              {saleError}
-            </p>
-          )}
+          {saleError && <p className="sell-page__message sell-page__message--error">{saleError}</p>}
 
           {saleSuccess && (
             <div className="sell-page__message sell-page__message--success">
@@ -1215,10 +1193,7 @@ export default function Sell() {
           {cart.length ? (
             <>
               {hasInsufficientStockInCart ? (
-                <p
-                  className="sell-page__message sell-page__message--error"
-                  role="alert"
-                >
+                <p className="sell-page__message sell-page__message--error" role="alert">
                   Not enough stock.
                 </p>
               ) : null}
@@ -1238,54 +1213,33 @@ export default function Sell() {
                   </thead>
                   <tbody>
                     {cart.map(line => {
-                      const product = products.find(
-                        p => p.id === line.productId,
-                      )
+                      const product = products.find(p => p.id === line.productId)
                       const itemType = product?.itemType ?? 'product'
                       const isService = itemType === 'service'
-                      const stockCount = isService
-                        ? null
-                        : getStockCount(line.productId)
+                      const stockCount = isService ? null : getStockCount(line.productId)
                       const hasInsufficientStock =
-                        !isService &&
-                        typeof stockCount === 'number' &&
-                        line.qty > stockCount
+                        !isService && typeof stockCount === 'number' && line.qty > stockCount
 
                       return (
                         <tr key={line.productId}>
                           <td>
                             {line.name}
-                            {isService && (
-                              <div className="sell-page__item-pill">
-                                Service
-                              </div>
-                            )}
+                            {isService && <div className="sell-page__item-pill">Service</div>}
                           </td>
                           <td className="sell-page__numeric">
                             <input
                               className={`input--inline input--align-right${
-                                hasInsufficientStock
-                                  ? ' sell-page__input--error'
-                                  : ''
+                                hasInsufficientStock ? ' sell-page__input--error' : ''
                               }`}
                               type="number"
                               min={0}
                               value={line.qty}
-                              onChange={e =>
-                                setQty(
-                                  line.productId,
-                                  Number(e.target.value),
-                                )
-                              }
+                              onChange={e => setQty(line.productId, Number(e.target.value))}
                               aria-invalid={hasInsufficientStock}
                             />
                             {hasInsufficientStock ? (
-                              <div
-                                className="sell-page__qty-warning"
-                                role="alert"
-                              >
-                                Not enough stock (on hand:{' '}
-                                {stockCount ?? 0})
+                              <div className="sell-page__qty-warning" role="alert">
+                                Not enough stock (on hand: {stockCount ?? 0})
                               </div>
                             ) : null}
                           </td>
@@ -1312,9 +1266,7 @@ export default function Sell() {
                   <select
                     id="sell-customer"
                     value={selectedCustomerId}
-                    onChange={event =>
-                      setSelectedCustomerId(event.target.value)
-                    }
+                    onChange={event => setSelectedCustomerId(event.target.value)}
                     className="sell-page__select"
                   >
                     <option value="">Walk-in customer</option>
@@ -1326,10 +1278,7 @@ export default function Sell() {
                   </select>
                   <p className="field__hint">
                     Need to add someone new? Manage records on the{' '}
-                    <Link
-                      to="/customers"
-                      className="sell-page__customers-link"
-                    >
+                    <Link to="/customers" className="sell-page__customers-link">
                       Customers page
                     </Link>
                     .
@@ -1337,35 +1286,25 @@ export default function Sell() {
                 </div>
 
                 <div className="sell-page__field-group">
-                  <label
-                    className="field__label"
-                    htmlFor="sell-payment-method"
-                  >
+                  <label className="field__label" htmlFor="sell-payment-method">
                     Payment method
                   </label>
                   <select
                     id="sell-payment-method"
                     value={paymentMethod}
                     onChange={event =>
-                      setPaymentMethod(
-                        event.target.value as 'cash' | 'paystack',
-                      )
+                      setPaymentMethod(event.target.value as 'cash' | 'paystack')
                     }
                     className="sell-page__select"
                   >
                     <option value="cash">Cash</option>
-                    <option value="paystack">
-                      Card/Mobile (Paystack)
-                    </option>
+                    <option value="paystack">Card/Mobile (Paystack)</option>
                   </select>
                 </div>
 
                 {paymentMethod === 'cash' && (
                   <div className="sell-page__field-group">
-                    <label
-                      className="field__label"
-                      htmlFor="sell-amount-tendered"
-                    >
+                    <label className="field__label" htmlFor="sell-amount-tendered">
                       Cash received
                     </label>
                     <input
@@ -1374,32 +1313,22 @@ export default function Sell() {
                       min="0"
                       step="0.01"
                       value={amountTendered}
-                      onChange={event =>
-                        setAmountTendered(event.target.value)
-                      }
+                      onChange={event => setAmountTendered(event.target.value)}
                       className="sell-page__input"
                     />
                   </div>
                 )}
               </div>
 
-              <div
-                className="sell-page__loyalty-panel"
-                role="group"
-                aria-label="Loyalty rewards"
-              >
+              <div className="sell-page__loyalty-panel" role="group" aria-label="Loyalty rewards">
                 <div className="sell-page__loyalty-header">
                   <div>
                     <p className="field__label">Loyalty rewards</p>
                     <p className="sell-page__loyalty-hint">
-                      Apply available points or note how many they earned
-                      on this sale.
+                      Apply available points or note how many they earned on this sale.
                     </p>
                   </div>
-                  <div
-                    className="sell-page__loyalty-balance"
-                    aria-live="polite"
-                  >
+                  <div className="sell-page__loyalty-balance" aria-live="polite">
                     {selectedCustomer
                       ? `Balance after sale: ${(loyaltyBalanceAfterSale ?? 0).toFixed(0)} pts`
                       : 'Select a customer to track points'}
@@ -1407,18 +1336,14 @@ export default function Sell() {
                 </div>
                 <div className="sell-page__loyalty-grid">
                   <label className="sell-page__loyalty-field">
-                    <span className="sell-page__loyalty-label">
-                      Apply points
-                    </span>
+                    <span className="sell-page__loyalty-label">Apply points</span>
                     <input
                       type="number"
                       min="0"
                       step="1"
                       max={selectedCustomerLoyalty?.points ?? undefined}
                       value={loyaltyAppliedInput}
-                      onChange={event =>
-                        setLoyaltyAppliedInput(event.target.value)
-                      }
+                      onChange={event => setLoyaltyAppliedInput(event.target.value)}
                       className="sell-page__input"
                       disabled={!selectedCustomer}
                     />
@@ -1429,17 +1354,13 @@ export default function Sell() {
                     </span>
                   </label>
                   <label className="sell-page__loyalty-field">
-                    <span className="sell-page__loyalty-label">
-                      Earn this sale
-                    </span>
+                    <span className="sell-page__loyalty-label">Earn this sale</span>
                     <input
                       type="number"
                       min="0"
                       step="1"
                       value={loyaltyEarnedInput}
-                      onChange={event =>
-                        setLoyaltyEarnedInput(event.target.value)
-                      }
+                      onChange={event => setLoyaltyEarnedInput(event.target.value)}
                       className="sell-page__input"
                       disabled={!selectedCustomer}
                     />
@@ -1452,25 +1373,16 @@ export default function Sell() {
                 </div>
               </div>
 
-              <div
-                className="sell-page__payment-summary"
-                aria-live="polite"
-              >
+              <div className="sell-page__payment-summary" aria-live="polite">
                 <div>
-                  <span className="sell-page__summary-label">
-                    Amount due
-                  </span>
+                  <span className="sell-page__summary-label">Amount due</span>
                   <strong>GHS {subtotal.toFixed(2)}</strong>
                 </div>
                 <div>
                   <span className="sell-page__summary-label">Paid</span>
                   <strong>GHS {amountPaid.toFixed(2)}</strong>
                 </div>
-                <div
-                  className={`sell-page__change${
-                    isCashShort ? ' is-short' : ''
-                  }`}
-                >
+                <div className={`sell-page__change${isCashShort ? ' is-short' : ''}`}>
                   <span className="sell-page__summary-label">
                     {isCashShort ? 'Short' : 'Change due'}
                   </span>
@@ -1479,16 +1391,11 @@ export default function Sell() {
               </div>
 
               {saleSuccess && receiptSharePayload && (
-                <section
-                  className="sell-page__engagement"
-                  aria-live="polite"
-                >
-                  <h4 className="sell-page__engagement-title">
-                    Share the receipt
-                  </h4>
+                <section className="sell-page__engagement" aria-live="polite">
+                  <h4 className="sell-page__engagement-title">Share the receipt</h4>
                   <p className="sell-page__engagement-text">
-                    Email, text, or WhatsApp the receipt so your
-                    customer has a digital copy right away.
+                    Email, text, or WhatsApp the receipt so your customer has a digital copy right
+                    away.
                   </p>
                   <div className="sell-page__engagement-actions">
                     <button
@@ -1551,9 +1458,7 @@ export default function Sell() {
                 type="button"
                 className="button button--primary button--block"
                 onClick={recordSale}
-                disabled={
-                  cart.length === 0 || isRecording || isSubscriptionInactive
-                }
+                disabled={cart.length === 0 || isRecording || isSubscriptionInactive}
               >
                 {isSubscriptionInactive ? '🔒 ' : ''}
                 {isRecording ? 'Saving…' : 'Record sale'}
@@ -1562,10 +1467,7 @@ export default function Sell() {
           ) : (
             <div className="empty-state">
               <h3 className="empty-state__title">Cart is empty</h3>
-              <p>
-                Select products or services from the list to start a new
-                sale.
-              </p>
+              <p>Select products or services from the list to start a new sale.</p>
             </div>
           )}
         </section>
@@ -1588,12 +1490,8 @@ export default function Sell() {
               <div className="receipt-print__section">
                 <strong>Customer:</strong>
                 <div>{receipt.customer.name}</div>
-                {receipt.customer.phone && (
-                  <div>{receipt.customer.phone}</div>
-                )}
-                {receipt.customer.email && (
-                  <div>{receipt.customer.email}</div>
-                )}
+                {receipt.customer.phone && <div>{receipt.customer.phone}</div>}
+                {receipt.customer.email && <div>{receipt.customer.email}</div>}
               </div>
             )}
 
@@ -1610,9 +1508,7 @@ export default function Sell() {
                   <tr key={line.productId}>
                     <td>{line.name}</td>
                     <td>{line.qty}</td>
-                    <td>
-                      GHS {(line.qty * line.price).toFixed(2)}
-                    </td>
+                    <td>GHS {(line.qty * line.price).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1625,15 +1521,11 @@ export default function Sell() {
               </div>
               <div>
                 <span>Paid ({receipt.payment.method})</span>
-                <strong>
-                  GHS {receipt.payment.amountPaid.toFixed(2)}
-                </strong>
+                <strong>GHS {receipt.payment.amountPaid.toFixed(2)}</strong>
               </div>
               <div>
                 <span>Change</span>
-                <strong>
-                  GHS {receipt.payment.changeDue.toFixed(2)}
-                </strong>
+                <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
               </div>
               {typeof receipt.loyaltyEarned === 'number' &&
               receipt.loyaltyEarned !== null ? (
