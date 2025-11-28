@@ -627,6 +627,16 @@ export default function AuthPage() {
                   ))}
                 </ul>
               )}
+
+              {/* ✅ Reset password link for login mode */}
+              {mode === 'login' && (
+                <p className="form__hint" style={{ marginTop: 4 }}>
+                  Forgot your password?{' '}
+                  <Link to="/reset-password" className="app__link">
+                    Reset it here.
+                  </Link>
+                </p>
+              )}
             </div>
 
             {mode === 'signup' && (
