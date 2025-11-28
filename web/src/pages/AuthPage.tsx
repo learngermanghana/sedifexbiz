@@ -787,13 +787,13 @@ export default function AuthPage() {
           </p>
           <a
             className="info-card__cta"
-            href="https://calendly.com/sedifex/demo"
+            href="https://calendly.com/sedifexbiz"
             target="_blank"
             rel="noreferrer noopener"
           >
             Book a 30-minute consultation
           </a>
-          <p className="info-card__caption">Prefer email? Reach us at sales@sedifex.com.</p>
+          <p className="info-card__caption">Prefer email? Reach us at sedifexbiz@gmail.com.</p>
         </article>
       </section>
     </main>
