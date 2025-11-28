@@ -163,25 +163,17 @@ type CommitSaleResponse = {
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
   const displayName = customer.displayName?.trim()
-  if (displayName) {
-    return displayName
-  }
+  if (displayName) return displayName
   const legacyName = customer.name?.trim()
-  if (legacyName) {
-    return legacyName
-  }
+  if (legacyName) return legacyName
   return ''
 }
 
 function getCustomerFallbackContact(customer: Pick<Customer, 'email' | 'phone'>): string {
   const email = customer.email?.trim()
-  if (email) {
-    return email
-  }
+  if (email) return email
   const phone = customer.phone?.trim()
-  if (phone) {
-    return phone
-  }
+  if (phone) return phone
   return ''
 }
 
@@ -189,9 +181,7 @@ function getCustomerSortKey(
   customer: Pick<Customer, 'displayName' | 'name' | 'email' | 'phone'>,
 ): string {
   const primary = getCustomerPrimaryName(customer)
-  if (primary) {
-    return primary
-  }
+  if (primary) return primary
   return getCustomerFallbackContact(customer)
 }
 
@@ -199,13 +189,9 @@ function getCustomerDisplayName(
   customer: Pick<Customer, 'displayName' | 'name' | 'email' | 'phone'>,
 ): string {
   const primary = getCustomerPrimaryName(customer)
-  if (primary) {
-    return primary
-  }
+  if (primary) return primary
   const fallback = getCustomerFallbackContact(customer)
-  if (fallback) {
-    return fallback
-  }
+  if (fallback) return fallback
   return '—'
 }
 
@@ -213,9 +199,7 @@ function getCustomerNameForData(
   customer: Pick<Customer, 'displayName' | 'name' | 'email' | 'phone'>,
 ): string {
   const primary = getCustomerPrimaryName(customer)
-  if (primary) {
-    return primary
-  }
+  if (primary) return primary
   return getCustomerFallbackContact(customer)
 }
 
