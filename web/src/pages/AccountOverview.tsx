@@ -142,7 +142,7 @@ function mapSubscriptionSnapshot(
   return {
     status: toNullableString(data.status),
     plan: toNullableString(data.plan),
-    provider: toNullableString(data.provider),
+    provider: toNullableString(data.provider) ?? 'Paystack',
   }
 }
 
@@ -176,7 +176,9 @@ function formatValue(value: string | null) {
 function formatTimestamp(timestamp: Timestamp | null) {
   if (!timestamp) return '—'
   try {
-    return timestamp.toDate().toLocaleString()
+    return timestamp
+      .toDate()
+      .toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
   } catch (error) {
     console.warn('Unable to render timestamp', error)
     return '—'
@@ -356,13 +358,24 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     }
   }, [storeId, publish])
 
+  const Heading = headingLevel as keyof JSX.IntrinsicElements
+
   if (storeError) {
     return <div role="alert">{storeError}</div>
   }
 
-  const Heading = headingLevel as keyof JSX.IntrinsicElements
+  if (storeLoading) {
+    return (
+      <div className="account-overview">
+        <Heading>Account overview</Heading>
+        <p role="status" aria-live="polite">
+          Loading workspace…
+        </p>
+      </div>
+    )
+  }
 
-  if (!storeId && !storeLoading) {
+  if (!storeId) {
     return (
       <div className="account-overview" role="status">
         <Heading>Account overview</Heading>
@@ -372,7 +385,6 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   }
 
   const isBusy =
-    storeLoading ||
     membershipsLoading ||
     profileLoading ||
     subscriptionLoading ||
@@ -381,6 +393,19 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   return (
     <div className="account-overview">
       <Heading>Account overview</Heading>
+
+      {profile && (
+        <p className="account-overview__subtitle">
+          Workspace:{' '}
+          <strong>{profile.displayName ?? profile.name ?? '—'}</strong>
+          {activeMembership && (
+            <>
+              {' · '}Your role:{' '}
+              <strong>{isOwner ? 'Owner' : 'Staff'}</strong>
+            </>
+          )}
+        </p>
+      )}
 
       {(membershipsError || profileError || subscriptionError || rosterError) && (
         <div className="account-overview__error" role="alert">
@@ -445,7 +470,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       )}
 
       <AccountBillingSection
-        storeId={storeId ?? null}
+        storeId={storeId}
         ownerEmail={user?.email ?? null}
         isOwner={isOwner}
         contractStatus={
@@ -489,46 +514,42 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           <p role="note">You have read-only access to the team roster.</p>
         )}
 
-        <div
+        <table
           className="account-overview__roster"
-          role="table"
           aria-label="Team roster"
         >
-          <div className="account-overview__roster-header" role="row">
-            <span role="columnheader">Email</span>
-            <span role="columnheader">Role</span>
-            <span role="columnheader">Invited by</span>
-            <span role="columnheader">Updated</span>
-          </div>
-          {roster.length === 0 && !rosterLoading ? (
-            <div role="row" className="account-overview__roster-empty">
-              <span role="cell" colSpan={4}>
-                No team members found.
-              </span>
-            </div>
-          ) : (
-            roster.map(member => (
-              <div
-                role="row"
-                key={member.id}
-                data-testid={`account-roster-${member.id}`}
-                data-uid={member.uid}
-                data-store-id={member.storeId ?? undefined}
-                data-phone={member.phone ?? undefined}
-                data-first-signup-email={member.firstSignupEmail ?? undefined}
-              >
-                <span role="cell">{formatValue(member.email)}</span>
-                <span role="cell">
-                  {member.role === 'owner' ? 'Owner' : 'Staff'}
-                </span>
-                <span role="cell">{formatValue(member.invitedBy)}</span>
-                <span role="cell">
-                  {formatTimestamp(member.updatedAt ?? member.createdAt)}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
+          <thead>
+            <tr>
+              <th scope="col">Email</th>
+              <th scope="col">Role</th>
+              <th scope="col">Invited by</th>
+              <th scope="col">Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {roster.length === 0 && !rosterLoading ? (
+              <tr className="account-overview__roster-empty">
+                <td colSpan={4}>No team members found.</td>
+              </tr>
+            ) : (
+              roster.map(member => (
+                <tr
+                  key={member.id}
+                  data-testid={`account-roster-${member.id}`}
+                  data-uid={member.uid}
+                  data-store-id={member.storeId ?? undefined}
+                  data-phone={member.phone ?? undefined}
+                  data-first-signup-email={member.firstSignupEmail ?? undefined}
+                >
+                  <td>{formatValue(member.email)}</td>
+                  <td>{member.role === 'owner' ? 'Owner' : 'Staff'}</td>
+                  <td>{formatValue(member.invitedBy)}</td>
+                  <td>{formatTimestamp(member.updatedAt ?? member.createdAt)}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </section>
     </div>
   )
