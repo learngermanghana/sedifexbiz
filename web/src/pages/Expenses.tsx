@@ -1,3 +1,4 @@
+// web/src/pages/Expenses.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   addDoc,
@@ -8,7 +9,6 @@ import {
   orderBy,
   serverTimestamp,
 } from 'firebase/firestore'
-import { Link } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useAuthUser } from '../hooks/useAuthUser'
@@ -104,20 +104,21 @@ export default function Expenses() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSuccess(null)
-
     if (!storeId) {
-      setError('You need an active Sedifex POS workspace to record expenses.')
+      setError('You need an active workspace to record expenses.')
+      setSuccess(null)
       return
     }
     if (!user) {
       setError('You must be signed in to record expenses.')
+      setSuccess(null)
       return
     }
     if (!isFormValid) return
 
     setIsSaving(true)
     setError(null)
+    setSuccess(null)
 
     try {
       await addDoc(collection(db, 'expenses'), {
@@ -133,16 +134,17 @@ export default function Expenses() {
       // clear form (keep date & category to make multiple entries easier)
       setAmount('')
       setDescription('')
-      setSuccess('Expense saved. It will now appear in your history below.')
+
+      // show success message
+      setSuccess('Expense saved. You can see it in the history below.')
     } catch (err) {
       console.error('[expenses] Failed to save expense', err)
       setError('We could not save this expense. Please try again.')
+      setSuccess(null)
     } finally {
       setIsSaving(false)
     }
   }
-
-  const hasWorkspace = Boolean(storeId)
 
   return (
     <div className="page">
@@ -150,35 +152,23 @@ export default function Expenses() {
         <div>
           <h2 className="page__title">Expenses</h2>
           <p className="page__subtitle">
-            Record rent, salaries, utilities, and other store costs so you can see real profit
-            from your Sedifex POS.
+            Record rent, salaries, utilities, and other store costs so you can see real profit.
           </p>
         </div>
       </header>
-
-      {!hasWorkspace && (
-        <section className="card" aria-label="No workspace">
-          <h3 className="card__title">No POS workspace selected</h3>
-          <p className="card__subtitle">
-            Connect or create a Sedifex POS workspace before tracking your expenses.
-          </p>
-          <p style={{ marginBottom: 16 }}>
-            Once a workspace is active, expenses recorded here will be linked to that store and
-            shown alongside your sales in Finance.
-          </p>
-          <Link to="/onboarding" className="button button--primary">
-            Set up Sedifex POS
-          </Link>
-        </section>
-      )}
 
       {/* Entry form */}
       <section className="card" aria-label="Add expense">
         <h3 className="card__title">Add expense</h3>
         <p className="card__subtitle">
-          Capture expenses for this Sedifex workspace. Amounts are stored in your POS currency
-          (GHS).
+          Capture expenses for this Sedifex workspace. Amounts are stored in your POS currency.
         </p>
+
+        {!storeId && (
+          <p className="status status--error" role="alert">
+            Switch to a workspace before adding expenses.
+          </p>
+        )}
 
         {error && (
           <p className="status status--error" role="alert">
@@ -207,9 +197,8 @@ export default function Expenses() {
               value={amount}
               onChange={e => setAmount(e.target.value)}
               required
-              disabled={!hasWorkspace || !user}
             />
-            <p className="form__hint">Enter the total cost for this expense in GHS.</p>
+            <p className="form__hint">Enter the total cost for this expense.</p>
           </div>
 
           <div className="form__field">
@@ -218,7 +207,6 @@ export default function Expenses() {
               id="expense-category"
               value={category}
               onChange={e => setCategory(e.target.value)}
-              disabled={!hasWorkspace || !user}
             >
               {CATEGORIES.map(cat => (
                 <option key={cat} value={cat}>
@@ -237,7 +225,6 @@ export default function Expenses() {
               value={date}
               onChange={e => setDate(e.target.value)}
               required
-              disabled={!hasWorkspace || !user}
             />
           </div>
 
@@ -249,7 +236,6 @@ export default function Expenses() {
               value={description}
               onChange={e => setDescription(e.target.value)}
               placeholder="Eg. March rent for East Legon store"
-              disabled={!hasWorkspace || !user}
             />
           </div>
 
@@ -269,7 +255,7 @@ export default function Expenses() {
           <div>
             <h3 className="card__title">Expense history</h3>
             <p className="card__subtitle">
-              This list updates in real time for your current Sedifex POS workspace.
+              This list updates in real time for your current workspace.
             </p>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -285,10 +271,7 @@ export default function Expenses() {
         {expenses.length === 0 ? (
           <div className="empty-state">
             <h4 className="empty-state__title">No expenses yet</h4>
-            <p>
-              Add your first expense above to start tracking the real costs of running your
-              store alongside POS sales.
-            </p>
+            <p>Add your first expense above to start tracking store costs.</p>
           </div>
         ) : (
           <div className="table-wrapper">
