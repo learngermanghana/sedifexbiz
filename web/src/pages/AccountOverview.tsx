@@ -45,6 +45,11 @@ type SubscriptionProfile = {
   status: string | null
   plan: string | null
   provider: string | null
+  // 🔹 New fields
+  currentPeriodStart: Timestamp | null
+  currentPeriodEnd: Timestamp | null
+  lastPaymentAt: Timestamp | null
+  receiptUrl: string | null
 }
 
 type RosterMember = {
@@ -143,6 +148,17 @@ function mapSubscriptionSnapshot(
     status: toNullableString(data.status),
     plan: toNullableString(data.plan),
     provider: toNullableString(data.provider) ?? 'Paystack',
+    // 🔹 These fields are optional – only shown if you store them
+    currentPeriodStart: isTimestamp(data.currentPeriodStart)
+      ? data.currentPeriodStart
+      : null,
+    currentPeriodEnd: isTimestamp(data.currentPeriodEnd)
+      ? data.currentPeriodEnd
+      : null,
+    lastPaymentAt: isTimestamp(data.lastPaymentAt)
+      ? data.lastPaymentAt
+      : null,
+    receiptUrl: toNullableString(data.receiptUrl),
   }
 }
 
@@ -402,6 +418,17 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const isTrial =
     contractStatus === 'trial' || billingPlan === 'trial'
 
+  // 🔹 Derived billing display values
+  const lastPaymentDisplay = formatTimestamp(
+    subscriptionProfile?.lastPaymentAt ??
+      subscriptionProfile?.currentPeriodStart ??
+      null,
+  )
+
+  const expiryDisplay = formatTimestamp(
+    subscriptionProfile?.currentPeriodEnd ?? null,
+  )
+
   return (
     <div className="account-overview">
       <Heading>Account overview</Heading>
@@ -452,14 +479,13 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       {profile && (
         <section
           aria-labelledby="account-overview-profile"
-          id="store-profile"  // 🔹 anchor target for the button
+          id="store-profile"
         >
           <div className="account-overview__section-header">
             <h2 id="account-overview-profile">Store profile</h2>
 
             {isOwner && (
               <div className="account-overview__actions account-overview__actions--profile">
-                {/* 🔹 Option B: button that scrolls to this section */}
                 <button
                   type="button"
                   className="button button--secondary"
@@ -521,6 +547,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         </section>
       )}
 
+      {/* Existing billing summary (contract status, plan, provider, etc.) */}
       <AccountBillingSection
         storeId={storeId}
         ownerEmail={user?.email ?? null}
@@ -533,6 +560,43 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           'Paystack'
         }
       />
+
+      {/* 🔹 New: Billing history section with payment + expiry + receipt */}
+      {subscriptionProfile && (
+        <section aria-labelledby="account-overview-billing-history">
+          <div className="account-overview__section-header">
+            <h2 id="account-overview-billing-history">Billing history</h2>
+          </div>
+
+          <dl className="account-overview__grid">
+            <div>
+              <dt>Last payment</dt>
+              <dd>{lastPaymentDisplay}</dd>
+            </div>
+            <div>
+              <dt>Current period ends</dt>
+              <dd>{expiryDisplay}</dd>
+            </div>
+            <div>
+              <dt>Receipt</dt>
+              <dd>
+                {subscriptionProfile.receiptUrl ? (
+                  <a
+                    href={subscriptionProfile.receiptUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="button button--ghost"
+                  >
+                    Download receipt
+                  </a>
+                ) : (
+                  '—'
+                )}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
 
       <section aria-labelledby="account-overview-roster">
         <h2 id="account-overview-roster">Team roster</h2>
