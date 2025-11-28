@@ -17,7 +17,7 @@ import StaffManagement from './pages/StaffManagement'
 import { BillingVerifyPage } from './pages/BillingVerifyPage'
 import Support from './pages/Support'
 import Finance from './pages/Finance'
-import Expenses from './pages/Expenses'   // 👈 NEW
+import Expenses from './pages/Expenses'
 import { ToastProvider } from './components/ToastProvider'
 
 const router = createHashRouter([
@@ -39,10 +39,10 @@ const router = createHashRouter([
           // ✅ Finance main page
           { path: 'finance', element: <Finance /> },
 
-          // ✅ Expenses page under Finance
-          { path: 'finance/expenses', element: <Expenses /> },
+          // ✅ Expenses page (matches <Link to="/expenses">)
+          { path: 'expenses', element: <Expenses /> },
 
-          // keep Close Day route for the quick link
+          // Close Day route for the quick link
           { path: 'close-day', element: <CloseDay /> },
 
           { path: 'onboarding', element: <Onboarding /> },
