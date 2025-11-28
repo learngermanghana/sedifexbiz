@@ -18,6 +18,7 @@ import Support from './pages/Support'
 import Finance from './pages/Finance'
 import Expenses from './pages/Expenses'
 import ResetPassword from './pages/ResetPassword'
+import VerifyEmail from './pages/VerifyEmail'   // 👈 NEW
 import { ToastProvider } from './components/ToastProvider'
 
 const router = createHashRouter([
@@ -54,6 +55,7 @@ const router = createHashRouter([
 
       // 🔓 Public routes (outside ShellLayout)
       { path: 'reset-password', element: <ResetPassword /> },
+      { path: 'verify-email', element: <VerifyEmail /> },   // 👈 NEW
       { path: 'billing/verify', element: <BillingVerifyPage /> },
     ],
   },
