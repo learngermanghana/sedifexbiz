@@ -1,6 +1,11 @@
+// web/src/pages/AuthPage.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth'
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendEmailVerification,
+} from 'firebase/auth'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
@@ -126,9 +131,21 @@ export default function AuthPage() {
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
   const passwordChecklist = useMemo(
     () => [
-      { id: 'length', label: `At least ${PASSWORD_MIN_LENGTH} characters`, passed: passwordStrength.isLongEnough },
-      { id: 'uppercase', label: 'Includes an uppercase letter', passed: passwordStrength.hasUppercase },
-      { id: 'lowercase', label: 'Includes a lowercase letter', passed: passwordStrength.hasLowercase },
+      {
+        id: 'length',
+        label: `At least ${PASSWORD_MIN_LENGTH} characters`,
+        passed: passwordStrength.isLongEnough,
+      },
+      {
+        id: 'uppercase',
+        label: 'Includes an uppercase letter',
+        passed: passwordStrength.hasUppercase,
+      },
+      {
+        id: 'lowercase',
+        label: 'Includes a lowercase letter',
+        passed: passwordStrength.hasLowercase,
+      },
       { id: 'number', label: 'Includes a number', passed: passwordStrength.hasNumber },
       { id: 'symbol', label: 'Includes a symbol', passed: passwordStrength.hasSymbol },
     ] as const,
@@ -351,7 +368,19 @@ export default function AuthPage() {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
 
-        // 5) Mark onboarding as pending and bounce to login
+        // 5) Send email verification
+        try {
+          // Hash router, so we keep the hash in the continue URL
+          const continueUrl = `${window.location.origin}/#/verify-email`
+          await sendEmailVerification(nextUser, {
+            url: continueUrl,
+            handleCodeInApp: false,
+          })
+        } catch (error) {
+          console.warn('[auth] Failed to send verification email', error)
+        }
+
+        // 6) Mark onboarding as pending and bounce to login
         setOnboardingStatus(nextUser.uid, 'pending')
         setMode('login')
       }
@@ -361,7 +390,7 @@ export default function AuthPage() {
         message:
           mode === 'login'
             ? 'Welcome back! Redirecting…'
-            : 'Account created! You can now sign in.',
+            : 'Account created! We’ve emailed you a verification link — please confirm your email, then sign in.',
       })
       setPassword('')
       setConfirmPassword('')
@@ -434,7 +463,11 @@ export default function AuthPage() {
                 required
                 disabled={isLoading}
               />
-              <p className="form__hint">Enter the email you use for work.</p>
+              <p className="form__hint">
+                {mode === 'signup'
+                  ? 'We’ll send a verification link to this address.'
+                  : 'Enter the email you use for work.'}
+              </p>
             </div>
 
             {mode === 'signup' && (
@@ -627,13 +660,11 @@ export default function AuthPage() {
                   ))}
                 </ul>
               )}
-
-              {/* ✅ Reset password link for login mode */}
               {mode === 'login' && (
-                <p className="form__hint" style={{ marginTop: 4 }}>
+                <p className="form__hint">
                   Forgot your password?{' '}
-                  <Link to="/reset-password" className="app__link">
-                    Reset it here.
+                  <Link to="/reset-password" className="form__link">
+                    Reset it.
                   </Link>
                 </p>
               )}
@@ -829,7 +860,8 @@ const PAGE_FEATURES = [
   {
     path: '/customers',
     name: 'Customers',
-    description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.',
+    description:
+      'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.',
   },
   {
     path: '/finance',
