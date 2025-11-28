@@ -26,6 +26,8 @@ import {
 } from '../utils/offlineCache'
 import './Products.css'
 
+type ItemType = 'product' | 'service'
+
 interface ReceiptDetails {
   qty?: number | null
   supplier?: string | null
@@ -44,6 +46,7 @@ export type ProductRecord = {
   createdAt?: unknown
   updatedAt?: unknown
   storeId?: string | null
+  itemType?: ItemType
   __optimistic?: boolean
 }
 
@@ -67,6 +70,7 @@ const DEFAULT_CREATE_FORM = {
   price: '',
   reorderLevel: '',
   initialStock: '',
+  itemType: 'product' as ItemType,
 }
 
 const DEFAULT_EDIT_FORM = {
@@ -74,6 +78,7 @@ const DEFAULT_EDIT_FORM = {
   sku: '',
   price: '',
   reorderLevel: '',
+  itemType: 'product' as ItemType,
 }
 
 const LAST_EXPORT_KEY = 'products:lastExportedAt'
@@ -260,7 +265,6 @@ export default function Products() {
       snapshot => {
         if (cancelled) return
 
-        // ✅ Clear any previous error once we get a good snapshot
         setLoadError(null)
 
         const rows = snapshot.docs.map(docSnap => ({
@@ -333,6 +337,7 @@ export default function Products() {
         Number.isFinite(product.reorderLevel)
           ? String(product.reorderLevel)
           : '',
+      itemType: product.itemType ?? 'product',
     }
     setEditForm(nextForm)
     setInitialEditForm(nextForm)
@@ -344,9 +349,18 @@ export default function Products() {
       editForm.name !== initialEditForm.name ||
       editForm.sku !== initialEditForm.sku ||
       editForm.price !== initialEditForm.price ||
-      editForm.reorderLevel !== initialEditForm.reorderLevel
+      editForm.reorderLevel !== initialEditForm.reorderLevel ||
+      editForm.itemType !== initialEditForm.itemType
     )
-  }, [editForm.name, editForm.price, editForm.reorderLevel, editForm.sku, editingProductId, initialEditForm])
+  }, [
+    editForm.name,
+    editForm.price,
+    editForm.reorderLevel,
+    editForm.sku,
+    editForm.itemType,
+    editingProductId,
+    initialEditForm,
+  ])
 
   const productDataMap = useMemo(() => {
     return products.reduce<Record<string, ProductRecord>>((acc, product) => {
@@ -357,6 +371,8 @@ export default function Products() {
 
   const lowStockProducts = useMemo(() => {
     return Object.values(productDataMap).filter(product => {
+      const itemType: ItemType = product.itemType ?? 'product'
+      if (itemType === 'service') return false
       const stockCount =
         typeof product.stockCount === 'number' ? product.stockCount : 0
       const reorder =
@@ -507,7 +523,7 @@ export default function Products() {
     }
   }
 
-  function handleCreateFieldChange(event: React.ChangeEvent<HTMLInputElement>) {
+  function handleCreateFieldChange(event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = event.target
     setCreateForm(prev => ({ ...prev, [name]: value }))
   }
@@ -525,7 +541,7 @@ export default function Products() {
     setEditingProductId(null)
   }
 
-  function handleEditFieldChange(event: React.ChangeEvent<HTMLInputElement>) {
+  function handleEditFieldChange(event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
     const { name, value } = event.target
     setEditForm(prev => ({ ...prev, [name]: value }))
   }
@@ -557,11 +573,12 @@ export default function Products() {
     if (isSubscriptionInactive) {
       setCreateStatus({
         tone: 'error',
-        message: 'Your subscription is inactive. Reactivate it to add products.',
+        message: 'Your subscription is inactive. Reactivate it to add items.',
       })
       return
     }
 
+    const itemType: ItemType = createForm.itemType ?? 'product'
     const name = createForm.name.trim()
     const sku = createForm.sku.trim()
     const price = parsePriceInput(createForm.price)
@@ -572,7 +589,9 @@ export default function Products() {
       setCreateStatus({
         tone: 'error',
         message:
-          'Name your product so the team recognises it on the shelf.',
+          itemType === 'service'
+            ? 'Name your service so your team can select it quickly.'
+            : 'Name your product so the team recognises it on the shelf.',
       })
       return
     }
@@ -583,35 +602,38 @@ export default function Products() {
       })
       return
     }
-    if (!sku) {
-      setCreateStatus({
-        tone: 'error',
-        message:
-          'Add a SKU that matches the barcode so you can scan it during checkout.',
-      })
-      return
-    }
-    if (createForm.reorderLevel && reorderLevel === null) {
-      setCreateStatus({
-        tone: 'error',
-        message:
-          'Enter a valid reorder point that is zero or greater.',
-      })
-      return
-    }
-    if (createForm.initialStock && initialStock === null) {
-      setCreateStatus({
-        tone: 'error',
-        message:
-          'Enter a valid opening stock that is zero or greater.',
-      })
-      return
+
+    if (itemType === 'product') {
+      if (!sku) {
+        setCreateStatus({
+          tone: 'error',
+          message:
+            'Add a SKU that matches the barcode so you can scan it during checkout.',
+        })
+        return
+      }
+      if (createForm.reorderLevel && reorderLevel === null) {
+        setCreateStatus({
+          tone: 'error',
+          message:
+            'Enter a valid reorder point that is zero or greater.',
+        })
+        return
+      }
+      if (createForm.initialStock && initialStock === null) {
+        setCreateStatus({
+          tone: 'error',
+          message:
+            'Enter a valid opening stock that is zero or greater.',
+        })
+        return
+      }
     }
 
     if (!activeStoreId) {
       setCreateStatus({
         tone: 'error',
-        message: 'Select a workspace before adding products.',
+        message: 'Select a workspace before adding items.',
       })
       return
     }
@@ -622,33 +644,39 @@ export default function Products() {
     let optimisticProduct: ProductRecord | null = null
 
     try {
-      const duplicateQuery = query(
-        collection(db, 'products'),
-        where('storeId', '==', activeStoreId),
-        where('sku', '==', sku),
-        limit(1),
-      )
-      const duplicate = await getDocs(duplicateQuery)
-      if (!duplicate.empty) {
-        setCreateStatus({
-          tone: 'error',
-          message:
-            'A product in this workspace already uses that SKU. Pick a unique SKU before saving.',
-        })
-        return
+      if (itemType === 'product' && sku) {
+        const duplicateQuery = query(
+          collection(db, 'products'),
+          where('storeId', '==', activeStoreId),
+          where('sku', '==', sku),
+          limit(1),
+        )
+        const duplicate = await getDocs(duplicateQuery)
+        if (!duplicate.empty) {
+          setCreateStatus({
+            tone: 'error',
+            message:
+              'A product in this workspace already uses that SKU. Pick a unique SKU before saving.',
+          })
+          return
+        }
       }
+
+      const stockCount = itemType === 'product' ? initialStock ?? 0 : null
+      const resolvedReorderLevel = itemType === 'product' ? reorderLevel ?? null : null
 
       optimisticProduct = {
         id: `optimistic-${Date.now()}`,
         name,
         price,
-        sku,
-        reorderLevel: reorderLevel ?? null,
-        stockCount: initialStock ?? 0,
+        sku: itemType === 'product' ? sku : sku || null,
+        reorderLevel: resolvedReorderLevel,
+        stockCount,
         lastReceipt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
         storeId: activeStoreId,
+        itemType,
         __optimistic: true,
       }
 
@@ -657,10 +685,11 @@ export default function Products() {
       const ref = await addDoc(collection(db, 'products'), {
         name,
         price,
-        sku,
-        reorderLevel: reorderLevel ?? null,
-        reorderThreshold: reorderLevel ?? null,
-        stockCount: initialStock ?? 0,
+        sku: itemType === 'product' ? sku : sku || null,
+        itemType,
+        reorderLevel: resolvedReorderLevel,
+        reorderThreshold: resolvedReorderLevel,
+        stockCount,
         storeId: activeStoreId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -670,8 +699,13 @@ export default function Products() {
         await addDoc(collection(db, 'activity'), {
           storeId: activeStoreId,
           type: 'inventory',
-          summary: `Added product ${name}`,
-          detail: `SKU: ${sku || '—'} · Price: GHS ${price.toFixed(2)}`,
+          summary:
+            itemType === 'service'
+              ? `Added service ${name}`
+              : `Added product ${name}`,
+          detail: `SKU: ${sku || '—'} · Price: GHS ${price.toFixed(2)} · Type: ${
+            itemType === 'service' ? 'Service' : 'Product'
+          }`,
           actor: activityActor,
           createdAt: serverTimestamp(),
         })
@@ -688,11 +722,14 @@ export default function Products() {
       )
       setCreateStatus({
         tone: 'success',
-        message: 'Product created successfully.',
+        message:
+          itemType === 'service'
+            ? 'Service created successfully.'
+            : 'Product created successfully.',
       })
       resetCreateForm()
     } catch (error) {
-      console.error('[products] Failed to create product', error)
+      console.error('[products] Failed to create item', error)
       if (isOfflineError(error) && optimisticProduct) {
         setProducts(prev =>
           prev.map(product =>
@@ -704,7 +741,7 @@ export default function Products() {
         setCreateStatus({
           tone: 'success',
           message:
-            'Offline — product saved locally and will sync when you reconnect.',
+            'Offline — item saved locally and will sync when you reconnect.',
         })
         return
       }
@@ -715,7 +752,7 @@ export default function Products() {
       }
       setCreateStatus({
         tone: 'error',
-        message: 'Unable to create product. Please try again.',
+        message: 'Unable to create item. Please try again.',
       })
     } finally {
       setIsCreating(false)
@@ -728,7 +765,7 @@ export default function Products() {
     if (isSubscriptionInactive) {
       setEditStatus({
         tone: 'error',
-        message: 'Your subscription is inactive. Resume it to edit products.',
+        message: 'Your subscription is inactive. Resume it to edit items.',
       })
       return
     }
@@ -736,10 +773,11 @@ export default function Products() {
     if (!editingProductId) {
       setEditStatus({
         tone: 'error',
-        message: 'Select a product to edit before saving.',
+        message: 'Select an item to edit before saving.',
       })
       return
     }
+    const itemType: ItemType = editForm.itemType ?? 'product'
     const name = editForm.name.trim()
     const sku = editForm.sku.trim()
     const price = parsePriceInput(editForm.price)
@@ -748,7 +786,10 @@ export default function Products() {
     if (!name) {
       setEditStatus({
         tone: 'error',
-        message: 'Name your product so staff know what to pick.',
+        message:
+          itemType === 'service'
+            ? 'Name your service so staff know what to select.'
+            : 'Name your product so staff know what to pick.',
       })
       return
     }
@@ -759,27 +800,30 @@ export default function Products() {
       })
       return
     }
-    if (!sku) {
-      setEditStatus({
-        tone: 'error',
-        message:
-          'Every product needs a SKU that matches its barcode for scanning.',
-      })
-      return
-    }
-    if (editForm.reorderLevel && reorderLevel === null) {
-      setEditStatus({
-        tone: 'error',
-        message:
-          'Enter a valid reorder point that is zero or greater.',
-      })
-      return
+
+    if (itemType === 'product') {
+      if (!sku) {
+        setEditStatus({
+          tone: 'error',
+          message:
+            'Every product needs a SKU that matches its barcode for scanning.',
+        })
+        return
+      }
+      if (editForm.reorderLevel && reorderLevel === null) {
+        setEditStatus({
+          tone: 'error',
+          message:
+            'Enter a valid reorder point that is zero or greater.',
+        })
+        return
+      }
     }
 
     if (!activeStoreId) {
       setEditStatus({
         tone: 'error',
-        message: 'Select a workspace before updating products.',
+        message: 'Select a workspace before updating items.',
       })
       return
     }
@@ -788,18 +832,23 @@ export default function Products() {
     if (!previous) {
       setEditStatus({
         tone: 'error',
-        message: 'We could not find this product to update.',
+        message: 'We could not find this item to update.',
       })
       return
     }
 
+    const resolvedReorderLevel = itemType === 'product' ? reorderLevel ?? null : null
+
     const updatedValues: Partial<ProductRecord> = {
       name,
       price,
-      sku,
-      reorderLevel: reorderLevel ?? null,
+      sku: itemType === 'product' ? sku : sku || null,
+      reorderLevel: resolvedReorderLevel,
       updatedAt: new Date(),
       storeId: activeStoreId,
+      itemType,
+      // When switching to service, we no longer care about stockCount for alerts,
+      // but we leave existing value as-is so history still makes sense.
     }
 
     setIsUpdating(true)
@@ -818,9 +867,10 @@ export default function Products() {
       await updateDoc(doc(collection(db, 'products'), editingProductId), {
         name,
         price,
-        sku,
-        reorderLevel: reorderLevel ?? null,
-        reorderThreshold: reorderLevel ?? null,
+        sku: itemType === 'product' ? sku : sku || null,
+        itemType,
+        reorderLevel: resolvedReorderLevel,
+        reorderThreshold: resolvedReorderLevel,
         storeId: activeStoreId,
         updatedAt: serverTimestamp(),
       })
@@ -828,8 +878,13 @@ export default function Products() {
         await addDoc(collection(db, 'activity'), {
           storeId: activeStoreId,
           type: 'inventory',
-          summary: `Updated product ${name}`,
-          detail: `SKU: ${sku || '—'} · Price: GHS ${price.toFixed(2)}`,
+          summary:
+            itemType === 'service'
+              ? `Updated service ${name}`
+              : `Updated product ${name}`,
+          detail: `SKU: ${sku || '—'} · Price: GHS ${price.toFixed(
+            2,
+          )} · Type: ${itemType === 'service' ? 'Service' : 'Product'}`,
           actor: activityActor,
           createdAt: serverTimestamp(),
         })
@@ -838,7 +893,7 @@ export default function Products() {
       }
       setEditStatus({
         tone: 'success',
-        message: 'Product details updated.',
+        message: 'Item details updated.',
       })
       setProducts(prev =>
         prev.map(product =>
@@ -849,7 +904,7 @@ export default function Products() {
       )
       setEditingProductId(null)
     } catch (error) {
-      console.error('[products] Failed to update product', error)
+      console.error('[products] Failed to update item', error)
       setProducts(prev =>
         prev.map(product =>
           product.id === editingProductId ? previous : product,
@@ -859,14 +914,14 @@ export default function Products() {
         setEditStatus({
           tone: 'success',
           message:
-            'Offline — product edits saved and will sync when you reconnect.',
+            'Offline — item edits saved and will sync when you reconnect.',
         })
         setEditingProductId(null)
         return
       }
       setEditStatus({
         tone: 'error',
-        message: 'Unable to update product. Please try again.',
+        message: 'Unable to update item. Please try again.',
       })
     } finally {
       setIsUpdating(false)
@@ -885,8 +940,6 @@ export default function Products() {
     )
   }
 
-  // ✅ Only show the big error banner when there is an error AND
-  // we’re not loading AND there’s no data to show.
   const hasBlockingError =
     !!loadError && !isLoadingProducts && filteredProducts.length === 0
 
@@ -896,17 +949,17 @@ export default function Products() {
 
       {isSubscriptionInactive ? (
         <div className="products-page__restriction" role="alert">
-          Your subscription is inactive. You can browse products but cannot add
+          Your subscription is inactive. You can browse items but cannot add
           or edit them until you restart your plan.
         </div>
       ) : null}
 
       <header className="page__header">
         <div>
-          <h2 className="page__title">Products</h2>
+          <h2 className="page__title">Products & services</h2>
           <p className="page__subtitle">
             Review inventory, monitor low stock alerts, and keep your catalogue
-            tidy.
+            of products and services tidy.
           </p>
         </div>
         <Link to="/receive" className="products-page__receive-link">
@@ -920,7 +973,7 @@ export default function Products() {
             <span className="products-page__search-label">Search</span>
             <input
               type="search"
-              placeholder="Search by product or SKU"
+              placeholder="Search by name or SKU"
               value={filterText}
               onChange={event => setFilterText(event.target.value)}
             />
@@ -971,12 +1024,12 @@ export default function Products() {
         ) : null}
 
         {isLoadingProducts ? (
-          <div className="products-page__loading">Loading products…</div>
+          <div className="products-page__loading">Loading items…</div>
         ) : null}
 
         {!isLoadingProducts && filteredProducts.length === 0 && !hasBlockingError ? (
           <div className="products-page__empty" role="status">
-            No products found. Add your first item so you can track inventory.
+            No items found. Add your first product or service to start selling.
           </div>
         ) : null}
 
@@ -985,7 +1038,8 @@ export default function Products() {
             <table className="products-page__table">
               <thead>
                 <tr>
-                  <th scope="col">Product</th>
+                  <th scope="col">Item</th>
+                  <th scope="col">Type</th>
                   <th scope="col">SKU</th>
                   <th scope="col">Price</th>
                   <th scope="col">On hand</th>
@@ -998,17 +1052,22 @@ export default function Products() {
               </thead>
               <tbody>
                 {filteredProducts.map(product => {
-                  const stockCount =
+                  const itemType: ItemType = product.itemType ?? 'product'
+                  const isService = itemType === 'service'
+                  const stockCountRaw =
                     typeof product.stockCount === 'number'
                       ? product.stockCount
                       : 0
+                  const stockCount = isService ? null : stockCountRaw
                   const reorderLevel =
                     typeof product.reorderLevel === 'number'
                       ? product.reorderLevel
                       : null
                   const isLowStock =
-                    reorderLevel !== null && stockCount <= reorderLevel
-                  const isOutOfStock = stockCount === 0
+                    !isService &&
+                    reorderLevel !== null &&
+                    (stockCount ?? 0) <= reorderLevel
+                  const isOutOfStock = !isService && (stockCount ?? 0) === 0
                   const lastReceived = toDate(product.lastReceipt?.receivedAt)
                   const lastReceivedLabel = lastReceived
                     ? `Last received ${lastReceived.toLocaleDateString()} ${lastReceived.toLocaleTimeString([], {
@@ -1031,6 +1090,11 @@ export default function Products() {
                                 Syncing…
                               </span>
                             ) : null}
+                            {isService ? (
+                              <span className="products-page__badge products-page__badge--muted">
+                                Service
+                              </span>
+                            ) : null}
                             {isOutOfStock ? (
                               <span className="products-page__badge products-page__badge--danger">
                                 Out of stock
@@ -1050,6 +1114,7 @@ export default function Products() {
                           </div>
                         </div>
                       </th>
+                      <td>{isService ? 'Service' : 'Product'}</td>
                       <td>{product.sku || '—'}</td>
                       <td>
                         {typeof product.price === 'number' &&
@@ -1057,19 +1122,19 @@ export default function Products() {
                           ? `GHS ${product.price.toFixed(2)}`
                           : '—'}
                       </td>
-                      <td>{stockCount}</td>
-                      <td>{reorderLevel ?? '—'}</td>
+                      <td>{isService ? '—' : stockCount ?? 0}</td>
+                      <td>{isService ? '—' : reorderLevel ?? '—'}</td>
                       <td>{formatReceiptDetails(product.lastReceipt)}</td>
                       <td className="products-page__actions">
-                    <button
-                      type="button"
-                      className="products-page__edit-button"
-                      disabled={isSubscriptionInactive}
-                      onClick={() => setEditingProductId(product.id)}
-                    >
-                      Edit
-                    </button>
-                  </td>
+                        <button
+                          type="button"
+                          className="products-page__edit-button"
+                          disabled={isSubscriptionInactive}
+                          onClick={() => setEditingProductId(product.id)}
+                        >
+                          Edit
+                        </button>
+                      </td>
                     </tr>
                   )
                 })}
@@ -1080,13 +1145,57 @@ export default function Products() {
       </section>
 
       <section className="card products-page__card">
-        <h3 className="card__title">Add product</h3>
+        <h3 className="card__title">Add item</h3>
         <p className="card__subtitle">
-          Capture items you stock so sales and receipts stay accurate. Give each
-          one a SKU that matches the barcode you plan to scan at checkout.
+          Add both products and services so every sale is tracked in one place.
+          Products track stock; services are things like hair, makeup, delivery fees, or repairs.
         </p>
         <form className="products-page__form" onSubmit={handleCreateProduct}>
           <fieldset className="products-page__fieldset" disabled={isSubscriptionInactive}>
+            <div className="field">
+              <span className="field__label">Item type</span>
+              <div
+                className="products-page__itemtype-toggle"
+                role="radiogroup"
+                aria-label="Item type"
+              >
+                <button
+                  type="button"
+                  className={`products-page__itemtype-option${
+                    createForm.itemType === 'product' ? ' is-active' : ''
+                  }`}
+                  onClick={() =>
+                    setCreateForm(prev => ({
+                      ...prev,
+                      itemType: 'product',
+                    }))
+                  }
+                >
+                  Product
+                </button>
+                <button
+                  type="button"
+                  className={`products-page__itemtype-option${
+                    createForm.itemType === 'service' ? ' is-active' : ''
+                  }`}
+                  onClick={() =>
+                    setCreateForm(prev => ({
+                      ...prev,
+                      itemType: 'service',
+                      // For services we don't need stock / reorder, but we leave
+                      // existing values; validation simply won't require them.
+                    }))
+                  }
+                >
+                  Service
+                </button>
+              </div>
+              <p className="field__hint">
+                Use <strong>Product</strong> for physical stock like drinks or groceries.
+                Use <strong>Service</strong> for things like nails, lashes, makeup, repairs, or delivery.
+              </p>
+            </div>
+
             <label className="field">
               <span className="field__label">Name</span>
               <input
@@ -1094,62 +1203,85 @@ export default function Products() {
                 autoFocus
                 value={createForm.name}
                 onChange={handleCreateFieldChange}
-                placeholder="e.g. House Blend Coffee"
+                placeholder={
+                  createForm.itemType === 'service'
+                    ? 'e.g. Full set acrylic nails'
+                    : 'e.g. House Blend Coffee'
+                }
                 required
               />
             </label>
-            <label className="field">
-              <span className="field__label">SKU</span>
-              <input
-                name="sku"
-                value={createForm.sku}
-                onChange={handleCreateFieldChange}
-                placeholder="Barcode or SKU"
-                required
-                aria-describedby="create-sku-hint"
-              />
-            </label>
-            <p className="field__hint" id="create-sku-hint">
-              This must match the value encoded in your barcode so cashiers can
-              scan products.
-            </p>
+
+            {createForm.itemType === 'product' && (
+              <>
+                <label className="field">
+                  <span className="field__label">SKU</span>
+                  <input
+                    name="sku"
+                    value={createForm.sku}
+                    onChange={handleCreateFieldChange}
+                    placeholder="Barcode or SKU"
+                    required
+                    aria-describedby="create-sku-hint"
+                  />
+                </label>
+                <p className="field__hint" id="create-sku-hint">
+                  This must match the value encoded in your barcode so cashiers can
+                  scan products.
+                </p>
+              </>
+            )}
+
+            {createForm.itemType === 'service' && (
+              <p className="field__hint">
+                Services don&apos;t need a SKU or stock level. You can still add a code
+                later if you want to scan it like a product.
+              </p>
+            )}
+
             <label className="field">
               <span className="field__label">Price</span>
               <input
                 name="price"
                 value={createForm.price}
                 onChange={handleCreateFieldChange}
-                placeholder="How much you sell it for"
+                placeholder="How much you charge"
                 inputMode="decimal"
                 required
               />
             </label>
-            <label className="field">
-              <span className="field__label">Reorder point</span>
-              <input
-                name="reorderLevel"
-                value={createForm.reorderLevel}
-                onChange={handleCreateFieldChange}
-                placeholder="Alert when stock drops to…"
-                inputMode="numeric"
-              />
-            </label>
-            <label className="field">
-              <span className="field__label">Opening stock</span>
-              <input
-                name="initialStock"
-                value={createForm.initialStock}
-                onChange={handleCreateFieldChange}
-                placeholder="Quantity currently on hand"
-                inputMode="numeric"
-              />
-            </label>
+
+            {createForm.itemType === 'product' && (
+              <>
+                <label className="field">
+                  <span className="field__label">Reorder point</span>
+                  <input
+                    name="reorderLevel"
+                    value={createForm.reorderLevel}
+                    onChange={handleCreateFieldChange}
+                    placeholder="Alert when stock drops to…"
+                    inputMode="numeric"
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Opening stock</span>
+                  <input
+                    name="initialStock"
+                    value={createForm.initialStock}
+                    onChange={handleCreateFieldChange}
+                    placeholder="Quantity currently on hand"
+                    inputMode="numeric"
+                  />
+                </label>
+              </>
+            )}
+
             <button
               type="submit"
               className="products-page__submit"
               disabled={isCreating || isSubscriptionInactive}
             >
-              {isCreating ? 'Saving…' : 'Add product'}
+              {isCreating ? 'Saving…' : 'Add item'}
             </button>
             {renderStatus(createStatus)}
           </fieldset>
@@ -1163,9 +1295,47 @@ export default function Products() {
           aria-modal="true"
         >
           <div className="products-page__dialog-content">
-            <h3>Edit product</h3>
+            <h3>Edit item</h3>
             <form className="products-page__form" onSubmit={handleUpdateProduct}>
               <fieldset className="products-page__fieldset" disabled={isSubscriptionInactive}>
+                <div className="field">
+                  <span className="field__label">Item type</span>
+                  <div
+                    className="products-page__itemtype-toggle"
+                    role="radiogroup"
+                    aria-label="Item type for this item"
+                  >
+                    <button
+                      type="button"
+                      className={`products-page__itemtype-option${
+                        editForm.itemType === 'product' ? ' is-active' : ''
+                      }`}
+                      onClick={() =>
+                        setEditForm(prev => ({
+                          ...prev,
+                          itemType: 'product',
+                        }))
+                      }
+                    >
+                      Product
+                    </button>
+                    <button
+                      type="button"
+                      className={`products-page__itemtype-option${
+                        editForm.itemType === 'service' ? ' is-active' : ''
+                      }`}
+                      onClick={() =>
+                        setEditForm(prev => ({
+                          ...prev,
+                          itemType: 'service',
+                        }))
+                      }
+                    >
+                      Service
+                    </button>
+                  </div>
+                </div>
+
                 <label className="field">
                   <span className="field__label">Name</span>
                   <input
@@ -1176,20 +1346,33 @@ export default function Products() {
                     required
                   />
                 </label>
-                <label className="field">
-                  <span className="field__label">SKU</span>
-                  <input
-                    name="sku"
-                    value={editForm.sku}
-                    onChange={handleEditFieldChange}
-                    required
-                    aria-describedby="edit-sku-hint"
-                  />
-                </label>
-                <p className="field__hint" id="edit-sku-hint">
-                  Update the SKU to mirror the barcode if you need to reprint or
-                  relabel items.
-                </p>
+
+                {editForm.itemType === 'product' && (
+                  <>
+                    <label className="field">
+                      <span className="field__label">SKU</span>
+                      <input
+                        name="sku"
+                        value={editForm.sku}
+                        onChange={handleEditFieldChange}
+                        required
+                        aria-describedby="edit-sku-hint"
+                      />
+                    </label>
+                    <p className="field__hint" id="edit-sku-hint">
+                      Update the SKU to mirror the barcode if you need to reprint or
+                      relabel items.
+                    </p>
+                  </>
+                )}
+
+                {editForm.itemType === 'service' && (
+                  <p className="field__hint">
+                    This item is treated as a service, so it won&apos;t show in low
+                    stock alerts or reorder lists.
+                  </p>
+                )}
+
                 <label className="field">
                   <span className="field__label">Price</span>
                   <input
@@ -1200,15 +1383,19 @@ export default function Products() {
                     required
                   />
                 </label>
-                <label className="field">
-                  <span className="field__label">Reorder point</span>
-                  <input
-                    name="reorderLevel"
-                    value={editForm.reorderLevel}
-                    onChange={handleEditFieldChange}
-                    inputMode="numeric"
-                  />
-                </label>
+
+                {editForm.itemType === 'product' && (
+                  <label className="field">
+                    <span className="field__label">Reorder point</span>
+                    <input
+                      name="reorderLevel"
+                      value={editForm.reorderLevel}
+                      onChange={handleEditFieldChange}
+                      inputMode="numeric"
+                    />
+                  </label>
+                )}
+
                 <div className="products-page__dialog-actions">
                   <button
                     type="button"
