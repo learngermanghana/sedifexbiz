@@ -390,21 +390,48 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     subscriptionLoading ||
     rosterLoading
 
+  const contractStatus =
+    subscriptionProfile?.status ??
+    profile?.contractStatus ??
+    profile?.status ??
+    null
+
+  const billingPlan =
+    subscriptionProfile?.plan ?? profile?.billingPlan ?? null
+
+  const isTrial =
+    contractStatus === 'trial' || billingPlan === 'trial'
+
   return (
     <div className="account-overview">
       <Heading>Account overview</Heading>
 
       {profile && (
         <p className="account-overview__subtitle">
-          Workspace:{' '}
+          Workspace{' '}
           <strong>{profile.displayName ?? profile.name ?? '—'}</strong>
           {activeMembership && (
             <>
-              {' · '}Your role:{' '}
+              {' · '}Your role{' '}
               <strong>{isOwner ? 'Owner' : 'Staff'}</strong>
             </>
           )}
         </p>
+      )}
+
+      {isTrial && (
+        <div
+          className="account-overview__banner account-overview__banner--trial"
+          role="status"
+          aria-live="polite"
+        >
+          <p>
+            You’re currently on a <strong>trial</strong> plan.
+            {isOwner
+              ? ' Set up billing to avoid interruptions.'
+              : ' Ask the workspace owner to set up billing to avoid interruptions.'}
+          </p>
+        </div>
       )}
 
       {(membershipsError || profileError || subscriptionError || rosterError) && (
@@ -423,8 +450,33 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       )}
 
       {profile && (
-        <section aria-labelledby="account-overview-profile">
-          <h2 id="account-overview-profile">Store profile</h2>
+        <section
+          aria-labelledby="account-overview-profile"
+          id="store-profile"  // 🔹 anchor target for the button
+        >
+          <div className="account-overview__section-header">
+            <h2 id="account-overview-profile">Store profile</h2>
+
+            {isOwner && (
+              <div className="account-overview__actions account-overview__actions--profile">
+                {/* 🔹 Option B: button that scrolls to this section */}
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  data-testid="account-edit-store"
+                  onClick={() => {
+                    const el = document.getElementById('store-profile')
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }
+                  }}
+                >
+                  Edit workspace details
+                </button>
+              </div>
+            )}
+          </div>
+
           <dl className="account-overview__grid">
             <div>
               <dt>Workspace name</dt>
@@ -473,13 +525,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         storeId={storeId}
         ownerEmail={user?.email ?? null}
         isOwner={isOwner}
-        contractStatus={
-          subscriptionProfile?.status ??
-          profile?.contractStatus ??
-          profile?.status ??
-          null
-        }
-        billingPlan={subscriptionProfile?.plan ?? profile?.billingPlan ?? null}
+        contractStatus={contractStatus}
+        billingPlan={billingPlan}
         paymentProvider={
           subscriptionProfile?.provider ??
           profile?.paymentProvider ??
