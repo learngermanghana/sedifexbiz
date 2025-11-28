@@ -1,355 +1,441 @@
-import React, { useEffect, useMemo, useState, FormEvent } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   addDoc,
   collection,
-  doc,
+  limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   where,
 } from 'firebase/firestore'
+import { Link } from 'react-router-dom'
+import './Products.css'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
-import './Products.css'
+import {
+  PRODUCT_CACHE_LIMIT,
+  loadCachedProducts,
+  saveCachedProducts,
+} from '../utils/offlineCache'
 
 type ItemType = 'product' | 'service'
 
 type Product = {
   id: string
-  storeId: string
   name: string
+  sku: string | null
   price: number | null
-  sku?: string | null
-  itemType?: ItemType // <<< NEW – defaults to "product" when missing
-  stockCount?: number | null
-  reorderPoint?: number | null
-  createdAt?: unknown
-  updatedAt?: unknown
+  stockCount: number | null
+  reorderPoint: number | null
+  itemType: ItemType
+  lastReceiptAt?: unknown
 }
 
-function sanitizeNumber(value: string): number | null {
-  if (!value.trim()) return null
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) return null
-  return parsed
+type CachedProduct = Omit<Product, 'id'>
+
+/**
+ * Helpers
+ */
+function sanitizeNumber(value: unknown): number | null {
+  if (typeof value !== 'number') return null
+  if (!Number.isFinite(value)) return null
+  if (value < 0) return null
+  return value
+}
+
+function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product {
+  const nameRaw = typeof data.name === 'string' ? data.name : ''
+  const skuRaw = typeof data.sku === 'string' ? data.sku : ''
+  const itemType = data.itemType === 'service' ? 'service' : 'product'
+
+  return {
+    id,
+    name: nameRaw.trim() || 'Untitled item',
+    sku: skuRaw.trim() || null,
+    price: sanitizeNumber(data.price) ?? null,
+    stockCount: sanitizeNumber(data.stockCount),
+    reorderPoint: sanitizeNumber(data.reorderPoint),
+    itemType,
+    lastReceiptAt: data.lastReceiptAt,
+  }
+}
+
+function formatCurrency(amount: number | null | undefined): string {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return '—'
+  return `GHS ${amount.toFixed(2)}`
+}
+
+function formatLastReceipt(lastReceiptAt: unknown): string {
+  if (!lastReceiptAt) return 'No receipts recorded'
+  try {
+    // Firestore Timestamp
+    if (typeof (lastReceiptAt as any).toDate === 'function') {
+      const d: Date = (lastReceiptAt as any).toDate()
+      return d.toLocaleDateString()
+    }
+    if (lastReceiptAt instanceof Date) {
+      return lastReceiptAt.toLocaleDateString()
+    }
+  } catch {
+    // ignore
+  }
+  return 'No receipts recorded'
 }
 
 export default function Products() {
   const { storeId: activeStoreId } = useActiveStore()
 
   const [products, setProducts] = useState<Product[]>([])
-  const [search, setSearch] = useState('')
-  const [onlyLowStock, setOnlyLowStock] = useState(false)
+  const [searchText, setSearchText] = useState('')
+  const [showLowStockOnly, setShowLowStockOnly] = useState(false)
 
-  // add-item form
+  // add-item form state
   const [name, setName] = useState('')
   const [itemType, setItemType] = useState<ItemType>('product')
   const [sku, setSku] = useState('')
-  const [price, setPrice] = useState('')
-  const [reorderPoint, setReorderPoint] = useState('')
-  const [openingStock, setOpeningStock] = useState('')
+  const [priceInput, setPriceInput] = useState('')
+  const [reorderPointInput, setReorderPointInput] = useState('')
+  const [openingStockInput, setOpeningStockInput] = useState('')
 
   const [isSaving, setIsSaving] = useState(false)
+  const [formStatus, setFormStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [formError, setFormError] = useState<string | null>(null)
 
-  // --------------------------------------------------------------
-  // Load products for active store
-  // --------------------------------------------------------------
+  /**
+   * Load products for the active store
+   */
   useEffect(() => {
+    let cancelled = false
+
     if (!activeStoreId) {
       setProducts([])
-      return
+      return () => {
+        cancelled = true
+      }
     }
 
+    // 1. Try cached products first
+    loadCachedProducts<CachedProduct>({ storeId: activeStoreId })
+      .then(cached => {
+        if (cancelled || !cached.length) return
+        const mapped = cached.map((item, index) =>
+          mapFirestoreProduct(
+            // cached objects don't have ids, so we fake a stable-ish one
+            (item as any).id ?? `cached-${index}`,
+            item as any,
+          ),
+        )
+        setProducts(
+          mapped.sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+          ),
+        )
+      })
+      .catch(error => {
+        console.warn('[products] Failed to load cached products', error)
+      })
+
+    // 2. Live Firestore subscription
     const q = query(
       collection(db, 'products'),
       where('storeId', '==', activeStoreId),
-      orderBy('name', 'asc'),
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(PRODUCT_CACHE_LIMIT),
     )
 
-    const unsubscribe = onSnapshot(q, snap => {
-      const rows: Product[] = snap.docs.map(d => {
-        const data = d.data() as any
-        const itemType: ItemType = (data.itemType === 'service' ? 'service' : 'product')
-        return {
-          id: d.id,
-          storeId: data.storeId,
-          name: data.name ?? '',
-          price: typeof data.price === 'number' ? data.price : null,
-          sku: data.sku ?? null,
-          itemType,
-          stockCount:
-            typeof data.stockCount === 'number'
-              ? data.stockCount
-              : null,
-          reorderPoint:
-            typeof data.reorderPoint === 'number'
-              ? data.reorderPoint
-              : null,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt,
-        }
+    const unsubscribe = onSnapshot(q, snapshot => {
+      const rows: Product[] = snapshot.docs.map(d =>
+        mapFirestoreProduct(d.id, d.data() as Record<string, unknown>),
+      )
+
+      // save for offline
+      saveCachedProducts(
+        rows.map(r => ({
+          ...r,
+          id: undefined as any, // cache doesn't need the id
+        })),
+        { storeId: activeStoreId },
+      ).catch(error => {
+        console.warn('[products] Failed to cache products', error)
       })
-      setProducts(rows)
+
+      const sorted = [...rows].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+      )
+      setProducts(sorted)
     })
 
-    return unsubscribe
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [activeStoreId])
 
-  // --------------------------------------------------------------
-  // Derived values
-  // --------------------------------------------------------------
-  const filteredProducts = useMemo(() => {
-    const term = search.trim().toLowerCase()
-    let list = products
+  /**
+   * Filtering logic
+   */
+  const visibleProducts = useMemo(() => {
+    let result = products
 
-    if (term) {
-      list = list.filter(p => {
-        const sku = (p.sku ?? '').toLowerCase()
-        return (
-          p.name.toLowerCase().includes(term) ||
-          sku.includes(term)
-        )
-      })
-    }
-
-    if (onlyLowStock) {
-      list = list.filter(p => {
-        const type = p.itemType ?? 'product'
-        if (type === 'service') return false
-        if (p.stockCount == null || p.reorderPoint == null) return false
+    if (showLowStockOnly) {
+      result = result.filter(p => {
+        if (p.itemType === 'service') return false
+        if (typeof p.stockCount !== 'number') return false
+        if (typeof p.reorderPoint !== 'number') return false
         return p.stockCount <= p.reorderPoint
       })
     }
 
-    return list
-  }, [products, search, onlyLowStock])
+    if (searchText.trim()) {
+      const term = searchText.trim().toLowerCase()
+      result = result.filter(p => {
+        const inName = p.name.toLowerCase().includes(term)
+        const inSku = (p.sku ?? '').toLowerCase().includes(term)
+        return inName || inSku
+      })
+    }
+
+    return result
+  }, [products, searchText, showLowStockOnly])
 
   const lowStockCount = useMemo(
     () =>
       products.filter(p => {
-        const type = p.itemType ?? 'product'
-        if (type === 'service') return false
-        if (p.stockCount == null || p.reorderPoint == null) return false
+        if (p.itemType === 'service') return false
+        if (typeof p.stockCount !== 'number') return false
+        if (typeof p.reorderPoint !== 'number') return false
         return p.stockCount <= p.reorderPoint
       }).length,
     [products],
   )
 
-  // --------------------------------------------------------------
-  // Add item
-  // --------------------------------------------------------------
-  async function handleAddItem(event: FormEvent) {
+  /**
+   * Add item handler
+   */
+  async function handleAddItem(event: React.FormEvent) {
     event.preventDefault()
-    if (!activeStoreId) {
-      setFormError('Select a workspace before adding items.')
-      return
-    }
+    if (!activeStoreId) return
+
+    setFormStatus('idle')
+    setFormError(null)
 
     const trimmedName = name.trim()
     if (!trimmedName) {
-      setFormError('Enter a name for this item.')
+      setFormStatus('error')
+      setFormError('Please enter a name for this item.')
       return
     }
-
-    const numericPrice = sanitizeNumber(price)
-    if (numericPrice == null) {
-      setFormError('Enter a valid price (0 or higher).')
-      return
-    }
-
-    const numericReorder = sanitizeNumber(reorderPoint)
-    const numericOpening = sanitizeNumber(openingStock)
 
     const isService = itemType === 'service'
 
-    const payload: Omit<Product, 'id'> & {
-      storeId: string
-    } = {
-      storeId: activeStoreId,
-      name: trimmedName,
-      price: numericPrice,
-      sku: sku.trim() || null,
-      itemType,
-      stockCount: isService ? null : numericOpening ?? 0,
-      reorderPoint: isService ? null : numericReorder ?? null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+    const priceNumber = priceInput ? Number(priceInput) : NaN
+    const reorderPointNumber = reorderPointInput ? Number(reorderPointInput) : NaN
+    const openingStockNumber = openingStockInput ? Number(openingStockInput) : NaN
+
+    if (!isService && (Number.isNaN(priceNumber) || priceNumber < 0)) {
+      setFormStatus('error')
+      setFormError('Enter a valid selling price.')
+      return
+    }
+
+    if (!isService && openingStockInput && (Number.isNaN(openingStockNumber) || openingStockNumber < 0)) {
+      setFormStatus('error')
+      setFormError('Opening stock must be zero or more.')
+      return
     }
 
     setIsSaving(true)
-    setFormError(null)
     try {
-      await addDoc(collection(db, 'products'), payload as any)
+      await addDoc(collection(db, 'products'), {
+        storeId: activeStoreId,
+        name: trimmedName,
+        itemType,
+        price: !Number.isNaN(priceNumber) && priceNumber >= 0 ? priceNumber : null,
+        sku: isService ? null : sku.trim() || null,
+        reorderPoint:
+          !isService && !Number.isNaN(reorderPointNumber) && reorderPointNumber >= 0
+            ? reorderPointNumber
+            : null,
+        stockCount:
+          !isService && !Number.isNaN(openingStockNumber) && openingStockNumber >= 0
+            ? openingStockNumber
+            : null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
 
-      // clear form (keep type – you usually add same type in a row)
+      setFormStatus('success')
+      setFormError(null)
+
+      // reset form
       setName('')
+      setItemType('product')
       setSku('')
-      setPrice('')
-      if (itemType === 'product') {
-        setReorderPoint('')
-        setOpeningStock('')
-      }
-    } catch (err) {
-      console.error('[products] Failed to add item', err)
-      const msg =
-        err instanceof Error
-          ? err.message
-          : 'We could not save this item. Please try again.'
-      setFormError(msg)
+      setPriceInput('')
+      setReorderPointInput('')
+      setOpeningStockInput('')
+    } catch (error) {
+      console.error('[products] Failed to add item', error)
+      setFormStatus('error')
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : 'We could not save this item. Please try again.',
+      )
     } finally {
       setIsSaving(false)
     }
   }
 
-  const totalServices = products.filter(
-    p => (p.itemType ?? 'product') === 'service',
-  ).length
-  const totalProducts = products.filter(
-    p => (p.itemType ?? 'product') === 'product',
-  ).length
+  const handleItemTypeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = event.target.value as ItemType
+    setItemType(value)
+    if (value === 'service') {
+      // services should not have barcodes
+      setSku('')
+    }
+  }
 
-  // --------------------------------------------------------------
-  // Render
-  // --------------------------------------------------------------
+  const isService = itemType === 'service'
+
   return (
     <div className="page products-page">
-      <header className="page__header">
+      <header className="page__header products-page__header">
         <div>
           <h2 className="page__title">Products &amp; services</h2>
           <p className="page__subtitle">
-            Review inventory, monitor low stock alerts, and keep your catalogue
-            of items and services tidy.
+            Review inventory, monitor low stock alerts, and keep your catalogue of items and
+            services tidy.
           </p>
         </div>
-        <div className="products-page__summary">
-          <span className="products-page__summary-pill">
-            {totalProducts} products
-          </span>
-          <span className="products-page__summary-pill">
-            {totalServices} services
-          </span>
-          <span className="products-page__summary-pill products-page__summary-pill--alert">
-            {lowStockCount} low stock
-          </span>
+        <div className="products-page__header-actions">
+          <Link to="/receive" className="button button--primary">
+            Receive stock
+          </Link>
         </div>
       </header>
 
-      <div className="products-page__layout">
-        {/* ---------- Left: add item ---------- */}
-        <section className="card products-page__card products-page__card--form">
+      <div className="products-page__grid">
+        {/* Add item card */}
+        <section className="card products-page__add-card">
           <h3 className="card__title">Add item</h3>
           <p className="card__subtitle">
-            Capture both physical products and services so sales stay accurate.
+            Capture both physical products and services you offer so sales and records stay
+            accurate.
           </p>
 
-          <form onSubmit={handleAddItem} className="products-page__form">
+          {formStatus === 'success' && (
+            <p className="products__message products__message--success">
+              Item added. You can now sell it from the Sell page.
+            </p>
+          )}
+
+          {formStatus === 'error' && formError && (
+            <p className="products__message products__message--error">{formError}</p>
+          )}
+
+          <form className="form" onSubmit={handleAddItem}>
             <div className="field">
-              <label className="field__label" htmlFor="product-name">
+              <label className="field__label" htmlFor="add-name">
                 Name
               </label>
               <input
-                id="product-name"
+                id="add-name"
                 placeholder="e.g. House Blend Coffee or Acrylic Nails"
                 value={name}
                 onChange={e => setName(e.target.value)}
-                required
               />
             </div>
 
             <div className="field">
-              <label className="field__label" htmlFor="product-type">
+              <label className="field__label" htmlFor="add-type">
                 Item type
               </label>
               <select
-                id="product-type"
+                id="add-type"
                 value={itemType}
-                onChange={e => setItemType(e.target.value as ItemType)}
+                onChange={handleItemTypeChange}
               >
                 <option value="product">Physical product</option>
-                <option value="service">Service (no stock tracking)</option>
+                <option value="service">Service</option>
               </select>
-              <p className="field__hint">
-                Choose <strong>Service</strong> for things like haircuts, makeup,
-                repair work, etc. We won’t track stock for services.
-              </p>
+              {isService && (
+                <p className="field__hint">
+                  Services don&apos;t track stock. You can still set a selling price.
+                </p>
+              )}
             </div>
 
-            <div className="field">
-              <label className="field__label" htmlFor="product-sku">
-                SKU
-              </label>
-              <input
-                id="product-sku"
-                placeholder="Barcode or internal code"
-                value={sku}
-                onChange={e => setSku(e.target.value)}
-              />
-              <p className="field__hint">
-                If you scan barcodes, this should match the code. For services,
-                you can enter any reference code you like.
-              </p>
-            </div>
+            {!isService && (
+              <div className="field">
+                <label className="field__label" htmlFor="add-sku">
+                  SKU
+                </label>
+                <input
+                  id="add-sku"
+                  placeholder="Barcode or internal code"
+                  value={sku}
+                  onChange={e => setSku(e.target.value)}
+                />
+                <p className="field__hint">
+                  If you scan barcodes, this should match the code. For services, you can
+                  enter any reference code you like.
+                </p>
+              </div>
+            )}
 
             <div className="field">
-              <label className="field__label" htmlFor="product-price">
+              <label className="field__label" htmlFor="add-price">
                 Price
               </label>
               <input
-                id="product-price"
+                id="add-price"
                 type="number"
                 min="0"
                 step="0.01"
                 placeholder="How much you sell it for"
-                value={price}
-                onChange={e => setPrice(e.target.value)}
+                value={priceInput}
+                onChange={e => setPriceInput(e.target.value)}
               />
             </div>
 
             <div className="field">
-              <label className="field__label" htmlFor="product-reorder">
+              <label className="field__label" htmlFor="add-reorder">
                 Reorder point
               </label>
               <input
-                id="product-reorder"
+                id="add-reorder"
                 type="number"
                 min="0"
                 step="1"
-                placeholder="Alert when stock drops to…"
-                value={reorderPoint}
-                disabled={itemType === 'service'}
-                onChange={e => setReorderPoint(e.target.value)}
+                placeholder="Alert when stock drops to..."
+                value={reorderPointInput}
+                onChange={e => setReorderPointInput(e.target.value)}
+                disabled={isService}
               />
-              <p className="field__hint">
-                We only use this for physical products. Services ignore this
-                field.
-              </p>
             </div>
 
             <div className="field">
-              <label className="field__label" htmlFor="product-opening-stock">
+              <label className="field__label" htmlFor="add-opening-stock">
                 Opening stock
               </label>
               <input
-                id="product-opening-stock"
+                id="add-opening-stock"
                 type="number"
                 min="0"
                 step="1"
                 placeholder="Quantity currently on hand"
-                value={openingStock}
-                disabled={itemType === 'service'}
-                onChange={e => setOpeningStock(e.target.value)}
+                value={openingStockInput}
+                onChange={e => setOpeningStockInput(e.target.value)}
+                disabled={isService}
               />
             </div>
 
-            {formError && (
-              <p className="products-page__form-error">{formError}</p>
-            )}
-
             <button
               type="submit"
-              className="button button--primary button--block"
+              className="button button--primary"
               disabled={isSaving}
             >
               {isSaving ? 'Adding…' : 'Add item'}
@@ -357,78 +443,87 @@ export default function Products() {
           </form>
         </section>
 
-        {/* ---------- Right: list ---------- */}
-        <section className="card products-page__card products-page__card--list">
+        {/* List card */}
+        <section className="card products-page__list-card">
           <div className="products-page__list-header">
             <div className="field field--inline">
-              <label
-                className="field__label"
-                htmlFor="products-search"
-              >
+              <label className="field__label" htmlFor="products-search">
                 Search
               </label>
               <input
                 id="products-search"
                 placeholder="Search by name or SKU"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
               />
             </div>
-            <label className="products-page__low-stock-toggle">
-              <input
-                type="checkbox"
-                checked={onlyLowStock}
-                onChange={e => setOnlyLowStock(e.target.checked)}
-              />
-              <span>Show low stock only</span>
-            </label>
+
+            <div className="products-page__list-controls">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={showLowStockOnly}
+                  onChange={e => setShowLowStockOnly(e.target.checked)}
+                />
+                <span>Show low stock only ({lowStockCount})</span>
+              </label>
+              {/* If you already have a reorder export implementation,
+                  hook the existing onClick handler up here. */}
+              <button type="button" className="button button--ghost">
+                Download reorder list
+              </button>
+            </div>
           </div>
 
           <div className="table-wrapper">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Item</th>
-                  <th>Type</th>
-                  <th>SKU</th>
-                  <th className="products-page__numeric">Price</th>
-                  <th className="products-page__numeric">On hand</th>
-                  <th className="products-page__numeric">Reorder point</th>
+                  <th scope="col">Item</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">SKU</th>
+                  <th scope="col">Price</th>
+                  <th scope="col">On hand</th>
+                  <th scope="col">Reorder point</th>
+                  <th scope="col">Last receipt</th>
+                  <th scope="col" className="products-page__actions-column">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredProducts.length ? (
-                  filteredProducts.map(p => {
-                    const type = p.itemType ?? 'product'
-                    const isService = type === 'service'
-                    const onHand = isService ? '—' : p.stockCount ?? 0
-                    const reorder = isService ? '—' : p.reorderPoint ?? '—'
-
+                {visibleProducts.length ? (
+                  visibleProducts.map(product => {
+                    const isSvc = product.itemType === 'service'
                     return (
-                      <tr key={p.id}>
-                        <td>{p.name}</td>
-                        <td>{isService ? 'Service' : 'Product'}</td>
-                        <td>{p.sku || '—'}</td>
-                        <td className="products-page__numeric">
-                          {typeof p.price === 'number'
-                            ? `GHS ${p.price.toFixed(2)}`
-                            : '—'}
+                      <tr key={product.id}>
+                        <td>{product.name}</td>
+                        <td>{isSvc ? 'Service' : 'Product'}</td>
+                        <td>{product.sku || '—'}</td>
+                        <td>{formatCurrency(product.price)}</td>
+                        <td>{isSvc ? '—' : product.stockCount ?? 0}</td>
+                        <td>{isSvc ? '—' : product.reorderPoint ?? '—'}</td>
+                        <td>{formatLastReceipt(product.lastReceiptAt)}</td>
+                        <td className="products-page__actions-column">
+                          {/* Keep your existing edit pattern here if you already have one */}
+                          <button
+                            type="button"
+                            className="button button--ghost button--small"
+                          >
+                            Edit
+                          </button>
                         </td>
-                        <td className="products-page__numeric">{onHand}</td>
-                        <td className="products-page__numeric">{reorder}</td>
                       </tr>
                     )
                   })
                 ) : (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={8}>
                       <div className="empty-state">
-                        <h3 className="empty-state__title">
-                          No items found
-                        </h3>
+                        <h3 className="empty-state__title">No items found</h3>
                         <p>
-                          Try a different search term or add a new product or
-                          service on the left.
+                          Try a different search term, or add new products and services
+                          using the form on the left.
                         </p>
                       </div>
                     </td>
