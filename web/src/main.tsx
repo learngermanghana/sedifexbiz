@@ -1,4 +1,3 @@
-// web/src/main.tsx
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { createHashRouter, RouterProvider } from 'react-router-dom'
@@ -18,6 +17,7 @@ import { BillingVerifyPage } from './pages/BillingVerifyPage'
 import Support from './pages/Support'
 import Finance from './pages/Finance'
 import Expenses from './pages/Expenses'
+import ResetPassword from './pages/ResetPassword'
 import { ToastProvider } from './components/ToastProvider'
 
 const router = createHashRouter([
@@ -51,6 +51,9 @@ const router = createHashRouter([
           { path: 'support', element: <Support /> },
         ],
       },
+
+      // 🔓 Public routes (outside ShellLayout)
+      { path: 'reset-password', element: <ResetPassword /> },
       { path: 'billing/verify', element: <BillingVerifyPage /> },
     ],
   },
