@@ -16,6 +16,7 @@ type RangeKey = 'month' | '30d' | '7d' | 'all'
 type SaleRow = {
   id: string
   total: number
+  taxTotal: number
   createdAt: Date | null
 }
 
@@ -56,7 +57,7 @@ export default function Finance() {
 
     const q = query(
       collection(db, 'sales'),
-      where('branchId', '==', storeId),
+      where('storeId', '==', storeId), // 👈 match Dashboard query
       orderBy('createdAt', 'desc'),
     )
 
@@ -64,15 +65,25 @@ export default function Finance() {
       const rows: SaleRow[] = snap.docs.map(docSnap => {
         const data = docSnap.data() as any
         const createdAt = toDate(data.createdAt)
+
         const total =
           typeof data.totals?.total === 'number'
             ? data.totals.total
             : typeof data.total === 'number'
               ? data.total
               : 0
+
+        const taxTotal =
+          typeof data.totals?.taxTotal === 'number'
+            ? data.totals.taxTotal
+            : typeof data.taxTotal === 'number'
+              ? data.taxTotal
+              : 0
+
         return {
           id: docSnap.id,
           total: Number(total) || 0,
+          taxTotal: Number(taxTotal) || 0,
           createdAt,
         }
       })
@@ -152,6 +163,7 @@ export default function Finance() {
   )
 
   const grossSales = filteredSales.reduce((sum, row) => sum + row.total, 0)
+  const totalVat = filteredSales.reduce((sum, row) => sum + row.taxTotal, 0)
   const totalExpenses = filteredExpenses.reduce(
     (sum, row) => sum + row.amount,
     0,
@@ -190,7 +202,7 @@ export default function Finance() {
           <div>
             <h3 className="card__title">Overview</h3>
             <p className="card__subtitle">
-              See gross sales, expenses, and net profit for this workspace.
+              See gross sales, VAT, expenses, and net profit for this workspace.
             </p>
           </div>
 
@@ -234,7 +246,17 @@ export default function Finance() {
                 GHS {grossSales.toFixed(2)}
               </p>
               <p className="card__subtitle">
-                Sum of recorded sales in the selected range.
+                Sum of recorded sales (including VAT) in the selected range.
+              </p>
+            </div>
+
+            <div className="info-card">
+              <h4>VAT collected</h4>
+              <p style={{ fontSize: 24, fontWeight: 600 }}>
+                GHS {totalVat.toFixed(2)}
+              </p>
+              <p className="card__subtitle">
+                Total VAT portion from all recorded sales in this period.
               </p>
             </div>
 
@@ -260,7 +282,7 @@ export default function Finance() {
                 GHS {netProfit.toFixed(2)}
               </p>
               <p className="card__subtitle">
-                Gross sales minus expenses. Use this to judge store performance.
+                Gross sales minus expenses. (VAT is shown separately above.)
               </p>
             </div>
           </div>
