@@ -66,6 +66,7 @@ type DashboardSale = {
   branchId?: string | null
   storeId?: string | null
   total: number
+  vatTotal: number
   createdAt: Date | null
   items: DashboardSaleItem[]
 }
@@ -136,69 +137,76 @@ export default function Dashboard() {
   }, [now])
 
   // ---- Load sales for snapshot (last ~500 records for this store) ----
-useEffect(() => {
-  if (!storeId) {
-    setSales([])
-    setIsLoadingSnapshot(false)
-    return
-  }
-
-  setIsLoadingSnapshot(true)
-
-  const q = query(
-    collection(db, 'sales'),
-    where('storeId', '==', storeId),   // 👈 changed from branchId
-    orderBy('createdAt', 'desc'),
-    limit(500),
-  )
-
-  const unsubscribe = onSnapshot(
-    q,
-    snap => {
-      const rows: DashboardSale[] = snap.docs.map(docSnap => {
-        const data = docSnap.data() as any
-        const createdAt =
-          data.createdAt && typeof data.createdAt.toDate === 'function'
-            ? (data.createdAt.toDate() as Date)
-            : null
-
-        const total =
-          typeof data.total === 'number'
-            ? data.total
-            : typeof data.totals?.total === 'number'
-              ? data.totals.total
-              : 0
-
-        const itemsRaw = Array.isArray(data.items) ? data.items : []
-
-        const items: DashboardSaleItem[] = itemsRaw.map((item: any, index: number) => ({
-          name: String(item.name ?? `Item ${index + 1}`),
-          qty: Number(item.qty) || 0,
-          price: Number(item.price) || 0,
-        }))
-
-        return {
-          id: docSnap.id,
-          branchId: data.branchId ?? null,
-          storeId: data.storeId ?? null,
-          total,
-          createdAt,
-          items,
-        }
-      })
-
-      setSales(rows)
-      setIsLoadingSnapshot(false)
-    },
-    () => {
+  useEffect(() => {
+    if (!storeId) {
       setSales([])
       setIsLoadingSnapshot(false)
-    },
-  )
+      return
+    }
 
-  return unsubscribe
-}, [storeId])
+    setIsLoadingSnapshot(true)
 
+    const q = query(
+      collection(db, 'sales'),
+      where('storeId', '==', storeId), // changed from branchId
+      orderBy('createdAt', 'desc'),
+      limit(500),
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      snap => {
+        const rows: DashboardSale[] = snap.docs.map(docSnap => {
+          const data = docSnap.data() as any
+          const createdAt =
+            data.createdAt && typeof data.createdAt.toDate === 'function'
+              ? (data.createdAt.toDate() as Date)
+              : null
+
+          const total =
+            typeof data.total === 'number'
+              ? data.total
+              : typeof data.totals?.total === 'number'
+                ? data.totals.total
+                : 0
+
+          const vatTotal =
+            typeof data.totals?.vatTotal === 'number'
+              ? data.totals.vatTotal
+              : typeof data.vatTotal === 'number'
+                ? data.vatTotal
+                : 0
+
+          const itemsRaw = Array.isArray(data.items) ? data.items : []
+
+          const items: DashboardSaleItem[] = itemsRaw.map((item: any, index: number) => ({
+            name: String(item.name ?? `Item ${index + 1}`),
+            qty: Number(item.qty) || 0,
+            price: Number(item.price) || 0,
+          }))
+
+          return {
+            id: docSnap.id,
+            branchId: data.branchId ?? null,
+            storeId: data.storeId ?? null,
+            total: Number(total) || 0,
+            vatTotal: Number(vatTotal) || 0,
+            createdAt,
+            items,
+          }
+        })
+
+        setSales(rows)
+        setIsLoadingSnapshot(false)
+      },
+      () => {
+        setSales([])
+        setIsLoadingSnapshot(false)
+      },
+    )
+
+    return unsubscribe
+  }, [storeId])
 
   // ---- Load expenses for snapshot ----
   useEffect(() => {
@@ -236,21 +244,27 @@ useEffect(() => {
     todaySalesCount,
     yesterdaySalesTotal,
     monthSalesTotal,
+    todayVatTotal,
+    monthVatTotal,
   } = useMemo(() => {
     let todayTotal = 0
     let todayCount = 0
     let yesterdayTotal = 0
     let monthTotal = 0
+    let todayVat = 0
+    let monthVat = 0
 
     for (const sale of sales) {
       if (!sale.createdAt) continue
 
       if (isSameMonth(sale.createdAt, now)) {
         monthTotal += sale.total
+        monthVat += sale.vatTotal ?? 0
       }
 
       if (isSameDay(sale.createdAt, now)) {
         todayTotal += sale.total
+        todayVat += sale.vatTotal ?? 0
         todayCount += 1
       } else if (isSameDay(sale.createdAt, yesterday)) {
         yesterdayTotal += sale.total
@@ -262,6 +276,8 @@ useEffect(() => {
       todaySalesCount: todayCount,
       yesterdaySalesTotal: yesterdayTotal,
       monthSalesTotal: monthTotal,
+      todayVatTotal: todayVat,
+      monthVatTotal: monthVat,
     }
   }, [now, sales, yesterday])
 
@@ -418,7 +434,7 @@ useEffect(() => {
                   fontWeight: 600,
                 }}
               >
-                Sales today
+                Sales today (cash received)
               </p>
               <p
                 style={{
@@ -454,7 +470,7 @@ useEffect(() => {
                   fontWeight: 600,
                 }}
               >
-                Yesterday
+                Yesterday (cash received)
               </p>
               <p
                 style={{
@@ -493,7 +509,7 @@ useEffect(() => {
                   fontWeight: 600,
                 }}
               >
-                This month
+                This month (cash received)
               </p>
               <p
                 style={{
@@ -510,10 +526,45 @@ useEffect(() => {
                 <strong>GHS {monthExpensesTotal.toFixed(2)}</strong>
               </p>
               <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
-                Approx. gross margin:{' '}
+                Approx. gross margin (before tax):{' '}
                 <strong>
                   GHS {(monthSalesTotal - monthExpensesTotal).toFixed(2)}
                 </strong>
+              </p>
+            </article>
+
+            <article
+              style={{
+                background: '#F8FAFC',
+                borderRadius: 14,
+                padding: '14px 16px',
+                border: '1px solid #E2E8F0',
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.6,
+                  color: '#64748B',
+                  fontWeight: 600,
+                }}
+              >
+                VAT collected this month
+              </p>
+              <p
+                style={{
+                  margin: '6px 0 2px',
+                  fontSize: 24,
+                  fontWeight: 700,
+                  color: '#0F172A',
+                }}
+              >
+                GHS {monthVatTotal.toFixed(2)}
+              </p>
+              <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+                Total VAT portion included in this month&apos;s sales.
               </p>
             </article>
           </div>
@@ -670,8 +721,7 @@ useEffect(() => {
         )}
       </section>
 
-      {/* The rest of your original dashboard remains unchanged */}
-
+      {/* Business metrics overview */}
       <section
         style={{
           display: 'flex',
@@ -694,6 +744,18 @@ useEffect(() => {
               change === null ? '#475569' : change < 0 ? '#DC2626' : '#16A34A'
             const icon = change === null ? '▬' : change < 0 ? '▼' : '▲'
             const changeText = change !== null ? formatPercent(change) : '—'
+
+            const explainedTitle =
+              metric.title === 'Revenue'
+                ? 'Revenue (total cash received)'
+                : metric.title === 'Net profit'
+                  ? 'Net profit (money left after expenses)'
+                  : metric.title === 'Average basket size'
+                    ? 'Average basket size (avg spend per sale)'
+                    : metric.title === 'Units sold'
+                      ? 'Units sold (items sold in this range)'
+                      : metric.title
+
             return (
               <article
                 key={metric.title}
@@ -717,7 +779,7 @@ useEffect(() => {
                     letterSpacing: 0.6,
                   }}
                 >
-                  {metric.title}
+                  {explainedTitle}
                 </div>
                 <div
                   style={{
@@ -1021,6 +1083,7 @@ useEffect(() => {
         </div>
       </section>
 
+      {/* Right-hand side sections */}
       <section
         style={{
           display: 'grid',
