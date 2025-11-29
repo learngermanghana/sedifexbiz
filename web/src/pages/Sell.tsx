@@ -42,7 +42,7 @@ type Product = {
   stockCount?: number
   createdAt?: unknown
   updatedAt?: unknown
-  itemType?: 'product' | 'service' // supports services
+  itemType?: 'product' | 'service'
 }
 
 type CartLine = {
@@ -328,7 +328,22 @@ export default function Sell() {
   const canShareReceipt =
     Boolean(receiptSharePayload) && (typeof navigator === 'undefined' || navigator.onLine)
 
+  // Subtotal (no VAT yet)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
+
+  // VAT amount (tax total)
+  const cartTaxTotal = useMemo(
+    () =>
+      cart.reduce(
+        (sum, line) => sum + (line.taxRate ?? 0) * line.price * line.qty,
+        0,
+      ),
+    [cart],
+  )
+
+  // Grand total (Amount due = subtotal + VAT)
+  const totalDue = subtotal + cartTaxTotal
+
   const totalQty = cart.reduce((s, l) => s + l.qty, 0)
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
@@ -364,15 +379,12 @@ export default function Sell() {
     ? loyaltyCurrentPoints ?? selectedCustomerLoyalty?.points ?? 0
     : null
 
-  const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : subtotal
-  const changeDue = Math.max(0, amountPaid - subtotal)
-  const isCashShort = paymentMethod === 'cash' && amountPaid < subtotal && subtotal > 0
+  // For cash, user enters amount. For Paystack, assume full totalDue is paid.
+  const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : totalDue
+  const changeDue = Math.max(0, amountPaid - totalDue)
+  const isCashShort =
+    paymentMethod === 'cash' && amountPaid < totalDue && totalDue > 0
   const paymentMethodLabel = paymentMethod === 'paystack' ? 'card/mobile' : paymentMethod
-
-  const cartTaxTotal = useMemo(
-    () => cart.reduce((sum, line) => sum + (line.taxRate ?? 0) * line.price * line.qty, 0),
-    [cart],
-  )
 
   const receiptStore = useMemo(
     () => buildReceiptStore(storeProfile, activeStoreId),
@@ -550,7 +562,7 @@ export default function Sell() {
     return () => window.clearTimeout(timeout)
   }, [receipt])
 
-  // ---------- Build receipt share payload ----------
+  // ---------- Build receipt share payload + PDF ----------
   useEffect(() => {
     if (!receipt) {
       setReceiptSharePayload(prev => {
@@ -595,7 +607,9 @@ export default function Sell() {
       const lineTotal = line.qty * line.price
       const lineTax = lineTotal * (line.taxRate ?? 0)
       const taxLabel = lineTax > 0 ? ` (Tax: GHS ${lineTax.toFixed(2)})` : ''
-      lines.push(`  • ${line.qty} × ${line.name} — GHS ${lineTotal.toFixed(2)}${taxLabel}`)
+      lines.push(
+        `  • ${line.qty} × ${line.name} — GHS ${lineTotal.toFixed(2)}${taxLabel}`,
+      )
     })
 
     lines.push('')
@@ -603,14 +617,20 @@ export default function Sell() {
     if (taxTotal > 0) {
       lines.push(`Tax: GHS ${taxTotal.toFixed(2)}`)
     }
-    lines.push(`Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`)
+    const totalWithTax = receipt.subtotal + taxTotal
+    lines.push(`Total: GHS ${totalWithTax.toFixed(2)}`)
+    lines.push(
+      `Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`,
+    )
     lines.push(`Change: GHS ${receipt.payment.changeDue.toFixed(2)}`)
+
     if (typeof receipt.loyaltyEarned === 'number' && receipt.loyaltyEarned !== null) {
       lines.push(`Loyalty earned: ${receipt.loyaltyEarned} pts`)
     }
     if (typeof receipt.currentPoints === 'number' && receipt.currentPoints !== null) {
       lines.push(`Current points: ${receipt.currentPoints} pts`)
     }
+
     lines.push('')
     lines.push(`Sale #${receipt.saleId}`)
     lines.push('Thank you for shopping with us!')
@@ -624,7 +644,7 @@ export default function Sell() {
     const smsHref = `sms:${receipt.customer?.phone ?? ''}?body=${encodedBody}`
     const whatsappHref = `https://wa.me/?text=${encodedBody}`
 
-    const pdfLines = lines.slice(1)
+    const pdfLines = lines.slice(1) // drop duplicate title
     const pdfBytes = buildSimplePdf(storeName, pdfLines)
     const pdfBuffer = pdfBytes.slice().buffer
     const pdfBlob = new Blob([pdfBuffer], { type: 'application/pdf' })
@@ -690,9 +710,11 @@ export default function Sell() {
       logReceiptShare(logPayload).catch(error => {
         console.error('[sell] Failed to log share attempt', error)
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        logReceiptShare({ ...logPayload, status: 'failed', errorMessage }).catch(secondaryError => {
-          console.error('[sell] Failed to log share failure', secondaryError)
-        })
+        logReceiptShare({ ...logPayload, status: 'failed', errorMessage }).catch(
+          secondaryError => {
+            console.error('[sell] Failed to log share failure', secondaryError)
+          },
+        )
       })
 
       const target = channel === 'sms' ? '_self' : '_blank'
@@ -722,7 +744,6 @@ export default function Sell() {
   }, [selectedCustomerId])
 
   // ---------- Stock helpers ----------
-  // Only track stock for physical products
   const productStockById = useMemo(() => {
     const map = new Map<string, number>()
     products.forEach(product => {
@@ -739,7 +760,6 @@ export default function Sell() {
     [productStockById],
   )
 
-  // Services are ignored for stock checks
   const hasInsufficientStockInCart = useMemo(
     () =>
       cart.some(line => {
@@ -757,13 +777,15 @@ export default function Sell() {
     }
     setCart(cs => {
       const i = cs.findIndex(x => x.productId === p.id)
+      const taxRate =
+        typeof p.taxRate === 'number' && Number.isFinite(p.taxRate)
+          ? p.taxRate
+          : undefined
       if (i >= 0) {
         const copy = [...cs]
         copy[i] = { ...copy[i], qty: copy[i].qty + 1 }
         return copy
       }
-      const taxRate =
-        typeof p.taxRate === 'number' && Number.isFinite(p.taxRate) ? p.taxRate : undefined
       return [...cs, { productId: p.id, name: p.name, price: p.price, qty: 1, taxRate }]
     })
   }, [])
@@ -873,7 +895,8 @@ export default function Sell() {
             name: selectedCustomerDataName || selectedCustomer.id,
           }
         : undefined
-      const paystackResponse = await payWithPaystack(subtotal, paystackBuyer)
+      // Charge the grand total (incl. VAT)
+      const paystackResponse = await payWithPaystack(totalDue, paystackBuyer)
       if (!paystackResponse.ok || !paystackResponse.reference) {
         setSaleError(paystackResponse.error ?? 'Card/Mobile payment was cancelled.')
         setIsRecording(false)
@@ -893,7 +916,7 @@ export default function Sell() {
       loyaltyEarned: loyaltyEarnedValue,
       currentPoints: loyaltyCurrentPointsValue,
       totals: {
-        total: subtotal,
+        total: totalDue,
         taxTotal: cartTaxTotal,
       },
       payment,
@@ -928,7 +951,7 @@ export default function Sell() {
           await addDoc(collection(db, 'activity'), {
             storeId: activeStoreId,
             type: 'sale',
-            summary: `Sold ${totalQty} items for GHS ${subtotal.toFixed(2)}`,
+            summary: `Sold ${totalQty} items for GHS ${totalDue.toFixed(2)}`,
             detail: `Paid with ${paymentMethodLabel}`,
             actor: cashierNameOrEmail,
             createdAt: serverTimestamp(),
@@ -1026,8 +1049,8 @@ export default function Sell() {
           </p>
         </div>
         <div className="sell-page__total" aria-live="polite">
-          <span className="sell-page__total-label">Subtotal</span>
-          <span className="sell-page__total-value">GHS {subtotal.toFixed(2)}</span>
+          <span className="sell-page__total-label">Total (incl. VAT)</span>
+          <span className="sell-page__total-value">GHS {totalDue.toFixed(2)}</span>
         </div>
       </header>
 
@@ -1254,8 +1277,18 @@ export default function Sell() {
               </div>
 
               <div className="sell-page__summary">
-                <span>Total</span>
-                <strong>GHS {subtotal.toFixed(2)}</strong>
+                <div className="sell-page__summary-row">
+                  <span>Subtotal</span>
+                  <strong>GHS {subtotal.toFixed(2)}</strong>
+                </div>
+                <div className="sell-page__summary-row">
+                  <span>VAT</span>
+                  <strong>GHS {cartTaxTotal.toFixed(2)}</strong>
+                </div>
+                <div className="sell-page__summary-row">
+                  <span>Total (incl. VAT)</span>
+                  <strong>GHS {totalDue.toFixed(2)}</strong>
+                </div>
               </div>
 
               <div className="sell-page__form-grid">
@@ -1320,7 +1353,11 @@ export default function Sell() {
                 )}
               </div>
 
-              <div className="sell-page__loyalty-panel" role="group" aria-label="Loyalty rewards">
+              <div
+                className="sell-page__loyalty-panel"
+                role="group"
+                aria-label="Loyalty rewards"
+              >
                 <div className="sell-page__loyalty-header">
                   <div>
                     <p className="field__label">Loyalty rewards</p>
@@ -1375,8 +1412,16 @@ export default function Sell() {
 
               <div className="sell-page__payment-summary" aria-live="polite">
                 <div>
-                  <span className="sell-page__summary-label">Amount due</span>
+                  <span className="sell-page__summary-label">Subtotal</span>
                   <strong>GHS {subtotal.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span className="sell-page__summary-label">VAT</span>
+                  <strong>GHS {cartTaxTotal.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span className="sell-page__summary-label">Amount due</span>
+                  <strong>GHS {totalDue.toFixed(2)}</strong>
                 </div>
                 <div>
                   <span className="sell-page__summary-label">Paid</span>
@@ -1394,8 +1439,8 @@ export default function Sell() {
                 <section className="sell-page__engagement" aria-live="polite">
                   <h4 className="sell-page__engagement-title">Share the receipt</h4>
                   <p className="sell-page__engagement-text">
-                    Email, text, or WhatsApp the receipt so your customer has a digital copy right
-                    away.
+                    Email, text, or WhatsApp the receipt so your customer has a digital copy
+                    right away.
                   </p>
                   <div className="sell-page__engagement-actions">
                     <button
@@ -1473,79 +1518,112 @@ export default function Sell() {
         </section>
       </div>
 
+      {/* PRINT RECEIPT AREA */}
       <div
         className={`receipt-print${receipt ? ' is-ready' : ''}`}
         aria-hidden={receipt ? 'false' : 'true'}
       >
         {receipt && (
           <div className="receipt-print__inner">
-            <h2 className="receipt-print__title">Sedifex POS</h2>
-            <p className="receipt-print__meta">
-              {user?.email ?? 'sales@sedifex.app'}
-              <br />
-              {receipt.createdAt.toLocaleString()}
-            </p>
+            {(() => {
+              const storeInfo = receipt.store ?? receiptStore
+              const headerName = storeInfo?.name || 'Sedifex POS'
+              const headerContact =
+                storeInfo?.phone || storeInfo?.email || user?.email || 'sales@sedifex.app'
+              const headerAddress = (storeInfo?.addressLines ?? []).join(', ')
 
-            {receipt.customer && (
-              <div className="receipt-print__section">
-                <strong>Customer:</strong>
-                <div>{receipt.customer.name}</div>
-                {receipt.customer.phone && <div>{receipt.customer.phone}</div>}
-                {receipt.customer.email && <div>{receipt.customer.email}</div>}
-              </div>
-            )}
+              const taxTotal = receipt.items.reduce(
+                (sum, line) => sum + (line.taxRate ?? 0) * line.price * line.qty,
+                0,
+              )
+              const totalWithTax = receipt.subtotal + taxTotal
 
-            <table className="receipt-print__table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Qty</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {receipt.items.map(line => (
-                  <tr key={line.productId}>
-                    <td>{line.name}</td>
-                    <td>{line.qty}</td>
-                    <td>GHS {(line.qty * line.price).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              return (
+                <>
+                  <h2 className="receipt-print__title">{headerName}</h2>
+                  <p className="receipt-print__meta">
+                    {headerAddress && (
+                      <>
+                        {headerAddress}
+                        <br />
+                      </>
+                    )}
+                    {headerContact}
+                    <br />
+                    {receipt.createdAt.toLocaleString()}
+                  </p>
 
-            <div className="receipt-print__summary">
-              <div>
-                <span>Subtotal</span>
-                <strong>GHS {receipt.subtotal.toFixed(2)}</strong>
-              </div>
-              <div>
-                <span>Paid ({receipt.payment.method})</span>
-                <strong>GHS {receipt.payment.amountPaid.toFixed(2)}</strong>
-              </div>
-              <div>
-                <span>Change</span>
-                <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
-              </div>
-              {typeof receipt.loyaltyEarned === 'number' &&
-              receipt.loyaltyEarned !== null ? (
-                <div>
-                  <span>Loyalty earned</span>
-                  <strong>{receipt.loyaltyEarned} pts</strong>
-                </div>
-              ) : null}
-              {typeof receipt.currentPoints === 'number' &&
-              receipt.currentPoints !== null ? (
-                <div>
-                  <span>Points balance</span>
-                  <strong>{receipt.currentPoints} pts</strong>
-                </div>
-              ) : null}
-            </div>
+                  {receipt.customer && (
+                    <div className="receipt-print__section">
+                      <strong>Customer:</strong>
+                      <div>{receipt.customer.name}</div>
+                      {receipt.customer.phone && <div>{receipt.customer.phone}</div>}
+                      {receipt.customer.email && <div>{receipt.customer.email}</div>}
+                    </div>
+                  )}
 
-            <p className="receipt-print__footer">
-              Sale #{receipt.saleId} — Thank you for shopping with us!
-            </p>
+                  <table className="receipt-print__table">
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th>Qty</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {receipt.items.map(line => (
+                        <tr key={line.productId}>
+                          <td>{line.name}</td>
+                          <td>{line.qty}</td>
+                          <td>GHS {(line.qty * line.price).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <div className="receipt-print__summary">
+                    <div>
+                      <span>Subtotal</span>
+                      <strong>GHS {receipt.subtotal.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>VAT</span>
+                      <strong>GHS {taxTotal.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Total</span>
+                      <strong>GHS {totalWithTax.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Paid ({receipt.payment.method})</span>
+                      <strong>GHS {receipt.payment.amountPaid.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Change</span>
+                      <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
+                    </div>
+                    {typeof receipt.loyaltyEarned === 'number' &&
+                    receipt.loyaltyEarned !== null ? (
+                      <div>
+                        <span>Loyalty earned</span>
+                        <strong>{receipt.loyaltyEarned} pts</strong>
+                      </div>
+                    ) : null}
+                    {typeof receipt.currentPoints === 'number' &&
+                    receipt.currentPoints !== null ? (
+                      <div>
+                        <span>Points balance</span>
+                        <strong>{receipt.currentPoints} pts</strong>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <p className="receipt-print__footer">
+                    Sale #{receipt.saleId} — Thank you for shopping with us!
+                  </p>
+                </>
+              )
+            })()}
           </div>
         )}
       </div>
