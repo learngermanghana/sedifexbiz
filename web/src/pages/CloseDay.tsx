@@ -1,3 +1,4 @@
+// web/src/pages/CloseDay.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   collection,
@@ -30,9 +31,11 @@ function createInitialCashCountState(): CashCountState {
   }, {})
 }
 
-function parseCurrency(input: string): number {
-  if (!input) return 0
-  const normalized = input.replace(/[^0-9.-]/g, '')
+// 🔧 More robust currency parser (accepts string | number | null | undefined)
+function parseCurrency(input: string | number | null | undefined): number {
+  if (input === null || input === undefined) return 0
+  const normalized = String(input).replace(/[^0-9.-]/g, '')
+  if (!normalized) return 0
   const value = Number.parseFloat(normalized)
   return Number.isFinite(value) ? value : 0
 }
@@ -68,6 +71,7 @@ export default function CloseDay() {
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Load today's sales total for this store
   useEffect(() => {
     const start = new Date()
     start.setHours(0, 0, 0, 0)
@@ -84,15 +88,24 @@ export default function CloseDay() {
       where('createdAt', '>=', Timestamp.fromDate(start)),
       orderBy('createdAt', 'desc'),
     )
+
     return onSnapshot(q, snap => {
       let sum = 0
       snap.forEach(d => {
-        sum += d.data().total || 0
+        const data = d.data()
+        const saleTotal =
+          typeof data.total === 'number'
+            ? data.total
+            : typeof data.totals?.total === 'number'
+              ? data.totals.total
+              : 0
+        sum += Number(saleTotal) || 0
       })
       setTotal(sum)
     })
   }, [activeStoreId])
 
+  // Print CSS (hide buttons when printing)
   useEffect(() => {
     const style = document.createElement('style')
     style.textContent =
@@ -103,7 +116,10 @@ export default function CloseDay() {
     }
   }, [])
 
-  const looseCashTotal = useMemo(() => parseCurrency(looseCash), [looseCash])
+  const looseCashTotal = useMemo(
+    () => parseCurrency(looseCash),
+    [looseCash],
+  )
 
   const countedCash = useMemo(() => {
     return (
@@ -122,8 +138,12 @@ export default function CloseDay() {
     () => parseCurrency(cashRemoved),
     [cashRemoved],
   )
-  const addedTotal = useMemo(() => parseCurrency(cashAdded), [cashAdded])
+  const addedTotal = useMemo(
+    () => parseCurrency(cashAdded),
+    [cashAdded],
+  )
 
+  // Expected physical cash = all sales - non-cash payments - cash taken out + cash added
   const expectedCash = useMemo(() => {
     const computed = total - cardTotal - removedTotal + addedTotal
     return Number.isFinite(computed) ? computed : 0
@@ -138,8 +158,8 @@ export default function CloseDay() {
     Math.abs(variance) < 0.01
       ? 'Matches'
       : variance < 0
-      ? 'Short (missing cash)'
-      : 'Over (extra cash)'
+        ? 'Short (missing cash)'
+        : 'Over (extra cash)'
 
   const isLargeDifference =
     Math.abs(variance) > LARGE_DIFFERENCE_THRESHOLD + 0.009
@@ -197,9 +217,14 @@ export default function CloseDay() {
 
       salesSnapshot.forEach(docSnap => {
         const data = docSnap.data()
-        const saleTotal = Number(data.total ?? 0) || 0
+        const saleTotal =
+          typeof data.total === 'number'
+            ? data.total
+            : typeof data.totals?.total === 'number'
+              ? data.totals.total
+              : 0
         const saleTax = Number(data.taxTotal ?? 0) || 0
-        totalSales += saleTotal
+        totalSales += Number(saleTotal) || 0
         totalTax += saleTax
         receiptCount += 1
 
@@ -224,7 +249,7 @@ export default function CloseDay() {
             totalTax: 0,
           }
         entry.receiptCount += 1
-        entry.totalSales += saleTotal
+        entry.totalSales += Number(saleTotal) || 0
         entry.totalTax += saleTax
         cashierBreakdown[cashierId] = entry
       })
@@ -279,6 +304,7 @@ export default function CloseDay() {
       }
 
       await addDoc(collection(db, 'closeouts'), closePayload)
+
       const actor = user?.displayName || user?.email || 'Team member'
       try {
         await addDoc(collection(db, 'activity'), {
@@ -294,6 +320,7 @@ export default function CloseDay() {
       } catch (activityError) {
         console.warn('[activity] Failed to log close day', activityError)
       }
+
       setSubmitSuccess(true)
       setCashCounts(createInitialCashCountState())
       setLooseCash('')
@@ -339,7 +366,10 @@ export default function CloseDay() {
           }}
         >
           <li>Confirm the sales total is correct for today.</li>
-          <li>Enter card / mobile money / transfers and any cash taken out or added.</li>
+          <li>
+            Enter card / mobile money / transfers and any cash taken out or added –
+            these numbers change the expected cash below.
+          </li>
           <li>Count each note and coin, add loose cash, then review the cash check.</li>
           <li>Add notes for the next shift, then save and print the summary.</li>
         </ul>
@@ -348,7 +378,7 @@ export default function CloseDay() {
       <form onSubmit={handleSubmit}>
         <section style={{ marginTop: 24 }}>
           <h3 style={{ marginBottom: 8 }}>Sales Summary</h3>
-          <p style={{ marginBottom: 8 }}>Today’s sales total</p>
+          <p style={{ marginBottom: 8 }}>Today’s total sales (cash + card + momo)</p>
           <div
             style={{
               fontSize: 32,
@@ -517,10 +547,14 @@ export default function CloseDay() {
               color: '#4b5563',
             }}
           >
-            We compare what the system expects with what you counted in the
-            drawer.
+            We compare what the system expects with what you counted in the drawer.
+            Card / mobile money / transfers reduce the expected cash.
           </p>
-          <div style={{ display: 'grid', gap: 6, maxWidth: 360 }}>
+          <div style={{ display: 'grid', gap: 6, maxWidth: 420 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Non-cash payments (card / momo / transfers)</span>
+              <strong>GHS {cardTotal.toFixed(2)}</strong>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Expected cash in drawer</span>
               <strong>GHS {expectedCash.toFixed(2)}</strong>
@@ -551,22 +585,19 @@ export default function CloseDay() {
                 Math.abs(variance) < 0.01
                   ? '#047857'
                   : isLargeDifference
-                  ? '#b91c1c'
-                  : '#92400e',
+                    ? '#b91c1c'
+                    : '#92400e',
             }}
           >
             {Math.abs(variance) < 0.01 &&
               '✅ All good – your cash matches the system.'}
             {Math.abs(variance) >= 0.01 && !isLargeDifference && (
-              <>
-                ⚠️ Small difference. Please double-check the drawer and
-                amounts.
-              </>
+              <>⚠️ Small difference. Please double-check the drawer and amounts.</>
             )}
             {isLargeDifference && (
               <>
-                ⚠️ Large difference. You must add a note explaining what
-                happened before saving.
+                ⚠️ Large difference. You must add a note explaining what happened before
+                saving.
               </>
             )}
           </p>
