@@ -1,3 +1,4 @@
+// web/src/pages/AccountOverview.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -8,6 +9,7 @@ import {
   getDocs,
   query,
   where,
+  setDoc,
   type DocumentData,
   type DocumentSnapshot,
   type QueryDocumentSnapshot,
@@ -27,8 +29,6 @@ type StoreProfile = {
   phone: string | null
   status: string | null
   contractStatus: string | null
-  timezone: string | null
-  currency: string | null
   billingPlan: string | null
   paymentProvider: string | null
   addressLine1: string | null
@@ -39,13 +39,15 @@ type StoreProfile = {
   country: string | null
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
+  // 🔹 Public directory fields
+  isPublicDirectory: boolean
+  publicDescription: string | null
 }
 
 type SubscriptionProfile = {
   status: string | null
   plan: string | null
   provider: string | null
-  // 🔹 New fields
   currentPeriodStart: Timestamp | null
   currentPeriodEnd: Timestamp | null
   lastPaymentAt: Timestamp | null
@@ -97,12 +99,10 @@ function mapStoreSnapshot(
     toNullableString((data as { planKey?: unknown }).planKey) ??
     toNullableString(billingRaw.planKey)
 
-  // If still in trial, show "trial" as the billing plan label
   if (billingStatus === 'trial' || paymentStatus === 'trial') {
     billingPlan = 'trial'
   }
 
-  // Default payment provider is Paystack for this app
   const paymentProvider =
     toNullableString((data as { paymentProvider?: unknown }).paymentProvider) ??
     toNullableString(billingRaw.provider) ??
@@ -120,8 +120,6 @@ function mapStoreSnapshot(
     phone: toNullableString(data.phone),
     status: toNullableString(data.status),
     contractStatus,
-    timezone: toNullableString(data.timezone),
-    currency: toNullableString(data.currency),
     billingPlan,
     paymentProvider,
     addressLine1: toNullableString(data.addressLine1),
@@ -132,6 +130,8 @@ function mapStoreSnapshot(
     country: toNullableString(data.country),
     createdAt: isTimestamp(data.createdAt) ? data.createdAt : null,
     updatedAt: isTimestamp(data.updatedAt) ? data.updatedAt : null,
+    isPublicDirectory: Boolean((data as any).isPublicDirectory),
+    publicDescription: toNullableString((data as any).publicDescription),
   }
 }
 
@@ -148,7 +148,6 @@ function mapSubscriptionSnapshot(
     status: toNullableString(data.status),
     plan: toNullableString(data.plan),
     provider: toNullableString(data.provider) ?? 'Paystack',
-    // 🔹 These fields are optional – only shown if you store them
     currentPeriodStart: isTimestamp(data.currentPeriodStart)
       ? data.currentPeriodStart
       : null,
@@ -168,7 +167,6 @@ function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): Roste
   const uid =
     typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id
 
-  // Use helper so it also supports legacy workspace_uid / workspaceId fields
   const storeId = getStoreIdFromRecord(data)
 
   return {
@@ -229,6 +227,11 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const [roster, setRoster] = useState<RosterMember[]>([])
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterError, setRosterError] = useState<string | null>(null)
+
+  // Public directory edit state
+  const [isSavingPublicProfile, setIsSavingPublicProfile] = useState(false)
+  const [publicDescriptionDraft, setPublicDescriptionDraft] = useState('')
+  const [isPublicDirectoryDraft, setIsPublicDirectoryDraft] = useState(false)
 
   const activeMembership = useMemo(() => {
     if (!storeId) return null
@@ -374,6 +377,13 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     }
   }, [storeId, publish])
 
+  // Sync public profile drafts with loaded profile
+  useEffect(() => {
+    if (!profile) return
+    setPublicDescriptionDraft(profile.publicDescription ?? '')
+    setIsPublicDirectoryDraft(profile.isPublicDirectory ?? false)
+  }, [profile])
+
   const Heading = headingLevel as keyof JSX.IntrinsicElements
 
   if (storeError) {
@@ -415,10 +425,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const billingPlan =
     subscriptionProfile?.plan ?? profile?.billingPlan ?? null
 
-  const isTrial =
-    contractStatus === 'trial' || billingPlan === 'trial'
+  const isTrial = contractStatus === 'trial' || billingPlan === 'trial'
 
-  // 🔹 Derived billing display values
   const lastPaymentDisplay = formatTimestamp(
     subscriptionProfile?.lastPaymentAt ??
       subscriptionProfile?.currentPeriodStart ??
@@ -428,6 +436,48 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const expiryDisplay = formatTimestamp(
     subscriptionProfile?.currentPeriodEnd ?? null,
   )
+
+  async function handleSavePublicProfile() {
+    if (!storeId) return
+    if (!isOwner) {
+      publish({
+        message: 'Only the workspace owner can update public details.',
+        tone: 'error',
+      })
+      return
+    }
+
+    try {
+      setIsSavingPublicProfile(true)
+      const ref = doc(db, 'stores', storeId)
+
+      await setDoc(
+        ref,
+        {
+          isPublicDirectory: isPublicDirectoryDraft,
+          publicDescription: publicDescriptionDraft.trim() || null,
+          displayName: profile?.displayName ?? profile?.name ?? null,
+          addressLine1: profile?.addressLine1 ?? null,
+          city: profile?.city ?? null,
+          country: profile?.country ?? null,
+          phone: profile?.phone ?? null,
+          email: profile?.email ?? null,
+          updatedAt: Timestamp.now(),
+        },
+        { merge: true },
+      )
+
+      publish({ message: 'Public profile updated.', tone: 'success' })
+    } catch (error) {
+      console.error('[account] Failed to save public profile', error)
+      publish({
+        message: 'Unable to save public profile. Please try again.',
+        tone: 'error',
+      })
+    } finally {
+      setIsSavingPublicProfile(false)
+    }
+  }
 
   return (
     <div className="account-overview">
@@ -547,7 +597,89 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         </section>
       )}
 
-      {/* Existing billing summary (contract status, plan, provider, etc.) */}
+      {/* Public directory profile section */}
+      {profile && (
+        <section aria-labelledby="account-overview-public">
+          <div className="account-overview__section-header">
+            <h2 id="account-overview-public">Public directory profile</h2>
+            <p className="account-overview__subtitle">
+              Control what customers see on <strong>stores.sedifex.com</strong>.
+            </p>
+          </div>
+
+          {isOwner ? (
+            <div className="account-overview__grid">
+              <div>
+                <label
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isPublicDirectoryDraft}
+                    onChange={e => setIsPublicDirectoryDraft(e.target.checked)}
+                  />
+                  <span>Show this store in the public Sedifex directory</span>
+                </label>
+                <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
+                  When enabled, your store will appear on stores.sedifex.com with your
+                  name, city, country, address and contact details.
+                </p>
+
+                {isPublicDirectoryDraft && (
+                  <p style={{ fontSize: 12, color: '#374151', marginTop: 8 }}>
+                    Preview your listing:{' '}
+                    <a
+                      href={`https://stores.sedifex.com/store/${encodeURIComponent(
+                        storeId,
+                      )}`}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                    >
+                      Open public store page
+                    </a>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                  }}
+                >
+                  <span>What your store does (short description)</span>
+                  <textarea
+                    rows={3}
+                    value={publicDescriptionDraft}
+                    onChange={e => setPublicDescriptionDraft(e.target.value)}
+                    placeholder="E.g. We sell fresh fish, feed and equipment for aquaculture farms in Accra."
+                    style={{ width: '100%', resize: 'vertical' }}
+                  />
+                </label>
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={handleSavePublicProfile}
+                  disabled={isSavingPublicProfile}
+                >
+                  {isSavingPublicProfile ? 'Saving…' : 'Save public profile'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p role="note">
+              Only the workspace owner can change the public directory settings.
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* Billing summary */}
       <AccountBillingSection
         storeId={storeId}
         ownerEmail={user?.email ?? null}
@@ -561,7 +693,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         }
       />
 
-      {/* 🔹 New: Billing history section with payment + expiry + receipt */}
+      {/* Billing history */}
       {subscriptionProfile && (
         <section aria-labelledby="account-overview-billing-history">
           <div className="account-overview__section-header">
