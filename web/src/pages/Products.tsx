@@ -32,7 +32,7 @@ type Product = {
   stockCount: number | null
   reorderPoint: number | null
   itemType: ItemType
-  taxRate?: number | null          // 🔹 VAT stored as decimal (e.g. 0.15)
+  taxRate?: number | null
   lastReceiptAt?: unknown
 }
 
@@ -71,19 +71,6 @@ function formatVat(taxRate?: number | null): string {
     return '—'
   }
   return `${(taxRate * 100).toFixed(0)}%`
-}
-
-// 2 -> 1.99, 5 -> 4.99, 20 -> 19.99, but 2.5 stays 2.50
-function normalizePsychPrice(raw: number): number {
-  if (!Number.isFinite(raw) || raw <= 0) return raw
-  const roundedTo2 = Number(raw.toFixed(2))
-  const isWhole = Math.abs(roundedTo2 - Math.round(roundedTo2)) < 1e-6
-
-  if (isWhole && roundedTo2 >= 1) {
-    const adjusted = roundedTo2 - 0.01
-    return Number(adjusted.toFixed(2))
-  }
-  return roundedTo2
 }
 
 function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product {
@@ -138,7 +125,7 @@ export default function Products() {
   const [itemType, setItemType] = useState<ItemType>('product')
   const [sku, setSku] = useState('')
   const [priceInput, setPriceInput] = useState('')
-  const [taxRateInput, setTaxRateInput] = useState('') // 🔹 VAT (percent) for new item
+  const [taxRateInput, setTaxRateInput] = useState('')
   const [reorderPointInput, setReorderPointInput] = useState('')
   const [openingStockInput, setOpeningStockInput] = useState('')
 
@@ -151,8 +138,9 @@ export default function Products() {
   const [editName, setEditName] = useState('')
   const [editSku, setEditSku] = useState('')
   const [editPriceInput, setEditPriceInput] = useState('')
-  const [editTaxRateInput, setEditTaxRateInput] = useState('') // 🔹 VAT (percent) for edit
+  const [editTaxRateInput, setEditTaxRateInput] = useState('')
   const [editReorderPointInput, setEditReorderPointInput] = useState('')
+  const [editStockInput, setEditStockInput] = useState('') // 🔹 On hand (stock) editable
 
   /**
    * Load products for the active store
@@ -303,10 +291,9 @@ export default function Products() {
       return
     }
 
-    // 🔹 Apply psychological pricing (2 -> 1.99) for valid prices
     let finalPrice: number | null = null
     if (!Number.isNaN(priceNumber) && priceNumber >= 0) {
-      finalPrice = normalizePsychPrice(priceNumber)
+      finalPrice = Number(priceNumber.toFixed(2)) // 🔹 respect user input (2dp)
     }
 
     setIsSaving(true)
@@ -315,9 +302,9 @@ export default function Products() {
         storeId: activeStoreId,
         name: trimmedName,
         itemType,
-        price: !isService && finalPrice !== null ? finalPrice : finalPrice,
+        price: finalPrice,
         sku: isService ? null : sku.trim() || null,
-        taxRate: taxRateNumber, // 🔹 save VAT as decimal (or null)
+        taxRate: taxRateNumber,
         reorderPoint:
           !isService && !Number.isNaN(reorderPointNumber) && reorderPointNumber >= 0
             ? reorderPointNumber
@@ -379,12 +366,17 @@ export default function Products() {
     )
     setEditTaxRateInput(
       typeof product.taxRate === 'number' && Number.isFinite(product.taxRate)
-        ? String((product.taxRate * 100).toFixed(0)) // show as percent (e.g. 15)
+        ? String((product.taxRate * 100).toFixed(0)) // show as percent
         : '',
     )
     setEditReorderPointInput(
       typeof product.reorderPoint === 'number' && Number.isFinite(product.reorderPoint)
         ? String(product.reorderPoint)
+        : '',
+    )
+    setEditStockInput(
+      typeof product.stockCount === 'number' && Number.isFinite(product.stockCount)
+        ? String(product.stockCount)
         : '',
     )
     setFormStatus('idle')
@@ -411,6 +403,8 @@ export default function Products() {
       ? Number(editReorderPointInput)
       : NaN
     const taxRateNumber = parseTaxInput(editTaxRateInput)
+    const stockNumberRaw =
+      editStockInput.trim() === '' ? null : Number(editStockInput.trim())
 
     if (!isSvc && (Number.isNaN(priceNumber) || priceNumber < 0)) {
       setFormStatus('error')
@@ -418,11 +412,21 @@ export default function Products() {
       return
     }
 
-    // 🔹 Apply psychological pricing also when editing
+    if (!isSvc && stockNumberRaw !== null) {
+      if (!Number.isFinite(stockNumberRaw) || stockNumberRaw < 0) {
+        setFormStatus('error')
+        setFormError('On hand must be zero or more.')
+        return
+      }
+    }
+
     let finalPrice: number | null = null
     if (!Number.isNaN(priceNumber) && priceNumber >= 0) {
-      finalPrice = normalizePsychPrice(priceNumber)
+      finalPrice = Number(priceNumber.toFixed(2))
     }
+
+    const finalStock =
+      isSvc || stockNumberRaw === null ? null : Math.floor(stockNumberRaw)
 
     setFormStatus('idle')
     setFormError(null)
@@ -440,6 +444,7 @@ export default function Products() {
           reorderPointNumber >= 0
             ? reorderPointNumber
             : null,
+        stockCount: finalStock,
         updatedAt: serverTimestamp(),
       })
 
@@ -586,7 +591,7 @@ export default function Products() {
                 onChange={e => setPriceInput(e.target.value)}
               />
               <p className="field__hint">
-                Whole numbers will be saved like 2 → 1.99, 5 → 4.99 automatically.
+                We save the price as you enter it, rounded to 2 decimal places.
               </p>
             </div>
 
@@ -687,7 +692,7 @@ export default function Products() {
                   <th scope="col">Item</th>
                   <th scope="col">Type</th>
                   <th scope="col">SKU</th>
-                  <th scope="col">VAT</th>    {/* 🔹 new column */}
+                  <th scope="col">VAT</th>
                   <th scope="col">Price</th>
                   <th scope="col">On hand</th>
                   <th scope="col">Reorder point</th>
@@ -751,7 +756,21 @@ export default function Products() {
                             formatCurrency(product.price)
                           )}
                         </td>
-                        <td>{isSvc ? '—' : product.stockCount ?? 0}</td>
+                        <td>
+                          {isEditing && !isSvc ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={editStockInput}
+                              onChange={e => setEditStockInput(e.target.value)}
+                            />
+                          ) : isSvc ? (
+                            '—'
+                          ) : (
+                            product.stockCount ?? 0
+                          )}
+                        </td>
                         <td>
                           {isEditing && !isSvc ? (
                             <input
