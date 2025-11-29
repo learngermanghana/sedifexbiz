@@ -2,11 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   addDoc,
   collection,
+  deleteDoc,
+  doc,
   limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  updateDoc,
   where,
 } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
@@ -101,6 +104,13 @@ export default function Products() {
   const [isSaving, setIsSaving] = useState(false)
   const [formStatus, setFormStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [formError, setFormError] = useState<string | null>(null)
+
+  // edit state
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editSku, setEditSku] = useState('')
+  const [editPriceInput, setEditPriceInput] = useState('')
+  const [editReorderPointInput, setEditReorderPointInput] = useState('')
 
   /**
    * Load products for the active store
@@ -240,7 +250,11 @@ export default function Products() {
       return
     }
 
-    if (!isService && openingStockInput && (Number.isNaN(openingStockNumber) || openingStockNumber < 0)) {
+    if (
+      !isService &&
+      openingStockInput &&
+      (Number.isNaN(openingStockNumber) || openingStockNumber < 0)
+    ) {
       setFormStatus('error')
       setFormError('Opening stock must be zero or more.')
       return
@@ -300,6 +314,115 @@ export default function Products() {
 
   const isService = itemType === 'service'
 
+  /**
+   * Edit helpers
+   */
+  function startEditing(product: Product) {
+    setEditingId(product.id)
+    setEditName(product.name)
+    setEditSku(product.sku ?? '')
+    setEditPriceInput(
+      typeof product.price === 'number' && Number.isFinite(product.price)
+        ? String(product.price)
+        : '',
+    )
+    setEditReorderPointInput(
+      typeof product.reorderPoint === 'number' && Number.isFinite(product.reorderPoint)
+        ? String(product.reorderPoint)
+        : '',
+    )
+    setFormStatus('idle')
+    setFormError(null)
+  }
+
+  function cancelEditing() {
+    setEditingId(null)
+  }
+
+  async function handleSaveEdit(product: Product) {
+    if (!editingId || editingId !== product.id) return
+
+    const trimmedName = editName.trim()
+    if (!trimmedName) {
+      setFormStatus('error')
+      setFormError('Please enter a name for this item.')
+      return
+    }
+
+    const isSvc = product.itemType === 'service'
+    const priceNumber = editPriceInput ? Number(editPriceInput) : NaN
+    const reorderPointNumber = editReorderPointInput
+      ? Number(editReorderPointInput)
+      : NaN
+
+    if (!isSvc && (Number.isNaN(priceNumber) || priceNumber < 0)) {
+      setFormStatus('error')
+      setFormError('Enter a valid selling price.')
+      return
+    }
+
+    setFormStatus('idle')
+    setFormError(null)
+
+    try {
+      const ref = doc(db, 'products', product.id)
+      await updateDoc(ref, {
+        name: trimmedName,
+        sku: isSvc ? null : editSku.trim() || null,
+        price:
+          !isSvc && !Number.isNaN(priceNumber) && priceNumber >= 0
+            ? priceNumber
+            : isSvc
+            ? !Number.isNaN(priceNumber) && priceNumber >= 0
+              ? priceNumber
+              : null
+            : null,
+        reorderPoint:
+          !isSvc &&
+          !Number.isNaN(reorderPointNumber) &&
+          reorderPointNumber >= 0
+            ? reorderPointNumber
+            : null,
+        updatedAt: serverTimestamp(),
+      })
+
+      setEditingId(null)
+      setFormStatus('success')
+      setFormError('Item updated successfully.')
+    } catch (error) {
+      console.error('[products] Failed to update item', error)
+      setFormStatus('error')
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : 'We could not update this item. Please try again.',
+      )
+    }
+  }
+
+  async function handleDelete(product: Product) {
+    const confirmed = window.confirm(
+      `Delete "${product.name}"? This cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    try {
+      const ref = doc(db, 'products', product.id)
+      await deleteDoc(ref)
+      if (editingId === product.id) {
+        setEditingId(null)
+      }
+    } catch (error) {
+      console.error('[products] Failed to delete item', error)
+      setFormStatus('error')
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : 'We could not delete this item. Please try again.',
+      )
+    }
+  }
+
   return (
     <div className="page products-page">
       <header className="page__header products-page__header">
@@ -326,9 +449,15 @@ export default function Products() {
             accurate.
           </p>
 
-          {formStatus === 'success' && (
+          {formStatus === 'success' && formError === null && (
             <p className="products__message products__message--success">
               Item added. You can now sell it from the Sell page.
+            </p>
+          )}
+
+          {formStatus === 'success' && formError === 'Item updated successfully.' && (
+            <p className="products__message products__message--success">
+              {formError}
             </p>
           )}
 
@@ -467,8 +596,6 @@ export default function Products() {
                 />
                 <span>Show low stock only ({lowStockCount})</span>
               </label>
-              {/* If you already have a reorder export implementation,
-                  hook the existing onClick handler up here. */}
               <button type="button" className="button button--ghost">
                 Download reorder list
               </button>
@@ -495,23 +622,97 @@ export default function Products() {
                 {visibleProducts.length ? (
                   visibleProducts.map(product => {
                     const isSvc = product.itemType === 'service'
+                    const isEditing = editingId === product.id
+
                     return (
                       <tr key={product.id}>
-                        <td>{product.name}</td>
+                        <td>
+                          {isEditing ? (
+                            <input
+                              value={editName}
+                              onChange={e => setEditName(e.target.value)}
+                            />
+                          ) : (
+                            product.name
+                          )}
+                        </td>
                         <td>{isSvc ? 'Service' : 'Product'}</td>
-                        <td>{product.sku || '—'}</td>
-                        <td>{formatCurrency(product.price)}</td>
+                        <td>
+                          {isEditing && !isSvc ? (
+                            <input
+                              value={editSku}
+                              onChange={e => setEditSku(e.target.value)}
+                            />
+                          ) : product.sku || '—'}
+                        </td>
+                        <td>
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={editPriceInput}
+                              onChange={e => setEditPriceInput(e.target.value)}
+                            />
+                          ) : (
+                            formatCurrency(product.price)
+                          )}
+                        </td>
                         <td>{isSvc ? '—' : product.stockCount ?? 0}</td>
-                        <td>{isSvc ? '—' : product.reorderPoint ?? '—'}</td>
+                        <td>
+                          {isEditing && !isSvc ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={editReorderPointInput}
+                              onChange={e =>
+                                setEditReorderPointInput(e.target.value)
+                              }
+                            />
+                          ) : isSvc ? (
+                            '—'
+                          ) : (
+                            product.reorderPoint ?? '—'
+                          )}
+                        </td>
                         <td>{formatLastReceipt(product.lastReceiptAt)}</td>
                         <td className="products-page__actions-column">
-                          {/* Keep your existing edit pattern here if you already have one */}
-                          <button
-                            type="button"
-                            className="button button--ghost button--small"
-                          >
-                            Edit
-                          </button>
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                className="button button--primary button--small"
+                                onClick={() => handleSaveEdit(product)}
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                className="button button--ghost button--small"
+                                onClick={cancelEditing}
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="button button--ghost button--small"
+                                onClick={() => startEditing(product)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="button button--ghost button--small button--danger"
+                                onClick={() => handleDelete(product)}
+                              >
+                                Delete
+                              </button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     )
