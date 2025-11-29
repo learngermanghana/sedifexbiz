@@ -32,6 +32,7 @@ type Product = {
   stockCount: number | null
   reorderPoint: number | null
   itemType: ItemType
+  taxRate?: number | null          // 🔹 VAT stored as decimal (e.g. 0.15)
   lastReceiptAt?: unknown
 }
 
@@ -47,6 +48,44 @@ function sanitizeNumber(value: unknown): number | null {
   return value
 }
 
+function sanitizeTaxRate(value: unknown): number | null {
+  if (typeof value !== 'number') return null
+  if (!Number.isFinite(value)) return null
+  if (value < 0) return null
+  return value
+}
+
+// Users type VAT as "15" -> save 0.15
+function parseTaxInput(input: string): number | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  const raw = Number(trimmed)
+  if (!Number.isFinite(raw) || raw < 0) return null
+  // if > 1, treat as percent, else decimal
+  const rate = raw > 1 ? raw / 100 : raw
+  return rate
+}
+
+function formatVat(taxRate?: number | null): string {
+  if (typeof taxRate !== 'number' || !Number.isFinite(taxRate) || taxRate <= 0) {
+    return '—'
+  }
+  return `${(taxRate * 100).toFixed(0)}%`
+}
+
+// 2 -> 1.99, 5 -> 4.99, 20 -> 19.99, but 2.5 stays 2.50
+function normalizePsychPrice(raw: number): number {
+  if (!Number.isFinite(raw) || raw <= 0) return raw
+  const roundedTo2 = Number(raw.toFixed(2))
+  const isWhole = Math.abs(roundedTo2 - Math.round(roundedTo2)) < 1e-6
+
+  if (isWhole && roundedTo2 >= 1) {
+    const adjusted = roundedTo2 - 0.01
+    return Number(adjusted.toFixed(2))
+  }
+  return roundedTo2
+}
+
 function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product {
   const nameRaw = typeof data.name === 'string' ? data.name : ''
   const skuRaw = typeof data.sku === 'string' ? data.sku : ''
@@ -60,6 +99,7 @@ function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product
     stockCount: sanitizeNumber(data.stockCount),
     reorderPoint: sanitizeNumber(data.reorderPoint),
     itemType,
+    taxRate: sanitizeTaxRate(data.taxRate),
     lastReceiptAt: data.lastReceiptAt,
   }
 }
@@ -98,6 +138,7 @@ export default function Products() {
   const [itemType, setItemType] = useState<ItemType>('product')
   const [sku, setSku] = useState('')
   const [priceInput, setPriceInput] = useState('')
+  const [taxRateInput, setTaxRateInput] = useState('') // 🔹 VAT (percent) for new item
   const [reorderPointInput, setReorderPointInput] = useState('')
   const [openingStockInput, setOpeningStockInput] = useState('')
 
@@ -110,6 +151,7 @@ export default function Products() {
   const [editName, setEditName] = useState('')
   const [editSku, setEditSku] = useState('')
   const [editPriceInput, setEditPriceInput] = useState('')
+  const [editTaxRateInput, setEditTaxRateInput] = useState('') // 🔹 VAT (percent) for edit
   const [editReorderPointInput, setEditReorderPointInput] = useState('')
 
   /**
@@ -243,6 +285,7 @@ export default function Products() {
     const priceNumber = priceInput ? Number(priceInput) : NaN
     const reorderPointNumber = reorderPointInput ? Number(reorderPointInput) : NaN
     const openingStockNumber = openingStockInput ? Number(openingStockInput) : NaN
+    const taxRateNumber = parseTaxInput(taxRateInput)
 
     if (!isService && (Number.isNaN(priceNumber) || priceNumber < 0)) {
       setFormStatus('error')
@@ -260,14 +303,21 @@ export default function Products() {
       return
     }
 
+    // 🔹 Apply psychological pricing (2 -> 1.99) for valid prices
+    let finalPrice: number | null = null
+    if (!Number.isNaN(priceNumber) && priceNumber >= 0) {
+      finalPrice = normalizePsychPrice(priceNumber)
+    }
+
     setIsSaving(true)
     try {
       await addDoc(collection(db, 'products'), {
         storeId: activeStoreId,
         name: trimmedName,
         itemType,
-        price: !Number.isNaN(priceNumber) && priceNumber >= 0 ? priceNumber : null,
+        price: !isService && finalPrice !== null ? finalPrice : finalPrice,
         sku: isService ? null : sku.trim() || null,
+        taxRate: taxRateNumber, // 🔹 save VAT as decimal (or null)
         reorderPoint:
           !isService && !Number.isNaN(reorderPointNumber) && reorderPointNumber >= 0
             ? reorderPointNumber
@@ -288,6 +338,7 @@ export default function Products() {
       setItemType('product')
       setSku('')
       setPriceInput('')
+      setTaxRateInput('')
       setReorderPointInput('')
       setOpeningStockInput('')
     } catch (error) {
@@ -326,6 +377,11 @@ export default function Products() {
         ? String(product.price)
         : '',
     )
+    setEditTaxRateInput(
+      typeof product.taxRate === 'number' && Number.isFinite(product.taxRate)
+        ? String((product.taxRate * 100).toFixed(0)) // show as percent (e.g. 15)
+        : '',
+    )
     setEditReorderPointInput(
       typeof product.reorderPoint === 'number' && Number.isFinite(product.reorderPoint)
         ? String(product.reorderPoint)
@@ -354,11 +410,18 @@ export default function Products() {
     const reorderPointNumber = editReorderPointInput
       ? Number(editReorderPointInput)
       : NaN
+    const taxRateNumber = parseTaxInput(editTaxRateInput)
 
     if (!isSvc && (Number.isNaN(priceNumber) || priceNumber < 0)) {
       setFormStatus('error')
       setFormError('Enter a valid selling price.')
       return
+    }
+
+    // 🔹 Apply psychological pricing also when editing
+    let finalPrice: number | null = null
+    if (!Number.isNaN(priceNumber) && priceNumber >= 0) {
+      finalPrice = normalizePsychPrice(priceNumber)
     }
 
     setFormStatus('idle')
@@ -369,14 +432,8 @@ export default function Products() {
       await updateDoc(ref, {
         name: trimmedName,
         sku: isSvc ? null : editSku.trim() || null,
-        price:
-          !isSvc && !Number.isNaN(priceNumber) && priceNumber >= 0
-            ? priceNumber
-            : isSvc
-            ? !Number.isNaN(priceNumber) && priceNumber >= 0
-              ? priceNumber
-              : null
-            : null,
+        price: finalPrice,
+        taxRate: taxRateNumber,
         reorderPoint:
           !isSvc &&
           !Number.isNaN(reorderPointNumber) &&
@@ -528,6 +585,27 @@ export default function Products() {
                 value={priceInput}
                 onChange={e => setPriceInput(e.target.value)}
               />
+              <p className="field__hint">
+                Whole numbers will be saved like 2 → 1.99, 5 → 4.99 automatically.
+              </p>
+            </div>
+
+            <div className="field">
+              <label className="field__label" htmlFor="add-tax">
+                VAT (percent)
+              </label>
+              <input
+                id="add-tax"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="e.g. 15 for 15% VAT, or leave blank"
+                value={taxRateInput}
+                onChange={e => setTaxRateInput(e.target.value)}
+              />
+              <p className="field__hint">
+                This VAT rate will be used on the Sell page for tax totals.
+              </p>
             </div>
 
             <div className="field">
@@ -609,6 +687,7 @@ export default function Products() {
                   <th scope="col">Item</th>
                   <th scope="col">Type</th>
                   <th scope="col">SKU</th>
+                  <th scope="col">VAT</th>    {/* 🔹 new column */}
                   <th scope="col">Price</th>
                   <th scope="col">On hand</th>
                   <th scope="col">Reorder point</th>
@@ -644,6 +723,20 @@ export default function Products() {
                               onChange={e => setEditSku(e.target.value)}
                             />
                           ) : product.sku || '—'}
+                        </td>
+                        <td>
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={editTaxRateInput}
+                              onChange={e => setEditTaxRateInput(e.target.value)}
+                              placeholder="e.g. 15"
+                            />
+                          ) : (
+                            formatVat(product.taxRate)
+                          )}
                         </td>
                         <td>
                           {isEditing ? (
@@ -719,7 +812,7 @@ export default function Products() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       <div className="empty-state">
                         <h3 className="empty-state__title">No items found</h3>
                         <p>
