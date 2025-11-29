@@ -61,6 +61,8 @@ export default function AuthScreen() {
   const [mode, setMode] = useState<AuthMode>('sign-in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  // 🔹 New: storeId input for sign-up (to join an existing workspace)
+  const [storeIdInput, setStoreIdInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { publish } = useToast()
@@ -117,14 +119,41 @@ export default function AuthScreen() {
           return
         }
 
+        // 🔹 SIGN-UP FLOW
         const { user } = await createUserWithEmailAndPassword(auth, trimmedEmail, password)
+
+        // We still ensure a basic store doc for older flows, but the real
+        // workspace assignment will come from initializeStore/afterSignupBootstrap.
         await ensureStoreDocument(user)
-        await ensureTeamMemberDocument(user, { storeId: user.uid, role: 'owner' })
-        await persistSession(user, { storeId: user.uid, role: 'owner' })
+
+        // Decide if they are creating a new workspace or joining one
+        const trimmedStoreId = storeIdInput.trim()
+        const signupRole = trimmedStoreId ? 'team-member' : 'owner' // UI-only hint
+
+        // Initial lightweight session; will be updated after bootstrap
+        await persistSession(user)
         setOnboardingStatus(user.uid, 'pending')
 
         try {
-          await afterSignupBootstrap()
+          // 🔹 This is the critical part: send Store ID + contact info to backend
+          const result = await afterSignupBootstrap({
+            contact: {
+              firstSignupEmail: trimmedEmail,
+              signupRole: signupRole as 'owner' | 'team-member',
+            },
+            storeId: trimmedStoreId || null,
+          })
+
+          // result.storeId + result.role come from Cloud Function (initializeStore)
+          await persistSession(user, {
+            storeId: result.storeId,
+            role: result.role,
+          })
+
+          publish({
+            message: 'Account created! Setting your workspace up now…',
+            tone: 'success',
+          })
         } catch (bootstrapError) {
           const message = normalizeError(bootstrapError)
           publish({
@@ -133,8 +162,6 @@ export default function AuthScreen() {
             duration: 8000,
           })
         }
-
-        publish({ message: 'Account created! Setting things up now…', tone: 'success' })
 
         navigate(redirectTo, { replace: true })
       } catch (unknownError) {
@@ -145,14 +172,15 @@ export default function AuthScreen() {
         setLoading(false)
       }
     },
-    [email, loading, mode, navigate, password, publish, redirectTo],
+    [email, loading, mode, navigate, password, publish, redirectTo, storeIdInput],
   )
 
-  const formTitle = mode === 'sign-in' ? 'Welcome back' : 'Create your Sedifex account'
+  const formTitle =
+    mode === 'sign-in' ? 'Welcome back' : 'Create your Sedifex account'
   const formDescription =
     mode === 'sign-in'
       ? 'Sign in to manage your stores, track inventory, and keep sales in sync.'
-      : 'Start your free Sedifex workspace so your team can sell faster and count smarter.'
+      : 'Start your free Sedifex workspace or join your team’s existing one.'
 
   const footerActionLabel =
     mode === 'sign-in' ? "Don't have an account?" : 'Already have an account?'
@@ -233,8 +261,31 @@ export default function AuthScreen() {
               disabled={loading}
               required
             />
-            <p className={authFormNoteClass}>Use at least {MIN_PASSWORD_LENGTH} characters for a strong password.</p>
+            <p className={authFormNoteClass}>
+              Use at least {MIN_PASSWORD_LENGTH} characters for a strong password.
+            </p>
           </label>
+
+          {/* 🔹 NEW: Store ID field shown only on sign-up */}
+          {mode === 'sign-up' && (
+            <label className={authFormInputGroupClass}>
+              <span className={authFormLabelClass}>Store ID (optional)</span>
+              <input
+                className={authFormInputClass}
+                type="text"
+                name="storeId"
+                placeholder="Enter your company’s Store ID to join as staff"
+                value={storeIdInput}
+                onChange={event => setStoreIdInput(event.target.value)}
+                disabled={loading}
+              />
+              <p className={authFormNoteClass}>
+                Leave this blank to create a new workspace. Enter an ID like
+                <br />
+                <code>QUVGe8MDvdScM99Q2AXdqBGEOht2</code> to join an existing one.
+              </p>
+            </label>
+          )}
         </AuthForm>
       </div>
     </main>
