@@ -32,6 +32,15 @@ import {
 import { buildSimplePdf } from '../utils/pdf'
 import { ensureCustomerLoyalty } from '../utils/customerLoyalty'
 import { payWithPaystack } from '../lib/paystack'
+import {
+  buildCartEntry,
+  computeCartTotals,
+  loadCartStore,
+  persistCartStore,
+  type CartStore,
+  type StoredCart,
+  type StoredCartLine,
+} from '../utils/cartStorage'
 
 type Product = {
   id: string
@@ -45,13 +54,7 @@ type Product = {
   itemType?: 'product' | 'service'
 }
 
-type CartLine = {
-  productId: string
-  name: string
-  price: number
-  qty: number
-  taxRate?: number
-}
+type CartLine = StoredCartLine
 
 type Customer = {
   id: string
@@ -308,6 +311,11 @@ export default function Sell() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [queryText, setQueryText] = useState('')
   const [cart, setCart] = useState<CartLine[]>([])
+  const [savedCarts, setSavedCarts] = useState<StoredCart[]>([])
+  const [activeCartId, setActiveCartIdState] = useState('')
+  const [cartStorageReady, setCartStorageReady] = useState(false)
+  const [cartStorageAvailable, setCartStorageAvailable] = useState(true)
+  const [newCartName, setNewCartName] = useState('')
   const [selectedCustomerId, setSelectedCustomerId] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'paystack'>('cash')
   const [amountTendered, setAmountTendered] = useState('')
@@ -345,6 +353,7 @@ export default function Sell() {
   const totalDue = subtotal + cartTaxTotal
 
   const totalQty = cart.reduce((s, l) => s + l.qty, 0)
+  const activeCart = savedCarts.find(cartEntry => cartEntry.id === activeCartId)
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
   const selectedCustomerLoyalty = useMemo(
@@ -399,6 +408,138 @@ export default function Sell() {
       ),
     [],
   )
+
+  // ---------- Cart persistence ----------
+  useEffect(() => {
+    let cancelled = false
+
+    loadCartStore()
+      .then(result => {
+        if (cancelled) return
+        setCartStorageAvailable(result.canPersist)
+        setSavedCarts(result.store.carts)
+        if (result.store.activeCartId) {
+          const existing = result.store.carts.find(
+            cartEntry => cartEntry.id === result.store.activeCartId,
+          )
+          if (existing) {
+            setActiveCartIdState(existing.id)
+            setCart(existing.lines)
+          }
+        }
+      })
+      .catch(error => {
+        if (cancelled) return
+        console.warn('[sell] Failed to load saved carts', error)
+        setCartStorageAvailable(false)
+      })
+      .finally(() => {
+        if (cancelled) return
+        setCartStorageReady(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!activeCartId || !cartStorageReady) return
+    setSavedCarts(prev => {
+      const existing = prev.find(cartEntry => cartEntry.id === activeCartId)
+      const fallbackName = existing?.name ?? `Cart ${prev.length + 1}`
+      const updatedEntry = buildCartEntry(activeCartId, fallbackName, cart)
+      const nextCarts = existing
+        ? prev.map(cartEntry => (cartEntry.id === activeCartId ? updatedEntry : cartEntry))
+        : [...prev, updatedEntry]
+      persistCarts(nextCarts, activeCartId)
+      return nextCarts
+    })
+  }, [activeCartId, cart, cartStorageReady, persistCarts])
+
+  const generateCartId = useCallback(() => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+    return `cart-${Date.now()}`
+  }, [])
+
+  const handleLoadCart = useCallback(
+    (cartId: string) => {
+      if (!cartStorageReady) return
+      const existing = savedCarts.find(cartEntry => cartEntry.id === cartId)
+      if (!existing) return
+      setActiveCartIdState(cartId)
+      setCart(existing.lines)
+      setSaleError(null)
+      setSaleSuccess(null)
+      persistCarts(savedCarts, cartId)
+    },
+    [cartStorageReady, persistCarts, savedCarts],
+  )
+
+  const handleCreateCart = useCallback(() => {
+    if (!cartStorageReady) return
+    const id = generateCartId()
+    setSavedCarts(prev => {
+      const name = newCartName.trim() || `Cart ${prev.length + 1}`
+      const entry = buildCartEntry(id, name, cart)
+      const next = [...prev, entry]
+      persistCarts(next, id)
+      return next
+    })
+    setActiveCartIdState(id)
+    setNewCartName('')
+  }, [cart, cartStorageReady, generateCartId, newCartName, persistCarts])
+
+  const handleRenameCart = useCallback(
+    (cartId: string) => {
+      if (!cartStorageReady) return
+      const existing = savedCarts.find(cartEntry => cartEntry.id === cartId)
+      if (!existing) return
+      const input = window.prompt('Enter a new name for this cart', existing.name)
+      if (!input) return
+      const name = input.trim()
+      if (!name) return
+      setSavedCarts(prev => {
+        const next = prev.map(cartEntry =>
+          cartEntry.id === cartId ? { ...cartEntry, name } : cartEntry,
+        )
+        const nextActiveId = cartId === activeCartId ? cartId : activeCartId
+        persistCarts(next, nextActiveId || null)
+        return next
+      })
+    },
+    [activeCartId, cartStorageReady, persistCarts, savedCarts],
+  )
+
+  const handleDeleteCart = useCallback(
+    (cartId: string) => {
+      if (!cartStorageReady) return
+      setSavedCarts(prev => {
+        const next = prev.filter(cartEntry => cartEntry.id !== cartId)
+        const nextActiveId = activeCartId === cartId ? null : activeCartId
+        persistCarts(next, nextActiveId)
+        return next
+      })
+      if (activeCartId === cartId) {
+        setActiveCartIdState('')
+        setCart([])
+      }
+    },
+    [activeCartId, cartStorageReady, persistCarts],
+  )
+
+  const persistCarts = useCallback((carts: StoredCart[], activeId: string | null) => {
+    const store: CartStore = {
+      version: 1,
+      activeCartId: activeId,
+      carts,
+    }
+    persistCartStore(store).catch(error => {
+      console.warn('[sell] Failed to persist cart store', error)
+    })
+  }, [])
 
   // ---------- Store profile ----------
   useEffect(() => {
@@ -1140,6 +1281,7 @@ export default function Sell() {
           </div>
         </section>
 
+
         {/* Cart */}
         <section className="card sell-page__cart" aria-label="Cart">
           <div className="sell-page__section-header">
@@ -1147,374 +1289,477 @@ export default function Sell() {
             <p className="card__subtitle">Adjust quantities before recording the sale.</p>
           </div>
 
-          {isSubscriptionInactive && (
-            <p className="sell-page__message sell-page__message--error" role="status">
-              Reactivate your subscription to commit sales.
-            </p>
-          )}
+          <div className="sell-page__cart-layout">
+            <aside className="sell-page__saved-carts" aria-label="Saved carts">
+              <div className="sell-page__saved-carts-header">
+                <div>
+                  <h4 className="sell-page__saved-carts-title">Saved carts</h4>
+                  <p className="sell-page__saved-carts-subtitle">
+                    Save carts for different customers or transactions.
+                  </p>
+                </div>
+                {activeCart && <div className="sell-page__badge">Active</div>}
+              </div>
 
-          {saleError && <p className="sell-page__message sell-page__message--error">{saleError}</p>}
+              {!cartStorageAvailable && (
+                <p className="sell-page__message sell-page__message--error" role="status">
+                  Saving carts is unavailable in this browser. We'll keep your cart for now.
+                </p>
+              )}
 
-          {saleSuccess && (
-            <div className="sell-page__message sell-page__message--success">
-              <span>{saleSuccess}</span>
-              <div className="sell-page__engagement-actions">
+              <div className="sell-page__saved-carts-create">
+                <input
+                  type="text"
+                  value={newCartName}
+                  onChange={event => setNewCartName(event.target.value)}
+                  placeholder="Name this cart"
+                  className="sell-page__input"
+                  disabled={!cartStorageReady}
+                />
                 <button
                   type="button"
-                  className="button button--ghost button--small"
-                  onClick={() => window.print()}
+                  className="button button--primary button--small"
+                  onClick={handleCreateCart}
+                  disabled={!cartStorageReady}
                 >
-                  Print again
+                  Save cart
                 </button>
-                {receiptSharePayload && (
-                  <>
-                    <button
-                      type="button"
-                      className="button button--ghost button--small"
-                      onClick={() => handleShareChannel('email')}
-                      disabled={!canShareReceipt}
-                      title={
-                        canShareReceipt
-                          ? undefined
-                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
-                      }
-                    >
-                      Email receipt
-                    </button>
-                    <button
-                      type="button"
-                      className="button button--ghost button--small"
-                      onClick={() => handleShareChannel('sms')}
-                      disabled={!canShareReceipt}
-                      title={
-                        canShareReceipt
-                          ? undefined
-                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
-                      }
-                    >
-                      Text receipt
-                    </button>
-                    <button
-                      type="button"
-                      className="button button--ghost button--small"
-                      onClick={() => handleShareChannel('whatsapp')}
-                      disabled={!canShareReceipt}
-                      title={
-                        canShareReceipt
-                          ? undefined
-                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
-                      }
-                    >
-                      WhatsApp receipt
-                    </button>
-                  </>
-                )}
               </div>
-            </div>
-          )}
 
-          {cart.length ? (
-            <>
-              {hasInsufficientStockInCart ? (
-                <p className="sell-page__message sell-page__message--error" role="alert">
-                  Not enough stock.
-                </p>
-              ) : null}
-
-              <div className="table-wrapper">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Item</th>
-                      <th scope="col" className="sell-page__numeric">
-                        Qty
-                      </th>
-                      <th scope="col" className="sell-page__numeric">
-                        Price
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cart.map(line => {
-                      const product = products.find(p => p.id === line.productId)
-                      const itemType = product?.itemType ?? 'product'
-                      const isService = itemType === 'service'
-                      const stockCount = isService ? null : getStockCount(line.productId)
-                      const hasInsufficientStock =
-                        !isService && typeof stockCount === 'number' && line.qty > stockCount
-
+              <div className="sell-page__saved-carts-list" aria-live="polite">
+                {savedCarts.length ? (
+                  savedCarts
+                    .slice()
+                    .sort((a, b) => b.updatedAt - a.updatedAt)
+                    .map(cartEntry => {
+                      const totals = cartEntry.totals ?? computeCartTotals(cartEntry.lines)
+                      const isActive = cartEntry.id === activeCartId
                       return (
-                        <tr key={line.productId}>
-                          <td>
-                            {line.name}
-                            {isService && <div className="sell-page__item-pill">Service</div>}
-                          </td>
-                          <td className="sell-page__numeric">
-                            <input
-                              className={`input--inline input--align-right${
-                                hasInsufficientStock ? ' sell-page__input--error' : ''
-                              }`}
-                              type="number"
-                              min={0}
-                              value={line.qty}
-                              onChange={e => setQty(line.productId, Number(e.target.value))}
-                              aria-invalid={hasInsufficientStock}
-                            />
-                            {hasInsufficientStock ? (
-                              <div className="sell-page__qty-warning" role="alert">
-                                Not enough stock (on hand: {stockCount ?? 0})
-                              </div>
-                            ) : null}
-                          </td>
-                          <td className="sell-page__numeric">
-                            GHS {(line.price * line.qty).toFixed(2)}
-                          </td>
-                        </tr>
+                        <article
+                          key={cartEntry.id}
+                          className={`sell-page__saved-cart${isActive ? ' is-active' : ''}`}
+                        >
+                          <div className="sell-page__saved-cart-header">
+                            <div>
+                              <p className="sell-page__saved-cart-name">{cartEntry.name}</p>
+                              <p className="sell-page__saved-cart-meta">
+                                {cartEntry.lines.length} items • GHS {totals.total.toFixed(2)}
+                              </p>
+                            </div>
+                            {isActive && <span className="sell-page__badge">Active</span>}
+                          </div>
+                          <div className="sell-page__saved-cart-actions">
+                            <button
+                              type="button"
+                              className="button button--ghost button--small"
+                              onClick={() => handleLoadCart(cartEntry.id)}
+                              disabled={!cartStorageReady}
+                            >
+                              Load cart
+                            </button>
+                            <button
+                              type="button"
+                              className="button button--ghost button--small"
+                              onClick={() => handleRenameCart(cartEntry.id)}
+                              disabled={!cartStorageReady}
+                            >
+                              Rename
+                            </button>
+                            <button
+                              type="button"
+                              className="button button--ghost button--small"
+                              onClick={() => handleDeleteCart(cartEntry.id)}
+                              disabled={!cartStorageReady}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </article>
                       )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="sell-page__summary">
-                <div className="sell-page__summary-row">
-                  <span>Subtotal</span>
-                  <strong>GHS {subtotal.toFixed(2)}</strong>
-                </div>
-                <div className="sell-page__summary-row">
-                  <span>VAT</span>
-                  <strong>GHS {cartTaxTotal.toFixed(2)}</strong>
-                </div>
-                <div className="sell-page__summary-row">
-                  <span>Total (incl. VAT)</span>
-                  <strong>GHS {totalDue.toFixed(2)}</strong>
-                </div>
-              </div>
-
-              <div className="sell-page__form-grid">
-                <div className="sell-page__field-group">
-                  <label className="field__label" htmlFor="sell-customer">
-                    Customer
-                  </label>
-                  <select
-                    id="sell-customer"
-                    value={selectedCustomerId}
-                    onChange={event => setSelectedCustomerId(event.target.value)}
-                    className="sell-page__select"
-                  >
-                    <option value="">Walk-in customer</option>
-                    {customers.map(customer => (
-                      <option key={customer.id} value={customer.id}>
-                        {getCustomerDisplayName(customer)}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="field__hint">
-                    Need to add someone new? Manage records on the{' '}
-                    <Link to="/customers" className="sell-page__customers-link">
-                      Customers page
-                    </Link>
-                    .
-                  </p>
-                </div>
-
-                <div className="sell-page__field-group">
-                  <label className="field__label" htmlFor="sell-payment-method">
-                    Payment method
-                  </label>
-                  <select
-                    id="sell-payment-method"
-                    value={paymentMethod}
-                    onChange={event =>
-                      setPaymentMethod(event.target.value as 'cash' | 'paystack')
-                    }
-                    className="sell-page__select"
-                  >
-                    <option value="cash">Cash</option>
-                    <option value="paystack">Card/Mobile (Paystack)</option>
-                  </select>
-                </div>
-
-                {paymentMethod === 'cash' && (
-                  <div className="sell-page__field-group">
-                    <label className="field__label" htmlFor="sell-amount-tendered">
-                      Cash received
-                    </label>
-                    <input
-                      id="sell-amount-tendered"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={amountTendered}
-                      onChange={event => setAmountTendered(event.target.value)}
-                      className="sell-page__input"
-                    />
-                  </div>
+                    })
+                ) : (
+                  <p className="sell-page__saved-carts-empty">No saved carts yet.</p>
                 )}
               </div>
+            </aside>
 
-              <div
-                className="sell-page__loyalty-panel"
-                role="group"
-                aria-label="Loyalty rewards"
-              >
-                <div className="sell-page__loyalty-header">
-                  <div>
-                    <p className="field__label">Loyalty rewards</p>
-                    <p className="sell-page__loyalty-hint">
-                      Apply available points or note how many they earned on this sale.
-                    </p>
-                  </div>
-                  <div className="sell-page__loyalty-balance" aria-live="polite">
-                    {selectedCustomer
-                      ? `Balance after sale: ${(loyaltyBalanceAfterSale ?? 0).toFixed(0)} pts`
-                      : 'Select a customer to track points'}
-                  </div>
-                </div>
-                <div className="sell-page__loyalty-grid">
-                  <label className="sell-page__loyalty-field">
-                    <span className="sell-page__loyalty-label">Apply points</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      max={selectedCustomerLoyalty?.points ?? undefined}
-                      value={loyaltyAppliedInput}
-                      onChange={event => setLoyaltyAppliedInput(event.target.value)}
-                      className="sell-page__input"
-                      disabled={!selectedCustomer}
-                    />
-                    <span className="sell-page__loyalty-help">
-                      {selectedCustomer
-                        ? `Available: ${(selectedCustomerLoyalty?.points ?? 0).toFixed(0)} pts`
-                        : 'Pick a customer to redeem points.'}
-                    </span>
-                  </label>
-                  <label className="sell-page__loyalty-field">
-                    <span className="sell-page__loyalty-label">Earn this sale</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={loyaltyEarnedInput}
-                      onChange={event => setLoyaltyEarnedInput(event.target.value)}
-                      className="sell-page__input"
-                      disabled={!selectedCustomer}
-                    />
-                    <span className="sell-page__loyalty-help">
-                      {selectedCustomer
-                        ? 'We will sync these points on the receipt and queued sale.'
-                        : 'Add a customer to award or track points.'}
-                    </span>
-                  </label>
-                </div>
-              </div>
+            <div className="sell-page__cart-body">
+              {isSubscriptionInactive && (
+                <p className="sell-page__message sell-page__message--error" role="status">
+                  Reactivate your subscription to commit sales.
+                </p>
+              )}
 
-              <div className="sell-page__payment-summary" aria-live="polite">
-                <div>
-                  <span className="sell-page__summary-label">Subtotal</span>
-                  <strong>GHS {subtotal.toFixed(2)}</strong>
-                </div>
-                <div>
-                  <span className="sell-page__summary-label">VAT</span>
-                  <strong>GHS {cartTaxTotal.toFixed(2)}</strong>
-                </div>
-                <div>
-                  <span className="sell-page__summary-label">Amount due</span>
-                  <strong>GHS {totalDue.toFixed(2)}</strong>
-                </div>
-                <div>
-                  <span className="sell-page__summary-label">Paid</span>
-                  <strong>GHS {amountPaid.toFixed(2)}</strong>
-                </div>
-                <div className={`sell-page__change${isCashShort ? ' is-short' : ''}`}>
-                  <span className="sell-page__summary-label">
-                    {isCashShort ? 'Short' : 'Change due'}
-                  </span>
-                  <strong>GHS {changeDue.toFixed(2)}</strong>
-                </div>
-              </div>
+              {saleError && (
+                <p className="sell-page__message sell-page__message--error">{saleError}</p>
+              )}
 
-              {saleSuccess && receiptSharePayload && (
-                <section className="sell-page__engagement" aria-live="polite">
-                  <h4 className="sell-page__engagement-title">Share the receipt</h4>
-                  <p className="sell-page__engagement-text">
-                    Email, text, or WhatsApp the receipt so your customer has a digital copy
-                    right away.
-                  </p>
+              {saleSuccess && (
+                <div className="sell-page__message sell-page__message--success">
+                  <span>{saleSuccess}</span>
                   <div className="sell-page__engagement-actions">
                     <button
                       type="button"
                       className="button button--ghost button--small"
-                      onClick={handleDownloadPdf}
+                      onClick={() => window.print()}
                     >
-                      Download PDF
+                      Print again
                     </button>
-                    <button
-                      type="button"
-                      className="button button--ghost button--small"
-                      onClick={() => handleShareChannel('whatsapp')}
-                      disabled={!canShareReceipt}
-                      title={
-                        canShareReceipt
-                          ? undefined
-                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
-                      }
-                    >
-                      WhatsApp receipt
-                    </button>
-                    <button
-                      type="button"
-                      className="button button--ghost button--small"
-                      onClick={() => handleShareChannel('email')}
-                      disabled={!canShareReceipt}
-                      title={
-                        canShareReceipt
-                          ? undefined
-                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
-                      }
-                    >
-                      Email receipt
-                    </button>
-                    <button
-                      type="button"
-                      className="button button--ghost button--small"
-                      onClick={() => handleShareChannel('sms')}
-                      disabled={!canShareReceipt}
-                      title={
-                        canShareReceipt
-                          ? undefined
-                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
-                      }
-                    >
-                      Text receipt
-                    </button>
+                    {receiptSharePayload && (
+                      <>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleShareChannel('email')}
+                          disabled={!canShareReceipt}
+                          title={
+                            canShareReceipt
+                              ? undefined
+                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                          }
+                        >
+                          Email receipt
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleShareChannel('sms')}
+                          disabled={!canShareReceipt}
+                          title={
+                            canShareReceipt
+                              ? undefined
+                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                          }
+                        >
+                          Text receipt
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleShareChannel('whatsapp')}
+                          disabled={!canShareReceipt}
+                          title={
+                            canShareReceipt
+                              ? undefined
+                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                          }
+                        >
+                          WhatsApp receipt
+                        </button>
+                      </>
+                    )}
                   </div>
-                  <details className="sell-page__engagement-details">
-                    <summary>Preview message</summary>
-                    <pre className="sell-page__engagement-preview">
-                      {receiptSharePayload.message}
-                    </pre>
-                  </details>
-                </section>
+                </div>
               )}
 
-              <button
-                type="button"
-                className="button button--primary button--block"
-                onClick={recordSale}
-                disabled={cart.length === 0 || isRecording || isSubscriptionInactive}
-              >
-                {isSubscriptionInactive ? '🔒 ' : ''}
-                {isRecording ? 'Saving…' : 'Record sale'}
-              </button>
-            </>
-          ) : (
-            <div className="empty-state">
-              <h3 className="empty-state__title">Cart is empty</h3>
-              <p>Select products or services from the list to start a new sale.</p>
+              {cart.length ? (
+                <>
+                  {hasInsufficientStockInCart ? (
+                    <p className="sell-page__message sell-page__message--error" role="alert">
+                      Not enough stock.
+                    </p>
+                  ) : null}
+
+                  <div className="table-wrapper">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Item</th>
+                          <th scope="col" className="sell-page__numeric">
+                            Qty
+                          </th>
+                          <th scope="col" className="sell-page__numeric">
+                            Price
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cart.map(line => {
+                          const product = products.find(p => p.id === line.productId)
+                          const itemType = product?.itemType ?? 'product'
+                          const isService = itemType === 'service'
+                          const stockCount = isService ? null : getStockCount(line.productId)
+                          const hasInsufficientStock =
+                            !isService && typeof stockCount === 'number' && line.qty > stockCount
+
+                          return (
+                            <tr key={line.productId}>
+                              <td>
+                                {line.name}
+                                {isService && <div className="sell-page__item-pill">Service</div>}
+                              </td>
+                              <td className="sell-page__numeric">
+                                <input
+                                  className={`input--inline input--align-right${
+                                    hasInsufficientStock ? ' sell-page__input--error' : ''
+                                  }`}
+                                  type="number"
+                                  min={0}
+                                  value={line.qty}
+                                  onChange={e => setQty(line.productId, Number(e.target.value))}
+                                  aria-invalid={hasInsufficientStock}
+                                />
+                                {hasInsufficientStock ? (
+                                  <div className="sell-page__qty-warning" role="alert">
+                                    Not enough stock (on hand: {stockCount ?? 0})
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="sell-page__numeric">
+                                GHS {(line.price * line.qty).toFixed(2)}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="sell-page__summary">
+                    <div className="sell-page__summary-row">
+                      <span>Subtotal</span>
+                      <strong>GHS {subtotal.toFixed(2)}</strong>
+                    </div>
+                    <div className="sell-page__summary-row">
+                      <span>VAT</span>
+                      <strong>GHS {cartTaxTotal.toFixed(2)}</strong>
+                    </div>
+                    <div className="sell-page__summary-row">
+                      <span>Total (incl. VAT)</span>
+                      <strong>GHS {totalDue.toFixed(2)}</strong>
+                    </div>
+                  </div>
+
+                  <div className="sell-page__form-grid">
+                    <div className="sell-page__field-group">
+                      <label className="field__label" htmlFor="sell-customer">
+                        Customer
+                      </label>
+                      <select
+                        id="sell-customer"
+                        value={selectedCustomerId}
+                        onChange={event => setSelectedCustomerId(event.target.value)}
+                        className="sell-page__select"
+                      >
+                        <option value="">Walk-in customer</option>
+                        {customers.map(customer => (
+                          <option key={customer.id} value={customer.id}>
+                            {getCustomerDisplayName(customer)}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="field__hint">
+                        Need to add someone new? Manage records on the{' '}
+                        <Link to="/customers" className="sell-page__customers-link">
+                          Customers page
+                        </Link>
+                        .
+                      </p>
+                    </div>
+
+                    <div className="sell-page__field-group">
+                      <label className="field__label" htmlFor="sell-payment-method">
+                        Payment method
+                      </label>
+                      <select
+                        id="sell-payment-method"
+                        value={paymentMethod}
+                        onChange={event =>
+                          setPaymentMethod(event.target.value as 'cash' | 'paystack')
+                        }
+                        className="sell-page__select"
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="paystack">Card/Mobile (Paystack)</option>
+                      </select>
+                    </div>
+
+                    {paymentMethod === 'cash' && (
+                      <div className="sell-page__field-group">
+                        <label className="field__label" htmlFor="sell-amount-tendered">
+                          Cash received
+                        </label>
+                        <input
+                          id="sell-amount-tendered"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={amountTendered}
+                          onChange={event => setAmountTendered(event.target.value)}
+                          className="sell-page__input"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    className="sell-page__loyalty-panel"
+                    role="group"
+                    aria-label="Loyalty rewards"
+                  >
+                    <div className="sell-page__loyalty-header">
+                      <div>
+                        <p className="field__label">Loyalty rewards</p>
+                        <p className="sell-page__loyalty-hint">
+                          Apply available points or note how many they earned on this sale.
+                        </p>
+                      </div>
+                      <div className="sell-page__loyalty-balance" aria-live="polite">
+                        {selectedCustomer
+                          ? `Balance after sale: ${(loyaltyBalanceAfterSale ?? 0).toFixed(0)} pts`
+                          : 'Select a customer to track points'}
+                      </div>
+                    </div>
+                    <div className="sell-page__loyalty-grid">
+                      <label className="sell-page__loyalty-field">
+                        <span className="sell-page__loyalty-label">Apply points</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          max={selectedCustomerLoyalty?.points ?? undefined}
+                          value={loyaltyAppliedInput}
+                          onChange={event => setLoyaltyAppliedInput(event.target.value)}
+                          className="sell-page__input"
+                          disabled={!selectedCustomer}
+                        />
+                        <span className="sell-page__loyalty-help">
+                          {selectedCustomer
+                            ? `Available: ${(selectedCustomerLoyalty?.points ?? 0).toFixed(0)} pts`
+                            : 'Pick a customer to redeem points.'}
+                        </span>
+                      </label>
+                      <label className="sell-page__loyalty-field">
+                        <span className="sell-page__loyalty-label">Earn this sale</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={loyaltyEarnedInput}
+                          onChange={event => setLoyaltyEarnedInput(event.target.value)}
+                          className="sell-page__input"
+                          disabled={!selectedCustomer}
+                        />
+                        <span className="sell-page__loyalty-help">
+                          {selectedCustomer
+                            ? 'We will sync these points on the receipt and queued sale.'
+                            : 'Add a customer to award or track points.'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="sell-page__payment-summary" aria-live="polite">
+                    <div>
+                      <span className="sell-page__summary-label">Subtotal</span>
+                      <strong>GHS {subtotal.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span className="sell-page__summary-label">VAT</span>
+                      <strong>GHS {cartTaxTotal.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span className="sell-page__summary-label">Amount due</span>
+                      <strong>GHS {totalDue.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span className="sell-page__summary-label">Paid</span>
+                      <strong>GHS {amountPaid.toFixed(2)}</strong>
+                    </div>
+                    <div className={`sell-page__change${isCashShort ? ' is-short' : ''}`}>
+                      <span className="sell-page__summary-label">
+                        {isCashShort ? 'Short' : 'Change due'}
+                      </span>
+                      <strong>GHS {changeDue.toFixed(2)}</strong>
+                    </div>
+                  </div>
+
+                  {saleSuccess && receiptSharePayload && (
+                    <section className="sell-page__engagement" aria-live="polite">
+                      <h4 className="sell-page__engagement-title">Share the receipt</h4>
+                      <p className="sell-page__engagement-text">
+                        Email, text, or WhatsApp the receipt so your customer has a digital copy
+                        right away.
+                      </p>
+                      <div className="sell-page__engagement-actions">
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={handleDownloadPdf}
+                        >
+                          Download PDF
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleShareChannel('whatsapp')}
+                          disabled={!canShareReceipt}
+                          title={
+                            canShareReceipt
+                              ? undefined
+                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                          }
+                        >
+                          WhatsApp receipt
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleShareChannel('sms')}
+                          disabled={!canShareReceipt}
+                          title={
+                            canShareReceipt
+                              ? undefined
+                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                          }
+                        >
+                          Text receipt
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleShareChannel('email')}
+                          disabled={!canShareReceipt}
+                          title={
+                            canShareReceipt
+                              ? undefined
+                              : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                          }
+                        >
+                          Email receipt
+                        </button>
+                      </div>
+                      <details>
+                        <summary>View share message</summary>
+                        <pre className="sell-page__share-preview">{receiptSharePayload.message}</pre>
+                      </details>
+                    </section>
+                  )}
+
+                  <div className="sell-page__actions">
+                    <div>
+                      <p className="sell-page__summary-label">Payment method</p>
+                      <p>{paymentMethodLabel}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="button"
+                      onClick={recordSale}
+                      disabled={cart.length === 0 || isRecording || isSubscriptionInactive}
+                    >
+                      {isSubscriptionInactive ? '🔒 ' : ''}
+                      {isRecording ? 'Saving…' : 'Record sale'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="empty-state">
+                  <h3 className="empty-state__title">Cart is empty</h3>
+                  <p>Add items from the list or load a saved cart to continue.</p>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </section>
       </div>
 

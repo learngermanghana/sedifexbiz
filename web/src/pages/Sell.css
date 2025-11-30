@@ -34,6 +34,128 @@
   }
 }
 
+.sell-page__cart-layout {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+@media (min-width: 960px) {
+  .sell-page__cart-layout {
+    grid-template-columns: minmax(280px, 0.62fr) minmax(0, 1.38fr);
+    align-items: start;
+  }
+}
+
+.sell-page__saved-carts {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 14px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sell-page__saved-carts-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.sell-page__saved-carts-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.sell-page__saved-carts-subtitle {
+  margin: 4px 0 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.sell-page__saved-carts-create {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sell-page__saved-carts-create .sell-page__input {
+  flex: 1;
+}
+
+.sell-page__saved-carts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.sell-page__saved-cart {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sell-page__saved-cart.is-active {
+  border-color: #6366f1;
+  box-shadow: 0 6px 20px -12px rgba(79, 70, 229, 0.4);
+}
+
+.sell-page__saved-cart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.sell-page__saved-cart-name {
+  margin: 0;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sell-page__saved-cart-meta {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.sell-page__saved-cart-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sell-page__saved-carts-empty {
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+}
+
+.sell-page__badge {
+  background: #eef2ff;
+  color: #4338ca;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sell-page__cart-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .sell-page__section-header {
   display: flex;
   flex-direction: column;
@@ -259,6 +381,20 @@
 .sell-page__loyalty-help {
   font-size: 12px;
   color: #4338ca;
+}
+
+.sell-page__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.sell-page__actions .button {
+  min-width: 160px;
 }
 
 .sell-page__engagement {
