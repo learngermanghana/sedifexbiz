@@ -58,6 +58,7 @@ type RawResolveStoreAccessResponse = {
   workspaceSlug?: unknown
   role?: unknown
   claims?: unknown
+  billing?: unknown
 }
 
 export type ResolveStoreAccessResult = {
@@ -66,6 +67,14 @@ export type ResolveStoreAccessResult = {
   workspaceSlug: string
   role: 'owner' | 'staff'
   claims?: unknown
+  billing?: BillingSummary | null
+}
+
+export type BillingSummary = {
+  status: 'trial' | 'active' | 'past_due'
+  paymentStatus: 'trial' | 'active' | 'past_due'
+  trialEndsAt: number | null
+  trialDaysRemaining: number | null
 }
 
 export async function bootstrapStoreContext(): Promise<void> {
@@ -86,6 +95,37 @@ function normalizeRole(value: unknown): 'owner' | 'staff' {
     if (normalized === 'owner') return 'owner'
   }
   return 'staff'
+}
+
+function normalizeBillingSummary(payload: unknown): BillingSummary | null {
+  if (!payload || typeof payload !== 'object') return null
+
+  const billing = payload as Record<string, unknown>
+  const statusRaw = billing.status
+  const paymentStatusRaw = billing.paymentStatus
+  const trialEndsAtRaw = billing.trialEndsAt
+  const trialDaysRaw = billing.trialDaysRemaining
+
+  const status: BillingSummary['status'] =
+    statusRaw === 'active' || statusRaw === 'past_due' ? statusRaw : 'trial'
+
+  const paymentStatus: BillingSummary['paymentStatus'] =
+    paymentStatusRaw === 'active' || paymentStatusRaw === 'past_due'
+      ? paymentStatusRaw
+      : 'trial'
+
+  const trialEndsAt = typeof trialEndsAtRaw === 'number' ? trialEndsAtRaw : null
+  const trialDaysRemaining =
+    typeof trialDaysRaw === 'number'
+      ? Math.max(trialDaysRaw, 0)
+      : null
+
+  return {
+    status,
+    paymentStatus,
+    trialEndsAt,
+    trialDaysRemaining,
+  }
 }
 
 type ResolveStoreAccessPayload = {
@@ -255,6 +295,7 @@ export async function resolveStoreAccess(
     typeof payload.workspaceSlug === 'string'
       ? payload.workspaceSlug.trim()
       : ''
+  const billing = normalizeBillingSummary(payload.billing)
 
   if (!ok || !resolvedStoreId || !workspaceSlug) {
     throw new Error('Unable to resolve store access for this account.')
@@ -266,6 +307,7 @@ export async function resolveStoreAccess(
     workspaceSlug,
     role: normalizeRole(payload.role),
     claims: payload.claims,
+    billing,
   }
 }
 
