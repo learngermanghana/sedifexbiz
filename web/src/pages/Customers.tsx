@@ -487,7 +487,7 @@ export default function Customers() {
                 <Link to="/sell" className="button button--primary button--small">
                   Start new sale
                 </Link>
-                <Link to="/reports" className="button button--ghost button--small">
+                <Link to="/finance" className="button button--ghost button--small">
                   View reports
                 </Link>
               </div>
