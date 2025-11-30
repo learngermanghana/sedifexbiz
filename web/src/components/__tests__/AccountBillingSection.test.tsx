@@ -73,4 +73,21 @@ describe('AccountBillingSection', () => {
 
     expect(await screen.findByText(/unable to start checkout/i)).toBeInTheDocument()
   })
+
+  it('shows a paid contract summary instead of the checkout form', () => {
+    render(
+      <AccountBillingSection
+        storeId="store-123"
+        ownerEmail="owner@example.com"
+        isOwner
+        contractStatus="active"
+        billingPlan="starter-yearly"
+        contractEndDate="Dec 31, 2024, 10:00 AM"
+      />,
+    )
+
+    expect(screen.getByText(/contract is active/i)).toBeInTheDocument()
+    expect(screen.getByText(/Dec 31, 2024, 10:00 AM/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /pay with paystack/i })).not.toBeInTheDocument()
+  })
 })

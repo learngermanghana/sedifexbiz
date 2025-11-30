@@ -8,6 +8,7 @@ type Props = {
   contractStatus?: string | null
   billingPlan?: string | null
   paymentProvider?: string | null
+  contractEndDate?: string | null
 }
 
 type PlanOption = {
@@ -35,6 +36,10 @@ export const AccountBillingSection: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null)
 
   const activePlan = PLANS.find(plan => plan.id === selectedPlanId) ?? PLANS[0]
+
+  const hasPaidContract =
+    (contractStatus && contractStatus !== 'trial' && contractStatus !== 'unpaid') ||
+    (billingPlan && billingPlan !== 'trial')
 
   const handleStartCheckout = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -123,41 +128,56 @@ export const AccountBillingSection: React.FC<Props> = ({
         </div>
       </dl>
 
-      <p className="text-sm text-gray-600 mb-4">
-        Choose a plan and start your subscription. You’ll be redirected to Paystack to complete the
-        payment.
-      </p>
+      {hasPaidContract ? (
+        <div className="account-overview__notice" role="status">
+          <p className="text-sm text-gray-700">
+            Your contract is active. It will remain valid until{' '}
+            <strong>{contractEndDate ?? '—'}</strong>. If you need to make changes, contact your
+            Sedifex account manager.
+          </p>
+        </div>
+      ) : (
+        <>
+          <p className="text-sm text-gray-600 mb-4">
+            Choose a plan and start your subscription. You’ll be redirected to Paystack to complete
+            the payment.
+          </p>
 
-      <form onSubmit={handleStartCheckout} className="account-overview__form max-w-md space-y-4">
-        <label className="block text-sm font-medium">
-          <span>Plan</span>
-          <select
-            value={selectedPlanId}
-            onChange={event => setSelectedPlanId(event.target.value)}
-            className="border rounded px-3 py-2 w-full"
+          <form
+            onSubmit={handleStartCheckout}
+            className="account-overview__form max-w-md space-y-4"
           >
-            {PLANS.map(plan => (
-              <option key={plan.id} value={plan.id}>
-                {plan.label} – GHS {plan.amountGhs.toFixed(2)}
-              </option>
-            ))}
-          </select>
-        </label>
+            <label className="block text-sm font-medium">
+              <span>Plan</span>
+              <select
+                value={selectedPlanId}
+                onChange={event => setSelectedPlanId(event.target.value)}
+                className="border rounded px-3 py-2 w-full"
+              >
+                {PLANS.map(plan => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.label} – GHS {plan.amountGhs.toFixed(2)}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="button button--primary"
-        >
-          {loading ? 'Starting checkout…' : 'Pay with Paystack'}
-        </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="button button--primary"
+            >
+              {loading ? 'Starting checkout…' : 'Pay with Paystack'}
+            </button>
 
-        <p className="text-xs text-gray-500">
-          You will be redirected to Paystack’s secure page to complete your subscription.
-        </p>
-      </form>
+            <p className="text-xs text-gray-500">
+              You will be redirected to Paystack’s secure page to complete your subscription.
+            </p>
+          </form>
+        </>
+      )}
     </section>
   )
 }

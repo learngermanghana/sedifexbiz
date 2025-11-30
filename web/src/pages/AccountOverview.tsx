@@ -691,6 +691,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           profile?.paymentProvider ??
           'Paystack'
         }
+        contractEndDate={expiryDisplay}
       />
 
       {/* Billing history */}
