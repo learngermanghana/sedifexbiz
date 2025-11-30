@@ -49,6 +49,7 @@ const db = admin.firestore();
 const VALID_ROLES = new Set(['owner', 'staff']);
 const TRIAL_DAYS = 14;
 const GRACE_DAYS = 7;
+const MILLIS_PER_DAY = 1000 * 60 * 60 * 24;
 /** ============================================================================
  *  HELPERS
  * ==========================================================================*/
@@ -150,6 +151,12 @@ function normalizeStoreProfile(profile) {
         }
     }
     return { businessName, country, city, phone };
+}
+function calculateDaysRemaining(target, now) {
+    if (!target || typeof target.toMillis !== 'function')
+        return null;
+    const diffMs = target.toMillis() - now.toMillis();
+    return Math.ceil(diffMs / MILLIS_PER_DAY);
 }
 function getRoleFromToken(token) {
     const role = typeof token?.role === 'string' ? token.role : null;
@@ -474,6 +481,7 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
     const baseStore = storeSnap.data() ?? {};
     const previousBilling = (baseStore.billing || {});
     const nowTs = admin.firestore.Timestamp.now();
+    const paymentStatusRaw = typeof baseStore.paymentStatus === 'string' ? baseStore.paymentStatus : null;
     const trialEndsAt = previousBilling.trialEndsAt ||
         previousBilling.trialEnd ||
         timestampDaysFromNow(TRIAL_DAYS);
@@ -483,9 +491,24 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
     const billingStatus = previousBilling.status === 'active' || previousBilling.status === 'past_due'
         ? previousBilling.status
         : 'trial';
+    const trialDaysRemaining = calculateDaysRemaining(trialEndsAt, nowTs);
+    const trialExpired = billingStatus === 'trial' &&
+        paymentStatusRaw !== 'active' &&
+        trialDaysRemaining !== null &&
+        trialDaysRemaining <= 0;
+    const normalizedBillingStatus = trialExpired
+        ? 'past_due'
+        : billingStatus;
+    const normalizedPaymentStatus = trialExpired
+        ? 'past_due'
+        : paymentStatusRaw === 'active'
+            ? 'active'
+            : paymentStatusRaw === 'past_due'
+                ? 'past_due'
+                : billingStatus;
     const billingData = {
         planKey: previousBilling.planKey || 'standard',
-        status: billingStatus,
+        status: normalizedBillingStatus,
         trialEndsAt,
         graceEndsAt,
         paystackCustomerCode: previousBilling.paystackCustomerCode !== undefined
@@ -518,6 +541,7 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
             : 0,
         createdAt: baseStore.createdAt || timestamp,
         updatedAt: timestamp,
+        paymentStatus: normalizedPaymentStatus,
         billing: billingData,
     };
     await storeRef.set(storeData, { merge: true });
@@ -535,6 +559,20 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
         updatedAt: timestamp,
     };
     await wsRef.set(workspaceData, { merge: true });
+    const billingSummary = {
+        status: normalizedBillingStatus,
+        paymentStatus: normalizedPaymentStatus,
+        trialEndsAt: trialEndsAt && typeof trialEndsAt.toMillis === 'function'
+            ? trialEndsAt.toMillis()
+            : null,
+        trialDaysRemaining: trialDaysRemaining === null ? null : Math.max(trialDaysRemaining, 0),
+    };
+    if (trialExpired) {
+        const endDate = trialEndsAt && typeof trialEndsAt.toDate === 'function'
+            ? trialEndsAt.toDate().toISOString().slice(0, 10)
+            : 'your trial end date';
+        throw new functions.https.HttpsError('permission-denied', `Your free trial ended on ${endDate}. Please upgrade to continue.`);
+    }
     const claims = await updateUserClaims(uid, role);
     return {
         ok: true,
@@ -542,6 +580,7 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
         workspaceSlug,
         role,
         claims,
+        billing: billingSummary,
     };
 });
 /** ============================================================================

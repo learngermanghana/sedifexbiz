@@ -100,6 +100,25 @@ function getErrorMessage(error: unknown): string {
   return 'Something went wrong. Please try again.'
 }
 
+function formatTrialReminder(
+  billing: ResolveStoreAccessResult['billing'],
+): string | null {
+  if (!billing) return null
+  if (billing.status !== 'trial') return null
+  if (billing.paymentStatus === 'active') return null
+
+  const days = billing.trialDaysRemaining
+  if (typeof days === 'number') {
+    if (days <= 0) {
+      return 'Your free trial has ended. Please upgrade to continue.'
+    }
+    const unit = days === 1 ? 'day' : 'days'
+    return `You’re on a free trial — ${days} ${unit} left.`
+  }
+
+  return null
+}
+
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
@@ -268,6 +287,10 @@ export default function AuthPage() {
             workspaceSlug: resolution.workspaceSlug,
             role: resolution.role,
           })
+          const reminder = formatTrialReminder(resolution.billing)
+          if (reminder) {
+            publish({ tone: 'info', message: reminder })
+          }
         } catch (error) {
           console.warn('[auth] Failed to resolve workspace access', error)
           setStatus({ tone: 'error', message: getErrorMessage(error) })
@@ -327,6 +350,10 @@ export default function AuthPage() {
           workspaceSlug: resolution.workspaceSlug,
           role: resolution.role,
         })
+        const reminder = formatTrialReminder(resolution.billing)
+        if (reminder) {
+          publish({ tone: 'info', message: reminder })
+        }
 
         // 3) Upsert customer profile with correct role (owner vs staff)
         try {
