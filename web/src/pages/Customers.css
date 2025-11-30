@@ -3,9 +3,13 @@
   gap: 24px;
 }
 
+/* 3 columns on wider screens: form • list • details */
 @media (min-width: 1080px) {
   .customers-page__grid {
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    grid-template-columns:
+      minmax(0, 0.9fr)   /* New customer / edit form */
+      minmax(0, 1.1fr)   /* Customer list */
+      minmax(0, 1fr);    /* Details / CRM panel */
   }
 }
 
@@ -127,6 +131,14 @@
   white-space: nowrap;
 }
 
+/* 🔹 Contact buttons layout (WhatsApp / Telegram / Email) */
+.customers-page__contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .customers-page__table-actions {
   display: flex;
   gap: 8px;
@@ -146,11 +158,8 @@
   gap: 16px;
 }
 
+/* On large screens, details just live in column 3 (no spanning) */
 @media (min-width: 1080px) {
-  .customers-page__details {
-    grid-column: span 2;
-  }
-
   .customers-page__toolbar {
     flex-direction: row;
     justify-content: space-between;
