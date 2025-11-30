@@ -56,7 +56,7 @@ vi.mock('../utils/onboarding', () => ({
   setOnboardingStatus: (...args: unknown[]) => mockSetOnboardingStatus(...args),
 }))
 
-vi.mock('../lib/paystack', () => ({
+vi.mock('../utils/paystack', () => ({
   payWithPaystack: (...args: unknown[]) => mockPayWithPaystack(...args),
 }))
 

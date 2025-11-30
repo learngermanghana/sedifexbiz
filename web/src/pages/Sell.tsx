@@ -31,7 +31,7 @@ import {
 } from '../utils/offlineCache'
 import { buildSimplePdf } from '../utils/pdf'
 import { ensureCustomerLoyalty } from '../utils/customerLoyalty'
-import { payWithPaystack } from '../lib/paystack'
+import { payWithPaystack } from '../utils/paystack'
 import {
   buildCartEntry,
   computeCartTotals,
@@ -89,6 +89,16 @@ type Payment = {
   provider?: string
   providerRef?: string | null
   status?: string | null
+}
+
+type PaymentMethod = 'cash' | 'paystack'
+
+function isCashPayment(method: PaymentMethod): method is 'cash' {
+  return method === 'cash'
+}
+
+function isPaystackPayment(method: PaymentMethod): method is 'paystack' {
+  return method === 'paystack'
 }
 
 type ReceiptData = {
@@ -317,7 +327,7 @@ export default function Sell() {
   const [cartStorageAvailable, setCartStorageAvailable] = useState(true)
   const [newCartName, setNewCartName] = useState('')
   const [selectedCustomerId, setSelectedCustomerId] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'paystack'>('cash')
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
   const [amountTendered, setAmountTendered] = useState('')
   const [loyaltyEarnedInput, setLoyaltyEarnedInput] = useState('')
   const [loyaltyAppliedInput, setLoyaltyAppliedInput] = useState('')
@@ -1015,12 +1025,12 @@ export default function Sell() {
     const loyaltyEarnedValue = selectedCustomer ? loyaltyEarned : null
     const loyaltyCurrentPointsValue = selectedCustomer ? loyaltyCurrentPoints : null
     const payment: Payment = {
-      method: paymentMethod === 'paystack' ? 'card' : paymentMethod,
+      method: isPaystackPayment(paymentMethod) ? 'card' : paymentMethod,
       amountPaid,
       changeDue,
     }
 
-    if (paymentMethod === 'paystack') {
+    if (!isCashPayment(paymentMethod)) {
       if (!navigator.onLine) {
         setSaleError(
           'Card/Mobile payments need an internet connection. Please reconnect and try again.',
@@ -1029,24 +1039,39 @@ export default function Sell() {
         return
       }
 
-      const paystackBuyer = selectedCustomer
-        ? {
-            email: selectedCustomer.email,
-            phone: selectedCustomer.phone,
-            name: selectedCustomerDataName || selectedCustomer.id,
-          }
-        : undefined
-      // Charge the grand total (incl. VAT)
-      const paystackResponse = await payWithPaystack(totalDue, paystackBuyer)
-      if (!paystackResponse.ok || !paystackResponse.reference) {
-        setSaleError(paystackResponse.error ?? 'Card/Mobile payment was cancelled.')
-        setIsRecording(false)
-        return
-      }
+      if (isPaystackPayment(paymentMethod)) {
+        const paystackBuyer = selectedCustomer
+          ? {
+              email: selectedCustomer.email,
+              phone: selectedCustomer.phone,
+              name: selectedCustomerDataName || selectedCustomer.id,
+            }
+          : undefined
+        // Charge the grand total (incl. VAT)
+        const paystackResponse = await payWithPaystack(totalDue, paystackBuyer)
+        const providerStatus = paystackResponse.status ?? 'cancelled'
 
-      payment.provider = 'paystack'
-      payment.providerRef = paystackResponse.reference
-      payment.status = paystackResponse.status ?? 'success'
+        if (!paystackResponse.ok || !paystackResponse.reference) {
+          const statusMessage =
+            providerStatus === 'cancelled'
+              ? 'Card/Mobile payment was cancelled.'
+              : 'Card/Mobile payment was declined. Please try again.'
+
+          setSaleError(paystackResponse.error ?? statusMessage)
+          setIsRecording(false)
+          return
+        }
+
+        if (providerStatus !== 'success') {
+          setSaleError('Card/Mobile payment was declined. Please try another method.')
+          setIsRecording(false)
+          return
+        }
+
+        payment.provider = 'paystack'
+        payment.providerRef = paystackResponse.reference
+        payment.status = providerStatus
+      }
     }
 
     const payload: CommitSalePayload = {
@@ -1565,7 +1590,7 @@ export default function Sell() {
                         id="sell-payment-method"
                         value={paymentMethod}
                         onChange={event =>
-                          setPaymentMethod(event.target.value as 'cash' | 'paystack')
+                          setPaymentMethod(event.target.value as PaymentMethod)
                         }
                         className="sell-page__select"
                       >
