@@ -6,6 +6,7 @@ import Sparkline from '../components/Sparkline'
 import { useStoreMetrics } from '../hooks/useStoreMetrics'
 import { useLowStock } from '../hooks/useLowStock'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { useMemberships } from '../hooks/useMemberships'
 import { db } from '../firebase'
 import {
   collection,
@@ -118,11 +119,32 @@ export default function Dashboard() {
     isLoading: isLoadingLowStock,
     error: lowStockError,
   } = useLowStock()
+  const { memberships } = useMemberships()
 
   const { storeId } = useActiveStore()
 
   const [isExportingLowStock, setIsExportingLowStock] = useState(false)
   const [lowStockExportMessage, setLowStockExportMessage] = useState<string | null>(null)
+  const [scheduledExport, setScheduledExport] = useState<{
+    cadence: 'weekly'
+    recipients: string[]
+    nextRun: string
+    skuCount: number
+  } | null>(null)
+  const [isSchedulingExport, setIsSchedulingExport] = useState(false)
+  const [supplierDraft, setSupplierDraft] = useState<{
+    createdAt: string
+    items: Array<{
+      id: string
+      name: string
+      sku: string | null
+      stockCount: number
+      reorderLevel: number
+      suggestedQuantity: number
+    }>
+  } | null>(null)
+  const [automationStatus, setAutomationStatus] = useState<string | null>(null)
+  const [isBuildingSupplierDraft, setIsBuildingSupplierDraft] = useState(false)
 
   // ---- New snapshot state ----
   const [sales, setSales] = useState<DashboardSale[]>([])
@@ -349,6 +371,134 @@ export default function Dashboard() {
     } finally {
       setIsExportingLowStock(false)
     }
+  }
+
+  const managerEmails = useMemo(() => {
+    const unique = new Set<string>()
+    memberships
+      .filter(member => !!member.email)
+      .forEach(member => unique.add((member.email as string).toLowerCase()))
+
+    if (unique.size === 0) {
+      unique.add('managers@sedifex.app')
+    }
+
+    return Array.from(unique)
+  }, [memberships])
+
+  const nextScheduledRun = useMemo(() => {
+    if (!scheduledExport?.nextRun) return null
+    return new Date(scheduledExport.nextRun)
+  }, [scheduledExport?.nextRun])
+
+  useEffect(() => {
+    if (!scheduledExport) return
+    if (scheduledExport.skuCount === lowStock.length) return
+
+    setScheduledExport(current =>
+      current
+        ? {
+            ...current,
+            skuCount: lowStock.length,
+          }
+        : null,
+    )
+  }, [lowStock.length, scheduledExport?.skuCount])
+
+  useEffect(() => {
+    if (!supplierDraft) return
+
+    setSupplierDraft(current => {
+      if (!current) return null
+
+      const updatedItems = topLowStock.map(item => ({
+        id: item.id,
+        name: item.name,
+        sku: item.sku,
+        stockCount: item.stockCount,
+        reorderLevel: item.reorderLevel,
+        suggestedQuantity: Math.max(item.reorderLevel * 2 - item.stockCount, 1),
+      }))
+
+      const hasDifference =
+        current.items.length !== updatedItems.length ||
+        current.items.some((item, index) => {
+          const nextItem = updatedItems[index]
+          return (
+            item.id !== nextItem.id ||
+            item.stockCount !== nextItem.stockCount ||
+            item.reorderLevel !== nextItem.reorderLevel ||
+            item.suggestedQuantity !== nextItem.suggestedQuantity
+          )
+        })
+
+      if (!hasDifference) return current
+
+      return {
+        ...current,
+        items: updatedItems,
+      }
+    })
+  }, [supplierDraft, topLowStock])
+
+  function scheduleWeeklyLowStockExport() {
+    if (isSchedulingExport) return
+
+    if (!lowStock.length) {
+      setLowStockExportMessage('No low-stock SKUs to export right now.')
+      return
+    }
+
+    setIsSchedulingExport(true)
+
+    const nextRunDate = new Date()
+    nextRunDate.setDate(nextRunDate.getDate() + 7)
+
+    const recipients = managerEmails
+
+    setScheduledExport({
+      cadence: 'weekly',
+      recipients,
+      nextRun: nextRunDate.toISOString(),
+      skuCount: lowStock.length,
+    })
+
+    setAutomationStatus(
+      `Weekly export scheduled. ${recipients.join(', ')} will receive ${
+        lowStock.length
+      } SKUs every week starting ${nextRunDate.toLocaleDateString()}.`,
+    )
+    setIsSchedulingExport(false)
+  }
+
+  function createSupplierReorderDraft() {
+    if (isBuildingSupplierDraft) return
+
+    if (!topLowStock.length) {
+      setAutomationStatus('No low-stock SKUs to build a supplier reorder yet.')
+      return
+    }
+
+    setIsBuildingSupplierDraft(true)
+
+    const draftItems = topLowStock.map(item => ({
+      id: item.id,
+      name: item.name,
+      sku: item.sku,
+      stockCount: item.stockCount,
+      reorderLevel: item.reorderLevel,
+      suggestedQuantity: Math.max(item.reorderLevel * 2 - item.stockCount, 1),
+    }))
+
+    setSupplierDraft({
+      createdAt: new Date().toISOString(),
+      items: draftItems,
+    })
+
+    setAutomationStatus(
+      `Purchase order draft prepared from your top ${draftItems.length} low-stock SKUs. Edit quantities and send to suppliers.`,
+    )
+    setIsBuildingSupplierDraft(false)
   }
 
   return (
@@ -1251,6 +1401,152 @@ export default function Dashboard() {
                   {lowStockExportMessage}
                 </p>
               ) : null}
+
+              <div
+                style={{
+                  border: '1px solid #E2E8F0',
+                  borderRadius: 12,
+                  padding: '12px 14px',
+                  background: '#F8FAFC',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                }}
+              >
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 240px' }}>
+                    <p style={{ margin: 0, fontWeight: 700, color: '#0F172A' }}>
+                      Automation
+                    </p>
+                    <p style={{ margin: '4px 0 0', fontSize: 13, color: '#475569' }}>
+                      Use the live low-stock list to notify managers and prep supplier orders.
+                    </p>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={scheduleWeeklyLowStockExport}
+                      disabled={isSchedulingExport || !lowStock.length}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 10,
+                        border: '1px solid #0EA5E9',
+                        background: '#0EA5E9',
+                        color: '#FFFFFF',
+                        fontWeight: 600,
+                        cursor: isSchedulingExport ? 'wait' : 'pointer',
+                        minWidth: 180,
+                      }}
+                    >
+                      {isSchedulingExport
+                        ? 'Scheduling…'
+                        : `Schedule weekly email${scheduledExport ? ' ✔' : ''}`}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={createSupplierReorderDraft}
+                      disabled={isBuildingSupplierDraft || !topLowStock.length}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: 10,
+                        border: '1px solid #4338CA',
+                        background: '#FFFFFF',
+                        color: '#4338CA',
+                        fontWeight: 700,
+                        cursor: isBuildingSupplierDraft ? 'wait' : 'pointer',
+                        minWidth: 200,
+                      }}
+                    >
+                      {isBuildingSupplierDraft
+                        ? 'Building draft…'
+                        : `Create supplier reorder${supplierDraft ? ' ✔' : ''}`}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div
+                    style={{
+                      background: '#FFFFFF',
+                      border: '1px dashed #CBD5E1',
+                      borderRadius: 10,
+                      padding: 12,
+                    }}
+                  >
+                    <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#0F172A' }}>
+                      Weekly CSV export
+                    </p>
+                    {scheduledExport && nextScheduledRun ? (
+                      <p style={{ margin: 0, fontSize: 13, color: '#0F172A' }}>
+                        Sends every week to {scheduledExport.recipients.join(', ')}. Next run{' '}
+                        {nextScheduledRun.toLocaleDateString()} with {scheduledExport.skuCount} SKUs.
+                      </p>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: 13, color: '#475569' }}>
+                        We’ll email managers a CSV of {lowStock.length || 'all'} low-stock SKUs
+                        every week once scheduled.
+                      </p>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#FFFFFF',
+                      border: '1px dashed #CBD5E1',
+                      borderRadius: 10,
+                      padding: 12,
+                    }}
+                  >
+                    <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#0F172A' }}>
+                      Supplier reorder draft
+                    </p>
+                    {supplierDraft ? (
+                      <div style={{ margin: 0, fontSize: 13, color: '#0F172A' }}>
+                        <p style={{ margin: 0 }}>
+                          Drafted {supplierDraft.items.length} lines at{' '}
+                          {new Date(supplierDraft.createdAt).toLocaleString()}.
+                        </p>
+                        <ul
+                          style={{
+                            margin: '6px 0 0',
+                            paddingLeft: 16,
+                            color: '#475569',
+                            fontSize: 12,
+                          }}
+                        >
+                          {supplierDraft.items.slice(0, 3).map(item => (
+                            <li key={item.id}>
+                              {item.name} · order {item.suggestedQuantity} (on hand {item.stockCount})
+                            </li>
+                          ))}
+                          {supplierDraft.items.length > 3 ? (
+                            <li>+{supplierDraft.items.length - 3} more lines</li>
+                          ) : null}
+                        </ul>
+                      </div>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: 13, color: '#475569' }}>
+                        We’ll draft a purchase order from the top {topLowStock.length || 5} SKUs to
+                        fast-track supplier outreach.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {automationStatus ? (
+                  <p style={{ margin: 0, fontSize: 12, color: '#0F172A' }}>{automationStatus}</p>
+                ) : null}
+              </div>
 
               <ul
                 style={{
