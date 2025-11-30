@@ -79,13 +79,19 @@ type StoreProfile = {
   country: string | null
 }
 
-type Payment = {
-  method: string
-  amountPaid: number
-  changeDue: number
+type PaymentTender = {
+  method: 'cash' | 'card'
+  amount: number
   provider?: string
   providerRef?: string | null
   status?: string | null
+}
+
+type Payment = {
+  tenders: PaymentTender[]
+  totalPaid: number
+  changeDue: number
+  tip?: number | null
 }
 
 type ReceiptData = {
@@ -174,8 +180,11 @@ type SaleDraft = {
   id: string
   cart: CartLine[]
   selectedCustomerId: string
-  paymentMethod: 'cash' | 'paystack'
-  amountTendered: string
+  paymentInputs: {
+    cash: string
+    paystack: string
+  }
+  tipInput: string
   loyaltyEarnedInput: string
   loyaltyAppliedInput: string
 }
@@ -320,8 +329,11 @@ function createEmptyDraft(id: string): SaleDraft {
     id,
     cart: [],
     selectedCustomerId: '',
-    paymentMethod: 'cash',
-    amountTendered: '',
+    paymentInputs: {
+      cash: '',
+      paystack: '',
+    },
+    tipInput: '',
     loyaltyEarnedInput: '',
     loyaltyAppliedInput: '',
   }
@@ -369,8 +381,9 @@ export default function Sell() {
   // Aliases so rest of logic still uses simple names
   const cart = activeDraft?.cart ?? []
   const selectedCustomerId = activeDraft?.selectedCustomerId ?? ''
-  const paymentMethod = activeDraft?.paymentMethod ?? 'cash'
-  const amountTendered = activeDraft?.amountTendered ?? ''
+  const cashAmountInput = activeDraft?.paymentInputs.cash ?? ''
+  const paystackAmountInput = activeDraft?.paymentInputs.paystack ?? ''
+  const tipInput = activeDraft?.tipInput ?? ''
   const loyaltyEarnedInput = activeDraft?.loyaltyEarnedInput ?? ''
   const loyaltyAppliedInput = activeDraft?.loyaltyAppliedInput ?? ''
 
@@ -428,12 +441,35 @@ export default function Sell() {
     ? loyaltyCurrentPoints ?? selectedCustomerLoyalty?.points ?? 0
     : null
 
-  // For cash, user enters amount. For Paystack, assume full totalDue is paid.
-  const amountPaid = paymentMethod === 'cash' ? Number(amountTendered || 0) : totalDue
-  const changeDue = Math.max(0, amountPaid - totalDue)
-  const isCashShort =
-    paymentMethod === 'cash' && amountPaid < totalDue && totalDue > 0
-  const paymentMethodLabel = paymentMethod === 'paystack' ? 'card/mobile' : paymentMethod
+  const tipAmount = useMemo(() => {
+    const parsed = Number(tipInput)
+    if (!Number.isFinite(parsed) || parsed < 0) return 0
+    return parsed
+  }, [tipInput])
+
+  const cashAmount = useMemo(() => {
+    const parsed = Number(cashAmountInput)
+    if (!Number.isFinite(parsed) || parsed < 0) return 0
+    return parsed
+  }, [cashAmountInput])
+
+  const paystackAmount = useMemo(() => {
+    const parsed = Number(paystackAmountInput)
+    if (!Number.isFinite(parsed) || parsed < 0) return 0
+    return parsed
+  }, [paystackAmountInput])
+
+  const totalWithTip = totalDue + tipAmount
+
+  const amountPaid = cashAmount + paystackAmount
+  const changeDue = Math.max(0, amountPaid - totalWithTip)
+  const isPaymentShort = amountPaid < totalWithTip && totalWithTip > 0
+  const paymentMethodsLabel = [
+    cashAmount > 0 ? 'cash' : null,
+    paystackAmount > 0 ? 'card/mobile' : null,
+  ]
+    .filter(Boolean)
+    .join(' + ')
 
   const receiptStore = useMemo(
     () => buildReceiptStore(storeProfile, activeStoreId),
@@ -667,10 +703,21 @@ export default function Sell() {
       lines.push(`Tax: GHS ${taxTotal.toFixed(2)}`)
     }
     const totalWithTax = receipt.subtotal + taxTotal
+    const totalWithTip = totalWithTax + (receipt.payment.tip ?? 0)
     lines.push(`Total: GHS ${totalWithTax.toFixed(2)}`)
-    lines.push(
-      `Paid (${receipt.payment.method}): GHS ${receipt.payment.amountPaid.toFixed(2)}`,
-    )
+    if (receipt.payment.tip) {
+      lines.push(`Tip: GHS ${receipt.payment.tip.toFixed(2)}`)
+    }
+    lines.push(`Amount due: GHS ${totalWithTip.toFixed(2)}`)
+    if (receipt.payment.tenders.length) {
+      lines.push('Payments:')
+      receipt.payment.tenders.forEach(tender => {
+        const label = tender.method === 'card' ? 'Card/Mobile' : 'Cash'
+        const providerLabel = tender.provider ? ` (${tender.provider})` : ''
+        lines.push(`  • ${label}${providerLabel}: GHS ${tender.amount.toFixed(2)}`)
+      })
+    }
+    lines.push(`Total paid: GHS ${receipt.payment.totalPaid.toFixed(2)}`)
     lines.push(`Change: GHS ${receipt.payment.changeDue.toFixed(2)}`)
 
     if (typeof receipt.loyaltyEarned === 'number' && receipt.loyaltyEarned !== null) {
@@ -938,8 +985,8 @@ export default function Sell() {
       setSaleError('Not enough stock')
       return
     }
-    if (isCashShort) {
-      setSaleError('Cash received is less than the total due.')
+    if (isPaymentShort) {
+      setSaleError('Payment received is less than the total due.')
       return
     }
     setSaleError(null)
@@ -952,13 +999,26 @@ export default function Sell() {
       httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
     const loyaltyEarnedValue = selectedCustomer ? loyaltyEarned : null
     const loyaltyCurrentPointsValue = selectedCustomer ? loyaltyCurrentPoints : null
-    const payment: Payment = {
-      method: paymentMethod === 'paystack' ? 'card' : paymentMethod,
-      amountPaid,
-      changeDue,
+    const paymentTenders: PaymentTender[] = []
+
+    if (cashAmount > 0) {
+      paymentTenders.push({ method: 'cash', amount: cashAmount })
     }
 
-    if (paymentMethod === 'paystack') {
+    let paystackTender: PaymentTender | null = null
+    if (paystackAmount > 0) {
+      paystackTender = { method: 'card', amount: paystackAmount }
+      paymentTenders.push(paystackTender)
+    }
+
+    const payment: Payment = {
+      tenders: paymentTenders,
+      totalPaid: amountPaid,
+      changeDue,
+      tip: tipAmount || null,
+    }
+
+    if (paystackTender) {
       if (!navigator.onLine) {
         setSaleError(
           'Card/Mobile payments need an internet connection. Please reconnect and try again.',
@@ -974,17 +1034,16 @@ export default function Sell() {
             name: selectedCustomerDataName || selectedCustomer.id,
           }
         : undefined
-      // Charge the grand total (incl. VAT)
-      const paystackResponse = await payWithPaystack(totalDue, paystackBuyer)
+      const paystackResponse = await payWithPaystack(paystackTender.amount, paystackBuyer)
       if (!paystackResponse.ok || !paystackResponse.reference) {
         setSaleError(paystackResponse.error ?? 'Card/Mobile payment was cancelled.')
         setIsRecording(false)
         return
       }
 
-      payment.provider = 'paystack'
-      payment.providerRef = paystackResponse.reference
-      payment.status = paystackResponse.status ?? 'success'
+      paystackTender.provider = 'paystack'
+      paystackTender.providerRef = paystackResponse.reference
+      paystackTender.status = paystackResponse.status ?? 'success'
     }
 
     const payload: CommitSalePayload = {
@@ -1031,7 +1090,7 @@ export default function Sell() {
             storeId: activeStoreId,
             type: 'sale',
             summary: `Sold ${totalQty} items for GHS ${totalDue.toFixed(2)}`,
-            detail: `Paid with ${paymentMethodLabel}`,
+            detail: `Paid with ${paymentMethodsLabel || 'none'}`,
             actor: cashierNameOrEmail,
             createdAt: serverTimestamp(),
           })
@@ -1063,8 +1122,8 @@ export default function Sell() {
         ...draft,
         cart: [],
         selectedCustomerId: '',
-        paymentMethod: 'cash',
-        amountTendered: '',
+        paymentInputs: { cash: '', paystack: '' },
+        tipInput: '',
         loyaltyEarnedInput: '',
         loyaltyAppliedInput: '',
       }))
@@ -1073,10 +1132,18 @@ export default function Sell() {
     } catch (err) {
       console.error('[sell] Unable to record sale', err)
       if (isOfflineError(err)) {
-        const queuedPayment =
-          paymentMethod === 'paystack'
-            ? { ...payload.payment, status: payload.payment.status ?? 'pending' }
-            : payload.payment
+        const queuedPayment: Payment = payload.payment.tenders.some(
+          tender => tender.method === 'card',
+        )
+          ? {
+              ...payload.payment,
+              tenders: payload.payment.tenders.map(tender =>
+                tender.method === 'card'
+                  ? { ...tender, status: tender.status ?? 'pending' }
+                  : tender,
+              ),
+            }
+          : payload.payment
         const queuedPayload = { ...payload, payment: queuedPayment }
         const queued = await queueCallableRequest('commitSale', queuedPayload, 'sale')
         if (queued) {
@@ -1103,8 +1170,8 @@ export default function Sell() {
             ...draft,
             cart: [],
             selectedCustomerId: '',
-            paymentMethod: 'cash',
-            amountTendered: '',
+            paymentInputs: { cash: '', paystack: '' },
+            tipInput: '',
             loyaltyEarnedInput: '',
             loyaltyAppliedInput: '',
           }))
@@ -1455,48 +1522,66 @@ export default function Sell() {
                 </div>
 
                 <div className="sell-page__field-group">
-                  <label className="field__label" htmlFor="sell-payment-method">
-                    Payment method
+                  <label className="field__label" htmlFor="sell-cash-amount">
+                    Cash received
                   </label>
-                  <select
-                    id="sell-payment-method"
-                    value={paymentMethod}
-                    onChange={event => {
-                      const value = event.target.value as 'cash' | 'paystack'
+                  <input
+                    id="sell-cash-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={cashAmountInput}
+                    onChange={event =>
                       updateActiveDraft(draft => ({
                         ...draft,
-                        paymentMethod: value,
-                        amountTendered: value === 'cash' ? draft.amountTendered : '',
+                        paymentInputs: { ...draft.paymentInputs, cash: event.target.value },
                       }))
-                    }}
-                    className="sell-page__select"
-                  >
-                    <option value="cash">Cash</option>
-                    <option value="paystack">Card/Mobile (Paystack)</option>
-                  </select>
+                    }
+                    className="sell-page__input"
+                  />
                 </div>
 
-                {paymentMethod === 'cash' && (
-                  <div className="sell-page__field-group">
-                    <label className="field__label" htmlFor="sell-amount-tendered">
-                      Cash received
-                    </label>
-                    <input
-                      id="sell-amount-tendered"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={amountTendered}
-                      onChange={event =>
-                        updateActiveDraft(draft => ({
-                          ...draft,
-                          amountTendered: event.target.value,
-                        }))
-                      }
-                      className="sell-page__input"
-                    />
-                  </div>
-                )}
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-paystack-amount">
+                    Card/Mobile (Paystack)
+                  </label>
+                  <input
+                    id="sell-paystack-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paystackAmountInput}
+                    onChange={event =>
+                      updateActiveDraft(draft => ({
+                        ...draft,
+                        paymentInputs: { ...draft.paymentInputs, paystack: event.target.value },
+                      }))
+                    }
+                    className="sell-page__input"
+                  />
+                  <p className="field__hint">Enter the amount to charge via Paystack.</p>
+                </div>
+
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-tip-amount">
+                    Tip (optional)
+                  </label>
+                  <input
+                    id="sell-tip-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={tipInput}
+                    onChange={event =>
+                      updateActiveDraft(draft => ({
+                        ...draft,
+                        tipInput: event.target.value,
+                      }))
+                    }
+                    className="sell-page__input"
+                  />
+                  <p className="field__hint">Add a gratuity to the total.</p>
+                </div>
               </div>
 
               <div
@@ -1576,16 +1661,20 @@ export default function Sell() {
                   <strong>GHS {cartTaxTotal.toFixed(2)}</strong>
                 </div>
                 <div>
+                  <span className="sell-page__summary-label">Tip</span>
+                  <strong>GHS {tipAmount.toFixed(2)}</strong>
+                </div>
+                <div>
                   <span className="sell-page__summary-label">Amount due</span>
-                  <strong>GHS {totalDue.toFixed(2)}</strong>
+                  <strong>GHS {totalWithTip.toFixed(2)}</strong>
                 </div>
                 <div>
                   <span className="sell-page__summary-label">Paid</span>
                   <strong>GHS {amountPaid.toFixed(2)}</strong>
                 </div>
-                <div className={`sell-page__change${isCashShort ? ' is-short' : ''}`}>
+                <div className={`sell-page__change${isPaymentShort ? ' is-short' : ''}`}>
                   <span className="sell-page__summary-label">
-                    {isCashShort ? 'Short' : 'Change due'}
+                    {isPaymentShort ? 'Short' : 'Change due'}
                   </span>
                   <strong>GHS {changeDue.toFixed(2)}</strong>
                 </div>
@@ -1746,18 +1835,36 @@ export default function Sell() {
                       <span>VAT</span>
                       <strong>GHS {taxTotal.toFixed(2)}</strong>
                     </div>
-                    <div>
-                      <span>Total</span>
-                      <strong>GHS {totalWithTax.toFixed(2)}</strong>
+                <div>
+                  <span>Total</span>
+                  <strong>GHS {totalWithTax.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span>Tip</span>
+                  <strong>GHS {(receipt.payment.tip ?? 0).toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span>Amount due</span>
+                  <strong>GHS {(totalWithTax + (receipt.payment.tip ?? 0)).toFixed(2)}</strong>
+                </div>
+                {receipt.payment.tenders.map((tender, index) => {
+                  const label = tender.method === 'card' ? 'Card/Mobile' : 'Cash'
+                  const providerLabel = tender.provider ? ` (${tender.provider})` : ''
+                  return (
+                    <div key={`${label}-${index}`}>
+                      <span>{`${label}${providerLabel}`}</span>
+                      <strong>GHS {tender.amount.toFixed(2)}</strong>
                     </div>
-                    <div>
-                      <span>Paid ({receipt.payment.method})</span>
-                      <strong>GHS {receipt.payment.amountPaid.toFixed(2)}</strong>
-                    </div>
-                    <div>
-                      <span>Change</span>
-                      <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
-                    </div>
+                  )
+                })}
+                <div>
+                  <span>Total paid</span>
+                  <strong>GHS {receipt.payment.totalPaid.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span>Change</span>
+                  <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
+                </div>
                     {typeof receipt.loyaltyEarned === 'number' &&
                     receipt.loyaltyEarned !== null ? (
                       <div>
