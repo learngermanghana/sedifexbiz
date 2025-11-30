@@ -122,14 +122,17 @@ function normalizeTags(input: string): string[] {
         .split(',')
         .map(tag => tag.trim())
         .filter(Boolean)
-        .map(tag => tag.replace(/^#/, ''))
-    )
+        .map(tag => tag.replace(/^#/, '')),
+    ),
   )
 }
 
 function formatDate(date: Date | null): string {
   if (!date) return '—'
-  return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+  return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`
 }
 
 function parseCsv(text: string): string[][] {
@@ -214,7 +217,10 @@ export default function Customers() {
   const [salesHistory, setSalesHistory] = useState<Record<string, SaleHistoryEntry[]>>({})
   const [searchTerm, setSearchTerm] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
-  const [quickFilter, setQuickFilter] = useState<'all' | 'recent' | 'noPurchases' | 'highValue' | 'untagged'>('all')
+  const [quickFilter, setQuickFilter] = useState<
+    'all' | 'recent' | 'noPurchases' | 'highValue' | 'untagged'
+  >('all')
+
   useEffect(() => {
     return () => {
       if (messageTimeoutRef.current) {
@@ -314,7 +320,8 @@ export default function Customers() {
         }
       }
       if (typeof anyValue.seconds === 'number') {
-        const millis = anyValue.seconds * 1000 + Math.round((anyValue.nanoseconds ?? 0) / 1_000_000)
+        const millis =
+          anyValue.seconds * 1000 + Math.round((anyValue.nanoseconds ?? 0) / 1_000_000)
         return Number.isFinite(millis) ? new Date(millis) : null
       }
     }
@@ -412,7 +419,10 @@ export default function Customers() {
     const q = query(salesCollection, orderBy('createdAt', 'desc'), limit(SALES_CACHE_LIMIT))
 
     const unsubscribe = onSnapshot(q, snapshot => {
-      const rows = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...(docSnap.data() as any) }))
+      const rows = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...(docSnap.data() as any),
+      }))
       applySalesData(rows)
       saveCachedSales(rows, { storeId: activeStoreId }).catch(error => {
         console.warn('[customers] Failed to cache sales', error)
@@ -448,7 +458,7 @@ export default function Customers() {
         currency: 'GHS',
         minimumFractionDigits: 2,
       }),
-    []
+    [],
   )
 
   const allTags = useMemo(() => {
@@ -476,7 +486,11 @@ export default function Customers() {
         : true
 
       const matchesTag = tagFilter ? customer.tags?.includes(tagFilter) : true
-      const stats = customerStats[customer.id] ?? { visits: 0, totalSpend: 0, lastVisit: null }
+      const stats = customerStats[customer.id] ?? {
+        visits: 0,
+        totalSpend: 0,
+        lastVisit: null,
+      }
 
       let matchesQuick = true
       switch (quickFilter) {
@@ -522,6 +536,31 @@ export default function Customers() {
   const selectedCustomerStats = selectedCustomerId
     ? customerStats[selectedCustomerId] ?? { visits: 0, totalSpend: 0, lastVisit: null }
     : { visits: 0, totalSpend: 0, lastVisit: null }
+
+  // 🔹 Contact links for the selected customer
+  const selectedCustomerPhoneDigits =
+    selectedCustomer?.phone?.replace(/\D/g, '') ?? ''
+
+  const whatsappHref =
+    selectedCustomerPhoneDigits
+      ? `https://wa.me/${selectedCustomerPhoneDigits}?text=${encodeURIComponent(
+          `Hi ${selectedCustomerName},`,
+        )}`
+      : null
+
+  const telegramHref =
+    selectedCustomerPhoneDigits
+      ? `https://t.me/+${selectedCustomerPhoneDigits}`
+      : null
+
+  const mailtoHref =
+    selectedCustomer?.email
+      ? `mailto:${encodeURIComponent(
+          selectedCustomer.email,
+        )}?subject=${encodeURIComponent(
+          `Hello ${selectedCustomerName}`,
+        )}&body=${encodeURIComponent('Hi,')}`
+      : null
 
   function resetForm() {
     setName('')
@@ -758,10 +797,13 @@ export default function Customers() {
         throw new Error('No valid customer rows were found in this file.')
       }
 
-      showSuccess(`Imported ${newCount + updatedCount} customers (${newCount} new, ${updatedCount} updated).`)
+      showSuccess(
+        `Imported ${newCount + updatedCount} customers (${newCount} new, ${updatedCount} updated).`,
+      )
     } catch (err) {
       console.error('[customers] Unable to import CSV', err)
-      const message = err instanceof Error ? err.message : 'We were unable to import this file.'
+      const message =
+        err instanceof Error ? err.message : 'We were unable to import this file.'
       setError(message)
       setSuccess(null)
     } finally {
@@ -773,7 +815,16 @@ export default function Customers() {
   }
 
   function exportToCsv() {
-    const headers = ['Name', 'Phone', 'Email', 'Notes', 'Tags', 'Visits', 'Last visit', 'Total spend']
+    const headers = [
+      'Name',
+      'Phone',
+      'Email',
+      'Notes',
+      'Tags',
+      'Visits',
+      'Last visit',
+      'Total spend',
+    ]
     const lines = customers.map(customer => {
       const stats = customerStats[customer.id]
       const visitCount = stats?.visits ?? 0
@@ -848,7 +899,9 @@ export default function Customers() {
       <div className="customers-page__grid">
         <section className="card" aria-label="Add a customer">
           <div className="customers-page__section-header">
-            <h3 className="card__title">{editingCustomerId ? 'Update customer' : 'New customer'}</h3>
+            <h3 className="card__title">
+              {editingCustomerId ? 'Update customer' : 'New customer'}
+            </h3>
             <p className="card__subtitle">
               {editingCustomerId
                 ? 'Edit the selected profile to keep records accurate.'
@@ -858,7 +911,9 @@ export default function Customers() {
 
           <form className="customers-page__form" onSubmit={addCustomer}>
             <div className="field">
-              <label className="field__label" htmlFor="customer-name">Full name</label>
+              <label className="field__label" htmlFor="customer-name">
+                Full name
+              </label>
               <input
                 id="customer-name"
                 value={name}
@@ -871,7 +926,9 @@ export default function Customers() {
 
             <div className="customers-page__form-row">
               <div className="field">
-                <label className="field__label" htmlFor="customer-phone">Phone</label>
+                <label className="field__label" htmlFor="customer-phone">
+                  Phone
+                </label>
                 <input
                   id="customer-phone"
                   value={phone}
@@ -881,7 +938,9 @@ export default function Customers() {
                 />
               </div>
               <div className="field">
-                <label className="field__label" htmlFor="customer-email">Email</label>
+                <label className="field__label" htmlFor="customer-email">
+                  Email
+                </label>
                 <input
                   id="customer-email"
                   value={email}
@@ -894,7 +953,9 @@ export default function Customers() {
             </div>
 
             <div className="field">
-              <label className="field__label" htmlFor="customer-notes">Notes</label>
+              <label className="field__label" htmlFor="customer-notes">
+                Notes
+              </label>
               <textarea
                 id="customer-notes"
                 value={notes}
@@ -906,7 +967,9 @@ export default function Customers() {
             </div>
 
             <div className="field">
-              <label className="field__label" htmlFor="customer-tags">Segmentation tags</label>
+              <label className="field__label" htmlFor="customer-tags">
+                Segmentation tags
+              </label>
               <input
                 id="customer-tags"
                 value={tagsInput}
@@ -914,15 +977,30 @@ export default function Customers() {
                 placeholder="e.g. VIP, Wholesale, Birthday Club"
                 disabled={isFormDisabled}
               />
-              <p className="field__hint">Separate multiple tags with commas to power quick filters and campaigns.</p>
+              <p className="field__hint">
+                Separate multiple tags with commas to power quick filters and campaigns.
+              </p>
             </div>
 
-            {error && <p className="customers-page__message customers-page__message--error">{error}</p>}
+            {error && (
+              <p className="customers-page__message customers-page__message--error">
+                {error}
+              </p>
+            )}
             {success && !error && (
-              <p className="customers-page__message customers-page__message--success" role="status">{success}</p>
+              <p
+                className="customers-page__message customers-page__message--success"
+                role="status"
+              >
+                {success}
+              </p>
             )}
             <div className="customers-page__form-actions">
-              <button type="submit" className="button button--primary" disabled={isFormDisabled}>
+              <button
+                type="submit"
+                className="button button--primary"
+                disabled={isFormDisabled}
+              >
                 {editingCustomerId ? 'Save changes' : 'Save customer'}
               </button>
               {editingCustomerId && (
@@ -938,7 +1016,8 @@ export default function Customers() {
             </div>
 
             <p className="field__hint">
-              Customers saved here appear in the checkout flow. Visit the <Link to="/sell">Sell page</Link> to try it out.
+              Customers saved here appear in the checkout flow. Visit the{' '}
+              <Link to="/sell">Sell page</Link> to try it out.
             </p>
           </form>
         </section>
@@ -947,13 +1026,16 @@ export default function Customers() {
           <div className="customers-page__section-header">
             <h3 className="card__title">Customer list</h3>
             <p className="card__subtitle">
-              Stay organised and keep sales staff informed with up-to-date contact information.
+              Stay organised and keep sales staff informed with up-to-date contact
+              information.
             </p>
           </div>
 
           <div className="customers-page__toolbar">
             <div className="field customers-page__search-field">
-              <label className="field__label" htmlFor="customer-search">Search</label>
+              <label className="field__label" htmlFor="customer-search">
+                Search
+              </label>
               <input
                 id="customer-search"
                 placeholder="Search by name, phone, email, or notes"
@@ -988,14 +1070,22 @@ export default function Customers() {
             </div>
           </div>
 
-          <div className="customers-page__filters" role="group" aria-label="Quick filters">
+          <div
+            className="customers-page__filters"
+            role="group"
+            aria-label="Quick filters"
+          >
             <span className="customers-page__filters-label">Quick filters:</span>
             <div className="customers-page__quick-filters">
               {quickFilters.map(filter => (
                 <button
                   key={filter.id}
                   type="button"
-                  className={`button button--ghost button--small${quickFilter === filter.id ? ' customers-page__quick-filter--active' : ''}`}
+                  className={`button button--ghost button--small${
+                    quickFilter === filter.id
+                      ? ' customers-page__quick-filter--active'
+                      : ''
+                  }`}
                   onClick={() => setQuickFilter(filter.id)}
                 >
                   {filter.label}
@@ -1004,14 +1094,20 @@ export default function Customers() {
             </div>
           </div>
 
-          <div className="customers-page__filters" role="group" aria-label="Suggested tags">
+          <div
+            className="customers-page__filters"
+            role="group"
+            aria-label="Suggested tags"
+          >
             <span className="customers-page__filters-label">Suggested tags:</span>
             <div className="customers-page__quick-filters">
               {SUGGESTED_TAGS.map(tag => (
                 <button
                   key={tag}
                   type="button"
-                  className={`button button--ghost button--small${tagFilter === tag ? ' customers-page__quick-filter--active' : ''}`}
+                  className={`button button--ghost button--small${
+                    tagFilter === tag ? ' customers-page__quick-filter--active' : ''
+                  }`}
                   onClick={() => setTagFilter(tag)}
                 >
                   #{tag}
@@ -1021,12 +1117,18 @@ export default function Customers() {
           </div>
 
           {allTags.length > 0 && (
-            <div className="customers-page__tag-filters" role="group" aria-label="Tag filters">
+            <div
+              className="customers-page__tag-filters"
+              role="group"
+              aria-label="Tag filters"
+            >
               <span className="customers-page__filters-label">Tags:</span>
               <div className="customers-page__tag-chip-group">
                 <button
                   type="button"
-                  className={`button button--ghost button--small${tagFilter === null ? ' customers-page__quick-filter--active' : ''}`}
+                  className={`button button--ghost button--small${
+                    tagFilter === null ? ' customers-page__quick-filter--active' : ''
+                  }`}
                   onClick={() => setTagFilter(null)}
                 >
                   All tags
@@ -1035,7 +1137,9 @@ export default function Customers() {
                   <button
                     key={tag}
                     type="button"
-                    className={`button button--ghost button--small${tagFilter === tag ? ' customers-page__quick-filter--active' : ''}`}
+                    className={`button button--ghost button--small${
+                      tagFilter === tag ? ' customers-page__quick-filter--active' : ''
+                    }`}
                     onClick={() => setTagFilter(tag)}
                   >
                     #{tag}
@@ -1061,7 +1165,9 @@ export default function Customers() {
                 </thead>
                 <tbody>
                   {filteredCustomers.map(customer => {
-                    const contactBits = [customer.phone, customer.email].filter(Boolean).join(' • ')
+                    const contactBits = [customer.phone, customer.email]
+                      .filter(Boolean)
+                      .join(' • ')
                     const stats = customerStats[customer.id] ?? {
                       visits: 0,
                       totalSpend: 0,
@@ -1075,16 +1181,26 @@ export default function Customers() {
                     return (
                       <tr
                         key={customer.id}
-                        className={`customers-page__row${isSelected ? ' customers-page__row--selected' : ''}`}
+                        className={`customers-page__row${
+                          isSelected ? ' customers-page__row--selected' : ''
+                        }`}
                         onClick={() => beginView(customer)}
                       >
                         <td>{customerName}</td>
                         <td>{contactBits || '—'}</td>
                         <td>
                           {customer.tags?.length ? (
-                            <div className="customers-page__tag-list" aria-label={`Tags for ${customerName}`}>
+                            <div
+                              className="customers-page__tag-list"
+                              aria-label={`Tags for ${customerName}`}
+                            >
                               {customer.tags.map(tag => (
-                                <span key={tag} className="customers-page__tag-chip">#{tag}</span>
+                                <span
+                                  key={tag}
+                                  className="customers-page__tag-chip"
+                                >
+                                  #{tag}
+                                </span>
                               ))}
                             </div>
                           ) : (
@@ -1112,7 +1228,9 @@ export default function Customers() {
                               event.stopPropagation()
                               beginEdit(customer)
                             }}
-                            disabled={isFormDisabled && editingCustomerId !== customer.id}
+                            disabled={
+                              isFormDisabled && editingCustomerId !== customer.id
+                            }
                           >
                             Edit
                           </button>
@@ -1136,7 +1254,9 @@ export default function Customers() {
             </div>
           ) : (
             <div className="empty-state">
-              <h3 className="empty-state__title">No customers match the current filters</h3>
+              <h3 className="empty-state__title">
+                No customers match the current filters
+              </h3>
               <p>Adjust your search or quick filters, or add customers using the form.</p>
             </div>
           )}
@@ -1147,17 +1267,66 @@ export default function Customers() {
             <div className="customers-page__details-content">
               <div className="customers-page__section-header">
                 <h3 className="card__title">{selectedCustomerName}</h3>
-                <p className="card__subtitle">Deep dive into visits, spend, and notes.</p>
+                <p className="card__subtitle">
+                  Deep dive into visits, spend, and notes.
+                </p>
               </div>
               <dl className="customers-page__detail-list">
                 <div>
                   <dt>Contact</dt>
                   <dd>
-                    {selectedCustomer.phone ? <div>{selectedCustomer.phone}</div> : null}
-                    {selectedCustomer.email ? <div>{selectedCustomer.email}</div> : null}
+                    {selectedCustomer.phone ? (
+                      <div>{selectedCustomer.phone}</div>
+                    ) : null}
+                    {selectedCustomer.email ? (
+                      <div>{selectedCustomer.email}</div>
+                    ) : null}
                     {!selectedCustomer.phone && !selectedCustomer.email ? '—' : null}
                   </dd>
                 </div>
+
+                {/* 🔹 New: quick contact actions */}
+                <div>
+                  <dt>Contact actions</dt>
+                  <dd>
+                    <div className="customers-page__contact-actions">
+                      {whatsappHref && (
+                        <a
+                          href={whatsappHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="button button--secondary button--small"
+                        >
+                          WhatsApp
+                        </a>
+                      )}
+                      {telegramHref && (
+                        <a
+                          href={telegramHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="button button--ghost button--small"
+                        >
+                          Telegram
+                        </a>
+                      )}
+                      {mailtoHref && (
+                        <a
+                          href={mailtoHref}
+                          className="button button--outline button--small"
+                        >
+                          Email
+                        </a>
+                      )}
+                      {!whatsappHref && !telegramHref && !mailtoHref && (
+                        <span>
+                          Save a phone number or email to enable quick actions.
+                        </span>
+                      )}
+                    </div>
+                  </dd>
+                </div>
+
                 <div>
                   <dt>Notes</dt>
                   <dd>{selectedCustomer.notes ? selectedCustomer.notes : '—'}</dd>
@@ -1168,7 +1337,9 @@ export default function Customers() {
                     {selectedCustomer.tags?.length ? (
                       <div className="customers-page__tag-list">
                         {selectedCustomer.tags.map(tag => (
-                          <span key={tag} className="customers-page__tag-chip">#{tag}</span>
+                          <span key={tag} className="customers-page__tag-chip">
+                            #{tag}
+                          </span>
                         ))}
                       </div>
                     ) : (
@@ -1182,7 +1353,9 @@ export default function Customers() {
                 </div>
                 <div>
                   <dt>Total spent</dt>
-                  <dd>{currencyFormatter.format(selectedCustomerStats.totalSpend)}</dd>
+                  <dd>
+                    {currencyFormatter.format(selectedCustomerStats.totalSpend)}
+                  </dd>
                 </div>
                 <div>
                   <dt>Last visit</dt>
@@ -1198,12 +1371,18 @@ export default function Customers() {
                       <li key={entry.id}>
                         <div className="customers-page__history-row">
                           <span className="customers-page__history-primary">
-                            {entry.createdAt ? entry.createdAt.toLocaleString() : 'Unknown date'}
+                            {entry.createdAt
+                              ? entry.createdAt.toLocaleString()
+                              : 'Unknown date'}
                           </span>
-                          <span className="customers-page__history-total">{currencyFormatter.format(entry.total)}</span>
+                          <span className="customers-page__history-total">
+                            {currencyFormatter.format(entry.total)}
+                          </span>
                         </div>
                         <div className="customers-page__history-meta">
-                          {entry.paymentMethod ? `Paid via ${entry.paymentMethod}` : 'Payment method not recorded'}
+                          {entry.paymentMethod
+                            ? `Paid via ${entry.paymentMethod}`
+                            : 'Payment method not recorded'}
                         </div>
                         {entry.items?.length ? (
                           <div className="customers-page__history-items">
@@ -1244,8 +1423,8 @@ export default function Customers() {
             <div className="customers-page__details-empty">
               <h3>Select a customer to view CRM insights</h3>
               <p>
-                Pick someone from the list to see their visit history, spending patterns, and notes. Use tags to
-                segment audiences before launching campaigns.
+                Pick someone from the list to see their visit history, spending patterns,
+                and notes. Use tags to segment audiences before launching campaigns.
               </p>
             </div>
           )}
