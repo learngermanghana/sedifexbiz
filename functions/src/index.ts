@@ -962,6 +962,109 @@ export const commitSale = functions.https.onCall(
 )
 
 /** ============================================================================
+ *  CALLABLE: logReceiptShare (staff)
+ * ==========================================================================*/
+
+const RECEIPT_CHANNELS = new Set(['email', 'sms', 'whatsapp'])
+const RECEIPT_STATUSES = new Set(['attempt', 'failed', 'sent'])
+
+export const logReceiptShare = functions.https.onCall(
+  async (data: any, context: functions.https.CallableContext) => {
+    assertStaffAccess(context)
+
+    const storeId = typeof data?.storeId === 'string' ? data.storeId.trim() : ''
+    const saleId = typeof data?.saleId === 'string' ? data.saleId.trim() : ''
+    const channel = typeof data?.channel === 'string' ? data.channel.trim() : ''
+    const status = typeof data?.status === 'string' ? data.status.trim() : ''
+
+    if (!storeId || !saleId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'storeId and saleId are required',
+      )
+    }
+
+    if (!RECEIPT_CHANNELS.has(channel)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid channel')
+    }
+
+    if (!RECEIPT_STATUSES.has(status)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid status')
+    }
+
+    const contactRaw = data?.contact
+    const contact =
+      contactRaw === null || contactRaw === undefined
+        ? null
+        : typeof contactRaw === 'string'
+          ? contactRaw.trim() || null
+          : (() => {
+              throw new functions.https.HttpsError(
+                'invalid-argument',
+                'contact must be a string when provided',
+              )
+            })()
+
+    const customerIdRaw = data?.customerId
+    const customerId =
+      customerIdRaw === null || customerIdRaw === undefined
+        ? null
+        : typeof customerIdRaw === 'string'
+          ? customerIdRaw.trim() || null
+          : (() => {
+              throw new functions.https.HttpsError(
+                'invalid-argument',
+                'customerId must be a string when provided',
+              )
+            })()
+
+    const customerNameRaw = data?.customerName
+    const customerName =
+      customerNameRaw === null || customerNameRaw === undefined
+        ? null
+        : typeof customerNameRaw === 'string'
+          ? customerNameRaw.trim() || null
+          : (() => {
+              throw new functions.https.HttpsError(
+                'invalid-argument',
+                'customerName must be a string when provided',
+              )
+            })()
+
+    const errorMessageRaw = data?.errorMessage
+    const errorMessage =
+      errorMessageRaw === null || errorMessageRaw === undefined
+        ? null
+        : typeof errorMessageRaw === 'string'
+          ? errorMessageRaw.trim() || null
+          : (() => {
+              throw new functions.https.HttpsError(
+                'invalid-argument',
+                'errorMessage must be a string when provided',
+              )
+            })()
+
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const payload: admin.firestore.DocumentData = {
+      storeId,
+      saleId,
+      channel,
+      status,
+      contact,
+      customerId,
+      customerName,
+      errorMessage,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    const ref = await db.collection('receiptShareLogs').add(payload)
+
+    return { ok: true, shareId: ref.id }
+  },
+)
+
+/** ============================================================================
  *  CALLABLE: receiveStock (staff)
  * ==========================================================================*/
 
