@@ -364,18 +364,25 @@ describe('App signup cleanup', () => {
     const ownerDocRef = firestore.docRefByPath.get(ownerDocKey)
     const customerDocRef = firestore.docRefByPath.get(customerDocKey)
 
-    // Signup should only persist user metadata for the customer profile. All store/team/product
-    // documents are created later by backend workspace resolution, not seeded from the client.
-    expect(ownerDocRef).toBeUndefined()
+    expect(ownerDocRef).toBeDefined()
     expect(customerDocRef).toBeDefined()
 
     const setDocCalls = firestore.setDocMock.mock.calls
     const customerCall = setDocCalls.find(([ref]) => ref === customerDocRef)
     expect(customerCall).toBeDefined()
 
+    const pendingStaffCall = setDocCalls.find(([ref]) => ref === ownerDocRef)
+    expect(pendingStaffCall?.[1]).toMatchObject({
+      uid: createdUser.uid,
+      storeId: 'workspace-store-id',
+      role: 'staff',
+      status: 'pending',
+      email: 'owner@example.com',
+    })
+
     const unrelatedWrites = setDocCalls.filter(([ref]) => {
       const path = ref?.path ?? ''
-      return path.startsWith('teamMembers/') || path.startsWith('stores/') || path.startsWith('products/')
+      return path.startsWith('stores/') || path.startsWith('products/')
     })
     expect(unrelatedWrites).toHaveLength(0)
 

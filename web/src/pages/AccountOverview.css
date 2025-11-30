@@ -1,0 +1,72 @@
+.account-overview__alert {
+  border: 1px solid #f3c87a;
+  background: #fff7e6;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.account-overview__eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  color: #8b5e00;
+  margin: 0 0 4px;
+}
+
+.account-overview__approvals {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.account-overview__approval-card {
+  border: 1px solid #f3e1b0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.account-overview__approval-email {
+  font-weight: 600;
+  margin: 0;
+}
+
+.account-overview__approval-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-overview__approval-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.account-overview__status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  text-transform: capitalize;
+  background: #edf2ff;
+  color: #1d3a8a;
+  border: 1px solid #c7d2fe;
+}
+
+.account-overview__status[data-variant='inactive'] {
+  background: #fff1f0;
+  color: #a8071a;
+  border-color: #ffa39e;
+}
+
+.account-overview__status[data-variant='pending'] {
+  background: #fff7e6;
+  color: #8b5e00;
+  border-color: #ffd591;
+}

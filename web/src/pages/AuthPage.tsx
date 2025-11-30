@@ -357,7 +357,29 @@ export default function AuthPage() {
           publish({ tone: 'info', message: reminder })
         }
 
-        // 3) Upsert customer profile with correct role (owner vs staff)
+        // 3) Flag self-signups for owner review when joining via Store ID
+        if (isJoiningExistingStore) {
+          try {
+            await setDoc(
+              doc(db, 'teamMembers', nextUser.uid),
+              {
+                uid: nextUser.uid,
+                storeId: resolution.storeId,
+                role: 'staff',
+                email: sanitizedEmail.toLowerCase(),
+                firstSignupEmail: sanitizedEmail.toLowerCase(),
+                status: 'pending',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true },
+            )
+          } catch (error) {
+            console.warn('[signup] Unable to flag pending staff request', error)
+          }
+        }
+
+        // 4) Upsert customer profile with correct role (owner vs staff)
         try {
           const preferredDisplayName =
             sanitizedFullName || nextUser.displayName?.trim() || sanitizedEmail
@@ -390,14 +412,14 @@ export default function AuthPage() {
           console.warn('[customers] Unable to upsert customer record', error)
         }
 
-        // 4) Refresh ID token for fresh custom claims
+        // 5) Refresh ID token for fresh custom claims
         try {
           await nextUser.getIdToken(true)
         } catch (error) {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
 
-        // 5) Send email verification
+        // 6) Send email verification
         try {
           // Hash router, so we keep the hash in the continue URL
           const continueUrl = `${window.location.origin}/#/verify-email`
@@ -409,7 +431,7 @@ export default function AuthPage() {
           console.warn('[auth] Failed to send verification email', error)
         }
 
-        // 6) Mark onboarding as pending and bounce to login
+        // 7) Mark onboarding as pending and bounce to login
         setOnboardingStatus(nextUser.uid, 'pending')
         setMode('login')
       }

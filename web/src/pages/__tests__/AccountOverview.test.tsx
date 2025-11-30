@@ -1,5 +1,6 @@
 import React from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import AccountOverview from '../AccountOverview'
 
 const mockPublish = vi.fn()
@@ -28,6 +29,8 @@ const getDocMock = vi.fn()
 const getDocsMock = vi.fn()
 const queryMock = vi.fn((ref: unknown, ...clauses: unknown[]) => ({ ref, clauses }))
 const whereMock = vi.fn((field: string, op: string, value: unknown) => ({ field, op, value }))
+const setDocMock = vi.fn()
+const serverTimestampMock = vi.fn(() => 'server-timestamp')
 
 vi.mock('firebase/firestore', () => ({
   Timestamp: class {},
@@ -37,6 +40,8 @@ vi.mock('firebase/firestore', () => ({
   getDocs: (...args: Parameters<typeof getDocsMock>) => getDocsMock(...args),
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
+  setDoc: (...args: Parameters<typeof setDocMock>) => setDocMock(...args),
+  serverTimestamp: serverTimestampMock,
 }))
 
 vi.mock('../../firebase', () => ({
@@ -72,6 +77,8 @@ describe('AccountOverview', () => {
     getDocsMock.mockReset()
     queryMock.mockClear()
     whereMock.mockClear()
+    setDocMock.mockReset()
+    serverTimestampMock.mockReset()
 
     mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
     getDocMock.mockImplementation(async ref => {
@@ -222,6 +229,61 @@ describe('AccountOverview', () => {
     expect(screen.queryByTestId('account-invite-form')).not.toBeInTheDocument()
     expect(screen.getByText(/read-only access/i)).toBeInTheDocument()
     expect(screen.queryByTestId('account-edit-team')).not.toBeInTheDocument()
+  })
+
+  it('lets owners approve pending staff signups that used the Store ID', async () => {
+    const user = userEvent.setup()
+
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-4',
+          uid: 'owner-1',
+          role: 'owner',
+          storeId: 'store-123',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+
+    getDocsMock.mockResolvedValueOnce({
+      docs: [
+        {
+          id: 'member-pending',
+          data: () => ({
+            uid: 'uid-member-pending',
+            storeId: 'store-123',
+            email: 'pending@example.com',
+            role: 'staff',
+            status: 'pending',
+            invitedBy: null,
+            updatedAt: { toDate: () => new Date('2023-04-01T00:00:00Z') },
+          }),
+        },
+      ],
+    })
+
+    render(<AccountOverview />)
+
+    expect(await screen.findByTestId('account-pending-approvals')).toBeInTheDocument()
+    const approveButton = screen.getByRole('button', { name: /approve/i })
+
+    await user.click(approveButton)
+
+    await waitFor(() => {
+      expect(setDocMock).toHaveBeenCalledWith(
+        { type: 'doc', path: 'teamMembers/member-pending' },
+        { status: 'active', updatedAt: 'server-timestamp' },
+        { merge: true },
+      )
+    })
   })
 
   it('falls back to ownerId lookup when the store document id differs from the storeId', async () => {
