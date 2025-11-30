@@ -10,6 +10,7 @@ import {
   query,
   where,
   setDoc,
+  serverTimestamp,
   type DocumentData,
   type DocumentSnapshot,
   type QueryDocumentSnapshot,
@@ -21,6 +22,7 @@ import { useToast } from '../components/ToastProvider'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { AccountBillingSection } from '../components/AccountBillingSection'
 import { getStoreIdFromRecord } from '../utils/storeId'
+import './AccountOverview.css'
 
 type StoreProfile = {
   name: string | null
@@ -63,6 +65,7 @@ type RosterMember = {
   email: string | null
   role: Membership['role']
   invitedBy: string | null
+  status: string | null
   phone: string | null
   firstSignupEmail: string | null
   createdAt: Timestamp | null
@@ -184,6 +187,7 @@ function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): Roste
     email: toNullableString(data.email),
     role,
     invitedBy: toNullableString(data.invitedBy),
+    status: toNullableString(data.status),
     phone: toNullableString(data.phone),
     firstSignupEmail: toNullableString(data.firstSignupEmail),
     createdAt: isTimestamp(data.createdAt) ? data.createdAt : null,
@@ -205,6 +209,13 @@ function formatTimestamp(timestamp: Timestamp | null) {
     console.warn('Unable to render timestamp', error)
     return '—'
   }
+}
+
+function formatStatus(status: string | null) {
+  if (!status || status === 'active') return 'Active'
+  if (status === 'pending') return 'Pending approval'
+  if (status === 'inactive') return 'Inactive'
+  return status
 }
 
 type HeadingLevel = 'h1' | 'h2' | 'h3' | 'h4'
@@ -235,6 +246,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const [roster, setRoster] = useState<RosterMember[]>([])
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterError, setRosterError] = useState<string | null>(null)
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null)
 
   // Public directory edit state
   const [isSavingPublicProfile, setIsSavingPublicProfile] = useState(false)
@@ -247,6 +259,10 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   }, [memberships, storeId])
 
   const isOwner = activeMembership?.role === 'owner'
+  const pendingMembers = useMemo(
+    () => roster.filter(member => member.status === 'pending'),
+    [roster],
+  )
 
   useEffect(() => {
     if (!storeId) {
@@ -492,6 +508,70 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       })
     } finally {
       setIsSavingPublicProfile(false)
+    }
+  }
+
+  async function handleApprovePending(member: RosterMember) {
+    if (!storeId || !isOwner) return
+
+    setPendingActionId(member.id)
+    try {
+      await setDoc(
+        doc(db, 'teamMembers', member.id),
+        { status: 'active', updatedAt: serverTimestamp() },
+        { merge: true },
+      )
+      setRoster(current =>
+        current.map(entry =>
+          entry.id === member.id
+            ? { ...entry, status: 'active', updatedAt: Timestamp.now() }
+            : entry,
+        ),
+      )
+      publish({
+        message: `Approved ${member.email ?? 'staff member'}.`,
+        tone: 'success',
+      })
+    } catch (error) {
+      console.warn('[account] Failed to approve pending staff', error)
+      publish({
+        message: 'Unable to approve this staff member. Please try again.',
+        tone: 'error',
+      })
+    } finally {
+      setPendingActionId(null)
+    }
+  }
+
+  async function handleRejectPending(member: RosterMember) {
+    if (!storeId || !isOwner) return
+
+    setPendingActionId(member.id)
+    try {
+      await setDoc(
+        doc(db, 'teamMembers', member.id),
+        { status: 'inactive', updatedAt: serverTimestamp() },
+        { merge: true },
+      )
+      setRoster(current =>
+        current.map(entry =>
+          entry.id === member.id
+            ? { ...entry, status: 'inactive', updatedAt: Timestamp.now() }
+            : entry,
+        ),
+      )
+      publish({
+        message: `Removed ${member.email ?? 'staff member'} from your workspace.`,
+        tone: 'success',
+      })
+    } catch (error) {
+      console.warn('[account] Failed to reject pending staff', error)
+      publish({
+        message: 'Unable to remove this staff member. Please try again.',
+        tone: 'error',
+      })
+    } finally {
+      setPendingActionId(null)
     }
   }
 
@@ -760,6 +840,57 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       <section aria-labelledby="account-overview-roster">
         <h2 id="account-overview-roster">Team roster</h2>
 
+        {isOwner && pendingMembers.length > 0 && (
+          <div
+            className="account-overview__alert"
+            role="alert"
+            aria-live="polite"
+            data-testid="account-pending-approvals"
+          >
+            <p className="account-overview__eyebrow">Action needed</p>
+            <p className="account-overview__subtitle">
+              These people signed up with your Store ID. Approve to grant access or
+              reject to block it.
+            </p>
+            <div className="account-overview__approvals">
+              {pendingMembers.map(member => (
+                <article
+                  key={member.id}
+                  className="account-overview__approval-card"
+                  data-testid={`account-roster-pending-${member.id}`}
+                >
+                  <div className="account-overview__approval-meta">
+                    <p className="account-overview__approval-email">
+                      {formatValue(member.email ?? member.firstSignupEmail)}
+                    </p>
+                    <p className="account-overview__hint">
+                      Pending approval · Requested access as staff
+                    </p>
+                  </div>
+                  <div className="account-overview__approval-actions">
+                    <button
+                      type="button"
+                      className="button button--primary button--small"
+                      onClick={() => handleApprovePending(member)}
+                      disabled={pendingActionId === member.id}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => handleRejectPending(member)}
+                      disabled={pendingActionId === member.id}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+
         {isOwner ? (
           !rosterLoading && roster.length > 0 ? (
             <div className="account-overview__actions">
@@ -792,6 +923,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
             <tr>
               <th scope="col">Email</th>
               <th scope="col">Role</th>
+              <th scope="col">Status</th>
               <th scope="col">Invited by</th>
               <th scope="col">Updated</th>
             </tr>
@@ -799,7 +931,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           <tbody>
             {roster.length === 0 && !rosterLoading ? (
               <tr className="account-overview__roster-empty">
-                <td colSpan={4}>No team members found.</td>
+                <td colSpan={5}>No team members found.</td>
               </tr>
             ) : (
               roster.map(member => (
@@ -809,10 +941,19 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   data-uid={member.uid}
                   data-store-id={member.storeId ?? undefined}
                   data-phone={member.phone ?? undefined}
+                  data-status={member.status ?? undefined}
                   data-first-signup-email={member.firstSignupEmail ?? undefined}
                 >
                   <td>{formatValue(member.email)}</td>
                   <td>{member.role === 'owner' ? 'Owner' : 'Staff'}</td>
+                  <td>
+                    <span
+                      className="account-overview__status"
+                      data-variant={member.status ?? 'active'}
+                    >
+                      {formatStatus(member.status)}
+                    </span>
+                  </td>
                   <td>{formatValue(member.invitedBy)}</td>
                   <td>{formatTimestamp(member.updatedAt ?? member.createdAt)}</td>
                 </tr>
