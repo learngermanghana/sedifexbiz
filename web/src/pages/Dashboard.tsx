@@ -10,9 +10,12 @@ import { useMemberships } from '../hooks/useMemberships'
 import { db } from '../firebase'
 import {
   collection,
+  doc,
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
+  setDoc,
   where,
   limit,
 } from 'firebase/firestore'
@@ -147,6 +150,7 @@ export default function Dashboard() {
   } | null>(null)
   const [automationStatus, setAutomationStatus] = useState<string | null>(null)
   const [isBuildingSupplierDraft, setIsBuildingSupplierDraft] = useState(false)
+  const [isLoadingExportSchedule, setIsLoadingExportSchedule] = useState(false)
 
   // ---- New snapshot state ----
   const [sales, setSales] = useState<DashboardSale[]>([])
@@ -394,6 +398,59 @@ export default function Dashboard() {
   }, [scheduledExport?.nextRun])
 
   useEffect(() => {
+    if (!storeId) {
+      setScheduledExport(null)
+      return
+    }
+
+    setIsLoadingExportSchedule(true)
+
+    const scheduleRef = doc(
+      collection(db, 'stores', storeId, 'automations'),
+      'lowStockWeeklyExport',
+    )
+
+    const unsubscribe = onSnapshot(
+      scheduleRef,
+      snapshot => {
+        setIsLoadingExportSchedule(false)
+
+        if (!snapshot.exists()) {
+          setScheduledExport(null)
+          return
+        }
+
+        const data = snapshot.data() as Record<string, unknown>
+        const recipients = Array.isArray(data.recipients)
+          ? (data.recipients.filter(value => typeof value === 'string') as string[])
+          : []
+
+        if (typeof data.nextRun !== 'string' || data.cadence !== 'weekly') {
+          setScheduledExport(null)
+          return
+        }
+
+        setScheduledExport({
+          cadence: 'weekly',
+          recipients,
+          nextRun: data.nextRun,
+          skuCount: typeof data.skuCount === 'number' ? data.skuCount : 0,
+        })
+      },
+      error => {
+        console.error('[dashboard] Failed to load export schedule', error)
+        setAutomationStatus('Unable to load automation status right now.')
+        setIsLoadingExportSchedule(false)
+      },
+    )
+
+    return () => {
+      setIsLoadingExportSchedule(false)
+      unsubscribe()
+    }
+  }, [storeId])
+
+  useEffect(() => {
     if (!scheduledExport) return
     if (scheduledExport.skuCount === lowStock.length) return
 
@@ -443,8 +500,13 @@ export default function Dashboard() {
     })
   }, [supplierDraft, topLowStock])
 
-  function scheduleWeeklyLowStockExport() {
-    if (isSchedulingExport) return
+  async function scheduleWeeklyLowStockExport() {
+    if (isSchedulingExport || isLoadingExportSchedule) return
+
+    if (!storeId) {
+      setAutomationStatus('Select a store before scheduling exports.')
+      return
+    }
 
     if (!lowStock.length) {
       setLowStockExportMessage('No low-stock SKUs to export right now.')
@@ -458,19 +520,44 @@ export default function Dashboard() {
 
     const recipients = managerEmails
 
-    setScheduledExport({
-      cadence: 'weekly',
+    const scheduleRef = doc(
+      collection(db, 'stores', storeId, 'automations'),
+      'lowStockWeeklyExport',
+    )
+
+    const schedulePayload = {
+      cadence: 'weekly' as const,
       recipients,
       nextRun: nextRunDate.toISOString(),
       skuCount: lowStock.length,
-    })
+      storeId,
+      type: 'lowStockCsv',
+    }
 
-    setAutomationStatus(
-      `Weekly export scheduled. ${recipients.join(', ')} will receive ${
-        lowStock.length
-      } SKUs every week starting ${nextRunDate.toLocaleDateString()}.`,
-    )
-    setIsSchedulingExport(false)
+    try {
+      await setDoc(
+        scheduleRef,
+        {
+          ...schedulePayload,
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+        },
+        { merge: true },
+      )
+
+      setScheduledExport(schedulePayload)
+
+      setAutomationStatus(
+        `Weekly export scheduled. ${recipients.join(', ')} will receive ${
+          lowStock.length
+        } SKUs every week starting ${nextRunDate.toLocaleDateString()}.`,
+      )
+    } catch (error) {
+      console.error('[dashboard] Failed to schedule low-stock export', error)
+      setAutomationStatus('Unable to schedule the weekly export right now.')
+    } finally {
+      setIsSchedulingExport(false)
+    }
   }
 
   function createSupplierReorderDraft() {
