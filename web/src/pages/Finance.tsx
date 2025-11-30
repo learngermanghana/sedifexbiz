@@ -191,7 +191,7 @@ export default function Finance() {
         <div>
           <h2 className="page__title">Finance</h2>
           <p className="page__subtitle">
-            Track cash, expenses, and billing for your Sedifex workspace.
+            Track cash and expenses for your Sedifex workspace.
           </p>
         </div>
       </header>
@@ -310,9 +310,6 @@ export default function Finance() {
           </li>
           <li>
             <Link to="/expenses">Expenses &amp; payouts</Link>
-          </li>
-          <li>
-            <Link to="/account">Billing &amp; subscription</Link>
           </li>
         </ul>
       </section>
