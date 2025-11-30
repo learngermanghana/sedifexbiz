@@ -39,6 +39,8 @@ type StoreProfile = {
   country: string | null
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
+  // 🔹 Billing/trial fields
+  trialEndsAt: Timestamp | null
   // 🔹 Public directory fields
   isPublicDirectory: boolean
   publicDescription: string | null
@@ -113,6 +115,11 @@ function mapStoreSnapshot(
     billingStatus ??
     toNullableString(data.status)
 
+  // 🔹 Trial end from billing (supports trialEndsAt/trialEnd)
+  const trialEndsRaw =
+    (billingRaw.trialEndsAt as unknown) ?? (billingRaw.trialEnd as unknown)
+  const trialEndsAt = isTimestamp(trialEndsRaw) ? trialEndsRaw : null
+
   return {
     name: toNullableString(data.name),
     displayName: toNullableString(data.displayName),
@@ -130,6 +137,7 @@ function mapStoreSnapshot(
     country: toNullableString(data.country),
     createdAt: isTimestamp(data.createdAt) ? data.createdAt : null,
     updatedAt: isTimestamp(data.updatedAt) ? data.updatedAt : null,
+    trialEndsAt,
     isPublicDirectory: Boolean((data as any).isPublicDirectory),
     publicDescription: toNullableString((data as any).publicDescription),
   }
@@ -437,6 +445,14 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     subscriptionProfile?.currentPeriodEnd ?? null,
   )
 
+  // 🔹 Trial end (from store billing)
+  const trialEndDisplay = formatTimestamp(profile?.trialEndsAt ?? null)
+
+  // 🔹 Period start (from subscription)
+  const periodStartDisplay = formatTimestamp(
+    subscriptionProfile?.currentPeriodStart ?? null,
+  )
+
   async function handleSavePublicProfile() {
     if (!storeId) return
     if (!isOwner) {
@@ -504,6 +520,12 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         >
           <p>
             You’re currently on a <strong>trial</strong> plan.
+            {profile?.trialEndsAt && (
+              <>
+                {' '}Your trial ends on{' '}
+                <strong>{trialEndDisplay}</strong>.
+              </>
+            )}
             {isOwner
               ? ' Set up billing to avoid interruptions.'
               : ' Ask the workspace owner to set up billing to avoid interruptions.'}
@@ -705,6 +727,10 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
             <div>
               <dt>Last payment</dt>
               <dd>{lastPaymentDisplay}</dd>
+            </div>
+            <div>
+              <dt>Current period starts</dt>
+              <dd>{periodStartDisplay}</dd>
             </div>
             <div>
               <dt>Current period ends</dt>
