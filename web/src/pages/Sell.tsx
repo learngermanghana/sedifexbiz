@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   addDoc,
   collection,
+  Timestamp,
   query,
   orderBy,
   limit,
@@ -128,15 +129,23 @@ type ReceiptSharePayload = {
 
 type ShareChannel = 'email' | 'sms' | 'whatsapp'
 
+type ReceiptShareStatus = 'attempt' | 'failed' | 'sent'
+
 type LogReceiptSharePayload = {
   storeId: string
   saleId: string
   channel: ShareChannel
-  status: 'attempt' | 'failed'
+  status: ReceiptShareStatus
   contact: string | null
   customerId?: string | null
   customerName?: string | null
   errorMessage?: string | null
+}
+
+type ReceiptShareLog = LogReceiptSharePayload & {
+  id: string
+  createdAt?: Timestamp | null
+  updatedAt?: Timestamp | null
 }
 
 type LogReceiptShareResponse = { ok: boolean; shareId: string }
@@ -221,6 +230,18 @@ function getCustomerDisplayName(
   const fallback = getCustomerFallbackContact(customer)
   if (fallback) return fallback
   return '—'
+}
+
+function getReceiptShareStatusLabel(status: ReceiptShareStatus | string): string {
+  if (status === 'failed') return 'Failed'
+  if (status === 'sent') return 'Sent'
+  return 'Pending'
+}
+
+function getReceiptShareStatusTone(status: ReceiptShareStatus | string): 'error' | 'success' | 'pending' {
+  if (status === 'failed') return 'error'
+  if (status === 'sent') return 'success'
+  return 'pending'
 }
 
 function getCustomerNameForData(
@@ -363,6 +384,9 @@ export default function Sell() {
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [receiptSharePayload, setReceiptSharePayload] =
     useState<ReceiptSharePayload | null>(null)
+  const [receiptShareLogs, setReceiptShareLogs] = useState<ReceiptShareLog[]>([])
+  const [shareLogsError, setShareLogsError] = useState<string | null>(null)
+  const [isLoadingShareLogs, setIsLoadingShareLogs] = useState(false)
 
   const activeDraft = useMemo(
     () => saleDrafts.find(d => d.id === activeDraftId) ?? saleDrafts[0],
@@ -647,6 +671,45 @@ export default function Sell() {
     return () => window.clearTimeout(timeout)
   }, [receipt])
 
+  useEffect(() => {
+    if (!activeStoreId || !receipt?.saleId) {
+      setReceiptShareLogs([])
+      setShareLogsError(null)
+      setIsLoadingShareLogs(false)
+      return () => {}
+    }
+
+    setIsLoadingShareLogs(true)
+
+    const q = query(
+      collection(db, 'receiptShareLogs'),
+      where('storeId', '==', activeStoreId),
+      where('saleId', '==', receipt.saleId),
+      orderBy('createdAt', 'desc'),
+      limit(15),
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        const logs = snapshot.docs.map(docSnap => {
+          const data = docSnap.data() as Omit<ReceiptShareLog, 'id'>
+          return { id: docSnap.id, ...data }
+        })
+        setReceiptShareLogs(logs)
+        setIsLoadingShareLogs(false)
+        setShareLogsError(null)
+      },
+      error => {
+        console.warn('[sell] Failed to load receipt share logs', error)
+        setShareLogsError('Unable to load receipt delivery attempts right now.')
+        setIsLoadingShareLogs(false)
+      },
+    )
+
+    return () => unsubscribe()
+  }, [activeStoreId, receipt?.saleId])
+
   // ---------- Build receipt share payload + PDF ----------
   useEffect(() => {
     if (!receipt) {
@@ -817,6 +880,15 @@ export default function Sell() {
       window.open(hrefMap[channel], target, 'noopener,noreferrer')
     },
     [activeStoreId, logReceiptShare, receipt, receiptSharePayload, selectedCustomer?.id],
+  )
+
+  const handleRetryShare = useCallback(
+    (log: ReceiptShareLog) => {
+      if (!receipt || !receiptSharePayload) return
+      if (log.saleId !== receipt.saleId) return
+      handleShareChannel(log.channel)
+    },
+    [handleShareChannel, receipt, receiptSharePayload],
   )
 
   useEffect(() => {
@@ -1743,6 +1815,73 @@ export default function Sell() {
                   </details>
                 </section>
               )}
+
+              {receipt && receiptSharePayload ? (
+                <section className="sell-page__outbox" aria-live="polite">
+                  <div className="sell-page__outbox-header">
+                    <h4 className="sell-page__outbox-title">Receipts Outbox</h4>
+                    <p className="sell-page__outbox-subtitle">
+                      Track delivery attempts for sale #{receipt.saleId}.
+                    </p>
+                  </div>
+
+                  {isLoadingShareLogs ? (
+                    <p className="sell-page__outbox-status-text">Loading delivery attempts…</p>
+                  ) : shareLogsError ? (
+                    <p className="sell-page__message sell-page__message--error">{shareLogsError}</p>
+                  ) : receiptShareLogs.length === 0 ? (
+                    <p className="sell-page__outbox-status-text">No receipt shares yet.</p>
+                  ) : (
+                    <ul className="sell-page__outbox-list">
+                      {receiptShareLogs.map(log => {
+                        const createdAt =
+                          log.createdAt instanceof Timestamp ? log.createdAt.toDate() : null
+                        const statusTone = getReceiptShareStatusTone(log.status)
+                        const statusLabel = getReceiptShareStatusLabel(log.status)
+
+                        return (
+                          <li key={log.id} className="sell-page__outbox-item">
+                            <div className="sell-page__outbox-item-main">
+                              <div className="sell-page__outbox-row">
+                                <span className="sell-page__outbox-channel">
+                                  {log.channel.toUpperCase()}
+                                </span>
+                                <span
+                                  className={`sell-page__outbox-status sell-page__outbox-status--${statusTone}`}
+                                >
+                                  {statusLabel}
+                                </span>
+                              </div>
+                              <div className="sell-page__outbox-meta">
+                                {log.contact ? `To ${log.contact}` : 'No contact recorded'}
+                                {createdAt ? ` • ${createdAt.toLocaleString()}` : ''}
+                              </div>
+                              {log.errorMessage ? (
+                                <p className="sell-page__outbox-error">{log.errorMessage}</p>
+                              ) : null}
+                            </div>
+                            {log.status === 'failed' ? (
+                              <button
+                                type="button"
+                                className="button button--ghost button--small"
+                                onClick={() => handleRetryShare(log)}
+                                disabled={!canShareReceipt}
+                                title={
+                                  canShareReceipt
+                                    ? 'Try sending this receipt again'
+                                    : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                                }
+                              >
+                                Retry send
+                              </button>
+                            ) : null}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </section>
+              ) : null}
 
               <button
                 type="button"
