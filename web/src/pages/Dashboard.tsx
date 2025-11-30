@@ -170,15 +170,12 @@ export default function Dashboard() {
                 ? data.totals.total
                 : 0
 
-          // 🔹 VAT mapping: support both vatTotal and taxTotal for backwards compatibility
           const vatTotal =
             typeof data.totals?.vatTotal === 'number'
               ? data.totals.vatTotal
-              : typeof data.totals?.taxTotal === 'number'
-                ? data.totals.taxTotal
-                : typeof data.vatTotal === 'number'
-                  ? data.vatTotal
-                  : 0
+              : typeof data.vatTotal === 'number'
+                ? data.vatTotal
+                : 0
 
           const itemsRaw = Array.isArray(data.items) ? data.items : []
 
@@ -833,7 +830,7 @@ export default function Dashboard() {
                       fontSize: 12,
                       fontWeight: 700,
                     }}
-                    aria-hidden="true'
+                    aria-hidden="true"
                   >
                     {icon}
                   </span>
@@ -960,7 +957,7 @@ export default function Dashboard() {
                   {goal.target}
                 </div>
                 <div
-                  role="progressbar'
+                  role="progressbar"
                   aria-valuenow={Math.round(goal.progress * 100)}
                   aria-valuemin={0}
                   aria-valuemax={100}
@@ -1005,7 +1002,7 @@ export default function Dashboard() {
                 <span style={{ fontWeight: 600 }}>Revenue goal (GHS)</span>
                 <input
                   id="goal-revenue"
-                  type="number'
+                  type="number"
                   min={0}
                   step="0.01"
                   inputMode="decimal"
@@ -1061,7 +1058,7 @@ export default function Dashboard() {
               }}
             >
               <button
-                type="submit'
+                type="submit"
                 className="primary-button"
                 disabled={isSavingGoals}
                 style={{
@@ -1263,7 +1260,7 @@ export default function Dashboard() {
                   <li
                     key={item.id}
                     style={{
-                      border: '1px solid '#E2E8F0',
+                      border: '1px solid #E2E8F0',
                       borderRadius: 12,
                       padding: '12px 14px',
                       display: 'flex',
