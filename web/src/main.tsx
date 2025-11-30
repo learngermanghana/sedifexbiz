@@ -10,6 +10,7 @@ import Receive from './pages/Receive'
 import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
 import ActivityFeed from './pages/ActivityFeed'
+import Logi from './pages/Logi'
 import Onboarding from './pages/Onboarding'
 import AccountOverview from './pages/AccountOverview'
 import StaffManagement from './pages/StaffManagement'
@@ -36,6 +37,7 @@ const router = createHashRouter([
           { path: 'receive', element: <Receive /> },
           { path: 'customers', element: <Customers /> },
           { path: 'activity', element: <ActivityFeed /> },
+          { path: 'logi', element: <Logi /> },
 
           // ✅ Finance main page
           { path: 'finance', element: <Finance /> },
