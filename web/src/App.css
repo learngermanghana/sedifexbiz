@@ -102,6 +102,99 @@ body {
   z-index: 1;
 }
 
+.app__partners {
+  width: min(1280px, 100%);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: center;
+  gap: clamp(18px, 5vw, 36px);
+  padding: clamp(22px, 5vw, 34px);
+  border-radius: 32px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(17, 24, 39, 0.82));
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 28px 72px -36px rgba(15, 23, 42, 0.85);
+  overflow: hidden;
+  position: relative;
+  isolation: isolate;
+}
+
+.app__partners-copy {
+  display: grid;
+  gap: 12px;
+  z-index: 1;
+}
+
+.app__partners-copy h2 {
+  margin: 0;
+  font-size: clamp(20px, 4vw, 30px);
+  letter-spacing: -0.01em;
+}
+
+.app__partners-copy p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.app__partners-link {
+  width: fit-content;
+  color: #e0e7ff;
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.4);
+  transition: color 160ms ease, border-color 160ms ease;
+}
+
+.app__partners-link:hover,
+.app__partners-link:focus-visible {
+  color: #eef2ff;
+  border-color: rgba(99, 102, 241, 0.7);
+}
+
+.app__partners-link:focus-visible {
+  outline: 2px solid rgba(191, 219, 254, 0.75);
+  outline-offset: 2px;
+}
+
+.app__partners-visual {
+  position: relative;
+  border-radius: 24px;
+  overflow: hidden;
+  min-height: 220px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: var(--shadow-image);
+}
+
+.app__partners-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.app__partners-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 30%, rgba(59, 130, 246, 0.24), rgba(15, 23, 42, 0.6));
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.app__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.14);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #e0e7ff;
+}
+
 .app__features {
   width: min(1280px, 100%);
   display: grid;

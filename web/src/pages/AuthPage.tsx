@@ -24,6 +24,8 @@ import { auth, db } from '../firebase'
 import { setOnboardingStatus } from '../utils/onboarding'
 
 const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
+const LOGI_PARTNER_IMAGE_URL =
+  'https://raw.githubusercontent.com/learngermanghana/sedifexbiz/main/photos/pexels-omotayo-tajudeen-1650120-3213283%281%29.jpg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
 
@@ -780,6 +782,29 @@ export default function AuthPage() {
         </aside>
       </div>
 
+      <section className="app__partners" aria-label="Share your store snapshot with Logi partners">
+        <div className="app__partners-copy">
+          <span className="app__pill">Store partners</span>
+          <h2>Show your store snapshot before logging in</h2>
+          <p>
+            Give partners a live, read-only view of non-sensitive store details. Your store name,
+            location, and overview update automatically after sign up—no extra setup needed.
+          </p>
+          <Link className="app__partners-link" to="/logi">
+            Preview the Logi snapshot
+          </Link>
+        </div>
+
+        <div className="app__partners-visual" aria-hidden="true">
+          <img
+            src={LOGI_PARTNER_IMAGE_URL}
+            alt="Retail partners reviewing a product shelf"
+            loading="lazy"
+          />
+          <div className="app__partners-glow" />
+        </div>
+      </section>
+
       <section className="app__features" aria-label="Sedifex workspace pages">
         <header className="app__features-header">
           <h2>Explore the workspace</h2>
@@ -894,6 +919,11 @@ const PAGE_FEATURES = [
     path: '/finance',
     name: 'Finance',
     description: 'Track cash-up, expenses, and profitability with one simple view.',
+  },
+  {
+    path: '/logi',
+    name: 'Logi partners',
+    description: 'Share a live public snapshot of your store name, location, and overview with partners.',
   },
 ] as const
 
