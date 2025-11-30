@@ -112,6 +112,8 @@ export default function Dashboard() {
     isSavingGoals,
     inventoryAlerts,
     teamCallouts,
+    paceNudge,
+    shareProgressReport,
   } = useStoreMetrics()
   const {
     lowStock,
@@ -508,6 +510,27 @@ export default function Dashboard() {
         Welcome back! Choose what you’d like to work on — the most important Sedifex pages
         are just one tap away.
       </p>
+
+      {paceNudge && (
+        <div
+          role="alert"
+          style={{
+            background: '#FEF2F2',
+            color: '#7F1D1D',
+            border: '1px solid #FCA5A5',
+            borderRadius: 14,
+            padding: '14px 16px',
+            marginBottom: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: 14 }}>Sales pace alert</div>
+          <div style={{ fontSize: 14 }}>{paceNudge.message}</div>
+          <div style={{ fontSize: 13, color: '#991B1B' }}>{paceNudge.progress}</div>
+        </div>
+      )}
 
       {/* 🔹 New "Today at a glance" snapshot card */}
       <section
@@ -1043,29 +1066,49 @@ export default function Dashboard() {
                 Set targets per branch and keep teams aligned on what success looks like.
               </p>
             </div>
-            <label
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-                fontSize: 12,
-                color: '#475569',
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>Month</span>
-              <input
-                type="month"
-                value={selectedGoalMonth}
-                onChange={event => handleGoalMonthChange(event.target.value)}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <label
                 style={{
-                  borderRadius: 8,
-                  border: '1px solid #CBD5F5',
-                  padding: '6px 10px',
-                  fontSize: 13,
-                  background: '#FFFFFF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  fontSize: 12,
+                  color: '#475569',
+                  minWidth: 140,
                 }}
-              />
-            </label>
+              >
+                <span style={{ fontWeight: 600 }}>Month</span>
+                <input
+                  type="month"
+                  value={selectedGoalMonth}
+                  onChange={event => handleGoalMonthChange(event.target.value)}
+                  style={{
+                    borderRadius: 8,
+                    border: '1px solid #CBD5F5',
+                    padding: '6px 10px',
+                    fontSize: 13,
+                    background: '#FFFFFF',
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={shareProgressReport}
+                style={{
+                  background: '#4338CA',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  boxShadow: '0 8px 16px rgba(67, 56, 202, 0.28)',
+                }}
+              >
+                Share progress
+              </button>
+            </div>
           </div>
 
           <div

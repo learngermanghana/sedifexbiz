@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   collection,
   collectionGroup,
@@ -110,6 +110,29 @@ type TeamCallout = {
   description: string
 }
 
+type PaceNudge = {
+  monthLabel: string
+  message: string
+  progress: string
+  shortfallLabel: string
+}
+
+type ProgressReport = {
+  monthLabel: string
+  revenue: number
+  revenueTarget: number
+  customers: number
+  customerTarget: number
+  expectedRevenueByToday: number
+  expectedCustomersByToday: number
+  revenueShortfall: number
+  customerShortfall: number
+  isRevenueOffTrack: boolean
+  isCustomerOffTrack: boolean
+  dayOfMonth: number
+  daysInMonth: number
+}
+
 type GoalFormValues = {
   revenueTarget: string
   customerTarget: string
@@ -138,6 +161,9 @@ type UseStoreMetricsResult = {
   isSavingGoals: boolean
   inventoryAlerts: InventoryAlert[]
   teamCallouts: TeamCallout[]
+  paceNudge: PaceNudge | null
+  shareProgressReport: () => void
+  progressReport: ProgressReport
 }
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24
@@ -320,6 +346,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
   const [isSavingGoals, setIsSavingGoals] = useState(false)
   const [selectedRangeId, setSelectedRangeId] = useState<PresetRangeId>('today')
   const [customRange, setCustomRange] = useState<CustomRange>({ start: '', end: '' })
+  const paceNudgeKeyRef = useRef<string | null>(null)
 
   const goalDocumentId = useMemo(
     () => activeStoreId ?? `user-${authUser?.uid ?? 'default'}`,
@@ -771,6 +798,104 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     }
   }, [monthlyGoals, selectedGoalMonth])
 
+  const currentMonthStart = useMemo(() => startOfMonth(today), [today])
+  const currentMonthEnd = useMemo(() => endOfMonth(today), [today])
+  const daysInCurrentMonth = useMemo(
+    () => differenceInCalendarDays(currentMonthEnd, currentMonthStart) + 1,
+    [currentMonthEnd, currentMonthStart],
+  )
+  const todayMonthLabel = useMemo(
+    () => new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(today),
+    [today],
+  )
+
+  const currentMonthTargets = useMemo(() => {
+    const entry = monthlyGoals[defaultMonthKey]
+    return {
+      revenueTarget: entry?.revenueTarget ?? DEFAULT_REVENUE_TARGET,
+      customerTarget: entry?.customerTarget ?? DEFAULT_CUSTOMER_TARGET,
+    }
+  }, [defaultMonthKey, monthlyGoals])
+
+  const currentMonthRevenue = useMemo(
+    () =>
+      sales.reduce((sum, sale) => {
+        const created = asDate(sale.createdAt)
+        if (!created || created < currentMonthStart || created > currentMonthEnd) return sum
+        return sum + (sale.total ?? 0)
+      }, 0),
+    [currentMonthEnd, currentMonthStart, sales],
+  )
+
+  const currentMonthCustomers = useMemo(
+    () =>
+      customers.reduce((count, customer) => {
+        const created = asDate(customer.createdAt)
+        if (!created || created < currentMonthStart || created > currentMonthEnd) return count
+        return count + 1
+      }, 0),
+    [currentMonthEnd, currentMonthStart, customers],
+  )
+
+  const progressReport: ProgressReport = useMemo(() => {
+    const dayOfMonth = today.getDate()
+    const expectedRevenueByToday =
+      daysInCurrentMonth > 0
+        ? (currentMonthTargets.revenueTarget * dayOfMonth) / daysInCurrentMonth
+        : 0
+    const expectedCustomersByToday =
+      daysInCurrentMonth > 0
+        ? (currentMonthTargets.customerTarget * dayOfMonth) / daysInCurrentMonth
+        : 0
+
+    const revenueShortfall = Math.max(0, expectedRevenueByToday - currentMonthRevenue)
+    const customerShortfall = Math.max(0, expectedCustomersByToday - currentMonthCustomers)
+    const isRevenueOffTrack =
+      currentMonthTargets.revenueTarget > 0 && currentMonthRevenue < expectedRevenueByToday * 0.9
+    const isCustomerOffTrack =
+      currentMonthTargets.customerTarget > 0 && currentMonthCustomers < expectedCustomersByToday * 0.9
+
+    return {
+      monthLabel: todayMonthLabel,
+      revenue: currentMonthRevenue,
+      revenueTarget: currentMonthTargets.revenueTarget,
+      customers: currentMonthCustomers,
+      customerTarget: currentMonthTargets.customerTarget,
+      expectedRevenueByToday,
+      expectedCustomersByToday,
+      revenueShortfall,
+      customerShortfall,
+      isRevenueOffTrack,
+      isCustomerOffTrack,
+      dayOfMonth,
+      daysInMonth: daysInCurrentMonth,
+    }
+  }, [currentMonthCustomers, currentMonthRevenue, currentMonthTargets, daysInCurrentMonth, todayMonthLabel, today])
+
+  const paceNudge: PaceNudge | null = useMemo(() => {
+    if (!progressReport.isRevenueOffTrack) return null
+
+    const expectedLabel = formatAmount(progressReport.expectedRevenueByToday)
+    const actualLabel = formatAmount(progressReport.revenue)
+    const shortfallLabel = formatAmount(progressReport.revenueShortfall)
+
+    return {
+      monthLabel: progressReport.monthLabel,
+      shortfallLabel,
+      message: `Pace alert: you're ${shortfallLabel} behind where ${progressReport.monthLabel} needs to be today.`,
+      progress: `${actualLabel} collected vs ${expectedLabel} expected by day ${progressReport.dayOfMonth} of ${progressReport.daysInMonth}.`,
+    }
+  }, [progressReport])
+
+  useEffect(() => {
+    if (!paceNudge) return
+    const key = `${activeStoreId ?? 'default'}-${formatDateKey(today)}-pace`
+    if (paceNudgeKeyRef.current === key) return
+
+    publish({ tone: 'info', message: paceNudge.message })
+    paceNudgeKeyRef.current = key
+  }, [activeStoreId, paceNudge, publish, today])
+
   const goals: GoalProgress[] = [
     {
       title: `${goalMonthLabel} revenue`,
@@ -856,6 +981,35 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     }
   }
 
+  function shareProgressReport() {
+    const lines = [
+      `Monthly progress: ${progressReport.monthLabel}`,
+      `Revenue: ${formatAmount(progressReport.revenue)} of ${formatAmount(progressReport.revenueTarget)}`,
+      `Customers: ${progressReport.customers} of ${progressReport.customerTarget}`,
+      `Expected pace by today: ${formatAmount(progressReport.expectedRevenueByToday)} revenue / ${Math.round(progressReport.expectedCustomersByToday)} customers`,
+      progressReport.isRevenueOffTrack
+        ? `Revenue pace: Behind by ${formatAmount(progressReport.revenueShortfall)}. ${paceNudge?.progress ?? ''}`.trim()
+        : 'Revenue pace: On track.',
+      progressReport.isCustomerOffTrack
+        ? `Customer pace: Behind by ${Math.max(0, Math.round(progressReport.customerShortfall))}.`
+        : 'Customer pace: On track.',
+    ]
+
+    try {
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+      const downloadUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = `sedifex-progress-${formatDateKey(today)}.txt`
+      link.click()
+      URL.revokeObjectURL(downloadUrl)
+      publish({ tone: 'success', message: 'Progress snapshot exported.' })
+    } catch (error) {
+      console.error('[metrics] Failed to export progress snapshot', error)
+      publish({ tone: 'error', message: 'Unable to export the progress snapshot right now.' })
+    }
+  }
+
   const inventoryAlerts = lowStock.slice(0, 5)
 
   const teamCallouts: TeamCallout[] = [
@@ -903,6 +1057,9 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     isSavingGoals,
     inventoryAlerts,
     teamCallouts,
+    paceNudge,
+    shareProgressReport,
+    progressReport,
   }
 }
 
