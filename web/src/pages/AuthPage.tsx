@@ -374,7 +374,7 @@ export default function AuthPage() {
           const continueUrl = `${window.location.origin}/#/verify-email`
           await sendEmailVerification(nextUser, {
             url: continueUrl,
-            handleCodeInApp: false,
+            handleCodeInApp: true,
           })
         } catch (error) {
           console.warn('[auth] Failed to send verification email', error)
