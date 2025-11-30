@@ -1,5 +1,6 @@
-// src/pages/Customers.tsx
+// web/src/pages/Customers.tsx
 import React, { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   collection,
   limit,
@@ -7,54 +8,40 @@ import {
   orderBy,
   query,
   where,
-  DocumentData,
 } from 'firebase/firestore'
-import { Link } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
-import { CUSTOMER_CACHE_LIMIT, loadCachedCustomers, saveCachedCustomers } from '../utils/offlineCache'
+import {
+  CUSTOMER_CACHE_LIMIT,
+  loadCachedCustomers,
+  saveCachedCustomers,
+} from '../utils/offlineCache'
 import { ensureCustomerLoyalty } from '../utils/customerLoyalty'
-import './Customers.css'
+
+// ---------- Types ----------
 
 type Customer = {
   id: string
-  name: string
+  name?: string
   displayName?: string
   phone?: string
   email?: string
   notes?: string
-  loyalty?: any
-  createdAt?: any
-  updatedAt?: any
+  loyalty?: {
+    points?: number
+  }
+  createdAt?: unknown
+  updatedAt?: unknown
 }
 
-type CustomerSale = {
+type CustomerSaleRow = {
   id: string
   total: number
   taxTotal: number
   createdAt: Date | null
-  items: Array<{
-    productId: string
-    name: string
-    price: number
-    qty: number
-    taxRate?: number
-  }>
-  payment: {
-    method?: string
-    amountPaid?: number
-    changeDue?: number
-    [key: string]: any
-  } | null
 }
 
-type CustomerSalesSummary = {
-  totalSalesAmount: number
-  saleCount: number
-  lastSaleAt: Date | null
-  lastSaleTotal: number | null
-  recentSales: CustomerSale[]
-}
+// ---------- Helpers ----------
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
   const displayName = customer.displayName?.trim()
@@ -90,22 +77,48 @@ function getCustomerDisplayName(
   return '—'
 }
 
+function getCustomerNameForData(
+  customer: Pick<Customer, 'displayName' | 'name' | 'email' | 'phone'>,
+): string {
+  const primary = getCustomerPrimaryName(customer)
+  if (primary) return primary
+  return getCustomerFallbackContact(customer)
+}
+
+function toDate(value: any): Date | null {
+  if (!value) return null
+  if (value.toDate && typeof value.toDate === 'function') {
+    return value.toDate()
+  }
+  if (value instanceof Date) return value
+  if (typeof value === 'string') {
+    const d = new Date(value)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  return null
+}
+
+// ---------- Component ----------
+
 export default function Customers() {
-  const { storeId: activeStoreId } = useActiveStore()
+  const { storeId } = useActiveStore()
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
   const [queryText, setQueryText] = useState('')
 
-  const [salesSummary, setSalesSummary] = useState<CustomerSalesSummary | null>(null)
-  const [isLoadingSales, setIsLoadingSales] = useState(false)
-  const [salesError, setSalesError] = useState<string | null>(null)
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false)
 
-  // ---------- Load customers ----------
+  const [customerSales, setCustomerSales] = useState<CustomerSaleRow[]>([])
+  const [isLoadingCustomerSales, setIsLoadingCustomerSales] = useState(false)
+  const [customerSalesError, setCustomerSalesError] = useState<string | null>(null)
+
+  // ---------- Load customers (with offline cache) ----------
+
   useEffect(() => {
     let cancelled = false
 
-    if (!activeStoreId) {
+    if (!storeId) {
       setCustomers([])
       setSelectedCustomerId('')
       return () => {
@@ -113,396 +126,169 @@ export default function Customers() {
       }
     }
 
-    // 1) Load cached customers for fast first paint
-    loadCachedCustomers<Customer>({ storeId: activeStoreId })
+    setIsLoadingCustomers(true)
+
+    // 1) Warm from offline cache
+    loadCachedCustomers<Customer>({ storeId })
       .then(cached => {
         if (!cancelled && cached.length) {
           const normalized = cached.map(customer => ensureCustomerLoyalty(customer))
-          setCustomers(
-            [...normalized].sort((a, b) =>
-              getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
-                sensitivity: 'base',
-              }),
-            ),
+          const sorted = [...normalized].sort((a, b) =>
+            getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
+              sensitivity: 'base',
+            }),
           )
+          setCustomers(sorted)
+          if (!selectedCustomerId && sorted[0]) {
+            setSelectedCustomerId(sorted[0].id)
+          }
         }
       })
       .catch(error => {
         console.warn('[customers] Failed to load cached customers', error)
       })
 
-    // 2) Live snapshot from Firestore
-    const qCustomers = query(
+    // 2) Live Firestore subscription
+    const q = query(
       collection(db, 'customers'),
-      where('storeId', '==', activeStoreId),
+      where('storeId', '==', storeId),
       orderBy('updatedAt', 'desc'),
       orderBy('createdAt', 'desc'),
       limit(CUSTOMER_CACHE_LIMIT),
     )
 
-    const unsubscribe = onSnapshot(qCustomers, snap => {
-      const rows = snap.docs.map(docSnap =>
-        ensureCustomerLoyalty({ id: docSnap.id, ...(docSnap.data() as Customer) }),
-      )
-      saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
-        console.warn('[customers] Failed to cache customers', error)
-      })
-      const sortedRows = [...rows].sort((a, b) =>
-        getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
-          sensitivity: 'base',
-        }),
-      )
-      setCustomers(sortedRows)
+    const unsubscribe = onSnapshot(
+      q,
+      snap => {
+        if (cancelled) return
+        const rows = snap.docs.map(docSnap =>
+          ensureCustomerLoyalty({
+            id: docSnap.id,
+            ...(docSnap.data() as Customer),
+          }),
+        )
 
-      // If nothing selected yet, auto-select first customer
-      if (!selectedCustomerId && sortedRows.length) {
-        setSelectedCustomerId(sortedRows[0].id)
-      }
-    })
+        saveCachedCustomers(rows, { storeId }).catch(err => {
+          console.warn('[customers] Failed to cache customers', err)
+        })
+
+        const sorted = [...rows].sort((a, b) =>
+          getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
+            sensitivity: 'base',
+          }),
+        )
+        setCustomers(sorted)
+        setIsLoadingCustomers(false)
+
+        if (!sorted.length) {
+          setSelectedCustomerId('')
+        } else if (!selectedCustomerId || !sorted.find(c => c.id === selectedCustomerId)) {
+          // default to first customer if none selected / current selection gone
+          setSelectedCustomerId(sorted[0].id)
+        }
+      },
+      error => {
+        if (cancelled) return
+        console.error('[customers] Failed to load customers', error)
+        setCustomers([])
+        setIsLoadingCustomers(false)
+      },
+    )
 
     return () => {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [storeId])
 
   const selectedCustomer = useMemo(
     () => customers.find(c => c.id === selectedCustomerId) || null,
     [customers, selectedCustomerId],
   )
 
-  const selectedCustomerLoyalty = useMemo(
-    () => (selectedCustomer ? ensureCustomerLoyalty(selectedCustomer).loyalty : null),
-    [selectedCustomer],
-  )
+  const selectedCustomerDataName = selectedCustomer
+    ? getCustomerNameForData(selectedCustomer)
+    : ''
 
   // ---------- Load sales for selected customer ----------
+
   useEffect(() => {
-    if (!activeStoreId || !selectedCustomerId) {
-      setSalesSummary(null)
+    if (!storeId || !selectedCustomer) {
+      setCustomerSales([])
+      setCustomerSalesError(null)
       return
     }
 
-    setIsLoadingSales(true)
-    setSalesError(null)
+    setIsLoadingCustomerSales(true)
+    setCustomerSalesError(null)
 
-    // We query sales by store + nested customer.id
-    // commitSale writes: { storeId, total, customer: { id, ... } }
-    const qSales = query(
+    const q = query(
       collection(db, 'sales'),
-      where('storeId', '==', activeStoreId),
-      where('customer.id', '==', selectedCustomerId),
+      where('storeId', '==', storeId),
+      where('customer.id', '==', selectedCustomer.id), // 👈 match commitSale payload
       orderBy('createdAt', 'desc'),
-      limit(50),
+      limit(100),
     )
 
     const unsubscribe = onSnapshot(
-      qSales,
+      q,
       snap => {
-        const docs = snap.docs.map(d => {
-          const raw = d.data() as DocumentData
-          const createdAtField = raw.createdAt
-          const createdAt =
-            createdAtField && typeof createdAtField.toDate === 'function'
-              ? createdAtField.toDate()
-              : null
+        const rows: CustomerSaleRow[] = snap.docs.map(docSnap => {
+          const data = docSnap.data() as any
+          const createdAt = toDate(data.createdAt)
 
-          const total = typeof raw.total === 'number' ? raw.total : 0
-          const taxTotal = typeof raw.taxTotal === 'number' ? raw.taxTotal : 0
+          const total =
+            typeof data.total === 'number'
+              ? data.total
+              : typeof data.totals?.total === 'number'
+                ? data.totals.total
+                : 0
+
+          const taxTotal =
+            typeof data.taxTotal === 'number'
+              ? data.taxTotal
+              : typeof data.totals?.taxTotal === 'number'
+                ? data.totals.taxTotal
+                : 0
 
           return {
-            id: d.id,
-            total,
-            taxTotal,
+            id: docSnap.id,
+            total: Number(total) || 0,
+            taxTotal: Number(taxTotal) || 0,
             createdAt,
-            items: Array.isArray(raw.items) ? raw.items : [],
-            payment: raw.payment ?? null,
-          } as CustomerSale
+          }
         })
 
-        const totalSalesAmount = docs.reduce((sum, sale) => sum + sale.total, 0)
-        const saleCount = docs.length
-        const lastSale = docs[0] || null
-        const lastSaleAt = lastSale?.createdAt ?? null
-        const lastSaleTotal = lastSale ? lastSale.total : null
-
-        setSalesSummary({
-          totalSalesAmount,
-          saleCount,
-          lastSaleAt,
-          lastSaleTotal,
-          recentSales: docs,
-        })
-        setIsLoadingSales(false)
+        setCustomerSales(rows)
+        setIsLoadingCustomerSales(false)
       },
       error => {
         console.error('[customers] Failed to load customer sales', error)
-        setSalesError('Unable to load sales for this customer.')
-        setIsLoadingSales(false)
+        setCustomerSales([])
+        setIsLoadingCustomerSales(false)
+        setCustomerSalesError('Unable to load sales for this customer.')
       },
     )
 
-    return () => {
-      unsubscribe()
-    }
-  }, [activeStoreId, selectedCustomerId])
+    return unsubscribe
+  }, [storeId, selectedCustomer?.id])
+
+  // ---------- Derived metrics ----------
 
   const filteredCustomers = useMemo(() => {
-    if (!queryText.trim()) return customers
-    const q = queryText.toLowerCase()
+    const q = queryText.trim().toLowerCase()
+    if (!q) return customers
     return customers.filter(c => {
       const name = getCustomerDisplayName(c).toLowerCase()
-      const phone = (c.phone || '').toLowerCase()
-      const email = (c.email || '').toLowerCase()
-      return name.includes(q) || phone.includes(q) || email.includes(q)
+      const email = (c.email ?? '').toLowerCase()
+      const phone = (c.phone ?? '').toLowerCase()
+      return (
+        name.includes(q) ||
+        email.includes(q) ||
+        phone.includes(q)
+      )
     })
   }, [customers, queryText])
 
-  return (
-    <div className="page customers-page">
-      <header className="page__header">
-        <div>
-          <h2 className="page__title">Customers</h2>
-          <p className="page__subtitle">
-            Look up customers, view their purchase history, and track loyalty points.
-          </p>
-        </div>
-      </header>
-
-      <div className="customers-page__grid">
-        {/* Left: customer list */}
-        <section className="card" aria-label="Customer list">
-          <div className="customers-page__section-header">
-            <h3 className="card__title">Customers</h3>
-            <p className="card__subtitle">
-              {customers.length ? `${customers.length} customers` : 'No customers yet.'}
-            </p>
-          </div>
-
-          <div className="customers-page__toolbar">
-            <div className="customers-page__search-field">
-              <input
-                placeholder="Search by name, phone, or email"
-                value={queryText}
-                onChange={e => setQueryText(e.target.value)}
-              />
-            </div>
-            <div className="customers-page__tool-buttons">
-              <Link to="/sell" className="button button--ghost button--small">
-                Go to Sell
-              </Link>
-              <Link to="/products" className="button button--ghost button--small">
-                View products
-              </Link>
-            </div>
-          </div>
-
-          <div className="table-wrapper">
-            <table className="table" aria-label="Customers table">
-              <thead>
-                <tr>
-                  <th scope="col">Customer</th>
-                  <th scope="col">Contact</th>
-                  <th scope="col">Points</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCustomers.length ? (
-                  filteredCustomers.map(c => {
-                    const loyalty = ensureCustomerLoyalty(c).loyalty
-                    const points = loyalty?.points ?? 0
-                    const isSelected = c.id === selectedCustomerId
-
-                    return (
-                      <tr
-                        key={c.id}
-                        className={
-                          'customers-page__row' +
-                          (isSelected ? ' customers-page__row--selected' : '')
-                        }
-                        onClick={() => setSelectedCustomerId(c.id)}
-                      >
-                        <td>
-                          <div>{getCustomerDisplayName(c)}</div>
-                          {c.notes && (
-                            <div className="table__secondary">{c.notes}</div>
-                          )}
-                        </td>
-                        <td>
-                          <div>{c.phone || '—'}</div>
-                          <div className="table__secondary">{c.email || ''}</div>
-                        </td>
-                        <td>
-                          <span className="customers-page__badge">
-                            {points.toFixed(0)} pts
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={3}>
-                      <div className="customers-page__details-empty">
-                        <p>No customers found.</p>
-                        <p>
-                          Add customers from the Sell page or import them from your existing
-                          records.
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {/* Right: details & sales summary */}
-        <section className="card customers-page__details" aria-label="Customer details">
-          {selectedCustomer ? (
-            <div className="customers-page__details-content">
-              <div className="customers-page__section-header">
-                <h3 className="card__title">{getCustomerDisplayName(selectedCustomer)}</h3>
-                <p className="card__subtitle">Profile &amp; purchase history</p>
-              </div>
-
-              <dl className="customers-page__detail-list">
-                <div>
-                  <dt>Phone</dt>
-                  <dd>{selectedCustomer.phone || '—'}</dd>
-                </div>
-                <div>
-                  <dt>Email</dt>
-                  <dd>{selectedCustomer.email || '—'}</dd>
-                </div>
-                <div>
-                  <dt>Notes</dt>
-                  <dd>{selectedCustomer.notes || '—'}</dd>
-                </div>
-                <div>
-                  <dt>Loyalty points</dt>
-                  <dd>
-                    {(selectedCustomerLoyalty?.points ?? 0).toFixed(0)} pts
-                  </dd>
-                </div>
-              </dl>
-
-              <section className="customers-page__history" aria-label="Sales history">
-                <h4>Sales summary</h4>
-
-                {isLoadingSales && <p>Loading sales…</p>}
-                {salesError && (
-                  <p className="customers-page__message customers-page__message--error">
-                    {salesError}
-                  </p>
-                )}
-
-                {!isLoadingSales && !salesError && (
-                  <>
-                    <ul>
-                      <li>
-                        <div className="customers-page__history-row">
-                          <span className="customers-page__history-primary">Total spent</span>
-                          <span className="customers-page__history-total">
-                            GHS{' '}
-                            {salesSummary
-                              ? salesSummary.totalSalesAmount.toFixed(2)
-                              : '0.00'}
-                          </span>
-                        </div>
-                        <div className="customers-page__history-meta">
-                          {salesSummary?.saleCount
-                            ? `${salesSummary.saleCount} sale${
-                                salesSummary.saleCount === 1 ? '' : 's'
-                              }`
-                            : 'No sales yet'}
-                        </div>
-                      </li>
-
-                      {salesSummary?.lastSaleAt && (
-                        <li>
-                          <div className="customers-page__history-row">
-                            <span className="customers-page__history-primary">
-                              Last purchase
-                            </span>
-                            <span className="customers-page__history-total">
-                              GHS{' '}
-                              {(salesSummary.lastSaleTotal ?? 0).toFixed(2)}
-                            </span>
-                          </div>
-                          <div className="customers-page__history-meta">
-                            {salesSummary.lastSaleAt.toLocaleString()}
-                          </div>
-                        </li>
-                      )}
-                    </ul>
-
-                    <h4>Recent sales</h4>
-                    {salesSummary?.recentSales.length ? (
-                      <ul>
-                        {salesSummary.recentSales.map(sale => (
-                          <li key={sale.id}>
-                            <div className="customers-page__history-row">
-                              <span className="customers-page__history-primary">
-                                Sale #{sale.id.slice(0, 8)}
-                              </span>
-                              <span className="customers-page__history-total">
-                                GHS {sale.total.toFixed(2)}
-                              </span>
-                            </div>
-                            <div className="customers-page__history-meta">
-                              {sale.createdAt
-                                ? sale.createdAt.toLocaleString()
-                                : 'Unknown date'}
-                              {sale.payment?.method && (
-                                <> • Paid via {sale.payment.method}</>
-                              )}
-                            </div>
-                            {sale.items?.length ? (
-                              <div className="customers-page__history-items">
-                                {sale.items.slice(0, 4).map(item => (
-                                  <span key={item.productId}>
-                                    {item.qty} × {item.name}
-                                  </span>
-                                ))}
-                                {sale.items.length > 4 && (
-                                  <span>+ {sale.items.length - 4} more…</span>
-                                )}
-                              </div>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="customers-page__history-meta">
-                        No sales recorded for this customer yet.
-                      </p>
-                    )}
-                  </>
-                )}
-              </section>
-
-              <div className="customers-page__details-actions">
-                <Link to="/sell" className="button button--primary button--small">
-                  Start new sale
-                </Link>
-                <Link to="/reports" className="button button--ghost button--small">
-                  View reports
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <div className="customers-page__details-empty">
-              <h3>Select a customer</h3>
-              <p>
-                Choose someone from the list to view their profile, loyalty points, and
-                purchase history.
-              </p>
-            </div>
-          )}
-        </section>
-      </div>
-    </div>
-  )
-}
+  const totalSalesAmount = customerSales.reduce((sum, row) => sum + row.total, 0)
+  const totalVatAmount
