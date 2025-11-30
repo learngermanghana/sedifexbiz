@@ -1,5 +1,5 @@
 import React from 'react'
-import { payWithPaystack } from './lib/paystack'
+import { payWithPaystack } from './utils/paystack'
 
 export default function TestPay() {
   const pay = async () => {
