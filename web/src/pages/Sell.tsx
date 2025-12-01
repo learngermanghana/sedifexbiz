@@ -100,8 +100,7 @@ type ReceiptData = {
   createdAt: Date
   items: CartLine[]
   subtotal: number
-  loyaltyEarned?: number | null
-  currentPoints?: number | null
+  discount?: number | null
   store?: {
     id: string | null
     name: string | null
@@ -155,8 +154,6 @@ type CommitSalePayload = {
   saleId: string
   cashierId: string
   customerId?: string | null
-  loyaltyEarned?: number | null
-  currentPoints?: number | null
   totals: {
     total: number
     taxTotal: number
@@ -177,11 +174,6 @@ type CommitSalePayload = {
   }>
 }
 
-type CommitSaleResponse = {
-  ok: boolean
-  saleId: string
-}
-
 /**
  * A single in-progress sale (one “cart tab”).
  */
@@ -194,8 +186,7 @@ type SaleDraft = {
     paystack: string
   }
   tipInput: string
-  loyaltyEarnedInput: string
-  loyaltyAppliedInput: string
+  discountInput: string
 }
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
@@ -355,8 +346,7 @@ function createEmptyDraft(id: string): SaleDraft {
       paystack: '',
     },
     tipInput: '',
-    loyaltyEarnedInput: '',
-    loyaltyAppliedInput: '',
+    discountInput: '',
   }
 }
 
@@ -408,8 +398,7 @@ export default function Sell() {
   const cashAmountInput = activeDraft?.paymentInputs.cash ?? ''
   const paystackAmountInput = activeDraft?.paymentInputs.paystack ?? ''
   const tipInput = activeDraft?.tipInput ?? ''
-  const loyaltyEarnedInput = activeDraft?.loyaltyEarnedInput ?? ''
-  const loyaltyAppliedInput = activeDraft?.loyaltyAppliedInput ?? ''
+  const discountInput = activeDraft?.discountInput ?? ''
 
   const canShareReceipt =
     Boolean(receiptSharePayload) && (typeof navigator === 'undefined' || navigator.onLine)
@@ -427,43 +416,24 @@ export default function Sell() {
     [cart],
   )
 
-  // Grand total (Amount due = subtotal + VAT)
-  const totalDue = subtotal + cartTaxTotal
+  // Discount amount (manual, in GHS)
+  const discountAmount = useMemo(() => {
+    const parsed = Number(discountInput)
+    if (!Number.isFinite(parsed) || parsed < 0) return 0
+    const maxDiscount = subtotal + cartTaxTotal
+    return Math.min(parsed, maxDiscount)
+  }, [discountInput, subtotal, cartTaxTotal])
+
+  // Total (incl. VAT, after discount)
+  const grossTotal = subtotal + cartTaxTotal
+  const totalDue = grossTotal - discountAmount
 
   const totalQty = cart.reduce((s, l) => s + l.qty, 0)
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
-  const selectedCustomerLoyalty = useMemo(
-    () => (selectedCustomer ? ensureCustomerLoyalty(selectedCustomer).loyalty : null),
-    [selectedCustomer],
-  )
-
   const selectedCustomerDataName = selectedCustomer
     ? getCustomerNameForData(selectedCustomer)
     : ''
-
-  const loyaltyEarned = useMemo(() => {
-    const parsed = Number(loyaltyEarnedInput)
-    if (!Number.isFinite(parsed) || parsed < 0) return 0
-    return parsed
-  }, [loyaltyEarnedInput])
-
-  const loyaltyApplied = useMemo(() => {
-    const parsed = Number(loyaltyAppliedInput)
-    if (!Number.isFinite(parsed) || parsed < 0) return 0
-    const available = selectedCustomerLoyalty?.points ?? 0
-    return Math.min(parsed, available)
-  }, [loyaltyAppliedInput, selectedCustomerLoyalty?.points])
-
-  const loyaltyCurrentPoints = useMemo(() => {
-    if (!selectedCustomer) return null
-    const available = selectedCustomerLoyalty?.points ?? 0
-    return Math.max(0, available - loyaltyApplied + loyaltyEarned)
-  }, [loyaltyApplied, loyaltyEarned, selectedCustomer, selectedCustomerLoyalty?.points])
-
-  const loyaltyBalanceAfterSale = selectedCustomer
-    ? loyaltyCurrentPoints ?? selectedCustomerLoyalty?.points ?? 0
-    : null
 
   const tipAmount = useMemo(() => {
     const parsed = Number(tipInput)
@@ -760,14 +730,20 @@ export default function Sell() {
       )
     })
 
+    const discount = receipt.discount ?? 0
+    const totalWithTax = receipt.subtotal + taxTotal
+    const totalAfterDiscount = totalWithTax - discount
+    const totalWithTip = totalAfterDiscount + (receipt.payment.tip ?? 0)
+
     lines.push('')
     lines.push(`Subtotal: GHS ${receipt.subtotal.toFixed(2)}`)
     if (taxTotal > 0) {
       lines.push(`Tax: GHS ${taxTotal.toFixed(2)}`)
     }
-    const totalWithTax = receipt.subtotal + taxTotal
-    const totalWithTip = totalWithTax + (receipt.payment.tip ?? 0)
-    lines.push(`Total: GHS ${totalWithTax.toFixed(2)}`)
+    if (discount > 0) {
+      lines.push(`Discount: -GHS ${discount.toFixed(2)}`)
+    }
+    lines.push(`Total: GHS ${totalAfterDiscount.toFixed(2)}`)
     if (receipt.payment.tip) {
       lines.push(`Tip: GHS ${receipt.payment.tip.toFixed(2)}`)
     }
@@ -782,13 +758,6 @@ export default function Sell() {
     }
     lines.push(`Total paid: GHS ${receipt.payment.totalPaid.toFixed(2)}`)
     lines.push(`Change: GHS ${receipt.payment.changeDue.toFixed(2)}`)
-
-    if (typeof receipt.loyaltyEarned === 'number' && receipt.loyaltyEarned !== null) {
-      lines.push(`Loyalty earned: ${receipt.loyaltyEarned} pts`)
-    }
-    if (typeof receipt.currentPoints === 'number' && receipt.currentPoints !== null) {
-      lines.push(`Current points: ${receipt.currentPoints} pts`)
-    }
 
     lines.push('')
     lines.push(`Sale #${receipt.saleId}`)
@@ -1069,8 +1038,7 @@ export default function Sell() {
     const saleId = doc(collection(db, 'sales')).id
     const commitSale =
       httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
-    const loyaltyEarnedValue = selectedCustomer ? loyaltyEarned : null
-    const loyaltyCurrentPointsValue = selectedCustomer ? loyaltyCurrentPoints : null
+
     const paymentTenders: PaymentTender[] = []
 
     if (cashAmount > 0) {
@@ -1123,10 +1091,8 @@ export default function Sell() {
       saleId,
       cashierId: user.uid,
       customerId: selectedCustomer?.id ?? null,
-      loyaltyEarned: loyaltyEarnedValue,
-      currentPoints: loyaltyCurrentPointsValue,
       totals: {
-        total: totalDue,
+        total: totalDue, // total after discount, before tip
         taxTotal: cartTaxTotal,
       },
       payment,
@@ -1176,8 +1142,7 @@ export default function Sell() {
         createdAt: new Date(),
         items: receiptItems,
         subtotal,
-        loyaltyEarned: loyaltyEarnedValue,
-        currentPoints: loyaltyCurrentPointsValue,
+        discount: discountAmount || 0,
         store: receiptStore,
         payment: payload.payment,
         customer: selectedCustomer
@@ -1196,8 +1161,7 @@ export default function Sell() {
         selectedCustomerId: '',
         paymentInputs: { cash: '', paystack: '' },
         tipInput: '',
-        loyaltyEarnedInput: '',
-        loyaltyAppliedInput: '',
+        discountInput: '',
       }))
 
       setSaleSuccess(`Sale recorded #${data.saleId}. Receipt sent to printer.`)
@@ -1224,8 +1188,7 @@ export default function Sell() {
             createdAt: new Date(),
             items: receiptItems,
             subtotal,
-            loyaltyEarned: loyaltyEarnedValue,
-            currentPoints: loyaltyCurrentPointsValue,
+            discount: discountAmount || 0,
             store: receiptStore,
             payment: queuedPayment,
             customer: selectedCustomer
@@ -1244,8 +1207,7 @@ export default function Sell() {
             selectedCustomerId: '',
             paymentInputs: { cash: '', paystack: '' },
             tipInput: '',
-            loyaltyEarnedInput: '',
-            loyaltyAppliedInput: '',
+            discountInput: '',
           }))
 
           setSaleSuccess(
@@ -1281,7 +1243,7 @@ export default function Sell() {
           </p>
         </div>
         <div className="sell-page__total" aria-live="polite">
-          <span className="sell-page__total-label">Total (incl. VAT)</span>
+          <span className="sell-page__total-label">Total (incl. VAT, after discount)</span>
           <span className="sell-page__total-value">GHS {totalDue.toFixed(2)}</span>
         </div>
       </header>
@@ -1554,7 +1516,11 @@ export default function Sell() {
                   <strong>GHS {cartTaxTotal.toFixed(2)}</strong>
                 </div>
                 <div className="sell-page__summary-row">
-                  <span>Total (incl. VAT)</span>
+                  <span>Discount</span>
+                  <strong>-GHS {discountAmount.toFixed(2)}</strong>
+                </div>
+                <div className="sell-page__summary-row">
+                  <span>Total (incl. VAT, after discount)</span>
                   <strong>GHS {totalDue.toFixed(2)}</strong>
                 </div>
               </div>
@@ -1571,8 +1537,6 @@ export default function Sell() {
                       updateActiveDraft(draft => ({
                         ...draft,
                         selectedCustomerId: event.target.value,
-                        loyaltyAppliedInput: '',
-                        loyaltyEarnedInput: '',
                       }))
                     }
                     className="sell-page__select"
@@ -1654,72 +1618,28 @@ export default function Sell() {
                   />
                   <p className="field__hint">Add a gratuity to the total.</p>
                 </div>
-              </div>
 
-              <div
-                className="sell-page__loyalty-panel"
-                role="group"
-                aria-label="Loyalty rewards"
-              >
-                <div className="sell-page__loyalty-header">
-                  <div>
-                    <p className="field__label">Loyalty rewards</p>
-                    <p className="sell-page__loyalty-hint">
-                      Apply available points or note how many they earned on this sale.
-                    </p>
-                  </div>
-                  <div className="sell-page__loyalty-balance" aria-live="polite">
-                    {selectedCustomer
-                      ? `Balance after sale: ${(loyaltyBalanceAfterSale ?? 0).toFixed(0)} pts`
-                      : 'Select a customer to track points'}
-                  </div>
-                </div>
-                <div className="sell-page__loyalty-grid">
-                  <label className="sell-page__loyalty-field">
-                    <span className="sell-page__loyalty-label">Apply points</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      max={selectedCustomerLoyalty?.points ?? undefined}
-                      value={loyaltyAppliedInput}
-                      onChange={event =>
-                        updateActiveDraft(draft => ({
-                          ...draft,
-                          loyaltyAppliedInput: event.target.value,
-                        }))
-                      }
-                      className="sell-page__input"
-                      disabled={!selectedCustomer}
-                    />
-                    <span className="sell-page__loyalty-help">
-                      {selectedCustomer
-                        ? `Available: ${(selectedCustomerLoyalty?.points ?? 0).toFixed(0)} pts`
-                        : 'Pick a customer to redeem points.'}
-                    </span>
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-discount-amount">
+                    Discount (GHS)
                   </label>
-                  <label className="sell-page__loyalty-field">
-                    <span className="sell-page__loyalty-label">Earn this sale</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={loyaltyEarnedInput}
-                      onChange={event =>
-                        updateActiveDraft(draft => ({
-                          ...draft,
-                          loyaltyEarnedInput: event.target.value,
-                        }))
-                      }
-                      className="sell-page__input"
-                      disabled={!selectedCustomer}
-                    />
-                    <span className="sell-page__loyalty-help">
-                      {selectedCustomer
-                        ? 'We will sync these points on the receipt and queued sale.'
-                        : 'Add a customer to award or track points.'}
-                    </span>
-                  </label>
+                  <input
+                    id="sell-discount-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={discountInput}
+                    onChange={event =>
+                      updateActiveDraft(draft => ({
+                        ...draft,
+                        discountInput: event.target.value,
+                      }))
+                    }
+                    className="sell-page__input"
+                  />
+                  <p className="field__hint">
+                    Enter a flat discount in GHS. This will reduce the total before tip.
+                  </p>
                 </div>
               </div>
 
@@ -1731,6 +1651,10 @@ export default function Sell() {
                 <div>
                   <span className="sell-page__summary-label">VAT</span>
                   <strong>GHS {cartTaxTotal.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span className="sell-page__summary-label">Discount</span>
+                  <strong>-GHS {discountAmount.toFixed(2)}</strong>
                 </div>
                 <div>
                   <span className="sell-page__summary-label">Tip</span>
@@ -1920,7 +1844,10 @@ export default function Sell() {
                 (sum, line) => sum + (line.taxRate ?? 0) * line.price * line.qty,
                 0,
               )
-              const totalWithTax = receipt.subtotal + taxTotal
+              const subtotal = receipt.subtotal
+              const discount = receipt.discount ?? 0
+              const totalWithTax = subtotal + taxTotal
+              const totalAfterDiscount = totalWithTax - discount
 
               return (
                 <>
@@ -1968,56 +1895,48 @@ export default function Sell() {
                   <div className="receipt-print__summary">
                     <div>
                       <span>Subtotal</span>
-                      <strong>GHS {receipt.subtotal.toFixed(2)}</strong>
+                      <strong>GHS {subtotal.toFixed(2)}</strong>
                     </div>
                     <div>
                       <span>VAT</span>
                       <strong>GHS {taxTotal.toFixed(2)}</strong>
                     </div>
-                <div>
-                  <span>Total</span>
-                  <strong>GHS {totalWithTax.toFixed(2)}</strong>
-                </div>
-                <div>
-                  <span>Tip</span>
-                  <strong>GHS {(receipt.payment.tip ?? 0).toFixed(2)}</strong>
-                </div>
-                <div>
-                  <span>Amount due</span>
-                  <strong>GHS {(totalWithTax + (receipt.payment.tip ?? 0)).toFixed(2)}</strong>
-                </div>
-                {receipt.payment.tenders.map((tender, index) => {
-                  const label = tender.method === 'card' ? 'Card/Mobile' : 'Cash'
-                  const providerLabel = tender.provider ? ` (${tender.provider})` : ''
-                  return (
-                    <div key={`${label}-${index}`}>
-                      <span>{`${label}${providerLabel}`}</span>
-                      <strong>GHS {tender.amount.toFixed(2)}</strong>
+                    <div>
+                      <span>Discount</span>
+                      <strong>-GHS {discount.toFixed(2)}</strong>
                     </div>
-                  )
-                })}
-                <div>
-                  <span>Total paid</span>
-                  <strong>GHS {receipt.payment.totalPaid.toFixed(2)}</strong>
-                </div>
-                <div>
-                  <span>Change</span>
-                  <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
-                </div>
-                    {typeof receipt.loyaltyEarned === 'number' &&
-                    receipt.loyaltyEarned !== null ? (
-                      <div>
-                        <span>Loyalty earned</span>
-                        <strong>{receipt.loyaltyEarned} pts</strong>
-                      </div>
-                    ) : null}
-                    {typeof receipt.currentPoints === 'number' &&
-                    receipt.currentPoints !== null ? (
-                      <div>
-                        <span>Points balance</span>
-                        <strong>{receipt.currentPoints} pts</strong>
-                      </div>
-                    ) : null}
+                    <div>
+                      <span>Total</span>
+                      <strong>GHS {totalAfterDiscount.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Tip</span>
+                      <strong>GHS {(receipt.payment.tip ?? 0).toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Amount due</span>
+                      <strong>
+                        GHS {(totalAfterDiscount + (receipt.payment.tip ?? 0)).toFixed(2)}
+                      </strong>
+                    </div>
+                    {receipt.payment.tenders.map((tender, index) => {
+                      const label = tender.method === 'card' ? 'Card/Mobile' : 'Cash'
+                      const providerLabel = tender.provider ? ` (${tender.provider})` : ''
+                      return (
+                        <div key={`${label}-${index}`}>
+                          <span>{`${label}${providerLabel}`}</span>
+                          <strong>GHS {tender.amount.toFixed(2)}</strong>
+                        </div>
+                      )
+                    })}
+                    <div>
+                      <span>Total paid</span>
+                      <strong>GHS {receipt.payment.totalPaid.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Change</span>
+                      <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
+                    </div>
                   </div>
 
                   <p className="receipt-print__footer">
