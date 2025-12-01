@@ -1,4 +1,3 @@
-// src/pages/Customers.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   collection,
@@ -8,6 +7,8 @@ import {
   query,
   where,
   DocumentData,
+  addDoc,
+  serverTimestamp,
 } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
@@ -100,6 +101,17 @@ export default function Customers() {
   const [salesSummary, setSalesSummary] = useState<CustomerSalesSummary | null>(null)
   const [isLoadingSales, setIsLoadingSales] = useState(false)
   const [salesError, setSalesError] = useState<string | null>(null)
+
+  // NEW: add-customer UI state
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false)
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [newCustomer, setNewCustomer] = useState({
+    displayName: '',
+    phone: '',
+    email: '',
+    notes: '',
+  })
 
   // ---------- Load customers ----------
   useEffect(() => {
@@ -258,6 +270,50 @@ export default function Customers() {
     })
   }, [customers, queryText])
 
+  // ---------- Create customer ----------
+  async function handleCreateCustomer(e: React.FormEvent) {
+    e.preventDefault()
+    if (!activeStoreId) {
+      setAddError('No active store selected.')
+      return
+    }
+
+    const displayName = newCustomer.displayName.trim()
+    const phone = newCustomer.phone.trim()
+    const email = newCustomer.email.trim()
+    const notes = newCustomer.notes.trim()
+
+    if (!displayName) {
+      setAddError('Customer name is required.')
+      return
+    }
+
+    try {
+      setIsSavingCustomer(true)
+      setAddError(null)
+
+      await addDoc(collection(db, 'customers'), {
+        storeId: activeStoreId,
+        displayName,
+        phone: phone || null,
+        email: email || null,
+        notes: notes || '',
+        loyalty: { points: 0 },
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+
+      // Reset form; snapshot listener will pull in the new customer
+      setNewCustomer({ displayName: '', phone: '', email: '', notes: '' })
+      setIsAddingCustomer(false)
+    } catch (error) {
+      console.error('[customers] Failed to create customer', error)
+      setAddError('Unable to save customer. Please try again.')
+    } finally {
+      setIsSavingCustomer(false)
+    }
+  }
+
   return (
     <div className="page customers-page">
       <header className="page__header">
@@ -288,6 +344,19 @@ export default function Customers() {
               />
             </div>
             <div className="customers-page__tool-buttons">
+              {/* NEW: Add customer button */}
+              <button
+                type="button"
+                className="button button--primary button--small"
+                onClick={() => {
+                  setIsAddingCustomer(prev => !prev)
+                  setAddError(null)
+                }}
+                disabled={!activeStoreId}
+              >
+                {isAddingCustomer ? 'Cancel' : 'Add customer'}
+              </button>
+
               <Link to="/sell" className="button button--ghost button--small">
                 Go to Sell
               </Link>
@@ -296,6 +365,91 @@ export default function Customers() {
               </Link>
             </div>
           </div>
+
+          {/* NEW: Inline add-customer form */}
+          {isAddingCustomer && (
+            <form
+              className="customers-page__add-form"
+              onSubmit={handleCreateCustomer}
+              aria-label="Add customer"
+            >
+              <div className="customers-page__add-form-grid">
+                <label>
+                  <span>Name</span>
+                  <input
+                    required
+                    placeholder="Customer name"
+                    value={newCustomer.displayName}
+                    onChange={e =>
+                      setNewCustomer(prev => ({ ...prev, displayName: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>Phone</span>
+                  <input
+                    placeholder="Phone number"
+                    value={newCustomer.phone}
+                    onChange={e =>
+                      setNewCustomer(prev => ({ ...prev, phone: e.target.value }))
+                    }
+                  />
+                </label>
+
+                <label>
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={newCustomer.email}
+                    onChange={e =>
+                      setNewCustomer(prev => ({ ...prev, email: e.target.value }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <label className="customers-page__add-form-notes">
+                <span>Notes</span>
+                <textarea
+                  rows={2}
+                  placeholder="Optional notes"
+                  value={newCustomer.notes}
+                  onChange={e =>
+                    setNewCustomer(prev => ({ ...prev, notes: e.target.value }))
+                  }
+                />
+              </label>
+
+              {addError && (
+                <p className="customers-page__message customers-page__message--error">
+                  {addError}
+                </p>
+              )}
+
+              <div className="customers-page__add-form-actions">
+                <button
+                  type="submit"
+                  className="button button--primary button--small"
+                  disabled={isSavingCustomer}
+                >
+                  {isSavingCustomer ? 'Saving…' : 'Save customer'}
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost button--small"
+                  onClick={() => {
+                    setIsAddingCustomer(false)
+                    setAddError(null)
+                  }}
+                  disabled={isSavingCustomer}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
 
           <div className="table-wrapper">
             <table className="table" aria-label="Customers table">
@@ -346,8 +500,8 @@ export default function Customers() {
                       <div className="customers-page__details-empty">
                         <p>No customers found.</p>
                         <p>
-                          Add customers from the Sell page or import them from your existing
-                          records.
+                          Add customers from the Sell page, or use the “Add customer” button
+                          above to create one here.
                         </p>
                       </div>
                     </td>
