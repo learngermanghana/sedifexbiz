@@ -1,4 +1,3 @@
-// web/src/pages/AuthPage.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import {
@@ -6,7 +5,15 @@ import {
   signInWithEmailAndPassword,
   sendEmailVerification,
 } from 'firebase/auth'
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
+import {
+  doc,
+  serverTimestamp,
+  setDoc,
+  collection,
+  query,
+  onSnapshot,
+  limit,
+} from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { Link } from 'react-router-dom'
 import '../App.css'
@@ -43,6 +50,13 @@ interface PasswordStrength {
   hasLowercase: boolean
   hasNumber: boolean
   hasSymbol: boolean
+}
+
+interface PartnerStoreSnippet {
+  id: string
+  name: string
+  town: string | null
+  country: string | null
 }
 
 function sanitizePhone(value: string): string {
@@ -83,7 +97,8 @@ function getErrorMessage(error: unknown): string {
       case 'auth/weak-password':
         return 'Please choose a stronger password. It must be at least 8 characters and include uppercase, lowercase, number, and symbol.'
       case 'functions/permission-denied': {
-        const callableMessage = extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
+        const callableMessage =
+          extractCallableErrorMessage(error) ?? INACTIVE_WORKSPACE_MESSAGE
         return callableMessage
       }
       default:
@@ -128,12 +143,14 @@ export default function AuthPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [businessName, setBusinessName] = useState('')
-  const [storeId, setStoreId] = useState('')
   const [phone, setPhone] = useState('')
   const [country, setCountry] = useState('')
   const [town, setTown] = useState('')
   const [address, setAddress] = useState('')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
+
+  // random partner stores for the marketing section
+  const [partnerStores, setPartnerStores] = useState<PartnerStoreSnippet[]>([])
 
   const isLoading = status.tone === 'loading'
   const { publish } = useToast()
@@ -147,7 +164,6 @@ export default function AuthPage() {
   const normalizedCountry = country.trim()
   const normalizedTown = town.trim()
   const normalizedAddress = address.trim()
-  const normalizedStoreId = storeId.trim()
 
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
   const passwordChecklist = useMemo(
@@ -193,8 +209,10 @@ export default function AuthPage() {
     normalizedTown.length > 0 &&
     normalizedAddress.length > 0
 
-  const isLoginFormValid = EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
-  const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
+  const isLoginFormValid =
+    EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
+  const isSubmitDisabled =
+    isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
 
   useEffect(() => {
     document.title = mode === 'login' ? 'Sedifex — Log in' : 'Sedifex — Sign up'
@@ -206,6 +224,52 @@ export default function AuthPage() {
       publish({ tone: status.tone, message: status.message })
     }
   }, [publish, status.message, status.tone])
+
+  // 🔹 Load a handful of stores and pick some at random for the partners section
+  useEffect(() => {
+    const q = query(collection(db, 'stores'), limit(30))
+
+    const unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        const all: PartnerStoreSnippet[] = snapshot.docs.map(docSnap => {
+          const data = docSnap.data() as any
+          const name =
+            (data.businessName as string) ||
+            (data.name as string) ||
+            'Unnamed store'
+          const town =
+            (typeof data.town === 'string' && data.town) ||
+            (typeof data.city === 'string' && data.city) ||
+            null
+          const country =
+            (typeof data.country === 'string' && data.country) || null
+
+          return {
+            id: docSnap.id,
+            name,
+            town,
+            country,
+          }
+        })
+
+        if (!all.length) {
+          setPartnerStores([])
+          return
+        }
+
+        // simple client-side shuffle & pick 4
+        const shuffled = [...all].sort(() => Math.random() - 0.5)
+        setPartnerStores(shuffled.slice(0, 4))
+      },
+      error => {
+        console.warn('[auth] Failed to load partner stores', error)
+        setPartnerStores([])
+      },
+    )
+
+    return unsubscribe
+  }, [])
 
   function handleModeChange(nextMode: AuthMode) {
     setMode(nextMode)
@@ -234,10 +298,11 @@ export default function AuthPage() {
     const sanitizedCountry = country.trim()
     const sanitizedTown = town.trim()
     const sanitizedAddress = address.trim()
-    const sanitizedStoreId = storeId.trim()
 
     const validationError =
-      mode === 'login' ? getLoginValidationError(sanitizedEmail, sanitizedPassword) : null
+      mode === 'login'
+        ? getLoginValidationError(sanitizedEmail, sanitizedPassword)
+        : null
 
     if (mode === 'signup') {
       setPhone(sanitizedPhone)
@@ -246,7 +311,6 @@ export default function AuthPage() {
       setCountry(sanitizedCountry)
       setTown(sanitizedTown)
       setAddress(sanitizedAddress)
-      setStoreId(sanitizedStoreId)
 
       if (!doesPasswordMeetAllChecks) {
         setStatus({
@@ -258,7 +322,10 @@ export default function AuthPage() {
       }
 
       if (sanitizedPassword !== sanitizedConfirmPassword) {
-        setStatus({ tone: 'error', message: 'Passwords do not match. Please re-enter them.' })
+        setStatus({
+          tone: 'error',
+          message: 'Passwords do not match. Please re-enter them.',
+        })
         return
       }
     }
@@ -308,12 +375,9 @@ export default function AuthPage() {
         await persistSession(nextUser)
 
         let initializedStoreId: string | undefined
-        const isJoiningExistingStore = Boolean(sanitizedStoreId)
-        const signupRoleForWorkspace: SignupRoleOption = isJoiningExistingStore
-          ? 'team-member'
-          : 'owner'
+        const signupRoleForWorkspace: SignupRoleOption = 'owner'
 
-        // 1) Initialize / join workspace
+        // 1) Initialize workspace (always a new store now)
         try {
           const initialization = await initializeStore(
             {
@@ -326,7 +390,7 @@ export default function AuthPage() {
               address: sanitizedAddress || null,
               signupRole: signupRoleForWorkspace,
             },
-            isJoiningExistingStore ? sanitizedStoreId : null,
+            null,
           )
           initializedStoreId = initialization.storeId
         } catch (error) {
@@ -357,29 +421,7 @@ export default function AuthPage() {
           publish({ tone: 'info', message: reminder })
         }
 
-        // 3) Flag self-signups for owner review when joining via Store ID
-        if (isJoiningExistingStore) {
-          try {
-            await setDoc(
-              doc(db, 'teamMembers', nextUser.uid),
-              {
-                uid: nextUser.uid,
-                storeId: resolution.storeId,
-                role: 'staff',
-                email: sanitizedEmail.toLowerCase(),
-                firstSignupEmail: sanitizedEmail.toLowerCase(),
-                status: 'pending',
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-              },
-              { merge: true },
-            )
-          } catch (error) {
-            console.warn('[signup] Unable to flag pending staff request', error)
-          }
-        }
-
-        // 4) Upsert customer profile with correct role (owner vs staff)
+        // 3) Upsert customer profile – always owner for self-signup
         try {
           const preferredDisplayName =
             sanitizedFullName || nextUser.displayName?.trim() || sanitizedEmail
@@ -401,8 +443,7 @@ export default function AuthPage() {
               town: sanitizedTown || null,
               address: sanitizedAddress || null,
               status: 'active',
-              // 👇 reflect whether they created a store or joined an existing one
-              role: isJoiningExistingStore ? 'staff' : 'owner',
+              role: 'owner',
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             },
@@ -412,14 +453,14 @@ export default function AuthPage() {
           console.warn('[customers] Unable to upsert customer record', error)
         }
 
-        // 5) Refresh ID token for fresh custom claims
+        // 4) Refresh ID token for fresh custom claims
         try {
           await nextUser.getIdToken(true)
         } catch (error) {
           console.warn('[auth] Unable to refresh ID token after signup', error)
         }
 
-        // 6) Send email verification
+        // 5) Send email verification
         try {
           // Hash router, so we keep the hash in the continue URL
           const continueUrl = `${window.location.origin}/#/verify-email`
@@ -431,7 +472,7 @@ export default function AuthPage() {
           console.warn('[auth] Failed to send verification email', error)
         }
 
-        // 7) Mark onboarding as pending and bounce to login
+        // 6) Mark onboarding as pending and bounce to login
         setOnboardingStatus(nextUser.uid, 'pending')
         setMode('login')
       }
@@ -451,7 +492,6 @@ export default function AuthPage() {
       setCountry('')
       setTown('')
       setAddress('')
-      setStoreId('')
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getErrorMessage(err) })
     }
@@ -473,7 +513,11 @@ export default function AuthPage() {
             </div>
           </div>
 
-          <div className="app__mode-toggle" role="tablist" aria-label="Authentication mode">
+          <div
+            className="app__mode-toggle"
+            role="tablist"
+            aria-label="Authentication mode"
+          >
             <button
               className={`app__mode-button${mode === 'login' ? ' is-active' : ''}`}
               role="tab"
@@ -556,7 +600,9 @@ export default function AuthPage() {
                   placeholder="Sedifex Retail"
                   required
                   disabled={isLoading}
-                  aria-invalid={businessName.length > 0 && normalizedBusinessName.length === 0}
+                  aria-invalid={
+                    businessName.length > 0 && normalizedBusinessName.length === 0
+                  }
                   aria-describedby="business-name-hint"
                 />
                 <p className="form__hint" id="business-name-hint">
@@ -653,29 +699,6 @@ export default function AuthPage() {
               </div>
             )}
 
-            {mode === 'signup' && (
-              <div className="form__field">
-                <label htmlFor="store-id">Store ID (optional)</label>
-                <input
-                  id="store-id"
-                  value={storeId}
-                  onChange={event => setStoreId(event.target.value)}
-                  onBlur={() => setStoreId(current => current.trim())}
-                  type="text"
-                  autoComplete="off"
-                  placeholder="Enter a store ID to join an existing workspace"
-                  disabled={isLoading}
-                  aria-invalid={storeId.length > 0 && normalizedStoreId.length === 0}
-                  aria-describedby="store-id-hint"
-                />
-                <p className="form__hint" id="store-id-hint">
-                  {normalizedStoreId
-                    ? 'You will join this existing store as a team member. We will use the company details from that store.'
-                    : 'Leave this blank to create a new store where you are the owner.'}
-                </p>
-              </div>
-            )}
-
             <div className="form__field">
               <label htmlFor="password">Password</label>
               <input
@@ -748,9 +771,8 @@ export default function AuthPage() {
 
             {mode === 'signup' && (
               <p className="form__hint" style={{ marginTop: 8 }}>
-                {normalizedStoreId
-                  ? 'Summary: You are creating a user account and joining an existing store as staff.'
-                  : 'Summary: You are creating a new store and will be the owner of this workspace.'}
+                Summary: You are creating a new store and will be the owner of this
+                workspace.
               </p>
             )}
 
@@ -804,14 +826,41 @@ export default function AuthPage() {
         </aside>
       </div>
 
-      <section className="app__partners" aria-label="Share your store snapshot with Logi partners">
+      <section
+        className="app__partners"
+        aria-label="Stores using Sedifex and sharing snapshots with partners"
+      >
         <div className="app__partners-copy">
           <span className="app__pill">Store partners</span>
           <h2>Show your store snapshot before logging in</h2>
           <p>
-            Give partners a live, read-only view of non-sensitive store details. Your store name,
-            location, and overview update automatically after sign up—no extra setup needed.
+            Give partners a live, read-only view of non-sensitive store details. Your
+            store name, location, and overview update automatically after sign up—no extra
+            setup needed.
           </p>
+
+          {partnerStores.length > 0 && (
+            <div className="app__partners-examples">
+              <p className="app__partners-examples-label">
+                A few stores already running on Sedifex:
+              </p>
+              <ul className="app__partners-list">
+                {partnerStores.map(store => (
+                  <li key={store.id} className="app__partners-badge">
+                    <span className="app__partners-name">{store.name}</span>
+                    {(store.town || store.country) && (
+                      <span className="app__partners-location">
+                        {store.town}
+                        {store.town && store.country ? ', ' : ''}
+                        {store.country}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <Link className="app__partners-link" to="/logi">
             Preview the Logi snapshot
           </Link>
@@ -831,8 +880,8 @@ export default function AuthPage() {
         <header className="app__features-header">
           <h2>Explore the workspace</h2>
           <p>
-            Every Sedifex page is built to keep retail operations synchronized—from the sales
-            floor to finance.
+            Every Sedifex page is built to keep retail operations synchronized—from the
+            sales floor to finance.
           </p>
         </header>
 
@@ -861,14 +910,14 @@ export default function AuthPage() {
         <article className="info-card">
           <h3>About Sedifex</h3>
           <p>
-            Sedifex is the operations control tower for modern retail teams. We unite store
-            execution, warehouse visibility, and merchandising insights so every location
-            can act on the same live source of truth.
+            Sedifex is the operations control tower for modern retail teams. We unite
+            store execution, warehouse visibility, and merchandising insights so every
+            location can act on the same live source of truth.
           </p>
           <p>
-            Connect your POS, ecommerce, and supplier systems in minutes to orchestrate the
-            entire product journey—from forecast to fulfillment—with less manual work and
-            far fewer stockouts.
+            Connect your POS, ecommerce, and supplier systems in minutes to orchestrate
+            the entire product journey—from forecast to fulfillment—with less manual work
+            and far fewer stockouts.
           </p>
           <footer>
             <ul className="info-card__list">
@@ -883,8 +932,8 @@ export default function AuthPage() {
           <h3>Our Mission</h3>
           <p>
             We believe resilient retailers win by responding to change faster than their
-            inventory can move. Sedifex exists to give operators the clarity and confidence
-            to do exactly that.
+            inventory can move. Sedifex exists to give operators the clarity and
+            confidence to do exactly that.
           </p>
           <ul className="info-card__list">
             <li>Deliver every SKU promise with predictive inventory intelligence</li>
@@ -897,8 +946,8 @@ export default function AuthPage() {
           <h3>Contact Sales</h3>
           <p>
             Partner with a retail operations strategist to tailor Sedifex to your fleet,
-            review pricing, and build an onboarding plan that keeps stores running while we
-            launch.
+            review pricing, and build an onboarding plan that keeps stores running while
+            we launch.
           </p>
           <a
             className="info-card__cta"
@@ -908,7 +957,9 @@ export default function AuthPage() {
           >
             Book a 30-minute consultation
           </a>
-          <p className="info-card__caption">Prefer email? Reach us at sedifexbiz@gmail.com.</p>
+          <p className="info-card__caption">
+            Prefer email? Reach us at sedifexbiz@gmail.com.
+          </p>
         </article>
       </section>
     </main>
@@ -919,17 +970,20 @@ const PAGE_FEATURES = [
   {
     path: '/products',
     name: 'Products',
-    description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.',
+    description:
+      'Spot low inventory, sync counts, and keep every SKU accurate across locations.',
   },
   {
     path: '/sell',
     name: 'Sell',
-    description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.',
+    description:
+      'Ring up sales with guided workflows that keep the floor moving and customers happy.',
   },
   {
     path: '/receive',
     name: 'Receive',
-    description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.',
+    description:
+      'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.',
   },
   {
     path: '/customers',
@@ -940,12 +994,14 @@ const PAGE_FEATURES = [
   {
     path: '/finance',
     name: 'Finance',
-    description: 'Track cash-up, expenses, and profitability with one simple view.',
+    description:
+      'Track cash-up, expenses, and profitability with one simple view.',
   },
   {
     path: '/logi',
     name: 'Logi partners',
-    description: 'Share a live public snapshot of your store name, location, and overview with partners.',
+    description:
+      'Share a live public snapshot of your store name, location, and overview with partners.',
   },
 ] as const
 
