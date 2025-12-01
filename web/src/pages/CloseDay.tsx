@@ -1,4 +1,3 @@
-// web/src/pages/CloseDay.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   collection,
@@ -63,6 +62,10 @@ type CloseoutRecord = {
   expectedCash: number
   countedCash: number
   variance: number
+  looseCash: number
+  cardAndDigital: number
+  cashRemoved: number
+  cashAdded: number
   closedAt: Date | null
   closedByName: string
 }
@@ -83,13 +86,18 @@ export default function CloseDay() {
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // NEW: auto-calculated non-cash payments (card / momo / transfers)
+  // auto-calculated non-cash payments (card / momo / transfers)
   const [autoNonCashTotal, setAutoNonCashTotal] = useState(0)
 
-  // NEW: recent close-day records
+  // recent close-day records
   const [recentCloseouts, setRecentCloseouts] = useState<CloseoutRecord[]>([])
   const [closeoutsError, setCloseoutsError] = useState<string | null>(null)
   const [isLoadingCloseouts, setIsLoadingCloseouts] = useState(false)
+
+  // which saved closeout we want to show / print
+  const [selectedCloseout, setSelectedCloseout] = useState<CloseoutRecord | null>(
+    null,
+  )
 
   // Load today's sales total for this store + auto non-cash total
   useEffect(() => {
@@ -118,7 +126,7 @@ export default function CloseDay() {
       snap.forEach(d => {
         const data = d.data() as any
 
-        // Total (same logic you already had)
+        // Total
         const saleTotal =
           typeof data.total === 'number'
             ? data.total
@@ -136,7 +144,6 @@ export default function CloseDay() {
         for (const tender of tenders) {
           const amount = Number(tender?.amount) || 0
           const method = (tender?.method || '').toLowerCase()
-
           if (amount > 0 && method && method !== 'cash') {
             nonCashSum += amount
           }
@@ -159,10 +166,11 @@ export default function CloseDay() {
     }
   }, [])
 
-  // NEW: load last 10 close-day records
+  // load last 10 close-day records
   useEffect(() => {
     if (!activeStoreId) {
       setRecentCloseouts([])
+      setSelectedCloseout(null)
       setCloseoutsError(null)
       return () => {
         /* noop */
@@ -202,13 +210,27 @@ export default function CloseDay() {
             expectedCash: Number(data.expectedCash ?? 0) || 0,
             countedCash: Number(data.countedCash ?? 0) || 0,
             variance: Number(data.variance ?? 0) || 0,
+            looseCash: Number(data.looseCash ?? 0) || 0,
+            cardAndDigital: Number(data.cardAndDigital ?? 0) || 0,
+            cashRemoved: Number(data.cashRemoved ?? 0) || 0,
+            cashAdded: Number(data.cashAdded ?? 0) || 0,
             closedAt: ca,
             closedByName,
           }
         })
+
         setRecentCloseouts(rows)
         setCloseoutsError(null)
         setIsLoadingCloseouts(false)
+
+        // default selected: keep current if still in list, otherwise latest
+        setSelectedCloseout(prev => {
+          if (prev) {
+            const stillThere = rows.find(r => r.id === prev.id)
+            if (stillThere) return stillThere
+          }
+          return rows[0] ?? null
+        })
       },
       error => {
         console.error('[close-day] Failed to load recent closeouts', error)
@@ -243,7 +265,7 @@ export default function CloseDay() {
     [cashAdded],
   )
 
-  // 💡 cardTotal is now 100% auto from today's sales (non-cash payments)
+  // cardTotal is now 100% auto from today's sales (non-cash payments)
   const cardTotal = autoNonCashTotal
 
   // Expected physical cash = all sales - non-cash payments - cash taken out + cash added
@@ -272,6 +294,8 @@ export default function CloseDay() {
   }
 
   const handlePrint = () => {
+    // We just print the page. The selected closeout summary section below
+    // is visible in print mode, so it will appear on the paper.
     window.print()
   }
 
@@ -384,7 +408,7 @@ export default function CloseDay() {
         countedCash,
         variance,
         looseCash: looseCashTotal,
-        cardAndDigital: cardTotal, // 🔹 numeric non-cash total (card + momo + others)
+        cardAndDigital: cardTotal, // numeric non-cash total (card + momo + others)
         cashRemoved: removedTotal,
         cashAdded: addedTotal,
         denominations: DENOMINATIONS.map(denom => {
@@ -425,10 +449,10 @@ export default function CloseDay() {
         console.warn('[activity] Failed to log close day', activityError)
       }
 
-      // ✅ Show success
       setSubmitSuccess(true)
 
-      // ✅ Auto-print like Sell page (small delay so DOM updates)
+      // Auto-print after save – this will now also include the new row
+      // in the "Recent close day records" and the print summary.
       window.setTimeout(() => {
         try {
           window.print()
@@ -452,6 +476,7 @@ export default function CloseDay() {
     <div className="print-summary" style={{ maxWidth: 760 }}>
       <h2 style={{ color: '#4338CA' }}>Close Day</h2>
 
+      {/* Simple English helper */}
       <div
         className="no-print"
         style={{
@@ -473,11 +498,11 @@ export default function CloseDay() {
             gap: 4,
           }}
         >
-          <li>Confirm the sales total is correct for today.</li>
+          <li>Check that today’s sales total looks correct.</li>
           <li>
-            We automatically add all <strong>card / mobile money / transfer</strong>{' '}
-            sales from today. You only need to type the <strong>cash in the drawer</strong>{' '}
-            and any cash taken out or added.
+            We automatically add all <strong>card / mobile money / transfer</strong> sales
+            from today. You only type the <strong>cash in the drawer</strong> and any cash
+            you took out or added.
           </li>
           <li>Count each note and coin, add loose cash, then review the cash check.</li>
           <li>Add notes for the next shift, then save and print the summary.</li>
@@ -518,7 +543,9 @@ export default function CloseDay() {
                 GHS {cardTotal.toFixed(2)}
               </div>
               <span style={{ fontSize: 12, color: '#6b7280' }}>
-                If this looks wrong, fix the payment method on the Sell page receipts.
+                This is money customers paid by card or mobile money. It is not inside the
+                cash drawer. If it looks wrong, fix the payment method on the Sell page
+                receipts.
               </span>
             </div>
             <label
@@ -538,6 +565,10 @@ export default function CloseDay() {
                 onChange={event => setCashRemoved(event.target.value)}
                 placeholder="0.00"
               />
+              <span style={{ fontSize: 12, color: '#6b7280' }}>
+                Any cash you removed from the drawer today. Example: bank deposit, paying a
+                supplier, staff payout.
+              </span>
             </label>
             <label
               style={{
@@ -556,6 +587,10 @@ export default function CloseDay() {
                 onChange={event => setCashAdded(event.target.value)}
                 placeholder="0.00"
               />
+              <span style={{ fontSize: 12, color: '#6b7280' }}>
+                Extra cash you added to the drawer that did not come from today’s sales. For
+                example: the owner adds float from the safe so you have more change.
+              </span>
             </label>
           </div>
         </section>
@@ -661,8 +696,8 @@ export default function CloseDay() {
               color: '#4b5563',
             }}
           >
-            We compare what the system expects with what you counted in the drawer.
-            Card / mobile money / transfers are pulled automatically from today’s sales.
+            We compare what the system expects with what you counted in the drawer. Card /
+            mobile money / transfers are pulled automatically from today’s sales.
           </p>
           <div style={{ display: 'grid', gap: 6, maxWidth: 420 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -767,11 +802,12 @@ export default function CloseDay() {
         </div>
       </form>
 
-      {/* NEW: Recent close-day records */}
+      {/* Recent close-day records */}
       <section style={{ marginTop: 40 }}>
         <h3 style={{ marginBottom: 8 }}>Recent close day records</h3>
         <p style={{ marginTop: 0, marginBottom: 12, fontSize: 14, color: '#4b5563' }}>
-          Last 10 days that were closed for this workspace.
+          Last 10 days that were closed for this workspace. Click a row to select which one
+          you want to print below.
         </p>
 
         {isLoadingCloseouts && <p>Loading recent records…</p>}
@@ -867,8 +903,19 @@ export default function CloseDay() {
                         ? '#b91c1c'
                         : '#92400e'
 
+                  const isSelected = selectedCloseout?.id === close.id
+
                   return (
-                    <tr key={close.id}>
+                    <tr
+                      key={close.id}
+                      onClick={() => setSelectedCloseout(close)}
+                      style={{
+                        cursor: 'pointer',
+                        backgroundColor: isSelected
+                          ? 'rgba(67,56,202,0.06)'
+                          : 'transparent',
+                      }}
+                    >
                       <td style={{ padding: '6px 4px' }}>
                         {close.businessDay
                           ? close.businessDay.toLocaleDateString()
@@ -890,9 +937,7 @@ export default function CloseDay() {
                       </td>
                       <td style={{ padding: '6px 4px' }}>{close.closedByName}</td>
                       <td style={{ padding: '6px 4px' }}>
-                        {close.closedAt
-                          ? close.closedAt.toLocaleString()
-                          : '—'}
+                        {close.closedAt ? close.closedAt.toLocaleString() : '—'}
                       </td>
                     </tr>
                   )
@@ -902,6 +947,75 @@ export default function CloseDay() {
           </div>
         )}
       </section>
+
+      {/* Print summary for the selected closeout – this is what will always show on paper */}
+      {selectedCloseout && (
+        <section style={{ marginTop: 32 }}>
+          <h3 style={{ marginBottom: 8 }}>Close day summary for print</h3>
+          <p style={{ marginTop: 0, fontSize: 14, color: '#4b5563' }}>
+            This section uses saved data from the <strong>closeouts</strong> collection.
+            When you print, this is the “receipt” your partners or manager will see.
+          </p>
+
+          <div style={{ display: 'grid', gap: 6, maxWidth: 420 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Business day</span>
+              <strong>
+                {selectedCloseout.businessDay
+                  ? selectedCloseout.businessDay.toLocaleDateString()
+                  : 'Unknown'}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Sales total</span>
+              <strong>GHS {selectedCloseout.salesTotal.toFixed(2)}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Non-cash payments</span>
+              <strong>GHS {selectedCloseout.cardAndDigital.toFixed(2)}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Cash taken out</span>
+              <strong>GHS {selectedCloseout.cashRemoved.toFixed(2)}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Cash put in drawer</span>
+              <strong>GHS {selectedCloseout.cashAdded.toFixed(2)}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Expected cash in drawer</span>
+              <strong>GHS {selectedCloseout.expectedCash.toFixed(2)}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Cash counted</span>
+              <strong>GHS {selectedCloseout.countedCash.toFixed(2)}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Difference</span>
+              <strong>
+                GHS {selectedCloseout.variance.toFixed(2)}{' '}
+                {Math.abs(selectedCloseout.variance) < 0.01
+                  ? '(Matches)'
+                  : selectedCloseout.variance < 0
+                    ? '(Short)'
+                    : '(Over)'}
+              </strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Closed by</span>
+              <strong>{selectedCloseout.closedByName}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Closed at</span>
+              <strong>
+                {selectedCloseout.closedAt
+                  ? selectedCloseout.closedAt.toLocaleString()
+                  : '—'}
+              </strong>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   )
 }
