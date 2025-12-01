@@ -321,13 +321,9 @@ export default function CloseDay() {
         console.warn('[activity] Failed to log close day', activityError)
       }
 
+      // ✅ Just show success – keep values on screen so they can be printed
       setSubmitSuccess(true)
-      setCashCounts(createInitialCashCountState())
-      setLooseCash('')
-      setCardAndDigital('')
-      setCashRemoved('')
-      setCashAdded('')
-      setNotes('')
+
     } catch (error: any) {
       console.error('[close-day] Failed to record closeout', error)
       const message =
