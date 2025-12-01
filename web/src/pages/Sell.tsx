@@ -1,4 +1,4 @@
-// src/pages/Sell.tsx
+// web/src/pages/Sell.tsx
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   addDoc,
@@ -12,6 +12,7 @@ import {
   where,
   getDoc,
   serverTimestamp,
+  DocumentData,
 } from 'firebase/firestore'
 import { FirebaseError } from 'firebase/app'
 import { httpsCallable } from 'firebase/functions'
@@ -100,9 +101,8 @@ type ReceiptData = {
   createdAt: Date
   items: CartLine[]
   subtotal: number
-  taxTotal: number        // NEW: store final VAT used for this sale
-  loyaltyEarned?: number | null
-  currentPoints?: number | null
+  taxTotal: number
+  discount: number
   store?: {
     id: string | null
     name: string | null
@@ -156,8 +156,6 @@ type CommitSalePayload = {
   saleId: string
   cashierId: string
   customerId?: string | null
-  loyaltyEarned?: number | null
-  currentPoints?: number | null
   totals: {
     total: number
     taxTotal: number
@@ -192,12 +190,11 @@ type SaleDraft = {
   selectedCustomerId: string
   paymentInputs: {
     cash: string
-    paystack: string // still used as "Card/Mobile" manual input
+    paystack: string // reused as generic "card / mobile money" amount
   }
   tipInput: string
-  loyaltyEarnedInput: string
-  loyaltyAppliedInput: string
-  vatOverrideInput: string      // NEW: manual VAT override for this draft
+  discountInput: string
+  vatOverrideInput: string
 }
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
@@ -240,7 +237,9 @@ function getReceiptShareStatusLabel(status: ReceiptShareStatus | string): string
   return 'Pending'
 }
 
-function getReceiptShareStatusTone(status: ReceiptShareStatus | string): 'error' | 'success' | 'pending' {
+function getReceiptShareStatusTone(
+  status: ReceiptShareStatus | string,
+): 'error' | 'success' | 'pending' {
   if (status === 'failed') return 'error'
   if (status === 'sent') return 'success'
   return 'pending'
@@ -357,10 +356,14 @@ function createEmptyDraft(id: string): SaleDraft {
       paystack: '',
     },
     tipInput: '',
-    loyaltyEarnedInput: '',
-    loyaltyAppliedInput: '',
-    vatOverrideInput: '', // NEW
+    discountInput: '',
+    vatOverrideInput: '',
   }
+}
+
+function normalizePhone(phone?: string | null): string {
+  if (!phone) return ''
+  return phone.replace(/[^0-9]/g, '')
 }
 
 export default function Sell() {
@@ -391,6 +394,9 @@ export default function Sell() {
   const [shareLogsError, setShareLogsError] = useState<string | null>(null)
   const [isLoadingShareLogs, setIsLoadingShareLogs] = useState(false)
 
+  // default customer message
+  const [messageTemplate, setMessageTemplate] = useState<string>('')
+
   const activeDraft = useMemo(
     () => saleDrafts.find(d => d.id === activeDraftId) ?? saleDrafts[0],
     [saleDrafts, activeDraftId],
@@ -411,14 +417,16 @@ export default function Sell() {
   const cashAmountInput = activeDraft?.paymentInputs.cash ?? ''
   const paystackAmountInput = activeDraft?.paymentInputs.paystack ?? ''
   const tipInput = activeDraft?.tipInput ?? ''
-  const loyaltyEarnedInput = activeDraft?.loyaltyEarnedInput ?? ''
-  const loyaltyAppliedInput = activeDraft?.loyaltyAppliedInput ?? ''
+  const discountInput = activeDraft?.discountInput ?? ''
   const vatOverrideInput = activeDraft?.vatOverrideInput ?? ''
+
+  const canShareReceipt =
+    Boolean(receiptSharePayload) && (typeof navigator === 'undefined' || navigator.onLine)
 
   // Subtotal (no VAT yet)
   const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0)
 
-  // VAT from product taxRate (auto)
+  // VAT from products
   const cartTaxTotal = useMemo(
     () =>
       cart.reduce(
@@ -428,53 +436,29 @@ export default function Sell() {
     [cart],
   )
 
-  // Manual VAT override
-  const vatOverrideAmount = useMemo(() => {
-    const parsed = Number(vatOverrideInput)
-    if (!Number.isFinite(parsed) || parsed < 0) return null
+  const discountAmount = useMemo(() => {
+    const parsed = Number(discountInput)
+    if (!Number.isFinite(parsed) || parsed < 0) return 0
     return parsed
-  }, [vatOverrideInput])
+  }, [discountInput])
 
-  // Final VAT used in sale
-  const taxTotal = vatOverrideAmount !== null ? vatOverrideAmount : cartTaxTotal
+  const effectiveTaxTotal = useMemo(() => {
+    const parsed = Number(vatOverrideInput)
+    if (!Number.isFinite(parsed) || parsed < 0) return cartTaxTotal
+    return parsed
+  }, [vatOverrideInput, cartTaxTotal])
 
-  // Grand total (Amount due = subtotal + VAT)
-  const totalDue = subtotal + taxTotal
+  // Grand total before tip (Amount due = subtotal + VAT - discount)
+  const totalBeforeDiscount = subtotal + effectiveTaxTotal
+  const totalDue = Math.max(0, totalBeforeDiscount - discountAmount)
 
   const totalQty = cart.reduce((s, l) => s + l.qty, 0)
 
-  const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
-  const selectedCustomerLoyalty = useMemo(
-    () => (selectedCustomer ? ensureCustomerLoyalty(selectedCustomer).loyalty : null),
-    [selectedCustomer],
-  )
+  const selectedCustomer = customers.find(c => c.id === selectedCustomerId) ?? null
 
   const selectedCustomerDataName = selectedCustomer
     ? getCustomerNameForData(selectedCustomer)
     : ''
-
-  const loyaltyEarned = useMemo(() => {
-    const parsed = Number(loyaltyEarnedInput)
-    if (!Number.isFinite(parsed) || parsed < 0) return 0
-    return parsed
-  }, [loyaltyEarnedInput])
-
-  const loyaltyApplied = useMemo(() => {
-    const parsed = Number(loyaltyAppliedInput)
-    if (!Number.isFinite(parsed) || parsed < 0) return 0
-    const available = selectedCustomerLoyalty?.points ?? 0
-    return Math.min(parsed, available)
-  }, [loyaltyAppliedInput, selectedCustomerLoyalty?.points])
-
-  const loyaltyCurrentPoints = useMemo(() => {
-    if (!selectedCustomer) return null
-    const available = selectedCustomerLoyalty?.points ?? 0
-    return Math.max(0, available - loyaltyApplied + loyaltyEarned)
-  }, [loyaltyApplied, loyaltyEarned, selectedCustomer, selectedCustomerLoyalty?.points])
-
-  const loyaltyBalanceAfterSale = selectedCustomer
-    ? loyaltyCurrentPoints ?? selectedCustomerLoyalty?.points ?? 0
-    : null
 
   const tipAmount = useMemo(() => {
     const parsed = Number(tipInput)
@@ -518,6 +502,52 @@ export default function Sell() {
         'logReceiptShare',
       ),
     [],
+  )
+
+  // Prefill default message when customer selected & no custom text yet
+  useEffect(() => {
+    if (!selectedCustomer) return
+    setMessageTemplate(prev => {
+      if (prev.trim()) return prev
+      return `Hi ${getCustomerDisplayName(
+        selectedCustomer,
+      )}, thank you for shopping with us. Your total today is GHS ${totalDue.toFixed(2)}.`
+    })
+  }, [selectedCustomer, totalDue])
+
+  const handleSendQuickMessage = useCallback(
+    (channel: 'whatsapp' | 'sms' | 'email' | 'telegram') => {
+      if (!selectedCustomer) return
+      const baseText =
+        messageTemplate.trim() ||
+        `Hi ${getCustomerDisplayName(
+          selectedCustomer,
+        )}, thank you for shopping with us. Your total today is GHS ${totalDue.toFixed(2)}.`
+      const encoded = encodeURIComponent(baseText)
+      let href = ''
+
+      if (channel === 'whatsapp') {
+        const phone = normalizePhone(selectedCustomer.phone)
+        href = phone
+          ? `https://wa.me/${phone}?text=${encoded}`
+          : `https://wa.me/?text=${encoded}`
+      } else if (channel === 'sms') {
+        if (!selectedCustomer.phone) return
+        href = `sms:${selectedCustomer.phone}?body=${encoded}`
+      } else if (channel === 'email') {
+        if (!selectedCustomer.email) return
+        const subject = encodeURIComponent('Thank you for your purchase')
+        href = `mailto:${selectedCustomer.email}?subject=${subject}&body=${encoded}`
+      } else if (channel === 'telegram') {
+        href = `https://t.me/share/url?url=&text=${encoded}`
+      }
+
+      if (href) {
+        const target = channel === 'sms' ? '_self' : '_blank'
+        window.open(href, target, 'noopener,noreferrer')
+      }
+    },
+    [selectedCustomer, messageTemplate, totalDue],
   )
 
   // ---------- Store profile ----------
@@ -610,4 +640,1442 @@ export default function Sell() {
       setProducts(sortedRows)
     })
 
- 
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [activeStoreId])
+
+  // ---------- Customers ----------
+  useEffect(() => {
+    let cancelled = false
+
+    if (!activeStoreId) {
+      setCustomers([])
+      return () => {
+        cancelled = true
+      }
+    }
+
+    loadCachedCustomers<Customer>({ storeId: activeStoreId })
+      .then(cached => {
+        if (!cancelled && cached.length) {
+          const normalized = cached.map(customer => ensureCustomerLoyalty(customer))
+          setCustomers(
+            [...normalized].sort((a, b) =>
+              getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
+                sensitivity: 'base',
+              }),
+            ),
+          )
+        }
+      })
+      .catch(error => {
+        console.warn('[sell] Failed to load cached customers', error)
+      })
+
+    const q = query(
+      collection(db, 'customers'),
+      where('storeId', '==', activeStoreId),
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(CUSTOMER_CACHE_LIMIT),
+    )
+
+    const unsubscribe = onSnapshot(q, snap => {
+      const rows = snap.docs.map(docSnap =>
+        ensureCustomerLoyalty({ id: docSnap.id, ...(docSnap.data() as Customer) }),
+      )
+      saveCachedCustomers(rows, { storeId: activeStoreId }).catch(error => {
+        console.warn('[sell] Failed to cache customers', error)
+      })
+      const sortedRows = [...rows].sort((a, b) =>
+        getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
+          sensitivity: 'base',
+        }),
+      )
+      setCustomers(sortedRows)
+    })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [activeStoreId])
+
+  // ---------- Auto-print receipt ----------
+  useEffect(() => {
+    if (!receipt) return
+    const timeout = window.setTimeout(() => {
+      window.print()
+    }, 250)
+    return () => window.clearTimeout(timeout)
+  }, [receipt])
+
+  useEffect(() => {
+    if (!activeStoreId || !receipt?.saleId) {
+      setReceiptShareLogs([])
+      setShareLogsError(null)
+      setIsLoadingShareLogs(false)
+      return () => {}
+    }
+
+    setIsLoadingShareLogs(true)
+
+    const q = query(
+      collection(db, 'receiptShareLogs'),
+      where('storeId', '==', activeStoreId),
+      where('saleId', '==', receipt.saleId),
+      orderBy('createdAt', 'desc'),
+      limit(15),
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        const logs = snapshot.docs.map(docSnap => {
+          const data = docSnap.data() as Omit<ReceiptShareLog, 'id'>
+          return { id: docSnap.id, ...data }
+        })
+        setReceiptShareLogs(logs)
+        setIsLoadingShareLogs(false)
+        setShareLogsError(null)
+      },
+      error => {
+        console.warn('[sell] Failed to load receipt share logs', error)
+        setShareLogsError('Unable to load receipt delivery attempts right now.')
+        setIsLoadingShareLogs(false)
+      },
+    )
+
+    return () => unsubscribe()
+  }, [activeStoreId, receipt?.saleId])
+
+  // ---------- Build receipt share payload + PDF ----------
+  useEffect(() => {
+    if (!receipt) {
+      setReceiptSharePayload(prev => {
+        if (prev?.pdfUrl) {
+          URL.revokeObjectURL(prev.pdfUrl)
+        }
+        return null
+      })
+      return
+    }
+
+    const receiptStoreInfo = receipt.store ?? buildReceiptStore(storeProfile, activeStoreId)
+    const storeName = receiptStoreInfo?.name || 'Sedifex POS'
+    const contactLine =
+      receiptStoreInfo?.email || receiptStoreInfo?.phone || user?.email || 'sales@sedifex.app'
+
+    const lines: string[] = []
+    lines.push(storeName)
+    receiptStoreInfo?.addressLines.forEach(line => lines.push(line))
+    lines.push(contactLine)
+    lines.push(receipt.createdAt.toLocaleString())
+
+    if (receipt.customer) {
+      lines.push('')
+      lines.push('Customer:')
+      lines.push(`  ${receipt.customer.name}`)
+      if (receipt.customer.phone) {
+        lines.push(`  ${receipt.customer.phone}`)
+      }
+      if (receipt.customer.email) {
+        lines.push(`  ${receipt.customer.email}`)
+      }
+    }
+
+    lines.push('')
+    lines.push('Items:')
+    const taxTotal = receipt.taxTotal
+    receipt.items.forEach(line => {
+      const lineTotal = line.qty * line.price
+      const lineTax = lineTotal * (line.taxRate ?? 0)
+      const taxLabel = lineTax > 0 ? ` (Tax: GHS ${lineTax.toFixed(2)})` : ''
+      lines.push(
+        `  • ${line.qty} × ${line.name} — GHS ${lineTotal.toFixed(2)}${taxLabel}`,
+      )
+    })
+
+    lines.push('')
+    lines.push(`Subtotal: GHS ${receipt.subtotal.toFixed(2)}`)
+    if (taxTotal > 0) {
+      lines.push(`Tax: GHS ${taxTotal.toFixed(2)}`)
+    }
+    if (receipt.discount > 0) {
+      lines.push(`Discount: GHS ${receipt.discount.toFixed(2)}`)
+    }
+    const totalWithTax = receipt.subtotal + taxTotal - receipt.discount
+    const totalWithTip = totalWithTax + (receipt.payment.tip ?? 0)
+    lines.push(`Total: GHS ${totalWithTax.toFixed(2)}`)
+    if (receipt.payment.tip) {
+      lines.push(`Tip: GHS ${receipt.payment.tip.toFixed(2)}`)
+    }
+    lines.push(`Amount due: GHS ${totalWithTip.toFixed(2)}`)
+    if (receipt.payment.tenders.length) {
+      lines.push('Payments:')
+      receipt.payment.tenders.forEach(tender => {
+        const label = tender.method === 'card' ? 'Card/Mobile' : 'Cash'
+        const providerLabel = tender.provider ? ` (${tender.provider})` : ''
+        lines.push(`  • ${label}${providerLabel}: GHS ${tender.amount.toFixed(2)}`)
+      })
+    }
+    lines.push(`Total paid: GHS ${receipt.payment.totalPaid.toFixed(2)}`)
+    lines.push(`Change: GHS ${receipt.payment.changeDue.toFixed(2)}`)
+
+    lines.push('')
+    lines.push(`Sale #${receipt.saleId}`)
+    lines.push('Thank you for shopping with us!')
+
+    const message = lines.join('\n')
+    const emailSubject = `Receipt for sale #${receipt.saleId}`
+
+    const encodedSubject = encodeURIComponent(emailSubject)
+    const encodedBody = encodeURIComponent(message)
+    const emailHref = `mailto:${receipt.customer?.email ?? ''}?subject=${encodedSubject}&body=${encodedBody}`
+    const smsHref = `sms:${receipt.customer?.phone ?? ''}?body=${encodedBody}`
+    const whatsappHref = `https://wa.me/?text=${encodedBody}`
+
+    const pdfLines = lines.slice(1) // drop duplicate title
+    const pdfBytes = buildSimplePdf(storeName, pdfLines)
+    const pdfBuffer = pdfBytes.slice().buffer
+    const pdfBlob = new Blob([pdfBuffer], { type: 'application/pdf' })
+    const pdfUrl = URL.createObjectURL(pdfBlob)
+    const pdfFileName = `receipt-${receipt.saleId}.pdf`
+
+    setReceiptSharePayload(prev => {
+      if (prev?.pdfUrl) {
+        URL.revokeObjectURL(prev.pdfUrl)
+      }
+      return { message, emailHref, smsHref, whatsappHref, pdfBlob, pdfUrl, pdfFileName }
+    })
+
+    return () => {
+      URL.revokeObjectURL(pdfUrl)
+    }
+  }, [activeStoreId, receipt, storeProfile, user?.email])
+
+  const handleDownloadPdf = useCallback(() => {
+    setReceiptSharePayload(prev => {
+      if (!prev) return prev
+
+      const url = prev.pdfUrl || URL.createObjectURL(prev.pdfBlob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = prev.pdfFileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      URL.revokeObjectURL(url)
+      const refreshedUrl = URL.createObjectURL(prev.pdfBlob)
+      return { ...prev, pdfUrl: refreshedUrl }
+    })
+  }, [])
+
+  const handleShareChannel = useCallback(
+    (channel: ShareChannel) => {
+      if (!receiptSharePayload || !receipt || !activeStoreId) return
+
+      const isOnline = typeof navigator === 'undefined' || navigator.onLine
+      if (!isOnline) {
+        setSaleError('You appear to be offline. Reconnect to share receipts.')
+        return
+      }
+
+      const hrefMap: Record<ShareChannel, string> = {
+        email: receiptSharePayload.emailHref,
+        sms: receiptSharePayload.smsHref,
+        whatsapp: receiptSharePayload.whatsappHref,
+      }
+
+      const logPayload: LogReceiptSharePayload = {
+        storeId: activeStoreId,
+        saleId: receipt.saleId,
+        channel,
+        status: 'attempt',
+        contact: receipt.customer?.email ?? receipt.customer?.phone ?? null,
+        customerId: selectedCustomer?.id ?? receipt.customer?.name ?? null,
+        customerName: receipt.customer?.name ?? null,
+      }
+
+      logReceiptShare(logPayload).catch(error => {
+        console.error('[sell] Failed to log share attempt', error)
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        logReceiptShare({ ...logPayload, status: 'failed', errorMessage }).catch(
+          secondaryError => {
+            console.error('[sell] Failed to log share failure', secondaryError)
+          },
+        )
+      })
+
+      const target = channel === 'sms' ? '_self' : '_blank'
+      window.open(hrefMap[channel], target, 'noopener,noreferrer')
+    },
+    [activeStoreId, logReceiptShare, receipt, receiptSharePayload, selectedCustomer?.id],
+  )
+
+  const handleRetryShare = useCallback(
+    (log: ReceiptShareLog) => {
+      if (!receipt || !receiptSharePayload) return
+      if (log.saleId !== receipt.saleId) return
+      handleShareChannel(log.channel)
+    },
+    [handleShareChannel, receipt, receiptSharePayload],
+  )
+
+  useEffect(() => {
+    const url = receiptSharePayload?.pdfUrl
+    return () => {
+      if (url) {
+        URL.revokeObjectURL(url)
+      }
+    }
+  }, [receiptSharePayload?.pdfUrl])
+
+  // ---------- Stock helpers ----------
+  const productStockById = useMemo(() => {
+    const map = new Map<string, number>()
+    products.forEach(product => {
+      const itemType = product.itemType ?? 'product'
+      if (itemType === 'product' && typeof product.stockCount === 'number') {
+        map.set(product.id, product.stockCount)
+      }
+    })
+    return map
+  }, [products])
+
+  const getStockCount = useCallback(
+    (productId: string) => productStockById.get(productId) ?? 0,
+    [productStockById],
+  )
+
+  const hasInsufficientStockInCart = useMemo(
+    () =>
+      cart.some(line => {
+        const product = products.find(p => p.id === line.productId)
+        const itemType = product?.itemType ?? 'product'
+        if (itemType === 'service') return false
+        return line.qty > getStockCount(line.productId)
+      }),
+    [cart, getStockCount, products],
+  )
+
+  const addToCart = useCallback(
+    (p: Product) => {
+      if (typeof p.price !== 'number' || !Number.isFinite(p.price)) {
+        return
+      }
+      updateActiveDraft(draft => {
+        const cs = draft.cart
+        const i = cs.findIndex(x => x.productId === p.id)
+        const taxRate =
+          typeof p.taxRate === 'number' && Number.isFinite(p.taxRate)
+            ? p.taxRate
+            : undefined
+        if (i >= 0) {
+          const copy = [...cs]
+          copy[i] = { ...copy[i], qty: copy[i].qty + 1 }
+          return { ...draft, cart: copy }
+        }
+        return {
+          ...draft,
+          cart: [
+            ...cs,
+            { productId: p.id, name: p.name, price: p.price, qty: 1, taxRate },
+          ],
+        }
+      })
+    },
+    [updateActiveDraft],
+  )
+
+  const removeFromCart = useCallback(
+    (productId: string) => {
+      updateActiveDraft(draft => ({
+        ...draft,
+        cart: draft.cart.filter(line => line.productId !== productId),
+      }))
+    },
+    [updateActiveDraft],
+  )
+
+  const handleScannerError = useCallback((message: string) => {
+    setScannerStatus({ tone: 'error', message })
+  }, [])
+
+  const handleScanResult = useCallback(
+    (result: ScanResult) => {
+      const normalized = result.code.trim()
+      if (!normalized) return
+      const match = products.find(product => {
+        if (!product.sku) return false
+        return product.sku.trim().toLowerCase() === normalized.toLowerCase()
+      })
+      if (!match) {
+        setScannerStatus({
+          tone: 'error',
+          message: `We couldn't find a product for code ${normalized}.`,
+        })
+        return
+      }
+      if (typeof match.price !== 'number' || !Number.isFinite(match.price)) {
+        setScannerStatus({
+          tone: 'error',
+          message: `${match.name} needs a price before it can be sold.`,
+        })
+        return
+      }
+
+      addToCart(match)
+      const friendlySource =
+        result.source === 'manual'
+          ? 'manual entry'
+          : result.source === 'camera'
+          ? 'the camera'
+          : 'the scanner'
+      setScannerStatus({
+        tone: 'success',
+        message: `Added ${match.name} via ${friendlySource}.`,
+      })
+    },
+    [addToCart, products],
+  )
+
+  function setQty(id: string, qty: number) {
+    updateActiveDraft(draft => ({
+      ...draft,
+      cart: draft.cart
+        .map(l => (l.productId === id ? { ...l, qty: Math.max(0, qty) } : l))
+        .filter(l => l.qty > 0),
+    }))
+  }
+
+  // ---------- Multi-sale tab handlers ----------
+  const handleAddSale = useCallback(() => {
+    const newId = `draft-${Date.now()}`
+    setSaleDrafts(drafts => [...drafts, createEmptyDraft(newId)])
+    setActiveDraftId(newId)
+  }, [])
+
+  const handleRemoveSale = useCallback(
+    (id: string) => {
+      setSaleDrafts(drafts => {
+        if (drafts.length === 1) {
+          // Never remove last draft; just reset it
+          return drafts.map(d => (d.id === id ? createEmptyDraft(d.id) : d))
+        }
+
+        const filtered = drafts.filter(d => d.id !== id)
+        if (id === activeDraftId && filtered[0]) {
+          setActiveDraftId(filtered[0].id)
+        }
+        return filtered
+      })
+    },
+    [activeDraftId],
+  )
+
+  // ---------- Record sale ----------
+  async function recordSale() {
+    const currentDraft = activeDraft
+    if (!currentDraft) return
+
+    const cart = currentDraft.cart
+
+    if (cart.length === 0) return
+    if (isSubscriptionInactive) {
+      setSaleError('Your subscription is inactive. Reactivate to record sales.')
+      return
+    }
+    if (!activeStoreId) {
+      setSaleError('Select a workspace before recording a sale.')
+      return
+    }
+    if (!user) {
+      setSaleError('You must be signed in to record a sale.')
+      return
+    }
+    if (hasInsufficientStockInCart) {
+      setSaleError('Not enough stock')
+      return
+    }
+    if (isPaymentShort) {
+      setSaleError('Payment received is less than the total due.')
+      return
+    }
+    setSaleError(null)
+    setSaleSuccess(null)
+    setReceipt(null)
+    setIsRecording(true)
+
+    const saleId = doc(collection(db, 'sales')).id
+    const commitSale =
+      httpsCallable<CommitSalePayload, CommitSaleResponse>(cloudFunctions, 'commitSale')
+
+    const paymentTenders: PaymentTender[] = []
+
+    if (cashAmount > 0) {
+      paymentTenders.push({ method: 'cash', amount: cashAmount })
+    }
+
+    if (paystackAmount > 0) {
+      // Treated as external card / mobile money; no Paystack checkout
+      paymentTenders.push({ method: 'card', amount: paystackAmount })
+    }
+
+    const payment: Payment = {
+      tenders: paymentTenders,
+      totalPaid: amountPaid,
+      changeDue,
+      tip: tipAmount || null,
+    }
+
+    const payload: CommitSalePayload = {
+      branchId: activeStoreId,
+      saleId,
+      cashierId: user.uid,
+      customerId: selectedCustomer?.id ?? null,
+      totals: {
+        total: totalDue,
+        taxTotal: effectiveTaxTotal,
+      },
+      payment,
+      items: cart.map(line => ({
+        productId: line.productId,
+        name: line.name,
+        price: line.price,
+        qty: line.qty,
+        taxRate: line.taxRate ?? 0,
+      })),
+    }
+    if (selectedCustomer) {
+      payload.customer = {
+        id: selectedCustomer.id,
+        name: selectedCustomerDataName || selectedCustomer.id,
+        ...(selectedCustomer.phone ? { phone: selectedCustomer.phone } : {}),
+        ...(selectedCustomer.email ? { email: selectedCustomer.email } : {}),
+      }
+    }
+
+    const receiptItems = cart.map(line => ({ ...line, taxRate: line.taxRate ?? 0 }))
+
+    try {
+      const { data } = await commitSale(payload)
+      if (!data?.ok) {
+        throw new Error('Sale was not recorded')
+      }
+
+      const cashierNameOrEmail = user.displayName || user.email || 'Cashier'
+      try {
+        if (activeStoreId) {
+          await addDoc(collection(db, 'activity'), {
+            storeId: activeStoreId,
+            type: 'sale',
+            summary: `Sold ${totalQty} items for GHS ${totalDue.toFixed(2)}`,
+            detail: `Paid with ${paymentMethodsLabel || 'none'}`,
+            actor: cashierNameOrEmail,
+            createdAt: serverTimestamp(),
+          })
+        }
+      } catch (err) {
+        console.warn('[activity] Failed to log sale activity', err)
+      }
+
+      setReceipt({
+        saleId: data.saleId,
+        createdAt: new Date(),
+        items: receiptItems,
+        subtotal,
+        taxTotal: effectiveTaxTotal,
+        discount: discountAmount,
+        store: receiptStore,
+        payment: payload.payment,
+        customer: selectedCustomer
+          ? {
+              name: selectedCustomerDataName || selectedCustomer.id,
+              phone: selectedCustomer.phone,
+              email: selectedCustomer.email,
+            }
+          : undefined,
+      })
+
+      // Reset only the active draft
+      updateActiveDraft(draft => ({
+        ...draft,
+        cart: [],
+        selectedCustomerId: '',
+        paymentInputs: { cash: '', paystack: '' },
+        tipInput: '',
+        discountInput: '',
+        vatOverrideInput: '',
+      }))
+
+      setSaleSuccess(`Sale recorded #${data.saleId}. Receipt sent to printer.`)
+    } catch (err) {
+      console.error('[sell] Unable to record sale', err)
+      if (isOfflineError(err)) {
+        const queuedPayment: Payment = payload.payment.tenders.some(
+          tender => tender.method === 'card',
+        )
+          ? {
+              ...payload.payment,
+              tenders: payload.payment.tenders.map(tender =>
+                tender.method === 'card'
+                  ? { ...tender, status: tender.status ?? 'pending' }
+                  : tender,
+              ),
+            }
+          : payload.payment
+        const queuedPayload = { ...payload, payment: queuedPayment }
+        const queued = await queueCallableRequest('commitSale', queuedPayload, 'sale')
+        if (queued) {
+          setReceipt({
+            saleId,
+            createdAt: new Date(),
+            items: receiptItems,
+            subtotal,
+            taxTotal: effectiveTaxTotal,
+            discount: discountAmount,
+            store: receiptStore,
+            payment: queuedPayment,
+            customer: selectedCustomer
+              ? {
+                  name: selectedCustomerDataName || selectedCustomer.id,
+                  phone: selectedCustomer.phone,
+                  email: selectedCustomer.email,
+                }
+              : undefined,
+          })
+
+          // Reset only the active draft (queued offline)
+          updateActiveDraft(draft => ({
+            ...draft,
+            cart: [],
+            selectedCustomerId: '',
+            paymentInputs: { cash: '', paystack: '' },
+            tipInput: '',
+            discountInput: '',
+            vatOverrideInput: '',
+          }))
+
+          setSaleSuccess(
+            `Sale queued offline #${saleId}. We'll sync it once you're back online.`,
+          )
+          setIsRecording(false)
+          return
+        }
+      }
+      const message = err instanceof Error ? err.message : null
+      setSaleError(
+        message && message !== 'Sale was not recorded'
+          ? message
+          : 'We were unable to record this sale. Please try again.',
+      )
+    } finally {
+      setIsRecording(false)
+    }
+  }
+
+  const filtered = products.filter(p =>
+    p.name.toLowerCase().includes(queryText.toLowerCase()),
+  )
+
+  // ---------- Render ----------
+  return (
+    <div className="page sell-page">
+      <header className="page__header">
+        <div>
+          <h2 className="page__title">Sell</h2>
+          <p className="page__subtitle">
+            Build a cart from your products and services, then record the sale in seconds.
+          </p>
+        </div>
+        <div className="sell-page__total" aria-live="polite">
+          <span className="sell-page__total-label">Total (incl. VAT)</span>
+          <span className="sell-page__total-value">GHS {totalDue.toFixed(2)}</span>
+        </div>
+      </header>
+
+      <section className="card">
+        <div className="field">
+          <label className="field__label" htmlFor="sell-search">
+            Find an item
+          </label>
+          <input
+            id="sell-search"
+            autoFocus
+            placeholder="Search by name"
+            value={queryText}
+            onChange={e => setQueryText(e.target.value)}
+          />
+          <p className="field__hint">
+            Tip: search or scan a barcode to add products and services to the cart instantly.
+          </p>
+        </div>
+        <BarcodeScanner
+          className="sell-page__scanner"
+          enableCameraFallback
+          onScan={handleScanResult}
+          onError={handleScannerError}
+          manualEntryLabel="Scan or type a barcode"
+        />
+        {scannerStatus && (
+          <div
+            className={`sell-page__scanner-status sell-page__scanner-status--${scannerStatus.tone}`}
+            role="status"
+            aria-live="polite"
+          >
+            {scannerStatus.message}
+          </div>
+        )}
+      </section>
+
+      <div className="sell-page__grid">
+        {/* Catalog */}
+        <section className="card sell-page__catalog" aria-label="Product and service list">
+          <div className="sell-page__section-header">
+            <h3 className="card__title">Products &amp; services</h3>
+            <p className="card__subtitle">{filtered.length} items available to sell.</p>
+          </div>
+          <div className="sell-page__catalog-list">
+            {filtered.length ? (
+              filtered.map(p => {
+                const itemType = p.itemType ?? 'product'
+                const isService = itemType === 'service'
+                const hasPrice = typeof p.price === 'number' && Number.isFinite(p.price)
+                const priceText = hasPrice ? `GHS ${p.price.toFixed(2)}` : 'Price unavailable'
+                const inventoryLabel = isService
+                  ? 'Service • no stock tracking'
+                  : `Stock ${p.stockCount ?? 0}`
+                const actionLabel = hasPrice ? 'Add' : 'Set price to sell'
+
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="sell-page__product"
+                    onClick={() => addToCart(p)}
+                    disabled={!hasPrice}
+                    title={hasPrice ? undefined : 'Update the price before selling this item.'}
+                  >
+                    <div>
+                      <span className="sell-page__product-name">{p.name}</span>
+                      <span className="sell-page__product-meta">
+                        {priceText} • {inventoryLabel}
+                      </span>
+                    </div>
+                    <span className="sell-page__product-action">
+                      {isService ? 'Add service' : actionLabel}
+                    </span>
+                  </button>
+                )
+              })
+            ) : (
+              <div className="empty-state">
+                <h3 className="empty-state__title">No items found</h3>
+                <p>
+                  Try a different search term or add new products and services from the products
+                  page.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Cart */}
+        <section className="card sell-page__cart" aria-label="Cart">
+          <div className="sell-page__section-header">
+            <h3 className="card__title">Cart</h3>
+            <p className="card__subtitle">Adjust quantities before recording the sale.</p>
+          </div>
+
+          {/* Multi-sale tabs */}
+          <div className="sell-page__multi-sales">
+            {saleDrafts.map((draft, index) => (
+              <button
+                key={draft.id}
+                type="button"
+                className={
+                  'sell-page__multi-sales-tab' +
+                  (draft.id === activeDraftId ? ' sell-page__multi-sales-tab--active' : '')
+                }
+                onClick={() => setActiveDraftId(draft.id)}
+              >
+                Sale {index + 1}
+                {saleDrafts.length > 1 && (
+                  <span
+                    className="sell-page__multi-sales-tab-close"
+                    onClick={e => {
+                      e.stopPropagation()
+                      handleRemoveSale(draft.id)
+                    }}
+                    aria-label={`Close sale ${index + 1}`}
+                  >
+                    ×
+                  </span>
+                )}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="sell-page__multi-sales-add"
+              onClick={handleAddSale}
+            >
+              + New sale
+            </button>
+          </div>
+
+          {isSubscriptionInactive && (
+            <p className="sell-page__message sell-page__message--error" role="status">
+              Reactivate your subscription to commit sales.
+            </p>
+          )}
+
+          {saleError && <p className="sell-page__message sell-page__message--error">{saleError}</p>}
+
+          {saleSuccess && (
+            <div className="sell-page__message sell-page__message--success">
+              <span>{saleSuccess}</span>
+              <div className="sell-page__engagement-actions">
+                <button
+                  type="button"
+                  className="button button--ghost button--small"
+                  onClick={() => window.print()}
+                >
+                  Print again
+                </button>
+                {receiptSharePayload && (
+                  <>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => handleShareChannel('email')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
+                    >
+                      Email receipt
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => handleShareChannel('sms')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
+                    >
+                      Text receipt
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => handleShareChannel('whatsapp')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
+                    >
+                      WhatsApp receipt
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {cart.length ? (
+            <>
+              {hasInsufficientStockInCart ? (
+                <p className="sell-page__message sell-page__message--error" role="alert">
+                  Not enough stock.
+                </p>
+              ) : null}
+
+              <div className="table-wrapper">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Item</th>
+                      <th scope="col" className="sell-page__numeric">
+                        Qty
+                      </th>
+                      <th scope="col" className="sell-page__numeric">
+                        Price
+                      </th>
+                      <th scope="col" className="sell-page__numeric">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cart.map(line => {
+                      const product = products.find(p => p.id === line.productId)
+                      const itemType = product?.itemType ?? 'product'
+                      const isService = itemType === 'service'
+                      const stockCount = isService ? null : getStockCount(line.productId)
+                      const hasInsufficientStock =
+                        !isService && typeof stockCount === 'number' && line.qty > stockCount
+
+                      return (
+                        <tr key={line.productId}>
+                          <td>
+                            {line.name}
+                            {isService && <div className="sell-page__item-pill">Service</div>}
+                          </td>
+                          <td className="sell-page__numeric">
+                            <input
+                              className={`input--inline input--align-right${
+                                hasInsufficientStock ? ' sell-page__input--error' : ''
+                              }`}
+                              type="number"
+                              min={0}
+                              value={line.qty}
+                              onChange={e => setQty(line.productId, Number(e.target.value))}
+                              aria-invalid={hasInsufficientStock}
+                            />
+                            {hasInsufficientStock ? (
+                              <div className="sell-page__qty-warning" role="alert">
+                                Not enough stock (on hand: {stockCount ?? 0})
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="sell-page__numeric">
+                            GHS {(line.price * line.qty).toFixed(2)}
+                          </td>
+                          <td className="sell-page__numeric">
+                            <button
+                              type="button"
+                              className="button button--ghost button--small"
+                              onClick={() => removeFromCart(line.productId)}
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="sell-page__summary">
+                <div className="sell-page__summary-row">
+                  <span>Subtotal</span>
+                  <strong>GHS {subtotal.toFixed(2)}</strong>
+                </div>
+                <div className="sell-page__summary-row">
+                  <span>VAT</span>
+                  <strong>GHS {effectiveTaxTotal.toFixed(2)}</strong>
+                </div>
+                <div className="sell-page__summary-row">
+                  <span>Discount</span>
+                  <strong>GHS {discountAmount.toFixed(2)}</strong>
+                </div>
+                <div className="sell-page__summary-row">
+                  <span>Total (incl. VAT)</span>
+                  <strong>GHS {totalDue.toFixed(2)}</strong>
+                </div>
+              </div>
+
+              <div className="sell-page__form-grid">
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-customer">
+                    Customer
+                  </label>
+                  <select
+                    id="sell-customer"
+                    value={selectedCustomerId}
+                    onChange={event =>
+                      updateActiveDraft(draft => ({
+                        ...draft,
+                        selectedCustomerId: event.target.value,
+                      }))
+                    }
+                    className="sell-page__select"
+                  >
+                    <option value="">Walk-in customer</option>
+                    {customers.map(customer => (
+                      <option key={customer.id} value={customer.id}>
+                        {getCustomerDisplayName(customer)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="field__hint">
+                    Need to add someone new? Manage records on the{' '}
+                    <Link to="/customers" className="sell-page__customers-link">
+                      Customers page
+                    </Link>
+                    .
+                  </p>
+
+                  {selectedCustomer && (
+                    <div className="sell-page__message-tools">
+                      <label className="field__label" htmlFor="sell-message-template">
+                        Edit default message
+                      </label>
+                      <textarea
+                        id="sell-message-template"
+                        rows={2}
+                        className="sell-page__input"
+                        value={messageTemplate}
+                        onChange={e => setMessageTemplate(e.target.value)}
+                        placeholder="Hi [customer], thank you for shopping with us today..."
+                      />
+                      <div className="sell-page__message-actions">
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleSendQuickMessage('whatsapp')}
+                          disabled={!selectedCustomer.phone}
+                        >
+                          WhatsApp
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleSendQuickMessage('sms')}
+                          disabled={!selectedCustomer.phone}
+                        >
+                          SMS
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleSendQuickMessage('email')}
+                          disabled={!selectedCustomer.email}
+                        >
+                          Email
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--small"
+                          onClick={() => handleSendQuickMessage('telegram')}
+                        >
+                          Telegram
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-cash-amount">
+                    Cash received
+                  </label>
+                  <input
+                    id="sell-cash-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={cashAmountInput}
+                    onChange={event =>
+                      updateActiveDraft(draft => ({
+                        ...draft,
+                        paymentInputs: { ...draft.paymentInputs, cash: event.target.value },
+                      }))
+                    }
+                    className="sell-page__input"
+                  />
+                </div>
+
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-paystack-amount">
+                    Card / Mobile money
+                  </label>
+                  <input
+                    id="sell-paystack-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paystackAmountInput}
+                    onChange={event =>
+                      updateActiveDraft(draft => ({
+                        ...draft,
+                        paymentInputs: { ...draft.paymentInputs, paystack: event.target.value },
+                      }))
+                    }
+                    className="sell-page__input"
+                  />
+                  <p className="field__hint">
+                    Enter the amount paid via POS machine or mobile money. This will not charge
+                    the customer.
+                  </p>
+                </div>
+
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-tip-amount">
+                    Tip (optional)
+                  </label>
+                  <input
+                    id="sell-tip-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={tipInput}
+                    onChange={event =>
+                      updateActiveDraft(draft => ({
+                        ...draft,
+                        tipInput: event.target.value,
+                      }))
+                    }
+                    className="sell-page__input"
+                  />
+                  <p className="field__hint">Add a gratuity to the total.</p>
+                </div>
+
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-discount-amount">
+                    Discount (GHS)
+                  </label>
+                  <input
+                    id="sell-discount-amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={discountInput}
+                    onChange={event =>
+                      updateActiveDraft(draft => ({
+                        ...draft,
+                        discountInput: event.target.value,
+                      }))
+                    }
+                    className="sell-page__input"
+                  />
+                  <p className="field__hint">Enter any discount applied to this sale.</p>
+                </div>
+
+                <div className="sell-page__field-group">
+                  <label className="field__label" htmlFor="sell-vat-override">
+                    VAT (override, optional)
+                  </label>
+                  <input
+                    id="sell-vat-override"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={vatOverrideInput}
+                    onChange={event =>
+                      updateActiveDraft(draft => ({
+                        ...draft,
+                        vatOverrideInput: event.target.value,
+                      }))
+                    }
+                    className="sell-page__input"
+                  />
+                  <p className="field__hint">
+                    Leave blank to use VAT from each product automatically.
+                  </p>
+                </div>
+              </div>
+
+              <div className="sell-page__payment-summary" aria-live="polite">
+                <div>
+                  <span className="sell-page__summary-label">Subtotal</span>
+                  <strong>GHS {subtotal.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span className="sell-page__summary-label">VAT</span>
+                  <strong>GHS {effectiveTaxTotal.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span className="sell-page__summary-label">Discount</span>
+                  <strong>GHS {discountAmount.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span className="sell-page__summary-label">Tip</span>
+                  <strong>GHS {tipAmount.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span className="sell-page__summary-label">Amount due</span>
+                  <strong>GHS {totalWithTip.toFixed(2)}</strong>
+                </div>
+                <div>
+                  <span className="sell-page__summary-label">Paid</span>
+                  <strong>GHS {amountPaid.toFixed(2)}</strong>
+                </div>
+                <div className={`sell-page__change${isPaymentShort ? ' is-short' : ''}`}>
+                  <span className="sell-page__summary-label">
+                    {isPaymentShort ? 'Short' : 'Change due'}
+                  </span>
+                  <strong>GHS {changeDue.toFixed(2)}</strong>
+                </div>
+              </div>
+
+              {saleSuccess && receiptSharePayload && (
+                <section className="sell-page__engagement" aria-live="polite">
+                  <h4 className="sell-page__engagement-title">Share the receipt</h4>
+                  <p className="sell-page__engagement-text">
+                    Email, text, or WhatsApp the receipt so your customer has a digital copy
+                    right away.
+                  </p>
+                  <div className="sell-page__engagement-actions">
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={handleDownloadPdf}
+                    >
+                      Download PDF
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => handleShareChannel('whatsapp')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
+                    >
+                      WhatsApp receipt
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => handleShareChannel('email')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
+                    >
+                      Email receipt
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => handleShareChannel('sms')}
+                      disabled={!canShareReceipt}
+                      title={
+                        canShareReceipt
+                          ? undefined
+                          : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                      }
+                    >
+                      Text receipt
+                    </button>
+                  </div>
+                  <details className="sell-page__engagement-details">
+                    <summary>Preview message</summary>
+                    <pre className="sell-page__engagement-preview">
+                      {receiptSharePayload.message}
+                    </pre>
+                  </details>
+                </section>
+              )}
+
+              {receipt && receiptSharePayload ? (
+                <section className="sell-page__outbox" aria-live="polite">
+                  <div className="sell-page__outbox-header">
+                    <h4 className="sell-page__outbox-title">Receipts Outbox</h4>
+                    <p className="sell-page__outbox-subtitle">
+                      Track delivery attempts for sale #{receipt.saleId}.
+                    </p>
+                  </div>
+
+                  {isLoadingShareLogs ? (
+                    <p className="sell-page__outbox-status-text">Loading delivery attempts…</p>
+                  ) : shareLogsError ? (
+                    <p className="sell-page__message sell-page__message--error">{shareLogsError}</p>
+                  ) : receiptShareLogs.length === 0 ? (
+                    <p className="sell-page__outbox-status-text">No receipt shares yet.</p>
+                  ) : (
+                    <ul className="sell-page__outbox-list">
+                      {receiptShareLogs.map(log => {
+                        const createdAt =
+                          log.createdAt instanceof Timestamp ? log.createdAt.toDate() : null
+                        const statusTone = getReceiptShareStatusTone(log.status)
+                        const statusLabel = getReceiptShareStatusLabel(log.status)
+
+                        return (
+                          <li key={log.id} className="sell-page__outbox-item">
+                            <div className="sell-page__outbox-item-main">
+                              <div className="sell-page__outbox-row">
+                                <span className="sell-page__outbox-channel">
+                                  {log.channel.toUpperCase()}
+                                </span>
+                                <span
+                                  className={`sell-page__outbox-status sell-page__outbox-status--${statusTone}`}
+                                >
+                                  {statusLabel}
+                                </span>
+                              </div>
+                              <div className="sell-page__outbox-meta">
+                                {log.contact ? `To ${log.contact}` : 'No contact recorded'}
+                                {createdAt ? ` • ${createdAt.toLocaleString()}` : ''}
+                              </div>
+                              {log.errorMessage ? (
+                                <p className="sell-page__outbox-error">{log.errorMessage}</p>
+                              ) : null}
+                            </div>
+                            {log.status === 'failed' ? (
+                              <button
+                                type="button"
+                                className="button button--ghost button--small"
+                                onClick={() => handleRetryShare(log)}
+                                disabled={!canShareReceipt}
+                                title={
+                                  canShareReceipt
+                                    ? 'Try sending this receipt again'
+                                    : 'Sharing is unavailable offline. Reconnect to send receipts.'
+                                }
+                              >
+                                Retry send
+                              </button>
+                            ) : null}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </section>
+              ) : null}
+
+              <button
+                type="button"
+                className="button button--primary button--block"
+                onClick={recordSale}
+                disabled={cart.length === 0 || isRecording || isSubscriptionInactive}
+              >
+                {isSubscriptionInactive ? '🔒 ' : ''}
+                {isRecording ? 'Saving…' : 'Record sale'}
+              </button>
+            </>
+          ) : (
+            <div className="empty-state">
+              <h3 className="empty-state__title">Cart is empty</h3>
+              <p>Select products or services from the list to start a new sale.</p>
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* PRINT RECEIPT AREA */}
+      <div
+        className={`receipt-print${receipt ? ' is-ready' : ''}`}
+        aria-hidden={receipt ? 'false' : 'true'}
+      >
+        {receipt && (
+          <div className="receipt-print__inner">
+            {(() => {
+              const storeInfo = receipt.store ?? receiptStore
+              const headerName = storeInfo?.name || 'Sedifex POS'
+              const headerContact =
+                storeInfo?.phone || storeInfo?.email || user?.email || 'sales@sedifex.app'
+              const headerAddress = (storeInfo?.addressLines ?? []).join(', ')
+
+              const taxTotal = receipt.taxTotal
+              const totalWithTax = receipt.subtotal + taxTotal - receipt.discount
+              const amountDue = totalWithTax + (receipt.payment.tip ?? 0)
+
+              return (
+                <>
+                  <h2 className="receipt-print__title">{headerName}</h2>
+                  <p className="receipt-print__meta">
+                    {headerAddress && (
+                      <>
+                        {headerAddress}
+                        <br />
+                      </>
+                    )}
+                    {headerContact}
+                    <br />
+                    {receipt.createdAt.toLocaleString()}
+                  </p>
+
+                  {receipt.customer && (
+                    <div className="receipt-print__section">
+                      <strong>Customer:</strong>
+                      <div>{receipt.customer.name}</div>
+                      {receipt.customer.phone && <div>{receipt.customer.phone}</div>}
+                      {receipt.customer.email && <div>{receipt.customer.email}</div>}
+                    </div>
+                  )}
+
+                  <table className="receipt-print__table">
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th>Qty</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {receipt.items.map(line => (
+                        <tr key={line.productId}>
+                          <td>{line.name}</td>
+                          <td>{line.qty}</td>
+                          <td>GHS {(line.qty * line.price).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <div className="receipt-print__summary">
+                    <div>
+                      <span>Subtotal</span>
+                      <strong>GHS {receipt.subtotal.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>VAT</span>
+                      <strong>GHS {taxTotal.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Discount</span>
+                      <strong>GHS {receipt.discount.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Total</span>
+                      <strong>GHS {totalWithTax.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Tip</span>
+                      <strong>GHS {(receipt.payment.tip ?? 0).toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Amount due</span>
+                      <strong>GHS {amountDue.toFixed(2)}</strong>
+                    </div>
+                    {receipt.payment.tenders.map((tender, index) => {
+                      const label = tender.method === 'card' ? 'Card/Mobile' : 'Cash'
+                      const providerLabel = tender.provider ? ` (${tender.provider})` : ''
+                      return (
+                        <div key={`${label}-${index}`}>
+                          <span>{`${label}${providerLabel}`}</span>
+                          <strong>GHS {tender.amount.toFixed(2)}</strong>
+                        </div>
+                      )
+                    })}
+                    <div>
+                      <span>Total paid</span>
+                      <strong>GHS {receipt.payment.totalPaid.toFixed(2)}</strong>
+                    </div>
+                    <div>
+                      <span>Change</span>
+                      <strong>GHS {receipt.payment.changeDue.toFixed(2)}</strong>
+                    </div>
+                  </div>
+
+                  <p className="receipt-print__footer">
+                    Sale #{receipt.saleId} — Thank you for shopping with us!
+                  </p>
+                </>
+              )
+            })()}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
