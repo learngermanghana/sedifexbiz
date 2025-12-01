@@ -76,7 +76,6 @@ export default function CloseDay() {
     createInitialCashCountState(),
   )
   const [looseCash, setLooseCash] = useState('')
-  const [cardAndDigital, setCardAndDigital] = useState('')
   const [cashRemoved, setCashRemoved] = useState('')
   const [cashAdded, setCashAdded] = useState('')
   const [notes, setNotes] = useState('')
@@ -84,17 +83,22 @@ export default function CloseDay() {
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // NEW: auto-calculated non-cash payments (card / momo / transfers)
+  const [autoNonCashTotal, setAutoNonCashTotal] = useState(0)
+
   // NEW: recent close-day records
   const [recentCloseouts, setRecentCloseouts] = useState<CloseoutRecord[]>([])
   const [closeoutsError, setCloseoutsError] = useState<string | null>(null)
   const [isLoadingCloseouts, setIsLoadingCloseouts] = useState(false)
 
-  // Load today's sales total for this store
+  // Load today's sales total for this store + auto non-cash total
   useEffect(() => {
     const start = new Date()
     start.setHours(0, 0, 0, 0)
+
     if (!activeStoreId) {
       setTotal(0)
+      setAutoNonCashTotal(0)
       return () => {
         /* noop */
       }
@@ -109,17 +113,38 @@ export default function CloseDay() {
 
     return onSnapshot(q, snap => {
       let sum = 0
+      let nonCashSum = 0
+
       snap.forEach(d => {
-        const data = d.data()
+        const data = d.data() as any
+
+        // Total (same logic you already had)
         const saleTotal =
           typeof data.total === 'number'
             ? data.total
             : typeof data.totals?.total === 'number'
               ? data.totals.total
               : 0
+
         sum += Number(saleTotal) || 0
+
+        // 🔍 payment.tenders: sum all non-cash amounts
+        const tenders = Array.isArray(data.payment?.tenders)
+          ? data.payment.tenders
+          : []
+
+        for (const tender of tenders) {
+          const amount = Number(tender?.amount) || 0
+          const method = (tender?.method || '').toLowerCase()
+
+          if (amount > 0 && method && method !== 'cash') {
+            nonCashSum += amount
+          }
+        }
       })
+
       setTotal(sum)
+      setAutoNonCashTotal(nonCashSum)
     })
   }, [activeStoreId])
 
@@ -158,8 +183,12 @@ export default function CloseDay() {
       snapshot => {
         const rows: CloseoutRecord[] = snapshot.docs.map(docSnap => {
           const data = docSnap.data() as any
-          const bd = data.businessDay instanceof Timestamp ? data.businessDay.toDate() : null
-          const ca = data.closedAt instanceof Timestamp ? data.closedAt.toDate() : null
+          const bd =
+            data.businessDay instanceof Timestamp
+              ? data.businessDay.toDate()
+              : null
+          const ca =
+            data.closedAt instanceof Timestamp ? data.closedAt.toDate() : null
           const closedBy = data.closedBy || {}
           const closedByName =
             (typeof closedBy.displayName === 'string' && closedBy.displayName) ||
@@ -205,10 +234,6 @@ export default function CloseDay() {
     )
   }, [cashCounts, looseCashTotal])
 
-  const cardTotal = useMemo(
-    () => parseCurrency(cardAndDigital),
-    [cardAndDigital],
-  )
   const removedTotal = useMemo(
     () => parseCurrency(cashRemoved),
     [cashRemoved],
@@ -217,6 +242,9 @@ export default function CloseDay() {
     () => parseCurrency(cashAdded),
     [cashAdded],
   )
+
+  // 💡 cardTotal is now 100% auto from today's sales (non-cash payments)
+  const cardTotal = autoNonCashTotal
 
   // Expected physical cash = all sales - non-cash payments - cash taken out + cash added
   const expectedCash = useMemo(() => {
@@ -291,14 +319,15 @@ export default function CloseDay() {
       > = {}
 
       salesSnapshot.forEach(docSnap => {
-        const data = docSnap.data()
+        const data = docSnap.data() as any
         const saleTotal =
           typeof data.total === 'number'
             ? data.total
             : typeof data.totals?.total === 'number'
               ? data.totals.total
               : 0
-        const saleTax = Number(data.taxTotal ?? data.totals?.taxTotal ?? 0) || 0
+        const saleTax =
+          Number(data.taxTotal ?? data.totals?.taxTotal ?? 0) || 0
         totalSales += Number(saleTotal) || 0
         totalTax += saleTax
         receiptCount += 1
@@ -355,7 +384,7 @@ export default function CloseDay() {
         countedCash,
         variance,
         looseCash: looseCashTotal,
-        cardAndDigital: cardTotal,
+        cardAndDigital: cardTotal, // 🔹 numeric non-cash total (card + momo + others)
         cashRemoved: removedTotal,
         cashAdded: addedTotal,
         denominations: DENOMINATIONS.map(denom => {
@@ -446,8 +475,9 @@ export default function CloseDay() {
         >
           <li>Confirm the sales total is correct for today.</li>
           <li>
-            Enter card / mobile money / transfers and any cash taken out or added –
-            these numbers change the expected cash below.
+            We automatically add all <strong>card / mobile money / transfer</strong>{' '}
+            sales from today. You only need to type the <strong>cash in the drawer</strong>{' '}
+            and any cash taken out or added.
           </li>
           <li>Count each note and coin, add loose cash, then review the cash check.</li>
           <li>Add notes for the next shift, then save and print the summary.</li>
@@ -468,24 +498,29 @@ export default function CloseDay() {
             GHS {total.toFixed(2)}
           </div>
           <div style={{ display: 'grid', gap: 12, maxWidth: 420 }}>
-            <label
+            <div
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 4,
               }}
             >
-              <span>Card / mobile money / transfers</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min="0"
-                value={cardAndDigital}
-                onChange={event => setCardAndDigital(event.target.value)}
-                placeholder="0.00"
-              />
-            </label>
+              <span>Card / mobile money / transfers (auto from today’s sales)</span>
+              <div
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  border: '1px solid #CBD5F5',
+                  background: '#F9FAFB',
+                  fontSize: 14,
+                }}
+              >
+                GHS {cardTotal.toFixed(2)}
+              </div>
+              <span style={{ fontSize: 12, color: '#6b7280' }}>
+                If this looks wrong, fix the payment method on the Sell page receipts.
+              </span>
+            </div>
             <label
               style={{
                 display: 'flex',
@@ -627,7 +662,7 @@ export default function CloseDay() {
             }}
           >
             We compare what the system expects with what you counted in the drawer.
-            Card / mobile money / transfers reduce the expected cash.
+            Card / mobile money / transfers are pulled automatically from today’s sales.
           </p>
           <div style={{ display: 'grid', gap: 6, maxWidth: 420 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
