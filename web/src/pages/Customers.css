@@ -1,6 +1,9 @@
+/* ============ Layout ============ */
+
 .customers-page__grid {
   display: grid;
   gap: 24px;
+  margin-top: 8px;
 }
 
 /* 3 columns on wider screens: form • list • details */
@@ -13,6 +16,16 @@
   }
 }
 
+/* Make each column feel like a card */
+.customers-page__grid > * {
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  padding: 18px 20px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+/* Section header (title + description) */
 .customers-page__section-header {
   display: flex;
   flex-direction: column;
@@ -20,16 +33,25 @@
   margin-bottom: 16px;
 }
 
+.customers-page__section-header h2,
+.customers-page__section-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.customers-page__section-header p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+/* ============ Form ============ */
+
 .customers-page__form {
   display: grid;
   gap: 16px;
-}
-
-.customers-page__form-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
 }
 
 .customers-page__form-row {
@@ -43,6 +65,15 @@
   }
 }
 
+.customers-page__form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+/* Status badge above form/list */
 .customers-page__badge {
   display: inline-flex;
   align-items: center;
@@ -53,12 +84,14 @@
   border-radius: 999px;
   padding: 8px 16px;
   min-width: 120px;
+  font-size: 13px;
   text-align: center;
 }
 
+/* Inline messages under buttons */
 .customers-page__message {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .customers-page__message--error {
@@ -69,6 +102,8 @@
   color: #047857;
 }
 
+/* ============ Toolbar: search + buttons + filters ============ */
+
 .customers-page__toolbar {
   display: flex;
   flex-direction: column;
@@ -76,8 +111,18 @@
   margin-bottom: 16px;
 }
 
+.customers-page__search-field {
+  position: relative;
+  width: 100%;
+}
+
 .customers-page__search-field input {
   width: 100%;
+  padding-inline: 12px;
+  border-radius: 999px;
+  border: 1px solid #cbd5f5;
+  font-size: 14px;
+  height: 40px;
 }
 
 .customers-page__tool-buttons {
@@ -86,79 +131,6 @@
   gap: 12px;
 }
 
-.customers-page__filters,
-.customers-page__tag-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.customers-page__filters-label {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.customers-page__quick-filters,
-.customers-page__tag-chip-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.customers-page__quick-filter--active {
-  background: rgba(67, 56, 202, 0.12);
-  border-color: rgba(67, 56, 202, 0.32);
-}
-
-.customers-page__tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.customers-page__tag-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: #eef2ff;
-  color: #4338ca;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-/* 🔹 Contact buttons layout (WhatsApp / Telegram / Email) */
-.customers-page__contact-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.customers-page__table-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.customers-page__row {
-  cursor: pointer;
-}
-
-.customers-page__row--selected {
-  background: rgba(67, 56, 202, 0.08);
-}
-
-.customers-page__details {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* On large screens, details just live in column 3 (no spanning) */
 @media (min-width: 1080px) {
   .customers-page__toolbar {
     flex-direction: row;
@@ -171,6 +143,108 @@
   }
 }
 
+/* Filters + tag chips row */
+
+.customers-page__filters,
+.customers-page__tag-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.customers-page__filters-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: #475569;
+}
+
+.customers-page__quick-filters,
+.customers-page__tag-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customers-page__quick-filters button,
+.customers-page__tag-chip {
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.customers-page__quick-filter--active {
+  background: rgba(67, 56, 202, 0.12);
+  border-color: rgba(67, 56, 202, 0.32);
+  color: #312e81;
+}
+
+.customers-page__tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Individual tag chip */
+.customers-page__tag-chip {
+  background: #eef2ff;
+  color: #4338ca;
+  white-space: nowrap;
+}
+
+/* ============ Contacts / actions ============ */
+
+.customers-page__contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.customers-page__table-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ============ Table list styling ============ */
+
+.customers-page__row {
+  cursor: pointer;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.customers-page__row:hover {
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.customers-page__row--selected {
+  background: rgba(67, 56, 202, 0.08);
+  box-shadow: inset 2px 0 0 #4338ca;
+}
+
+/* ============ Details / right-side panel ============ */
+
+.customers-page__details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.customers-page__details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .customers-page__details-content {
   display: grid;
   gap: 16px;
@@ -178,21 +252,30 @@
 
 .customers-page__detail-list {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.customers-page__detail-list:first-of-type {
+  border-top: none;
 }
 
 .customers-page__detail-list dt {
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
   color: #6366f1;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
+  letter-spacing: 0.08em;
+  margin-bottom: 3px;
 }
 
 .customers-page__detail-list dd {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
+  color: #0f172a;
 }
+
+/* ============ History ============ */
 
 .customers-page__history {
   display: grid;
@@ -204,7 +287,7 @@
   padding: 0;
   margin: 0;
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .customers-page__history-row {
@@ -216,34 +299,44 @@
 
 .customers-page__history-primary {
   color: #111827;
+  font-size: 14px;
 }
 
 .customers-page__history-total {
   color: #4338ca;
+  font-size: 14px;
 }
 
 .customers-page__history-meta {
-  font-size: 13px;
+  font-size: 12px;
   color: #6b7280;
+  margin-top: 2px;
 }
 
 .customers-page__history-items {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 12px;
   color: #374151;
 }
 
+/* ============ Details actions & empty state ============ */
+
 .customers-page__details-actions {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .customers-page__details-empty {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   text-align: center;
-  padding: 24px;
+  padding: 24px 18px;
   color: #4b5563;
+  border-radius: 14px;
+  background: #f9fafb;
+  border: 1px dashed #e5e7eb;
+  font-size: 14px;
 }
