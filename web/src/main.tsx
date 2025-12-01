@@ -46,10 +46,14 @@ const router = createHashRouter([
           { path: 'activity', element: <ActivityFeed /> },
           { path: 'logi', element: <Logi /> },
 
+          // Finance
           { path: 'finance', element: <Finance /> },
           { path: 'expenses', element: <Expenses /> },
+
+          // Close day
           { path: 'close-day', element: <CloseDay /> },
 
+          // Other authenticated pages
           { path: 'onboarding', element: <Onboarding /> },
           { path: 'staff', element: <StaffManagement /> },
           { path: 'account', element: <AccountOverview /> },
@@ -57,12 +61,12 @@ const router = createHashRouter([
         ],
       },
 
-      // Public (non-authenticated) routes
+      // Public routes (outside ShellLayout)
       { path: 'reset-password', element: <ResetPassword /> },
       { path: 'verify-email', element: <VerifyEmail /> },
       { path: 'billing/verify', element: <BillingVerifyPage /> },
 
-      // ✅ Legal pages
+      // Legal pages
       { path: 'legal/privacy', element: <PrivacyPage /> },
       { path: 'legal/cookies', element: <CookiesPage /> },
       { path: 'legal/refund', element: <RefundPage /> },
@@ -70,7 +74,7 @@ const router = createHashRouter([
   },
 ])
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <ToastProvider>
       <RouterProvider router={router} />
