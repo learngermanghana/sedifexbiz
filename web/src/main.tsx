@@ -1,8 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { createHashRouter, RouterProvider } from 'react-router-dom'
+
 import App from './App'
 import ShellLayout from './layout/ShellLayout'
+
 import Dashboard from './pages/Dashboard'
 import Products from './pages/Products'
 import Sell from './pages/Sell'
@@ -19,7 +21,12 @@ import Support from './pages/Support'
 import Finance from './pages/Finance'
 import Expenses from './pages/Expenses'
 import ResetPassword from './pages/ResetPassword'
-import VerifyEmail from './pages/VerifyEmail'   // 👈 NEW
+import VerifyEmail from './pages/VerifyEmail'
+
+import PrivacyPage from './pages/legal/PrivacyPage'
+import CookiesPage from './pages/legal/CookiesPage'
+import RefundPage from './pages/legal/RefundPage'
+
 import { ToastProvider } from './components/ToastProvider'
 
 const router = createHashRouter([
@@ -39,13 +46,8 @@ const router = createHashRouter([
           { path: 'activity', element: <ActivityFeed /> },
           { path: 'logi', element: <Logi /> },
 
-          // ✅ Finance main page
           { path: 'finance', element: <Finance /> },
-
-          // ✅ Expenses page (matches <Link to="/expenses">)
           { path: 'expenses', element: <Expenses /> },
-
-          // Close Day route for the quick link
           { path: 'close-day', element: <CloseDay /> },
 
           { path: 'onboarding', element: <Onboarding /> },
@@ -55,10 +57,15 @@ const router = createHashRouter([
         ],
       },
 
-      // 🔓 Public routes (outside ShellLayout)
+      // Public (non-authenticated) routes
       { path: 'reset-password', element: <ResetPassword /> },
-      { path: 'verify-email', element: <VerifyEmail /> },   // 👈 NEW
+      { path: 'verify-email', element: <VerifyEmail /> },
       { path: 'billing/verify', element: <BillingVerifyPage /> },
+
+      // ✅ Legal pages
+      { path: 'legal/privacy', element: <PrivacyPage /> },
+      { path: 'legal/cookies', element: <CookiesPage /> },
+      { path: 'legal/refund', element: <RefundPage /> },
     ],
   },
 ])
