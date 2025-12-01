@@ -1,83 +1,82 @@
-.auth-screen {
-  min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  background: radial-gradient(circle at top, rgba(37, 99, 235, 0.08), transparent 55%), #f8fafc;
-}
+/* --- Partner stores section under the login form --- */
 
-.auth-screen__panel {
+.auth-screen__partners {
+  margin-top: 2rem;
   width: 100%;
   max-width: 520px;
+}
+
+.auth-screen__partners-heading {
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--auth-text-muted);
+  margin: 0 0 0.5rem;
+}
+
+.auth-screen__partners-text {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: var(--auth-text-muted);
+}
+
+/* pill container */
+.auth-screen__partners-examples {
+  margin-top: 0.25rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.85rem;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+/* label above the pills */
+.auth-screen__partners-examples-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--auth-text-muted);
+  margin: 0 0 0.5rem;
+}
+
+/* the row of chips */
+.auth-screen__partners-list {
+  list-style: none;
   display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  align-items: center;
-}
-
-.auth-screen__brand {
-  text-align: center;
-  color: var(--auth-heading-color);
-}
-
-.auth-screen__logo {
-  font-weight: 800;
-  font-size: 2.5rem;
-  letter-spacing: -0.04em;
-}
-
-.auth-screen__tagline {
-  margin: 0.5rem 0 0;
-  font-size: 1rem;
-  color: var(--auth-text-muted);
-}
-
-.auth-screen__mode-toggle {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  background-color: rgba(148, 163, 184, 0.14);
-  border-radius: 999px;
-  padding: 0.25rem;
-  gap: 0.25rem;
-}
-
-.auth-screen__mode-button {
-  appearance: none;
-  border: none;
-  border-radius: 999px;
-  padding: 0.6rem 1.25rem;
-  font-size: 0.95rem;
-  font-weight: 600;
-  background-color: transparent;
-  color: var(--auth-text-muted);
-  cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
-}
-
-.auth-screen__mode-button.is-active {
-  background-color: #ffffff;
-  color: #1d4ed8;
-  box-shadow: 0 10px 25px rgba(30, 64, 175, 0.18);
-}
-
-.auth-screen__footer-button {
-  appearance: none;
-  background: none;
-  border: none;
-  color: var(--auth-accent-start);
-  font-weight: 600;
-  cursor: pointer;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
   padding: 0;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .auth-screen__mode-button:not(:disabled):hover {
-    background-color: rgba(255, 255, 255, 0.7);
-    color: #1d4ed8;
-  }
+/* individual chip */
+.auth-screen__partners-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  font-size: 0.75rem;
+  line-height: 1.2;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+}
 
-  .auth-screen__footer-button:not(:disabled):hover {
-    text-decoration: underline;
+.auth-screen__partners-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.auth-screen__partners-location {
+  font-weight: 400;
+  color: var(--auth-text-muted);
+}
+
+/* mobile tweak – let chips take full width if space is tight */
+@media (max-width: 640px) {
+  .auth-screen__partners-badge {
+    border-radius: 0.75rem;
+    width: 100%;
   }
 }
