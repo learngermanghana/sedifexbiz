@@ -7,6 +7,8 @@ import {
   query,
   where,
   DocumentData,
+  addDoc,
+  serverTimestamp,
 } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
@@ -109,6 +111,15 @@ export default function Customers() {
     'Hi {name}, thanks for shopping with us.',
   )
 
+  // NEW: "Add customer" form state
+  const [newName, setNewName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newNotes, setNewNotes] = useState('')
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false)
+  const [customerFormError, setCustomerFormError] = useState<string | null>(null)
+  const [customerFormSuccess, setCustomerFormSuccess] = useState<string | null>(null)
+
   // ---------- Load customers ----------
   useEffect(() => {
     let cancelled = false
@@ -172,7 +183,7 @@ export default function Customers() {
       cancelled = true
       unsubscribe()
     }
-  }, [activeStoreId])
+  }, [activeStoreId, selectedCustomerId])
 
   const selectedCustomer = useMemo(
     () => customers.find(c => c.id === selectedCustomerId) || null,
@@ -302,19 +313,159 @@ export default function Customers() {
   const canTelegram = Boolean(selectedCustomer?.phone)
   const canEmail = Boolean(selectedCustomer?.email)
 
+  // ---------- Create customer from form ----------
+
+  const handleCreateCustomer: React.FormEventHandler<HTMLFormElement> = async event => {
+    event.preventDefault()
+    setCustomerFormError(null)
+    setCustomerFormSuccess(null)
+
+    const trimmedName = newName.trim()
+    const trimmedPhone = newPhone.trim()
+    const trimmedEmail = newEmail.trim()
+    const trimmedNotes = newNotes.trim()
+
+    if (!activeStoreId) {
+      setCustomerFormError('Select a workspace before adding customers.')
+      return
+    }
+
+    if (!trimmedName && !trimmedPhone && !trimmedEmail) {
+      setCustomerFormError('Enter at least a name or a phone or email.')
+      return
+    }
+
+    try {
+      setIsSavingCustomer(true)
+
+      const payload: Record<string, unknown> = {
+        storeId: activeStoreId,
+        displayName: trimmedName || null,
+        name: trimmedName || null,
+        phone: trimmedPhone || null,
+        email: trimmedEmail || null,
+        notes: trimmedNotes || null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }
+
+      const docRef = await addDoc(collection(db, 'customers'), payload)
+
+      // Reset form
+      setNewName('')
+      setNewPhone('')
+      setNewEmail('')
+      setNewNotes('')
+      setCustomerFormSuccess('Customer added successfully.')
+      setSelectedCustomerId(docRef.id)
+    } catch (error) {
+      console.error('[customers] Failed to create customer', error)
+      setCustomerFormError('Unable to save customer. Please try again.')
+    } finally {
+      setIsSavingCustomer(false)
+    }
+  }
+
   return (
     <div className="page customers-page">
       <header className="page__header">
         <div>
           <h2 className="page__title">Customers</h2>
           <p className="page__subtitle">
-            Look up customers, view their purchase history, and track how much they’ve spent.
+            Add customers, look up profiles, and see how much each person has spent with your store.
           </p>
         </div>
       </header>
 
       <div className="customers-page__grid">
-        {/* Left: customer list */}
+        {/* Left: Add / edit customer form */}
+        <section className="card" aria-label="Add customer">
+          <div className="customers-page__section-header">
+            <h3 className="card__title">New customer</h3>
+            <p className="card__subtitle">
+              Save regular shoppers or VIPs so you can track their visits and contact them later.
+            </p>
+          </div>
+
+          <form className="customers-page__form" onSubmit={handleCreateCustomer}>
+            <div className="customers-page__form-row">
+              <div className="form__field">
+                <label htmlFor="customer-name">Name</label>
+                <input
+                  id="customer-name"
+                  type="text"
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  placeholder="Customer name"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="form__field">
+                <label htmlFor="customer-phone">Phone</label>
+                <input
+                  id="customer-phone"
+                  type="tel"
+                  value={newPhone}
+                  onChange={e => setNewPhone(e.target.value)}
+                  placeholder="233 20 123 4567"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            <div className="customers-page__form-row">
+              <div className="form__field">
+                <label htmlFor="customer-email">Email</label>
+                <input
+                  id="customer-email"
+                  type="email"
+                  value={newEmail}
+                  onChange={e => setNewEmail(e.target.value)}
+                  placeholder="customer@example.com"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="form__field">
+                <label htmlFor="customer-notes">Notes (optional)</label>
+                <input
+                  id="customer-notes"
+                  type="text"
+                  value={newNotes}
+                  onChange={e => setNewNotes(e.target.value)}
+                  placeholder="Birthday, preferences, VIP, etc."
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            <div className="customers-page__form-actions">
+              <button
+                type="submit"
+                className="button button--primary button--small"
+                disabled={isSavingCustomer}
+              >
+                {isSavingCustomer ? 'Saving…' : 'Add customer'}
+              </button>
+              {customerFormError && (
+                <p className="customers-page__message customers-page__message--error">
+                  {customerFormError}
+                </p>
+              )}
+              {customerFormSuccess && (
+                <p className="customers-page__message customers-page__message--success">
+                  {customerFormSuccess}
+                </p>
+              )}
+            </div>
+
+            <p className="customers-page__message" style={{ fontSize: 12, color: '#64748b' }}>
+              You can also attach a customer to a sale directly on the Sell page — both routes
+              use the same customer list.
+            </p>
+          </form>
+        </section>
+
+        {/* Middle: customer list */}
         <section className="card" aria-label="Customer list">
           <div className="customers-page__section-header">
             <h3 className="card__title">Customers</h3>
@@ -382,8 +533,7 @@ export default function Customers() {
                       <div className="customers-page__details-empty">
                         <p>No customers found.</p>
                         <p>
-                          Add customers from the Sell page or import them from your existing
-                          records.
+                          Add customers using the form on the left or from the Sell page.
                         </p>
                       </div>
                     </td>
@@ -464,7 +614,9 @@ export default function Customers() {
                     Email
                   </button>
                 </div>
+              </div>
 
+              <div className="customers-page__details-actions" style={{ marginTop: 8 }}>
                 <div className="customers-page__message-template">
                   <label className="field__label" htmlFor="customer-message-template">
                     Default message
@@ -523,8 +675,7 @@ export default function Customers() {
                               Last purchase
                             </span>
                             <span className="customers-page__history-total">
-                              GHS{' '}
-                              {(salesSummary.lastSaleTotal ?? 0).toFixed(2)}
+                              GHS {(salesSummary.lastSaleTotal ?? 0).toFixed(2)}
                             </span>
                           </div>
                           <div className="customers-page__history-meta">
