@@ -12,6 +12,7 @@ import {
   getDocs,
   setDoc,
   doc,
+  limit,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
@@ -54,6 +55,18 @@ function getDayKey(date: Date): string {
   return `${year}${month}${day}`
 }
 
+// Recent close-day records
+type CloseoutRecord = {
+  id: string
+  businessDay: Date | null
+  salesTotal: number
+  expectedCash: number
+  countedCash: number
+  variance: number
+  closedAt: Date | null
+  closedByName: string
+}
+
 export default function CloseDay() {
   const user = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
@@ -70,6 +83,11 @@ export default function CloseDay() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // NEW: recent close-day records
+  const [recentCloseouts, setRecentCloseouts] = useState<CloseoutRecord[]>([])
+  const [closeoutsError, setCloseoutsError] = useState<string | null>(null)
+  const [isLoadingCloseouts, setIsLoadingCloseouts] = useState(false)
 
   // Load today's sales total for this store
   useEffect(() => {
@@ -115,6 +133,63 @@ export default function CloseDay() {
       document.head.removeChild(style)
     }
   }, [])
+
+  // NEW: load last 10 close-day records
+  useEffect(() => {
+    if (!activeStoreId) {
+      setRecentCloseouts([])
+      setCloseoutsError(null)
+      return () => {
+        /* noop */
+      }
+    }
+
+    setIsLoadingCloseouts(true)
+
+    const q = query(
+      collection(db, 'closeouts'),
+      where('storeId', '==', activeStoreId),
+      orderBy('businessDay', 'desc'),
+      limit(10),
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        const rows: CloseoutRecord[] = snapshot.docs.map(docSnap => {
+          const data = docSnap.data() as any
+          const bd = data.businessDay instanceof Timestamp ? data.businessDay.toDate() : null
+          const ca = data.closedAt instanceof Timestamp ? data.closedAt.toDate() : null
+          const closedBy = data.closedBy || {}
+          const closedByName =
+            (typeof closedBy.displayName === 'string' && closedBy.displayName) ||
+            (typeof closedBy.email === 'string' && closedBy.email) ||
+            'Unknown'
+
+          return {
+            id: docSnap.id,
+            businessDay: bd,
+            salesTotal: Number(data.salesTotal ?? 0) || 0,
+            expectedCash: Number(data.expectedCash ?? 0) || 0,
+            countedCash: Number(data.countedCash ?? 0) || 0,
+            variance: Number(data.variance ?? 0) || 0,
+            closedAt: ca,
+            closedByName,
+          }
+        })
+        setRecentCloseouts(rows)
+        setCloseoutsError(null)
+        setIsLoadingCloseouts(false)
+      },
+      error => {
+        console.error('[close-day] Failed to load recent closeouts', error)
+        setCloseoutsError('Unable to load recent close-day records.')
+        setIsLoadingCloseouts(false)
+      },
+    )
+
+    return () => unsubscribe()
+  }, [activeStoreId])
 
   const looseCashTotal = useMemo(
     () => parseCurrency(looseCash),
@@ -223,7 +298,7 @@ export default function CloseDay() {
             : typeof data.totals?.total === 'number'
               ? data.totals.total
               : 0
-        const saleTax = Number(data.taxTotal ?? 0) || 0
+        const saleTax = Number(data.taxTotal ?? data.totals?.taxTotal ?? 0) || 0
         totalSales += Number(saleTotal) || 0
         totalTax += saleTax
         receiptCount += 1
@@ -321,9 +396,17 @@ export default function CloseDay() {
         console.warn('[activity] Failed to log close day', activityError)
       }
 
-      // ✅ Just show success – keep values on screen so they can be printed
+      // ✅ Show success
       setSubmitSuccess(true)
 
+      // ✅ Auto-print like Sell page (small delay so DOM updates)
+      window.setTimeout(() => {
+        try {
+          window.print()
+        } catch (e) {
+          console.warn('[close-day] Auto-print failed', e)
+        }
+      }, 250)
     } catch (error: any) {
       console.error('[close-day] Failed to record closeout', error)
       const message =
@@ -619,7 +702,7 @@ export default function CloseDay() {
         )}
         {submitSuccess && (
           <p style={{ color: '#047857', marginTop: 16 }}>
-            Close day record saved successfully.
+            Close day record saved successfully. Printing summary…
           </p>
         )}
 
@@ -648,6 +731,142 @@ export default function CloseDay() {
           </button>
         </div>
       </form>
+
+      {/* NEW: Recent close-day records */}
+      <section style={{ marginTop: 40 }}>
+        <h3 style={{ marginBottom: 8 }}>Recent close day records</h3>
+        <p style={{ marginTop: 0, marginBottom: 12, fontSize: 14, color: '#4b5563' }}>
+          Last 10 days that were closed for this workspace.
+        </p>
+
+        {isLoadingCloseouts && <p>Loading recent records…</p>}
+        {closeoutsError && (
+          <p style={{ color: '#b91c1c' }}>{closeoutsError}</p>
+        )}
+        {!isLoadingCloseouts && !closeoutsError && recentCloseouts.length === 0 && (
+          <p>No previous close day records yet.</p>
+        )}
+
+        {!isLoadingCloseouts && !closeoutsError && recentCloseouts.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <thead>
+                <tr>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      borderBottom: '1px solid #d1d5db',
+                      padding: '6px 4px',
+                    }}
+                  >
+                    Business day
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'right',
+                      borderBottom: '1px solid #d1d5db',
+                      padding: '6px 4px',
+                    }}
+                  >
+                    Sales total
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'right',
+                      borderBottom: '1px solid #d1d5db',
+                      padding: '6px 4px',
+                    }}
+                  >
+                    Expected cash
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'right',
+                      borderBottom: '1px solid #d1d5db',
+                      padding: '6px 4px',
+                    }}
+                  >
+                    Counted cash
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'right',
+                      borderBottom: '1px solid #d1d5db',
+                      padding: '6px 4px',
+                    }}
+                  >
+                    Difference
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      borderBottom: '1px solid #d1d5db',
+                      padding: '6px 4px',
+                    }}
+                  >
+                    Closed by
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      borderBottom: '1px solid #d1d5db',
+                      padding: '6px 4px',
+                    }}
+                  >
+                    Closed at
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentCloseouts.map(close => {
+                  const diffLabel =
+                    Math.abs(close.variance) < 0.01
+                      ? 'Matches'
+                      : close.variance < 0
+                        ? 'Short'
+                        : 'Over'
+                  const diffColor =
+                    Math.abs(close.variance) < 0.01
+                      ? '#047857'
+                      : Math.abs(close.variance) > LARGE_DIFFERENCE_THRESHOLD
+                        ? '#b91c1c'
+                        : '#92400e'
+
+                  return (
+                    <tr key={close.id}>
+                      <td style={{ padding: '6px 4px' }}>
+                        {close.businessDay
+                          ? close.businessDay.toLocaleDateString()
+                          : 'Unknown'}
+                      </td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right' }}>
+                        GHS {close.salesTotal.toFixed(2)}
+                      </td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right' }}>
+                        GHS {close.expectedCash.toFixed(2)}
+                      </td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right' }}>
+                        GHS {close.countedCash.toFixed(2)}
+                      </td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right' }}>
+                        <span style={{ color: diffColor }}>
+                          GHS {close.variance.toFixed(2)} · {diffLabel}
+                        </span>
+                      </td>
+                      <td style={{ padding: '6px 4px' }}>{close.closedByName}</td>
+                      <td style={{ padding: '6px 4px' }}>
+                        {close.closedAt
+                          ? close.closedAt.toLocaleString()
+                          : '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   )
 }
