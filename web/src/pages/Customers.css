@@ -238,3 +238,47 @@
   padding: 24px;
   color: #4b5563;
 }
+
+.customers-page__action-grid {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 720px) {
+  .customers-page__action-grid {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+}
+
+.customers-page__action-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  background: #f9fafb;
+}
+
+.customers-page__action-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.customers-page__action-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.customers-page__action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customers-page__action-empty {
+  margin: 0;
+  color: #9ca3af;
+  font-size: 13px;
+}
