@@ -1,6 +1,14 @@
+:root {
+  --page-gap: 24px;
+  --card-padding-block: 20px;
+  --card-padding-inline: clamp(20px, 4vw, 28px);
+  --table-cell-padding-block: 14px;
+  --table-cell-padding-inline: 18px;
+}
+
 .page {
   display: grid;
-  gap: 24px;
+  gap: var(--page-gap);
 }
 
 .page__header {
@@ -37,7 +45,7 @@
   border-radius: 20px;
   border: 1px solid #e2e8f0;
   box-shadow: 0 24px 60px -40px rgba(15, 23, 42, 0.45);
-  padding: 20px clamp(20px, 4vw, 28px);
+  padding: var(--card-padding-block) var(--card-padding-inline);
   display: grid;
   gap: 18px;
 }
@@ -175,7 +183,7 @@
 
 .table th,
 .table td {
-  padding: 14px 18px;
+  padding: var(--table-cell-padding-block) var(--table-cell-padding-inline);
   text-align: left;
 }
 
@@ -199,6 +207,21 @@
   padding: 8px 10px;
 }
 
+@media (max-width: 640px) {
+  :root {
+    --page-gap: 16px;
+    --card-padding-block: 16px;
+    --card-padding-inline: 16px;
+    --table-cell-padding-block: 12px;
+    --table-cell-padding-inline: 14px;
+  }
+
+  .page__actions {
+    width: 100%;
+    margin-top: 8px;
+  }
+}
+
 @media (max-width: 768px) {
   .page {
     gap: 18px;
@@ -217,7 +240,7 @@
   }
 
   .card {
-    padding: 16px 16px 18px;
+    padding: var(--card-padding-block) var(--card-padding-inline);
   }
 
   .table-wrapper {
