@@ -379,7 +379,7 @@ export default function Customers() {
 
       <div className="customers-page__grid">
         {/* Left: Add / edit customer form */}
-        <section className="card" aria-label="Add customer">
+        <section className="card customers-page__form-card" aria-label="Add customer">
           <div className="customers-page__section-header">
             <h3 className="card__title">New customer</h3>
             <p className="card__subtitle">
@@ -466,7 +466,7 @@ export default function Customers() {
         </section>
 
         {/* Middle: customer list */}
-        <section className="card" aria-label="Customer list">
+        <section className="card customers-page__list-card" aria-label="Customer list">
           <div className="customers-page__section-header">
             <h3 className="card__title">Customers</h3>
             <p className="card__subtitle">
@@ -493,7 +493,7 @@ export default function Customers() {
           </div>
 
           <div className="table-wrapper">
-            <table className="table" aria-label="Customers table">
+            <table className="table customers-page__table" aria-label="Customers table">
               <thead>
                 <tr>
                   <th scope="col">Customer</th>
@@ -514,15 +514,22 @@ export default function Customers() {
                         }
                         onClick={() => setSelectedCustomerId(c.id)}
                       >
-                        <td>
-                          <div>{getCustomerDisplayName(c)}</div>
+                        <td className="customers-page__cell">
+                          <div className="customers-page__cell-title">
+                            {getCustomerDisplayName(c)}
+                          </div>
                           {c.notes && (
-                            <div className="table__secondary">{c.notes}</div>
+                            <div className="table__secondary customers-page__cell-subtitle">
+                              {c.notes}
+                            </div>
                           )}
                         </td>
-                        <td>
-                          <div>{c.phone || '—'}</div>
-                          <div className="table__secondary">{c.email || ''}</div>
+                        <td className="customers-page__cell customers-page__cell--contact">
+                          <span className="customers-page__mobile-label">Contact</span>
+                          <div className="customers-page__cell-contact">
+                            <div>{c.phone || '—'}</div>
+                            <div className="table__secondary">{c.email || ''}</div>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -545,7 +552,10 @@ export default function Customers() {
         </section>
 
         {/* Right: details & sales summary */}
-        <section className="card customers-page__details" aria-label="Customer details">
+        <section
+          className="card customers-page__details customers-page__details-card"
+          aria-label="Customer details"
+        >
           {selectedCustomer ? (
             <div className="customers-page__details-content">
               <div className="customers-page__section-header">
