@@ -114,6 +114,8 @@ export default function Sell() {
   const [isCameraOpen, setIsCameraOpen] = useState(false)
   const [isCameraReady, setIsCameraReady] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
+  const [cameraStatusMessage, setCameraStatusMessage] = useState('')
+  const [lastCameraScanAt, setLastCameraScanAt] = useState<number | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const scannerControlsRef = useRef<{ stop: () => void } | null>(null)
 
@@ -404,6 +406,10 @@ export default function Sell() {
     const reader = new BrowserMultiFormatReader()
     setCameraError(null)
     setIsCameraReady(false)
+    setLastCameraScanAt(null)
+    setCameraStatusMessage(
+      'Opening camera… If this stays here, check that you allowed camera access.',
+    )
 
     let cancelled = false
 
@@ -431,8 +437,10 @@ export default function Sell() {
           (result, error) => {
             if (cancelled) return
 
+            setIsCameraReady(true)
+
             if (result) {
-              setIsCameraReady(true)
+              setLastCameraScanAt(Date.now())
               const text = result.getText()
               if (text) {
                 handleScanFromDecodedText(text)
@@ -452,6 +460,7 @@ export default function Sell() {
           setCameraError(
             'We could not access your camera. Check permissions and try again.',
           )
+          setCameraStatusMessage('Camera access failed. Enter the code manually instead.')
           setIsCameraOpen(false)
         }
       }
@@ -466,6 +475,32 @@ export default function Sell() {
       }
     }
   }, [isCameraOpen, products])
+
+  useEffect(() => {
+    if (!isCameraOpen) return
+
+    setCameraStatusMessage(
+      isCameraReady
+        ? 'Camera is on. Hold the barcode closer to the lens and keep it steady.'
+        : 'Opening camera… If this stays here, check that you allowed camera access.',
+    )
+
+    const id = window.setInterval(() => {
+      if (!isCameraReady) return
+
+      if (lastCameraScanAt && Date.now() - lastCameraScanAt < 5000) {
+        setCameraStatusMessage(
+          'Barcode detected! If it does not add automatically, move it closer and try again.',
+        )
+      } else {
+        setCameraStatusMessage(
+          'No barcode detected yet. Move it closer to the camera and improve lighting.',
+        )
+      }
+    }, 1200)
+
+    return () => window.clearInterval(id)
+  }, [isCameraOpen, isCameraReady, lastCameraScanAt])
 
   function handleCloseCameraClick() {
     setIsCameraOpen(false)
@@ -652,9 +687,7 @@ export default function Sell() {
                   (isCameraReady ? '' : 'sell-page__camera-hint--idle')
                 }
               >
-                {isCameraReady
-                  ? 'Camera is on. Point it at a barcode to add items automatically.'
-                  : 'Opening camera… If this stays here, check that you allowed camera access.'}
+                {cameraStatusMessage}
               </p>
               {cameraError && (
                 <p className="sell-page__camera-error">{cameraError}</p>
