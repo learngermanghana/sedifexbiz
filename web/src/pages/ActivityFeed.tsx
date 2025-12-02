@@ -17,7 +17,7 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import './ActivityFeed.css'
 import { FixedSizeList, ListChildComponentProps } from '../utils/VirtualizedList'
 
-type ActivityType = 'sale' | 'customer' | 'inventory' | 'task'
+type ActivityType = 'sale' | 'customer' | 'inventory' | 'expense' | 'task'
 type TimeRange = 'any' | '24h' | '7d' | '30d'
 
 type Activity = {
@@ -34,6 +34,7 @@ const TYPE_LABELS: Record<ActivityType, string> = {
   sale: 'Sale',
   customer: 'Customer',
   inventory: 'Inventory',
+  expense: 'Expense',
   task: 'Task',
 }
 
@@ -41,6 +42,7 @@ const TYPE_COLORS: Record<ActivityType, string> = {
   sale: '#4338CA',
   customer: '#10B981',
   inventory: '#0EA5E9',
+  expense: '#EA580C',
   task: '#F59E0B',
 }
 
@@ -184,7 +186,7 @@ export default function ActivityFeed() {
         acc[activity.type] += 1
         return acc
       },
-      { sale: 0, customer: 0, inventory: 0, task: 0 },
+      { sale: 0, customer: 0, inventory: 0, expense: 0, task: 0 },
     )
   }, [activities])
 
@@ -303,7 +305,7 @@ export default function ActivityFeed() {
 
       <section className="activity-controls" aria-label="Activity controls">
         <div className="activity-filters" role="group" aria-label="Activity type filters">
-          {(['all', 'sale', 'customer', 'inventory', 'task'] as const).map(option => {
+          {(['all', 'sale', 'customer', 'inventory', 'expense', 'task'] as const).map(option => {
             const label = option === 'all' ? 'All activity' : TYPE_LABELS[option]
             const countLabel = option === 'all' ? activities.length : counts[option]
             return (
@@ -373,6 +375,7 @@ export default function ActivityFeed() {
               <option value="sale">Sale</option>
               <option value="customer">Customer</option>
               <option value="inventory">Inventory</option>
+              <option value="expense">Expense</option>
               <option value="task">Task</option>
             </select>
           </label>
