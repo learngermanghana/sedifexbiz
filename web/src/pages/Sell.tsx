@@ -50,6 +50,7 @@ type CartLine = {
   qty: number
   price: number
   taxRate: number
+  itemType: ItemType
 }
 
 type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'transfer'
@@ -156,27 +157,49 @@ export default function Sell() {
     shareText: string
   } | null>(null)
 
+  function extractStoreName(data: any): string | null {
+    const candidates = [
+      data?.company,
+      data?.name,
+      data?.companyName,
+      data?.storeName,
+      data?.businessName,
+    ]
+
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim()
+      }
+    }
+
+    return null
+  }
+
   useEffect(() => {
     if (!activeStoreId) {
       setStoreName(null)
       return
     }
 
-    const ref = doc(db, 'stores', activeStoreId)
-    return onSnapshot(
-      ref,
-      snapshot => {
-        const data = snapshot.data()
-        const name =
-          typeof data?.company === 'string' && data.company.trim()
-            ? data.company.trim()
-            : typeof data?.name === 'string' && data.name.trim()
-              ? data.name.trim()
-              : null
-        setStoreName(name)
-      },
-      () => setStoreName(null),
+    const refs = [
+      doc(db, 'stores', activeStoreId),
+      doc(db, 'workspaces', activeStoreId),
+    ]
+
+    const unsubscribers = refs.map(ref =>
+      onSnapshot(
+        ref,
+        snapshot => {
+          const name = extractStoreName(snapshot.data())
+          setStoreName(prev => (name ? name : prev ?? null))
+        },
+        () => setStoreName(prev => prev ?? null),
+      ),
     )
+
+    return () => {
+      unsubscribers.forEach(unsub => unsub())
+    }
   }, [activeStoreId])
 
   // Load products
@@ -656,6 +679,7 @@ export default function Sell() {
           qty,
           price: product.price,
           taxRate: product.taxRate || 0,
+          itemType: product.itemType,
         },
       ]
     })
@@ -859,7 +883,12 @@ export default function Sell() {
 
     const labels = items.map(item => {
       const product = products.find(p => p.id === item.productId)
-      const typeLabel = product?.itemType === 'service' ? 'service' : 'product'
+      const typeLabel =
+        item.itemType === 'service'
+          ? 'service'
+          : product?.itemType === 'service'
+            ? 'service'
+            : 'product'
       const name = item.name || product?.name || 'Item'
       return typeLabel === 'service' ? `${name} (service)` : name
     })
@@ -939,6 +968,8 @@ export default function Sell() {
         qty: line.qty,
         price: line.price,
         taxRate: line.taxRate,
+        type: line.itemType,
+        isService: line.itemType === 'service',
       }))
 
       const totals = {
