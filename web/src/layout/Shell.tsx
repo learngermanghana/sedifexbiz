@@ -27,6 +27,7 @@ const OWNER_NAV_ITEMS: NavItem[] = [
 
 const STAFF_NAV_ITEMS: NavItem[] = [
   { to: '/sell', label: 'Sell' },
+  { to: '/customers', label: 'Customers' },
   { to: '/close-day', label: 'Close day' },
 ]
 
@@ -179,7 +180,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     if (membershipsLoading) return
     if (!isStaff) return
 
-    const allowedPrefixes = ['/sell', '/close-day']
+    const allowedPrefixes = ['/sell', '/customers', '/close-day']
     const isAllowed = allowedPrefixes.some(
       prefix =>
         location.pathname === prefix || location.pathname.startsWith(`${prefix}/`),
