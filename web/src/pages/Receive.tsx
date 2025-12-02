@@ -49,6 +49,7 @@ export default function Receive() {
   const { storeId: activeStoreId } = useActiveStore()
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string>('')
+  const [searchText, setSearchText] = useState('')
   const [qty, setQty] = useState<string>('')
   const [supplier, setSupplier] = useState('')
   const [reference, setReference] = useState('')
@@ -57,6 +58,24 @@ export default function Receive() {
   const [busy, setBusy] = useState(false)
   const statusTimeoutRef = useRef<number | null>(null)
   const receiveStock = useMemo(() => httpsCallable(functions, 'receiveStock'), [])
+
+  const selectedProduct = useMemo(
+    () => products.find(product => product.id === selected) || null,
+    [products, selected],
+  )
+
+  const filteredProducts = useMemo(() => {
+    const term = searchText.trim().toLowerCase()
+    const list = term
+      ? products.filter(p => p.name.toLowerCase().includes(term))
+      : products
+
+    if (selectedProduct && !list.some(p => p.id === selectedProduct.id)) {
+      return [selectedProduct, ...list]
+    }
+
+    return list
+  }, [products, searchText, selectedProduct])
   useEffect(() => {
     return () => {
       if (statusTimeoutRef.current) {
@@ -226,6 +245,16 @@ export default function Receive() {
       <section className="card receive-page__card">
         <div className="receive-page__form">
           <div className="field">
+            <label className="field__label" htmlFor="receive-search">Search products</label>
+            <input
+              id="receive-search"
+              type="search"
+              placeholder="Type to search..."
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+            />
+          </div>
+          <div className="field">
             <label className="field__label" htmlFor="receive-product">Product</label>
             <select
               id="receive-product"
@@ -233,7 +262,7 @@ export default function Receive() {
               onChange={e => setSelected(e.target.value)}
             >
               <option value="">Select product…</option>
-              {products.map(p => (
+              {filteredProducts.map(p => (
                 <option key={p.id} value={p.id}>
                   {p.name} (Stock {p.stockCount ?? 0})
                 </option>
