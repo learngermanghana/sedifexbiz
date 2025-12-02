@@ -731,13 +731,13 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <p style={{ fontSize: 12, color: '#374151', marginTop: 8 }}>
                     Preview your listing:{' '}
                     <a
-                      href={`https://stores.sedifex.com/store/${encodeURIComponent(
+                      href={`https://stores.sedifex.com/${encodeURIComponent(
                         storeId,
                       )}`}
                       target="_blank"
                       rel="noreferrer noopener"
                     >
-                      Open public store page
+                      Visit stores.sedifex.com with your store ID
                     </a>
                   </p>
                 )}
