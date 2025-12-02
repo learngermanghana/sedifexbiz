@@ -832,17 +832,18 @@ export default function AuthPage() {
       >
         <div className="app__partners-copy">
           <span className="app__pill">Store partners</span>
-          <h2>Show your store snapshot before logging in</h2>
+          <h2>Share your store snapshot before partners sign in</h2>
           <p>
-            Give partners a live, read-only view of non-sensitive store details. Your
-            store name, location, and overview update automatically after sign up—no extra
-            setup needed.
+            Provide partners with a live, read-only view of non-sensitive store details.
+            Your store name, location, and overview refresh automatically after sign
+            up—no extra setup required. We also list your store on
+            stores.sedifex.com automatically for free SEO visibility.
           </p>
 
           {partnerStores.length > 0 && (
             <div className="app__partners-examples">
               <p className="app__partners-examples-label">
-                A few stores already running on Sedifex:
+                Example stores currently running on Sedifex:
               </p>
               <ul className="app__partners-list">
                 {partnerStores.map(store => (
