@@ -21,6 +21,7 @@ import {
   loadCachedProducts,
   saveCachedProducts,
 } from '../utils/offlineCache'
+import { normalizeBarcode } from '../utils/barcode'
 
 type ItemType = 'product' | 'service'
 
@@ -28,6 +29,7 @@ type Product = {
   id: string
   name: string
   sku: string | null
+  barcode: string | null // 🔹 digits-only version for scanning
   price: number | null
   stockCount: number | null
   reorderPoint: number | null
@@ -76,12 +78,24 @@ function formatVat(taxRate?: number | null): string {
 function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product {
   const nameRaw = typeof data.name === 'string' ? data.name : ''
   const skuRaw = typeof data.sku === 'string' ? data.sku : ''
+
+  // 🔹 Prefer explicit barcode field; fall back to sku (for old data)
+  const barcodeSource =
+    typeof data.barcode === 'string'
+      ? data.barcode
+      : typeof data.sku === 'string'
+        ? data.sku
+        : ''
+
+  const normalizedBarcode = normalizeBarcode(barcodeSource)
+
   const itemType = data.itemType === 'service' ? 'service' : 'product'
 
   return {
     id,
     name: nameRaw.trim() || 'Untitled item',
     sku: skuRaw.trim() || null,
+    barcode: normalizedBarcode || null,
     price: sanitizeNumber(data.price) ?? null,
     stockCount: sanitizeNumber(data.stockCount),
     reorderPoint: sanitizeNumber(data.reorderPoint),
@@ -233,7 +247,8 @@ export default function Products() {
       result = result.filter(p => {
         const inName = p.name.toLowerCase().includes(term)
         const inSku = (p.sku ?? '').toLowerCase().includes(term)
-        return inName || inSku
+        const inBarcode = (p.barcode ?? '').toLowerCase().includes(term)
+        return inName || inSku || inBarcode
       })
     }
 
@@ -296,6 +311,8 @@ export default function Products() {
       finalPrice = Number(priceNumber.toFixed(2)) // 🔹 respect user input (2dp)
     }
 
+    const trimmedSku = sku.trim()
+
     setIsSaving(true)
     try {
       await addDoc(collection(db, 'products'), {
@@ -303,7 +320,9 @@ export default function Products() {
         name: trimmedName,
         itemType,
         price: finalPrice,
-        sku: isService ? null : sku.trim() || null,
+        // 🔹 Keep SKU as typed, but also store a digits-only barcode field
+        sku: isService ? null : trimmedSku || null,
+        barcode: isService ? null : normalizeBarcode(trimmedSku) || null,
         taxRate: taxRateNumber,
         reorderPoint:
           !isService && !Number.isNaN(reorderPointNumber) && reorderPointNumber >= 0
@@ -428,6 +447,8 @@ export default function Products() {
     const finalStock =
       isSvc || stockNumberRaw === null ? null : Math.floor(stockNumberRaw)
 
+    const trimmedSku = editSku.trim()
+
     setFormStatus('idle')
     setFormError(null)
 
@@ -435,7 +456,8 @@ export default function Products() {
       const ref = doc(db, 'products', product.id)
       await updateDoc(ref, {
         name: trimmedName,
-        sku: isSvc ? null : editSku.trim() || null,
+        sku: isSvc ? null : trimmedSku || null,
+        barcode: isSvc ? null : normalizeBarcode(trimmedSku) || null,
         price: finalPrice,
         taxRate: taxRateNumber,
         reorderPoint:
@@ -491,8 +513,8 @@ export default function Products() {
         <div>
           <h2 className="page__title">Products &amp; services</h2>
           <p className="page__subtitle">
-            Review inventory, monitor low stock alerts, and keep your catalogue of items and
-            services tidy.
+            Review inventory, monitor low stock alerts, and keep your catalogue of items
+            and services tidy.
           </p>
         </div>
         <div className="products-page__header-actions">
@@ -507,8 +529,8 @@ export default function Products() {
         <section className="card products-page__add-card">
           <h3 className="card__title">Add item</h3>
           <p className="card__subtitle">
-            Capture both physical products and services you offer so sales and records stay
-            accurate.
+            Capture both physical products and services you offer so sales and records
+            stay accurate.
           </p>
 
           {formStatus === 'success' && formError === null && (
@@ -544,11 +566,7 @@ export default function Products() {
               <label className="field__label" htmlFor="add-type">
                 Item type
               </label>
-              <select
-                id="add-type"
-                value={itemType}
-                onChange={handleItemTypeChange}
-              >
+              <select id="add-type" value={itemType} onChange={handleItemTypeChange}>
                 <option value="product">Physical product</option>
                 <option value="service">Service</option>
               </select>
@@ -562,17 +580,18 @@ export default function Products() {
             {!isService && (
               <div className="field">
                 <label className="field__label" htmlFor="add-sku">
-                  SKU
+                  SKU / Barcode
                 </label>
                 <input
                   id="add-sku"
-                  placeholder="Barcode or internal code"
+                  placeholder="Scan or type the barcode, or use an internal code"
                   value={sku}
                   onChange={e => setSku(e.target.value)}
                 />
                 <p className="field__hint">
-                  If you scan barcodes, this should match the code. For services, you can
-                  enter any reference code you like.
+                  If you scan barcodes, this should match the code on the product. We
+                  also store a digits-only version so camera scans work even if you add
+                  spaces.
                 </p>
               </div>
             )}
@@ -608,9 +627,6 @@ export default function Products() {
                 value={taxRateInput}
                 onChange={e => setTaxRateInput(e.target.value)}
               />
-              <p className="field__hint">
-                This VAT rate will be used on the Sell page for tax totals.
-              </p>
             </div>
 
             <div className="field">
@@ -664,7 +680,7 @@ export default function Products() {
               </label>
               <input
                 id="products-search"
-                placeholder="Search by name or SKU"
+                placeholder="Search by name, SKU, or barcode"
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
               />
@@ -727,7 +743,9 @@ export default function Products() {
                               value={editSku}
                               onChange={e => setEditSku(e.target.value)}
                             />
-                          ) : product.sku || '—'}
+                          ) : (
+                            product.sku || '—'
+                          )}
                         </td>
                         <td>
                           {isEditing ? (
