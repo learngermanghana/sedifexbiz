@@ -1481,7 +1481,7 @@ export const createPaystackCheckout = functions.https.onCall(
       ok: true,
       authorizationUrl: authUrl,
     }
-  },
+  }
 )
 
 // 🔹 Alias so the frontend name still works
@@ -1574,7 +1574,7 @@ export const handlePaystackWebhook = functions.https.onRequest(
       console.error('[paystack] webhook handling error', error)
       res.status(500).send('error')
     }
-  },
+  }
 )
 
 
