@@ -34,6 +34,7 @@ type PaystackEventData = {
   status?: string
   paid_at?: string
   channel?: string
+  fees?: number
   customer?: PaystackCustomer
   metadata?: Record<string, any>
   plan?: string | null
@@ -79,6 +80,31 @@ const toKobo = (amount: number) => Math.round(Math.abs(amount) * 100)
 function assertAuthenticated(context: functions.https.CallableContext) {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Sign in required')
+  }
+}
+
+async function recordPaystackEvent(
+  storeId: string,
+  evtType: string,
+  data: PaystackEventData,
+) {
+  try {
+    await defaultDb
+      .collection('subscriptions')
+      .doc(storeId)
+      .collection('events')
+      .doc(String(Date.now()))
+      .set({
+        event: evtType,
+        data,
+        receivedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+  } catch (e) {
+    functions.logger.warn('Failed to store Paystack audit event', {
+      e,
+      evtType,
+      storeId,
+    })
   }
 }
 
@@ -312,6 +338,13 @@ export const paystackWebhook = functions.https.onRequest(
             typeof data.amount === 'number' ? data.amount / 100 : null
           const paidAt = data.paid_at || null
           const reference = data.reference || null
+          const fees = typeof data.fees === 'number' ? data.fees / 100 : null
+          const metadata = data.metadata || null
+          const posChannel =
+            data.channel ||
+            (typeof data.metadata?.channel === 'string'
+              ? data.metadata.channel
+              : null)
 
           await defaultDb
             .collection('subscriptions')
@@ -326,18 +359,24 @@ export const paystackWebhook = functions.https.onRequest(
                 amount,
                 currency: data.currency || 'NGN',
                 channel: data.channel || null,
+                posChannel,
+                fees,
+                metadata,
                 paidAt,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 lastEvent: evtType,
               },
               { merge: true },
             )
+
+          await recordPaystackEvent(storeId, evtType, data)
           break
         }
 
         case 'charge.failed': {
           const storeId: string | undefined = data.metadata?.storeId
           const reference = data.reference || null
+          const fees = typeof data.fees === 'number' ? data.fees / 100 : null
 
           if (storeId) {
             await defaultDb
@@ -349,35 +388,23 @@ export const paystackWebhook = functions.https.onRequest(
                   status: 'failed',
                   plan: (data.metadata?.plan as PlanId | undefined) ?? null,
                   reference,
+                  fees,
+                  channel: data.channel || null,
                   updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                   lastEvent: evtType,
                 },
                 { merge: true },
               )
+
+            await recordPaystackEvent(storeId, evtType, data)
           }
           break
         }
 
         default: {
-          try {
-            const storeId: string | undefined = data.metadata?.storeId
-            if (storeId) {
-              await defaultDb
-                .collection('subscriptions')
-                .doc(storeId)
-                .collection('events')
-                .doc(String(Date.now()))
-                .set({
-                  event: evtType,
-                  data,
-                  receivedAt: admin.firestore.FieldValue.serverTimestamp(),
-                })
-            }
-          } catch (e) {
-            functions.logger.warn('Failed to store Paystack audit event', {
-              e,
-              evtType,
-            })
+          const storeId: string | undefined = data.metadata?.storeId
+          if (storeId) {
+            await recordPaystackEvent(storeId, evtType, data)
           }
           break
         }

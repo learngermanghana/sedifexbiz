@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.handlePaystackWebhook = exports.createCheckout = exports.createPaystackCheckout = exports.receiveStock = exports.commitSale = exports.manageStaffAccount = exports.resolveStoreAccess = exports.initializeStore = exports.handleUserCreate = void 0;
+exports.handlePaystackWebhook = exports.createCheckout = exports.createPaystackCheckout = exports.receiveStock = exports.logReceiptShare = exports.commitSale = exports.manageStaffAccount = exports.resolveStoreAccess = exports.initializeStore = exports.handleUserCreate = void 0;
 // functions/src/index.ts
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
@@ -174,6 +174,16 @@ function assertOwnerAccess(context) {
         throw new functions.https.HttpsError('permission-denied', 'Owner access required');
     }
 }
+async function verifyOwnerForStore(uid, storeId) {
+    const memberRef = db.collection('teamMembers').doc(uid);
+    const memberSnap = await memberRef.get();
+    const memberData = (memberSnap.data() ?? {});
+    const memberRole = typeof memberData.role === 'string' ? memberData.role : '';
+    const memberStoreId = typeof memberData.storeId === 'string' ? memberData.storeId : '';
+    if (memberRole !== 'owner' || memberStoreId !== storeId) {
+        throw new functions.https.HttpsError('permission-denied', 'Owner permission for this workspace is required');
+    }
+}
 function assertStaffAccess(context) {
     assertAuthenticated(context);
     const role = getRoleFromToken(context.auth.token);
@@ -223,7 +233,11 @@ function normalizeManageStaffPayload(data) {
     if (!VALID_ROLES.has(role)) {
         throw new functions.https.HttpsError('invalid-argument', 'Unsupported role requested');
     }
-    return { storeId, email, role, password };
+    const actionRaw = typeof data.action === 'string' ? data.action.trim() : 'invite';
+    const action = ['invite', 'reset', 'deactivate'].includes(actionRaw)
+        ? actionRaw
+        : 'invite';
+    return { storeId, email, role, password, action };
 }
 function timestampDaysFromNow(days) {
     const now = new Date();
@@ -586,6 +600,19 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
 /** ============================================================================
  *  CALLABLE: manageStaffAccount (owner only)
  * ==========================================================================*/
+async function logStaffAudit(entry) {
+    const auditRef = db.collection('staffAudit').doc();
+    const payload = {
+        ...entry,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    try {
+        await auditRef.set(payload);
+    }
+    catch (error) {
+        console.error('[staff-audit] Failed to record audit entry', error);
+    }
+}
 async function ensureAuthUser(email, password) {
     try {
         const record = await admin.auth().getUserByEmail(email);
@@ -611,26 +638,91 @@ async function ensureAuthUser(email, password) {
 }
 exports.manageStaffAccount = functions.https.onCall(async (data, context) => {
     assertOwnerAccess(context);
-    const { storeId, email, role, password } = normalizeManageStaffPayload(data);
-    const invitedBy = context.auth?.uid ?? null;
-    const { record, created } = await ensureAuthUser(email, password);
-    const memberRef = db.collection('teamMembers').doc(record.uid);
-    const memberSnap = await memberRef.get();
+    const { storeId, email, role, password, action } = normalizeManageStaffPayload(data);
+    const actorUid = context.auth.uid;
+    const actorEmail = typeof context.auth?.token?.email === 'string'
+        ? context.auth.token.email
+        : null;
     const timestamp = admin.firestore.FieldValue.serverTimestamp();
-    const memberData = {
-        uid: record.uid,
-        email,
-        storeId,
-        role,
-        invitedBy,
-        updatedAt: timestamp,
+    const getUserOrThrow = async () => {
+        try {
+            return await admin.auth().getUserByEmail(email);
+        }
+        catch (error) {
+            if (error?.code === 'auth/user-not-found') {
+                throw new functions.https.HttpsError('not-found', 'No account found for that email');
+            }
+            throw error;
+        }
     };
-    if (!memberSnap.exists) {
-        memberData.createdAt = timestamp;
+    const auditBase = {
+        action,
+        storeId,
+        actorUid,
+        actorEmail,
+        targetEmail: email,
+    };
+    try {
+        await verifyOwnerForStore(actorUid, storeId);
+        let record;
+        let created = false;
+        let claims;
+        if (action === 'invite') {
+            const ensured = await ensureAuthUser(email, password);
+            record = ensured.record;
+            created = ensured.created;
+            await admin.auth().updateUser(record.uid, { disabled: false });
+            const memberRef = db.collection('teamMembers').doc(record.uid);
+            const memberSnap = await memberRef.get();
+            const memberData = {
+                uid: record.uid,
+                email,
+                storeId,
+                role,
+                invitedBy: actorUid,
+                status: 'active',
+                updatedAt: timestamp,
+            };
+            if (!memberSnap.exists) {
+                memberData.createdAt = timestamp;
+            }
+            await memberRef.set(memberData, { merge: true });
+            claims = await updateUserClaims(record.uid, role);
+        }
+        else if (action === 'reset') {
+            if (!password) {
+                throw new functions.https.HttpsError('invalid-argument', 'A new password is required to reset staff credentials');
+            }
+            record = await getUserOrThrow();
+            await admin.auth().updateUser(record.uid, { password, disabled: false });
+            const memberRef = db.collection('teamMembers').doc(record.uid);
+            await memberRef.set({ uid: record.uid, email, storeId, role, status: 'active', updatedAt: timestamp }, { merge: true });
+            claims = await updateUserClaims(record.uid, role);
+        }
+        else {
+            record = await getUserOrThrow();
+            await admin.auth().updateUser(record.uid, { disabled: true });
+            const memberRef = db.collection('teamMembers').doc(record.uid);
+            await memberRef.set({ uid: record.uid, email, storeId, role, status: 'inactive', updatedAt: timestamp }, { merge: true });
+            created = false;
+        }
+        await logStaffAudit({
+            ...auditBase,
+            targetUid: record.uid,
+            outcome: 'success',
+            errorMessage: null,
+        });
+        return { ok: true, role, email, uid: record.uid, created, storeId, claims };
     }
-    await memberRef.set(memberData, { merge: true });
-    const claims = await updateUserClaims(record.uid, role);
-    return { ok: true, role, email, uid: record.uid, created, storeId, claims };
+    catch (error) {
+        await logStaffAudit({
+            ...auditBase,
+            outcome: 'failure',
+            targetUid: null,
+            errorMessage: typeof error?.message === 'string' ? error.message : 'Unknown error',
+        });
+        throw error;
+    }
 });
 /** ============================================================================
  *  CALLABLE: commitSale (staff)
@@ -734,6 +826,74 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
     return { ok: true, saleId };
 });
 /** ============================================================================
+ *  CALLABLE: logReceiptShare (staff)
+ * ==========================================================================*/
+const RECEIPT_CHANNELS = new Set(['email', 'sms', 'whatsapp']);
+const RECEIPT_STATUSES = new Set(['attempt', 'failed', 'sent']);
+exports.logReceiptShare = functions.https.onCall(async (data, context) => {
+    assertStaffAccess(context);
+    const storeId = typeof data?.storeId === 'string' ? data.storeId.trim() : '';
+    const saleId = typeof data?.saleId === 'string' ? data.saleId.trim() : '';
+    const channel = typeof data?.channel === 'string' ? data.channel.trim() : '';
+    const status = typeof data?.status === 'string' ? data.status.trim() : '';
+    if (!storeId || !saleId) {
+        throw new functions.https.HttpsError('invalid-argument', 'storeId and saleId are required');
+    }
+    if (!RECEIPT_CHANNELS.has(channel)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid channel');
+    }
+    if (!RECEIPT_STATUSES.has(status)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid status');
+    }
+    const contactRaw = data?.contact;
+    const contact = contactRaw === null || contactRaw === undefined
+        ? null
+        : typeof contactRaw === 'string'
+            ? contactRaw.trim() || null
+            : (() => {
+                throw new functions.https.HttpsError('invalid-argument', 'contact must be a string when provided');
+            })();
+    const customerIdRaw = data?.customerId;
+    const customerId = customerIdRaw === null || customerIdRaw === undefined
+        ? null
+        : typeof customerIdRaw === 'string'
+            ? customerIdRaw.trim() || null
+            : (() => {
+                throw new functions.https.HttpsError('invalid-argument', 'customerId must be a string when provided');
+            })();
+    const customerNameRaw = data?.customerName;
+    const customerName = customerNameRaw === null || customerNameRaw === undefined
+        ? null
+        : typeof customerNameRaw === 'string'
+            ? customerNameRaw.trim() || null
+            : (() => {
+                throw new functions.https.HttpsError('invalid-argument', 'customerName must be a string when provided');
+            })();
+    const errorMessageRaw = data?.errorMessage;
+    const errorMessage = errorMessageRaw === null || errorMessageRaw === undefined
+        ? null
+        : typeof errorMessageRaw === 'string'
+            ? errorMessageRaw.trim() || null
+            : (() => {
+                throw new functions.https.HttpsError('invalid-argument', 'errorMessage must be a string when provided');
+            })();
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const payload = {
+        storeId,
+        saleId,
+        channel,
+        status,
+        contact,
+        customerId,
+        customerName,
+        errorMessage,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+    };
+    const ref = await db.collection('receiptShareLogs').add(payload);
+    return { ok: true, shareId: ref.id };
+});
+/** ============================================================================
  *  CALLABLE: receiveStock (staff)
  * ==========================================================================*/
 exports.receiveStock = functions.https.onCall(async (data, context) => {
@@ -812,32 +972,42 @@ exports.receiveStock = functions.https.onCall(async (data, context) => {
  *  PAYSTACK HELPERS
  * ==========================================================================*/
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
-const PAYSTACK_SECRET_KEY = (0, params_1.defineString)('PAYSTACK_SECRET_KEY').value() || process.env.PAYSTACK_SECRET_KEY || '';
-const PAYSTACK_STANDARD_PLAN_CODE = (0, params_1.defineString)('PAYSTACK_STANDARD_PLAN_CODE').value() ||
-    process.env.PAYSTACK_STANDARD_PLAN_CODE ||
-    '';
-const PAYSTACK_CURRENCY = (0, params_1.defineString)('PAYSTACK_CURRENCY').value() || process.env.PAYSTACK_CURRENCY || 'GHS';
-console.log('[paystack] startup config', {
-    hasSecret: !!PAYSTACK_SECRET_KEY,
-    hasPlan: !!PAYSTACK_STANDARD_PLAN_CODE,
-    currency: PAYSTACK_CURRENCY,
-});
+const PAYSTACK_SECRET_KEY = (0, params_1.defineString)('PAYSTACK_SECRET_KEY');
+const PAYSTACK_STANDARD_PLAN_CODE = (0, params_1.defineString)('PAYSTACK_STANDARD_PLAN_CODE');
+const PAYSTACK_CURRENCY = (0, params_1.defineString)('PAYSTACK_CURRENCY');
+let paystackConfigLogged = false;
+function getPaystackConfig() {
+    const secret = PAYSTACK_SECRET_KEY.value() || process.env.PAYSTACK_SECRET_KEY || '';
+    const plan = PAYSTACK_STANDARD_PLAN_CODE.value() || process.env.PAYSTACK_STANDARD_PLAN_CODE || '';
+    const currency = PAYSTACK_CURRENCY.value() || process.env.PAYSTACK_CURRENCY || 'GHS';
+    if (!paystackConfigLogged) {
+        console.log('[paystack] startup config', {
+            hasSecret: !!secret,
+            hasPlan: !!plan,
+            currency,
+        });
+        paystackConfigLogged = true;
+    }
+    return { secret, plan, currency };
+}
 function ensurePaystackConfig() {
-    if (!PAYSTACK_SECRET_KEY) {
+    const config = getPaystackConfig();
+    if (!config.secret) {
         console.error('[paystack] Missing PAYSTACK_SECRET_KEY env');
         throw new functions.https.HttpsError('failed-precondition', 'Paystack is not configured. Please contact support.');
     }
-    if (!PAYSTACK_STANDARD_PLAN_CODE) {
+    if (!config.plan) {
         console.error('[paystack] Missing PAYSTACK_STANDARD_PLAN_CODE env');
         throw new functions.https.HttpsError('failed-precondition', 'Subscription plan is not configured. Please contact support.');
     }
+    return config;
 }
 /** ============================================================================
  *  CALLABLE: createPaystackCheckout
  * ==========================================================================*/
 exports.createPaystackCheckout = functions.https.onCall(async (data, context) => {
     assertOwnerAccess(context);
-    ensurePaystackConfig();
+    const paystackConfig = ensurePaystackConfig();
     const uid = context.auth.uid;
     const token = context.auth.token;
     const email = typeof token.email === 'string' ? token.email : null;
@@ -867,7 +1037,7 @@ exports.createPaystackCheckout = functions.https.onCall(async (data, context) =>
     const body = {
         email: email || storeData.ownerEmail || undefined,
         amount: amountMinorUnits,
-        currency: PAYSTACK_CURRENCY,
+        currency: paystackConfig.currency,
         callback_url: typeof payload.redirectUrl === 'string'
             ? payload.redirectUrl
             : typeof payload.returnUrl === 'string'
@@ -878,14 +1048,14 @@ exports.createPaystackCheckout = functions.https.onCall(async (data, context) =>
             userId: uid,
             planKey: 'standard',
         },
-        plan: PAYSTACK_STANDARD_PLAN_CODE,
+        plan: paystackConfig.plan,
     };
     let responseJson;
     try {
         const response = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
             method: 'POST',
             headers: {
-                Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                Authorization: `Bearer ${paystackConfig.secret}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify(body),
@@ -932,7 +1102,8 @@ exports.handlePaystackWebhook = functions.https.onRequest(async (req, res) => {
         res.status(405).send('Method Not Allowed');
         return;
     }
-    if (!PAYSTACK_SECRET_KEY) {
+    const { secret: paystackSecret, plan: paystackPlanCode } = getPaystackConfig();
+    if (!paystackSecret) {
         console.error('[paystack] Missing PAYSTACK_SECRET_KEY for webhook');
         res.status(500).send('PAYSTACK_SECRET_KEY_NOT_CONFIGURED');
         return;
@@ -944,7 +1115,7 @@ exports.handlePaystackWebhook = functions.https.onRequest(async (req, res) => {
     }
     const rawBody = req.rawBody;
     const hash = crypto
-        .createHmac('sha512', PAYSTACK_SECRET_KEY)
+        .createHmac('sha512', paystackSecret)
         .update(rawBody)
         .digest('hex');
     if (hash !== signature) {
@@ -974,7 +1145,7 @@ exports.handlePaystackWebhook = functions.https.onRequest(async (req, res) => {
                         status: 'active',
                         paystackCustomerCode: customer.customer_code || null,
                         paystackSubscriptionCode: subscription.subscription_code || null,
-                        paystackPlanCode: plan.plan_code || PAYSTACK_STANDARD_PLAN_CODE,
+                        paystackPlanCode: plan.plan_code || paystackPlanCode,
                         currentPeriodEnd: data.paid_at || null,
                         lastEventAt: timestamp,
                         lastChargeReference: data.reference || null,

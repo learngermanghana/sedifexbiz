@@ -42,11 +42,19 @@ const firestore_1 = require("./firestore");
 /**
  * Config
  */
-const PAYSTACK_SECRET = (0, params_1.defineString)('PAYSTACK_SECRET_KEY').value() || process.env.PAYSTACK_SECRET_KEY || '';
-const PAYSTACK_PUBLIC = (0, params_1.defineString)('PAYSTACK_PUBLIC_KEY').value() || process.env.PAYSTACK_PUBLIC_KEY || '';
-const APP_BASE_URL = (0, params_1.defineString)('APP_BASE_URL').value() || process.env.APP_BASE_URL || '';
-if (!PAYSTACK_SECRET) {
-    functions.logger.warn('Paystack secret not set. Run: firebase functions:config:set paystack.secret="sk_live_xxx"');
+const PAYSTACK_SECRET = (0, params_1.defineString)('PAYSTACK_SECRET_KEY');
+const PAYSTACK_PUBLIC = (0, params_1.defineString)('PAYSTACK_PUBLIC_KEY');
+const APP_BASE_URL = (0, params_1.defineString)('APP_BASE_URL');
+let paystackConfigLogged = false;
+function getPaystackConfig() {
+    const secret = PAYSTACK_SECRET.value() || process.env.PAYSTACK_SECRET_KEY || '';
+    const publicKey = PAYSTACK_PUBLIC.value() || process.env.PAYSTACK_PUBLIC_KEY || '';
+    const appBaseUrl = APP_BASE_URL.value() || process.env.APP_BASE_URL || '';
+    if (!paystackConfigLogged && !secret) {
+        functions.logger.warn('Paystack secret not set. Run: firebase functions:config:set paystack.secret="sk_live_xxx"');
+        paystackConfigLogged = true;
+    }
+    return { secret, publicKey, appBaseUrl };
 }
 /**
  * Util: kobo conversion (Paystack expects amounts in kobo)
@@ -58,6 +66,27 @@ const toKobo = (amount) => Math.round(Math.abs(amount) * 100);
 function assertAuthenticated(context) {
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+    }
+}
+async function recordPaystackEvent(storeId, evtType, data) {
+    try {
+        await firestore_1.defaultDb
+            .collection('subscriptions')
+            .doc(storeId)
+            .collection('events')
+            .doc(String(Date.now()))
+            .set({
+            event: evtType,
+            data,
+            receivedAt: firestore_1.admin.firestore.FieldValue.serverTimestamp(),
+        });
+    }
+    catch (e) {
+        functions.logger.warn('Failed to store Paystack audit event', {
+            e,
+            evtType,
+            storeId,
+        });
     }
 }
 /**
@@ -76,7 +105,8 @@ function assertAuthenticated(context) {
  */
 exports.createCheckout = functions.https.onCall(async (data, context) => {
     assertAuthenticated(context);
-    if (!PAYSTACK_SECRET) {
+    const { secret: paystackSecret, publicKey: paystackPublicKey, appBaseUrl } = getPaystackConfig();
+    if (!paystackSecret) {
         throw new functions.https.HttpsError('failed-precondition', 'Paystack secret is not configured');
     }
     const email = typeof data?.email === 'string' ? data.email.trim().toLowerCase() : '';
@@ -85,7 +115,7 @@ exports.createCheckout = functions.https.onCall(async (data, context) => {
         (typeof data?.planId === 'string' ? data.planId.trim() : '');
     const plan = rawPlan || null;
     const redirectUrlRaw = typeof data?.redirectUrl === 'string' ? data.redirectUrl.trim() : '';
-    const redirectUrl = redirectUrlRaw || (APP_BASE_URL ? `${APP_BASE_URL}/billing/verify` : undefined);
+    const redirectUrl = redirectUrlRaw || (appBaseUrl ? `${appBaseUrl}/billing/verify` : undefined);
     const metadataIn = data?.metadata && typeof data.metadata === 'object'
         ? data.metadata
         : {};
@@ -115,7 +145,7 @@ exports.createCheckout = functions.https.onCall(async (data, context) => {
     const resp = await fetch('https://api.paystack.co/transaction/initialize', {
         method: 'POST',
         headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET}`,
+            Authorization: `Bearer ${paystackSecret}`,
             'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
@@ -147,7 +177,7 @@ exports.createCheckout = functions.https.onCall(async (data, context) => {
         ok: true,
         authorizationUrl: authUrl,
         reference,
-        publicKey: PAYSTACK_PUBLIC || null,
+        publicKey: paystackPublicKey || null,
     };
 });
 /**
@@ -197,7 +227,7 @@ exports.paystackWebhook = functions.https.onRequest(async (req, res) => {
             return;
         }
         const signature = req.get('x-paystack-signature') || '';
-        const secret = PAYSTACK_SECRET;
+        const { secret } = getPaystackConfig();
         if (!secret) {
             res.status(500).send('Paystack secret not configured');
             return;
@@ -233,6 +263,12 @@ exports.paystackWebhook = functions.https.onRequest(async (req, res) => {
                 const amount = typeof data.amount === 'number' ? data.amount / 100 : null;
                 const paidAt = data.paid_at || null;
                 const reference = data.reference || null;
+                const fees = typeof data.fees === 'number' ? data.fees / 100 : null;
+                const metadata = data.metadata || null;
+                const posChannel = data.channel ||
+                    (typeof data.metadata?.channel === 'string'
+                        ? data.metadata.channel
+                        : null);
                 await firestore_1.defaultDb
                     .collection('subscriptions')
                     .doc(storeId)
@@ -245,15 +281,20 @@ exports.paystackWebhook = functions.https.onRequest(async (req, res) => {
                     amount,
                     currency: data.currency || 'NGN',
                     channel: data.channel || null,
+                    posChannel,
+                    fees,
+                    metadata,
                     paidAt,
                     updatedAt: firestore_1.admin.firestore.FieldValue.serverTimestamp(),
                     lastEvent: evtType,
                 }, { merge: true });
+                await recordPaystackEvent(storeId, evtType, data);
                 break;
             }
             case 'charge.failed': {
                 const storeId = data.metadata?.storeId;
                 const reference = data.reference || null;
+                const fees = typeof data.fees === 'number' ? data.fees / 100 : null;
                 if (storeId) {
                     await firestore_1.defaultDb
                         .collection('subscriptions')
@@ -263,33 +304,19 @@ exports.paystackWebhook = functions.https.onRequest(async (req, res) => {
                         status: 'failed',
                         plan: data.metadata?.plan ?? null,
                         reference,
+                        fees,
+                        channel: data.channel || null,
                         updatedAt: firestore_1.admin.firestore.FieldValue.serverTimestamp(),
                         lastEvent: evtType,
                     }, { merge: true });
+                    await recordPaystackEvent(storeId, evtType, data);
                 }
                 break;
             }
             default: {
-                try {
-                    const storeId = data.metadata?.storeId;
-                    if (storeId) {
-                        await firestore_1.defaultDb
-                            .collection('subscriptions')
-                            .doc(storeId)
-                            .collection('events')
-                            .doc(String(Date.now()))
-                            .set({
-                            event: evtType,
-                            data,
-                            receivedAt: firestore_1.admin.firestore.FieldValue.serverTimestamp(),
-                        });
-                    }
-                }
-                catch (e) {
-                    functions.logger.warn('Failed to store Paystack audit event', {
-                        e,
-                        evtType,
-                    });
+                const storeId = data.metadata?.storeId;
+                if (storeId) {
+                    await recordPaystackEvent(storeId, evtType, data);
                 }
                 break;
             }
