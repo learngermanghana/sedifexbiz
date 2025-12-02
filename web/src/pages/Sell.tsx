@@ -19,10 +19,8 @@ import { useAuthUser } from '../hooks/useAuthUser'
 import { normalizeBarcode } from '../utils/barcode'
 import './Sell.css'
 
-import {
-  BrowserMultiFormatReader,
-  NotFoundException,
-} from '@zxing/browser'
+import { BrowserMultiFormatReader } from '@zxing/browser'
+import { NotFoundException } from '@zxing/library'
 import { useKeyboardScanner } from '../components/BarcodeScanner'
 
 type ItemType = 'product' | 'service'
@@ -117,7 +115,6 @@ export default function Sell() {
   const [isCameraReady, setIsCameraReady] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const scannerRef = useRef<BrowserMultiFormatReader | null>(null)
   const scannerControlsRef = useRef<{ stop: () => void } | null>(null)
 
   // 🔹 Customer selection
@@ -405,7 +402,6 @@ export default function Sell() {
     if (!isCameraOpen || !videoRef.current) return
 
     const reader = new BrowserMultiFormatReader()
-    scannerRef.current = reader
     setCameraError(null)
     setIsCameraReady(false)
 
@@ -468,11 +464,6 @@ export default function Sell() {
         scannerControlsRef.current.stop()
         scannerControlsRef.current = null
       }
-
-      if (scannerRef.current && typeof scannerRef.current.reset === 'function') {
-        scannerRef.current.reset()
-        scannerRef.current = null
-      }
     }
   }, [isCameraOpen, products])
 
@@ -482,11 +473,6 @@ export default function Sell() {
     if (scannerControlsRef.current) {
       scannerControlsRef.current.stop()
       scannerControlsRef.current = null
-    }
-
-    if (scannerRef.current && typeof scannerRef.current.reset === 'function') {
-      scannerRef.current.reset()
-      scannerRef.current = null
     }
   }
 

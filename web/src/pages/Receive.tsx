@@ -45,7 +45,7 @@ function isOfflineError(error: unknown) {
 }
 
 export default function Receive() {
-  const { user } = useAuthUser()
+  const user = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
   const [products, setProducts] = useState<Product[]>([])
   const [selected, setSelected] = useState<string>('')

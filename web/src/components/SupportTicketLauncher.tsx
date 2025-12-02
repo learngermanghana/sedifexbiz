@@ -45,7 +45,7 @@ export default function SupportTicketLauncher() {
 
       setMessage('')
       setIsOpen(false)
-      publish('Thanks! Your request was sent to support.', 'success')
+      publish({ message: 'Thanks! Your request was sent to support.', tone: 'success' })
     } catch (error) {
       console.error('[support] Unable to submit ticket', error)
       setSubmitError('We could not send your request. Please try again.')

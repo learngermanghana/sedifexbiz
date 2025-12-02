@@ -1,9 +1,9 @@
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { useEffect } from 'react'
-import { useAuth } from './useAuth'
+import { useAuthUser } from './useAuthUser'
 
 export function useStoreBootstrap() {
-  const { user } = useAuth()
+  const user = useAuthUser()
 
   useEffect(() => {
     async function syncStoreAccess() {

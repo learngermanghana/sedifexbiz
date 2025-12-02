@@ -20,7 +20,10 @@
     ]
   },
   "include": [
-    "src",
+    "src"
+  ],
+  "exclude": [
+    "**/*.test.*",
     "tests"
   ]
 }
