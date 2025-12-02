@@ -1,3 +1,7 @@
+/* ======================
+   Totals pill
+   ====================== */
+
 .sell-page__total {
   display: flex;
   flex-direction: column;
@@ -23,16 +27,366 @@
   color: #312e81;
 }
 
+/* ======================
+   Main layout
+   ====================== */
+
 .sell-page__grid {
   display: grid;
   gap: 24px;
 }
 
+/* Two columns on larger screens: left = scanner & products, right = cart */
 @media (min-width: 960px) {
   .sell-page__grid {
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   }
 }
+
+/* Left / right cards */
+.sell-page__left,
+.sell-page__right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Section header used in multiple places */
+.sell-page__section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sell-page__section-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sell-page__section-header p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+/* ======================
+   Scan barcode form
+   ====================== */
+
+.sell-page__scan-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.sell-page__scan-form .field {
+  margin: 0;
+}
+
+.sell-page__scan-form input {
+  padding: 12px 14px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  font-size: 15px;
+}
+
+.sell-page__scan-form input:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.7);
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.35);
+}
+
+.sell-page__scan-form .button {
+  align-self: flex-start;
+  min-width: 160px;
+}
+
+/* On wider screens, put input + button on one row */
+@media (min-width: 640px) {
+  .sell-page__scan-form {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
+  .sell-page__scan-form .field {
+    flex: 1;
+  }
+}
+
+/* Scan status (success / error) */
+
+.sell-page__scan-status {
+  margin-top: 6px;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sell-page__scan-status--success {
+  background: #ecfdf5;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.sell-page__scan-status--error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+/* Divider between scan and manual search */
+
+.sell-page__divider {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 16px 0;
+}
+
+/* ======================
+   Product list (manual add)
+   ====================== */
+
+.sell-page__product-list {
+  display: grid;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+/* Button row used by new Sell.tsx */
+.sell-page__product-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 14px;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.sell-page__product-row:hover,
+.sell-page__product-row:focus-visible {
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow: 0 18px 40px -26px rgba(99, 102, 241, 0.6);
+  transform: translateY(-1px);
+}
+
+.sell-page__product-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sell-page__product-name {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.sell-page__product-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.sell-page__product-price {
+  font-weight: 700;
+  color: #111827;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.sell-page__empty-products {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+/* ======================
+   Cart & table
+   ====================== */
+
+.sell-page__cart {
+  margin-top: 4px;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #f9fafb;
+  padding: 10px 10px 4px;
+}
+
+.sell-page__cart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.sell-page__cart-table th,
+.sell-page__cart-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.sell-page__cart-table th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+}
+
+.sell-page__cart-table td:last-child,
+.sell-page__cart-table th:last-child {
+  text-align: right;
+}
+
+.sell-page__qty-input {
+  width: 64px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  text-align: center;
+}
+
+.sell-page__qty-input:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.7);
+  box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.35);
+}
+
+.sell-page__empty-cart {
+  margin: 8px 0 10px;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+/* Make cart table horizontally scrollable on small screens */
+@media (max-width: 720px) {
+  .sell-page__cart {
+    overflow-x: auto;
+  }
+
+  .sell-page__cart-table {
+    min-width: 520px;
+  }
+}
+
+/* ======================
+   Totals summary (bottom right)
+   ====================== */
+
+.sell-page__totals {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.sell-page__totals-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  color: #111827;
+}
+
+.sell-page__totals-row--grand {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed #e5e7eb;
+  font-size: 15px;
+}
+
+.sell-page__totals-row strong {
+  font-weight: 700;
+}
+
+/* ======================
+   Payment + change
+   ====================== */
+
+.sell-page__payment {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+@media (min-width: 720px) {
+  .sell-page__payment {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: end;
+  }
+}
+
+.sell-page__change {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #047857;
+}
+
+.sell-page__change.is-short {
+  color: #b91c1c;
+}
+
+/* ======================
+   Messages & actions
+   ====================== */
+
+.sell-page__message {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 0;
+  font-size: 14px;
+}
+
+.sell-page__message--error {
+  color: #b91c1c;
+}
+
+.sell-page__message--success {
+  color: #047857;
+}
+
+.sell-page__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.sell-page__actions .button {
+  min-width: 140px;
+}
+
+@media (max-width: 640px) {
+  .sell-page__actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .sell-page__actions .button {
+    width: 100%;
+  }
+}
+
+/* ======================
+   Existing cart layout / saved carts / loyalty / outbox
+   (kept from your original CSS)
+   ====================== */
 
 .sell-page__cart-layout {
   display: grid;
@@ -156,12 +510,6 @@
   gap: 12px;
 }
 
-.sell-page__section-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .sell-page__catalog-list {
   display: grid;
   gap: 12px;
@@ -170,6 +518,7 @@
   padding-right: 6px;
 }
 
+/* Your older product card (kept for other parts of the page) */
 .sell-page__product {
   display: flex;
   justify-content: space-between;
@@ -188,18 +537,6 @@
   border-color: rgba(99, 102, 241, 0.4);
   box-shadow: 0 18px 40px -26px rgba(99, 102, 241, 0.6);
   transform: translateY(-1px);
-}
-
-.sell-page__product-name {
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.sell-page__product-meta {
-  display: block;
-  font-size: 13px;
-  color: #64748b;
-  margin-top: 4px;
 }
 
 .sell-page__product-action {
@@ -288,30 +625,6 @@
   margin-bottom: 4px;
 }
 
-.sell-page__change {
-  color: #047857;
-}
-
-.sell-page__change.is-short {
-  color: #b91c1c;
-}
-
-.sell-page__message {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 16px 0 0;
-  font-size: 14px;
-}
-
-.sell-page__message--error {
-  color: #b91c1c;
-}
-
-.sell-page__message--success {
-  color: #047857;
-}
-
 .sell-page__input--error {
   border-color: #b91c1c;
   color: #b91c1c;
@@ -322,6 +635,8 @@
   font-size: 12px;
   margin-top: 6px;
 }
+
+/* Loyalty */
 
 .sell-page__loyalty-panel {
   margin-top: 12px;
@@ -383,19 +698,7 @@
   color: #4338ca;
 }
 
-.sell-page__actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-  padding-top: 8px;
-  border-top: 1px solid #e2e8f0;
-}
-
-.sell-page__actions .button {
-  min-width: 160px;
-}
+/* Engagement / receipt outbox */
 
 .sell-page__engagement {
   margin-top: 16px;
@@ -549,6 +852,8 @@
   font-size: 13px;
 }
 
+/* Receipt print styles */
+
 .receipt-print {
   display: none;
 }
@@ -641,9 +946,15 @@
   }
 }
 
+/* Small-screen tweaks */
+
 @media (max-width: 640px) {
   .sell-page__total {
     width: 100%;
     align-items: flex-start;
+  }
+
+  .sell-page__grid {
+    gap: 18px;
   }
 }
