@@ -123,6 +123,7 @@ export default function Sell() {
   const [customerMode, setCustomerMode] = useState<CustomerMode>('walk_in')
   const [customerNameInput, setCustomerNameInput] = useState('')
   const [customerPhoneInput, setCustomerPhoneInput] = useState('')
+  const [customerSearchTerm, setCustomerSearchTerm] = useState('')
   const [allCustomers, setAllCustomers] = useState<Customer[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
 
@@ -180,18 +181,31 @@ export default function Sell() {
     return () => unsub()
   }, [activeStoreId])
 
-  const customerSuggestions = useMemo(() => {
+  const customerResults = useMemo(() => {
     if (customerMode !== 'named') return []
-    const term = customerNameInput.trim().toLowerCase()
-    if (!term) return []
-    return allCustomers
-      .filter(c => {
-        const inName = c.name.toLowerCase().includes(term)
-        const inPhone = (c.phone ?? '').toLowerCase().includes(term)
-        return inName || inPhone
-      })
-      .slice(0, 5)
-  }, [allCustomers, customerMode, customerNameInput])
+    const term = customerSearchTerm.trim().toLowerCase()
+
+    const matches = allCustomers.filter(c => {
+      if (!term) return true
+      const inName = c.name.toLowerCase().includes(term)
+      const inPhone = (c.phone ?? '').toLowerCase().includes(term)
+      return inName || inPhone
+    })
+
+    return matches.slice(0, 20)
+  }, [allCustomers, customerMode, customerSearchTerm])
+
+  // Keep customer fields tidy when switching modes
+  useEffect(() => {
+    if (customerMode === 'walk_in') {
+      setCustomerNameInput('')
+      setCustomerPhoneInput('')
+      setCustomerSearchTerm('')
+      setSelectedCustomerId(null)
+    } else if (customerMode === 'named' && customerNameInput) {
+      setCustomerSearchTerm(customerNameInput)
+    }
+  }, [customerMode, customerNameInput])
 
   // Filtered list for manual search
   const filteredProducts = useMemo(() => {
@@ -863,89 +877,112 @@ export default function Sell() {
           </div>
 
           {/* Customer */}
-          <div style={{ marginTop: 16 }}>
-            <div className="sell-page__section-header">
-              <h3>Customer</h3>
-              <p>
-                Mark it as a walk-in or link the sale to an existing / named
-                customer.
+          <div className="sell-page__customer">
+            <div className="sell-page__customer-header">
+              <div>
+                <h3>Customer</h3>
+                <p>
+                  Mark it as a walk-in or link the sale to an existing / named
+                  customer.
+                </p>
+              </div>
+              <div className="sell-page__customer-mode">
+                <button
+                  type="button"
+                  className={
+                    'button button--ghost button--small' +
+                    (customerMode === 'walk_in' ? ' is-active' : '')
+                  }
+                  onClick={() => setCustomerMode('walk_in')}
+                >
+                  Walk-in
+                </button>
+                <button
+                  type="button"
+                  className={
+                    'button button--ghost button--small' +
+                    (customerMode === 'named' ? ' is-active' : '')
+                  }
+                  onClick={() => setCustomerMode('named')}
+                >
+                  Existing / named customer
+                </button>
+              </div>
+            </div>
+
+            {customerMode === 'walk_in' ? (
+              <p className="sell-page__customer-results-empty">
+                Sale will be recorded as a walk-in. Switch to "Existing / named"
+                to attach a saved customer.
               </p>
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                gap: 16,
-                alignItems: 'center',
-                marginTop: 8,
-                marginBottom: 8,
-              }}
-            >
-              <label style={{ display: 'flex', gap: 6, fontSize: 14 }}>
-                <input
-                  type="radio"
-                  name="sell-customer-mode"
-                  checked={customerMode === 'walk_in'}
-                  onChange={() => setCustomerMode('walk_in')}
-                />
-                <span>Walk-in</span>
-              </label>
-              <label style={{ display: 'flex', gap: 6, fontSize: 14 }}>
-                <input
-                  type="radio"
-                  name="sell-customer-mode"
-                  checked={customerMode === 'named'}
-                  onChange={() => setCustomerMode('named')}
-                />
-                <span>Existing / named customer</span>
-              </label>
-            </div>
-
-            <div className="sell-page__payment">
-              <div className="field">
-                <label className="field__label">Customer name</label>
-                <input
-                  type="text"
-                  placeholder="Type to search or add name"
-                  value={customerNameInput}
-                  onChange={e => {
-                    setCustomerNameInput(e.target.value)
-                    setSelectedCustomerId(null)
-                  }}
-                  disabled={customerMode === 'walk_in'}
-                />
-                {customerMode === 'named' &&
-                  customerSuggestions.length > 0 && (
-                    <ul className="sell-page__customer-suggestions">
-                      {customerSuggestions.map(c => (
+            ) : (
+              <>
+                <div className="sell-page__customer-search">
+                  <label className="field__label">Pick a saved customer</label>
+                  <input
+                    type="text"
+                    placeholder="Search saved customers by name or phone"
+                    value={customerSearchTerm}
+                    onChange={e => setCustomerSearchTerm(e.target.value)}
+                  />
+                  <ul className="sell-page__customer-results">
+                    {customerResults.length ? (
+                      customerResults.map(c => (
                         <li key={c.id}>
                           <button
                             type="button"
+                            className={
+                              selectedCustomerId === c.id ? 'is-active' : ''
+                            }
                             onClick={() => {
                               setCustomerNameInput(c.name)
                               setCustomerPhoneInput(c.phone ?? '')
                               setSelectedCustomerId(c.id)
+                              setCustomerSearchTerm(c.name)
                             }}
                           >
-                            {c.name}
-                            {c.phone ? ` · ${c.phone}` : ''}
+                            <span className="sell-page__customer-results-name">
+                              {c.name}
+                            </span>
+                            <span className="sell-page__customer-results-meta">
+                              {c.phone || 'No phone number saved'}
+                            </span>
                           </button>
                         </li>
-                      ))}
-                    </ul>
-                  )}
-              </div>
-              <div className="field">
-                <label className="field__label">Phone (optional)</label>
-                <input
-                  type="tel"
-                  placeholder="0xxxxxxxxx"
-                  value={customerPhoneInput}
-                  onChange={e => setCustomerPhoneInput(e.target.value)}
-                  disabled={customerMode === 'walk_in'}
-                />
-              </div>
-            </div>
+                      ))
+                    ) : (
+                      <p className="sell-page__customer-results-empty">
+                        No matching customers. Add a new one below.
+                      </p>
+                    )}
+                  </ul>
+                </div>
+
+                <div className="sell-page__customer-details">
+                  <div className="field">
+                    <label className="field__label">Customer name</label>
+                    <input
+                      type="text"
+                      placeholder="Type to add a new name"
+                      value={customerNameInput}
+                      onChange={e => {
+                        setCustomerNameInput(e.target.value)
+                        setSelectedCustomerId(null)
+                      }}
+                    />
+                  </div>
+                  <div className="field">
+                    <label className="field__label">Phone (optional)</label>
+                    <input
+                      type="tel"
+                      placeholder="0xxxxxxxxx"
+                      value={customerPhoneInput}
+                      onChange={e => setCustomerPhoneInput(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Payment */}

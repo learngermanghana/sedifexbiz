@@ -114,10 +114,20 @@
   color: #475569;
 }
 
-.sell-page__customer-mode label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.sell-page__customer-mode button {
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 6px 10px;
+  font-weight: 600;
+}
+
+.sell-page__customer-mode button.is-active {
+  background: #4338ca;
+  color: #ffffff;
+  border-color: #4338ca;
+  box-shadow: 0 4px 12px rgba(67, 56, 202, 0.2);
 }
 
 .sell-page__customer-search {
@@ -150,6 +160,11 @@
 }
 
 .sell-page__customer-results li button:hover {
+  border-color: #4338ca;
+  background: #eef2ff;
+}
+
+.sell-page__customer-results li button.is-active {
   border-color: #4338ca;
   background: #eef2ff;
 }
