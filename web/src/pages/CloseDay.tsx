@@ -401,6 +401,11 @@ export default function CloseDay() {
 
       await setDoc(daySummaryRef, summaryPayload, { merge: true })
 
+      const closedByName =
+        (user?.displayName && user.displayName.trim()) ||
+        (user?.email && user.email.trim()) ||
+        'Unknown'
+
       const closePayload = {
         businessDay: Timestamp.fromDate(start),
         salesTotal: totalSales,
@@ -431,7 +436,27 @@ export default function CloseDay() {
         storeId: activeStoreId,
       }
 
-      await addDoc(collection(db, 'closeouts'), closePayload)
+      const closeDocRef = await addDoc(collection(db, 'closeouts'), closePayload)
+
+      // Optimistically select the freshly saved close-out for printing so the
+      // PDF/print view is never empty while we wait for Firestore to sync.
+      const optimisticCloseout: CloseoutRecord = {
+        id: closeDocRef.id,
+        businessDay: start,
+        salesTotal: totalSales,
+        expectedCash,
+        countedCash,
+        variance,
+        looseCash: looseCashTotal,
+        cardAndDigital: cardTotal,
+        cashRemoved: removedTotal,
+        cashAdded: addedTotal,
+        closedAt: new Date(),
+        closedByName,
+      }
+
+      setSelectedCloseout(optimisticCloseout)
+      setRecentCloseouts(prev => [optimisticCloseout, ...prev].slice(0, 10))
 
       const actor = user?.displayName || user?.email || 'Team member'
       try {
