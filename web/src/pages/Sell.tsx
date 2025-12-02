@@ -6,11 +6,13 @@ import React, {
   useState,
 } from 'react'
 import {
+  addDoc,
   collection,
   limit,
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
   where,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
@@ -116,6 +118,8 @@ export default function Sell() {
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+  const activityActor = user?.displayName || user?.email || 'Team member'
 
   // 🔹 Scan-specific state
   const [scanInput, setScanInput] = useState('')
@@ -789,6 +793,23 @@ export default function Sell() {
     }
   }
 
+  async function logSaleActivity(options: { saleId: string; total: number; itemCount: number }) {
+    if (!activeStoreId) return
+
+    try {
+      await addDoc(collection(db, 'activity'), {
+        storeId: activeStoreId,
+        type: 'sale',
+        summary: `Recorded sale ${options.saleId}`,
+        detail: `${options.itemCount} item${options.itemCount === 1 ? '' : 's'} · Total ${formatCurrency(options.total)}`,
+        actor: activityActor,
+        createdAt: serverTimestamp(),
+      })
+    } catch (error) {
+      console.warn('[activity] Failed to log sale activity', error)
+    }
+  }
+
   async function handleCommitSale() {
     setErrorMessage(null)
     setSuccessMessage(null)
@@ -879,6 +900,12 @@ export default function Sell() {
         totals,
         paymentMethod,
         discountInput,
+      })
+
+      await logSaleActivity({
+        saleId,
+        total: totalAfterDiscount,
+        itemCount: cartSnapshot.length,
       })
 
       setCart([])

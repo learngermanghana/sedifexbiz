@@ -17,6 +17,7 @@ import './Products.css'
 import DataTable, { DataTableColumn } from '../components/DataTable'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { useAuthUser } from '../hooks/useAuthUser'
 import {
   PRODUCT_CACHE_LIMIT,
   loadCachedProducts,
@@ -170,6 +171,7 @@ function formatLastReceipt(lastReceiptAt: unknown): string {
 
 export default function Products() {
   const { storeId: activeStoreId } = useActiveStore()
+  const user = useAuthUser()
 
   const [products, setProducts] = useState<Product[]>([])
   const [searchText, setSearchText] = useState('')
@@ -585,7 +587,13 @@ export default function Products() {
       setTaxRateInput('')
       setReorderPointInput('')
       setOpeningStockInput('')
-      setExpiryInput('')
+
+      await logInventoryActivity(
+        `Added ${trimmedName}`,
+        isService
+          ? 'Service added to catalogue'
+          : `SKU ${trimmedSku || '—'} · Price ${finalPrice !== null ? `GHS ${finalPrice.toFixed(2)}` : '—'}`,
+      )
     } catch (error) {
       console.error('[products] Failed to add item', error)
       setFormStatus('error')
@@ -610,6 +618,24 @@ export default function Products() {
   }
 
   const isService = itemType === 'service'
+  const activityActor = user?.displayName || user?.email || 'Team member'
+
+  async function logInventoryActivity(summary: string, detail: string) {
+    if (!activeStoreId) return
+
+    try {
+      await addDoc(collection(db, 'activity'), {
+        storeId: activeStoreId,
+        type: 'inventory',
+        summary,
+        detail,
+        actor: activityActor,
+        createdAt: serverTimestamp(),
+      })
+    } catch (error) {
+      console.warn('[activity] Failed to log product activity', error)
+    }
+  }
 
   /**
    * Edit helpers
@@ -716,6 +742,17 @@ export default function Products() {
       setEditingId(null)
       setFormStatus('success')
       setFormError('Item updated successfully.')
+
+      await logInventoryActivity(
+        `Updated ${trimmedName}`,
+        isSvc
+          ? 'Service details updated'
+          : `SKU ${trimmedSku || '—'} · Stock ${
+              typeof finalStock === 'number' ? finalStock : '—'
+            } · Price ${
+              typeof finalPrice === 'number' ? `GHS ${finalPrice.toFixed(2)}` : '—'
+            }`,
+      )
     } catch (error) {
       console.error('[products] Failed to update item', error)
       setFormStatus('error')
@@ -739,6 +776,11 @@ export default function Products() {
       if (editingId === product.id) {
         setEditingId(null)
       }
+
+      await logInventoryActivity(
+        `Deleted ${product.name}`,
+        'Removed from catalogue',
+      )
     } catch (error) {
       console.error('[products] Failed to delete item', error)
       setFormStatus('error')
