@@ -21,9 +21,7 @@ import './Sell.css'
 
 import {
   BrowserMultiFormatReader,
-  BrowserCodeReader,
   NotFoundException,
-  IScannerControls,
 } from '@zxing/browser'
 
 type ItemType = 'product' | 'service'
@@ -113,13 +111,13 @@ export default function Sell() {
   const [scanInput, setScanInput] = useState('')
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null)
 
-  // 🔹 Camera scanner (ZXing) state
+  // 🔹 Camera scanner
   const [isCameraOpen, setIsCameraOpen] = useState(false)
   const [isCameraReady, setIsCameraReady] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const scannerRef = useRef<BrowserMultiFormatReader | null>(null)
-  const scannerControlsRef = useRef<IScannerControls | null>(null)
+  const scannerControlsRef = useRef<{ stop: () => void } | null>(null)
 
   // 🔹 Customer selection
   const [customerMode, setCustomerMode] = useState<CustomerMode>('walk_in')
@@ -128,7 +126,7 @@ export default function Sell() {
   const [allCustomers, setAllCustomers] = useState<Customer[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
 
-  // Load products for this store
+  // Load products
   useEffect(() => {
     if (!activeStoreId) {
       setProducts([])
@@ -151,7 +149,7 @@ export default function Sell() {
     return () => unsub()
   }, [activeStoreId])
 
-  // Load customers (for existing / named selection)
+  // Load customers
   useEffect(() => {
     if (!activeStoreId) {
       setAllCustomers([])
@@ -186,7 +184,6 @@ export default function Sell() {
     if (customerMode !== 'named') return []
     const term = customerNameInput.trim().toLowerCase()
     if (!term) return []
-
     return allCustomers
       .filter(c => {
         const inName = c.name.toLowerCase().includes(term)
@@ -208,7 +205,7 @@ export default function Sell() {
     })
   }, [products, searchText])
 
-  // Totals from cart (before discount)
+  // Totals (before discount)
   const { subTotal, taxTotal, grossTotal } = useMemo(() => {
     let sub = 0
     let tax = 0
@@ -226,7 +223,7 @@ export default function Sell() {
     }
   }, [cart])
 
-  // Discount parsing: "5" => 5 GHS, "5%" => 5% of gross total
+  // Discount parsing
   const {
     discountAmount,
     discountError,
@@ -335,7 +332,7 @@ export default function Sell() {
     setCart(prev => prev.filter(line => line.productId !== productId))
   }
 
-  // 🔹 Handle decoded text (both from manual scan + camera)
+  // 🔹 Use decoded text for both manual + camera
   function handleScanFromDecodedText(rawText: string) {
     const normalized = normalizeBarcode(rawText)
     if (!normalized) {
@@ -366,7 +363,7 @@ export default function Sell() {
     })
   }
 
-  // 🔹 Manual scan handler (via text input)
+  // 🔹 Manual scan submit
   function handleScanSubmit(event: React.FormEvent) {
     event.preventDefault()
     setScanStatus(null)
@@ -384,7 +381,7 @@ export default function Sell() {
     setScanInput('')
   }
 
-  // 🔹 Camera scanner effect (prefer back camera, proper cleanup)
+  // 🔹 Camera scanner logic (prefer back camera)
   useEffect(() => {
     if (!isCameraOpen || !videoRef.current) return
 
@@ -397,16 +394,20 @@ export default function Sell() {
 
     ;(async () => {
       try {
-        const devices = await BrowserCodeReader.listVideoInputDevices()
-        let deviceId: string | null = null
+        let deviceId: string | undefined
 
-        if (devices.length > 0) {
-          const envDevice =
-            devices.find(d =>
-              /back|rear|environment/i.test(d.label || ''),
-            ) || devices[0]
+        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+          const devices = await navigator.mediaDevices.enumerateDevices()
+          const videoDevices = devices.filter(d => d.kind === 'videoinput')
 
-          deviceId = envDevice.deviceId
+          if (videoDevices.length > 0) {
+            const backCamera =
+              videoDevices.find(d =>
+                /back|rear|environment/i.test(d.label || ''),
+              ) || videoDevices[0]
+
+            deviceId = backCamera.deviceId
+          }
         }
 
         const controls = await reader.decodeFromVideoDevice(
@@ -571,7 +572,7 @@ export default function Sell() {
       </header>
 
       <div className="sell-page__grid">
-        {/* LEFT: Scanner + product search */}
+        {/* LEFT */}
         <section className="card sell-page__left">
           <div className="sell-page__section-header">
             <h3>Scan barcode</h3>
@@ -614,7 +615,7 @@ export default function Sell() {
             </p>
           )}
 
-          {/* Camera scanner */}
+          {/* Camera */}
           <div className="sell-page__section-header" style={{ marginTop: 16 }}>
             <h3>Camera scanner (beta)</h3>
             <p>
@@ -712,7 +713,7 @@ export default function Sell() {
           </div>
         </section>
 
-        {/* RIGHT: Cart + payment + customer */}
+        {/* RIGHT */}
         <section className="card sell-page__right">
           <div className="sell-page__section-header">
             <h3>Cart</h3>
@@ -828,7 +829,7 @@ export default function Sell() {
             <div className="sell-page__section-header">
               <h3>Customer</h3>
               <p>
-                Record whether this is a walk-in or link it to an existing or named
+                Mark it as a walk-in or link the sale to an existing / named
                 customer.
               </p>
             </div>
