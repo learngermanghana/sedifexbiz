@@ -251,6 +251,14 @@
   color: #475569;
 }
 
+.activity-feed__virtual-list {
+  width: 100%;
+}
+
+.activity-feed__virtual-row {
+  width: 100%;
+}
+
 @media (max-width: 860px) {
   .activity-add {
     grid-template-columns: 1fr;
