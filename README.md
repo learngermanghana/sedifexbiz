@@ -60,6 +60,15 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
 3. Import the seed data into Firestore: `npx firebase firestore:delete workspaces --project <project-id> --force && npx firebase firestore:import seed/workspaces.seed.json --project <project-id>`.
 4. For ongoing updates, edit the documents directly in the Firebase console or via your preferred admin tooling.
 
+**One-command Firestore bootstrap**
+- From the repo root, you can refresh both collections with one command using the helper script:
+
+  ```bash
+  node seed/firestore-seed.js --env dev   # or stage | prod
+  ```
+
+- The script will pick the right Firebase project ID for the chosen environment and run `firestore:delete` + `firestore:import` for both [`seed/workspaces.seed.json`](seed/workspaces.seed.json) and [`seed/team-members.seed.json`](seed/team-members.seed.json), with clear console output so you can see exactly which project is being modified.
+
 ### Team member access (`teamMembers` collection)
 - All login eligibility data lives in the **default** Firestore database. The `teamMembers` collection inside the default DB must contain at least one document matching the user who is attempting to sign in.
 - Each team member document should include the member's `uid`, the verified `email`, and the assigned `storeId`. Additional helpful fields include `role`, `name`, `phone`, and any admin-only `notes`.
