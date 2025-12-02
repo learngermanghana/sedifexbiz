@@ -1,9 +1,5 @@
-import React, {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+// web/src/pages/Sell.tsx
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   collection,
   onSnapshot,
@@ -13,7 +9,6 @@ import {
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser'
-
 import { db, functions } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useAuthUser } from '../hooks/useAuthUser'
@@ -47,20 +42,13 @@ type ScanStatus = {
   message: string
 }
 
-type CustomerMode = 'walk_in' | 'named'
+type CustomerMode = 'walk_in' | 'existing'
 
-type Receipt = {
-  saleId: string
-  createdAt: string
-  items: CartLine[]
-  subTotal: number
-  taxTotal: number
-  discountAmount: number
-  grandTotal: number
-  paymentMethod: PaymentMethod
-  amountPaid: number
-  changeDue: number
-  customerDescription: string
+type Customer = {
+  id: string
+  name: string
+  phone: string | null
+  email: string | null
 }
 
 function mapFirestoreProduct(id: string, data: any): Product {
@@ -91,9 +79,58 @@ function mapFirestoreProduct(id: string, data: any): Product {
   }
 }
 
+function mapFirestoreCustomer(id: string, data: any): Customer {
+  const name =
+    typeof data.name === 'string' && data.name.trim()
+      ? data.name.trim()
+      : 'Unnamed customer'
+  const phone =
+    typeof data.phone === 'string' && data.phone.trim() ? data.phone.trim() : null
+  const email =
+    typeof data.email === 'string' && data.email.trim() ? data.email.trim() : null
+
+  return {
+    id,
+    name,
+    phone,
+    email,
+  }
+}
+
 function formatCurrency(amount: number | null | undefined): string {
   if (typeof amount !== 'number' || !Number.isFinite(amount)) return 'GHS 0.00'
   return `GHS ${amount.toFixed(2)}`
+}
+
+/**
+ * Parse a VAT / discount input.
+ * Supports:
+ *  - "5" or "5%" => 5% of base
+ *  - "0.05"      => 5% of base
+ *  - "12.5"      => 12.5% of base
+ *  - "20 cedis"  => 20 (flat amount, any non-numeric suffix ignored)
+ */
+function parseAmountOrPercent(input: string, base: number): number {
+  const raw = input.trim()
+  if (!raw) return 0
+
+  const hasPercent = raw.includes('%')
+  const numericPart = raw.replace('%', '').trim()
+  let value = Number(numericPart)
+
+  if (!Number.isFinite(value)) return 0
+
+  // Handle "0.05" style (5%)
+  if (!hasPercent && value > 0 && value < 1) {
+    return base * value
+  }
+
+  if (hasPercent) {
+    return (base * value) / 100
+  }
+
+  // If it's a "normal" number (>= 1) with no %, treat as flat amount
+  return value
 }
 
 export default function Sell() {
@@ -103,35 +140,39 @@ export default function Sell() {
   const [products, setProducts] = useState<Product[]>([])
   const [searchText, setSearchText] = useState('')
   const [cart, setCart] = useState<CartLine[]>([])
+
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
   const [amountPaidInput, setAmountPaidInput] = useState('')
-  const [discountInput, setDiscountInput] = useState('') // e.g. "5" or "5%"
+
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
-  // 🔹 Scan-specific state (text box)
+  // 🔹 Scan-specific state
   const [scanInput, setScanInput] = useState('')
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null)
 
   // 🔹 Camera scanner state
-  const videoRef = useRef<HTMLVideoElement | null>(null)
-  const scannerRef = useRef<BrowserMultiFormatReader | null>(null)
-  const controlsRef = useRef<IScannerControls | null>(null)
   const [isCameraOpen, setIsCameraOpen] = useState(false)
-  const [isCameraScanning, setIsCameraScanning] = useState(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
+  const [isCameraReady, setIsCameraReady] = useState(false)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const scannerControlsRef = useRef<IScannerControls | null>(null)
+  const lastScanRef = useRef<{ code: string; ts: number } | null>(null)
 
-  // 🔹 Customer state
+  // 🔹 VAT & discount
+  const [vatInput, setVatInput] = useState('')
+  const [discountInput, setDiscountInput] = useState('')
+
+  // 🔹 Customer
   const [customerMode, setCustomerMode] = useState<CustomerMode>('walk_in')
-  const [customerName, setCustomerName] = useState('')
-  const [customerPhone, setCustomerPhone] = useState('')
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
+  const [customerNameInput, setCustomerNameInput] = useState('')
+  const [customerPhoneInput, setCustomerPhoneInput] = useState('')
 
-  // 🔹 Receipt state
-  const [lastReceipt, setLastReceipt] = useState<Receipt | null>(null)
-  const [isReceiptPrintReady, setIsReceiptPrintReady] = useState(false)
-
-  // ---- Load products for this store ----
+  // Load products for this store
   useEffect(() => {
     if (!activeStoreId) {
       setProducts([])
@@ -145,24 +186,37 @@ export default function Sell() {
     )
 
     const unsub = onSnapshot(q, snap => {
-      const rows: Product[] = snap.docs.map(d =>
-        mapFirestoreProduct(d.id, d.data()),
-      )
+      const rows: Product[] = snap.docs.map(d => mapFirestoreProduct(d.id, d.data()))
       setProducts(rows)
     })
 
     return () => unsub()
   }, [activeStoreId])
 
-  // ---- Clean up camera on unmount ----
+  // Load customers for this store (for type-ahead)
   useEffect(() => {
-    return () => {
-      void stopCameraScanner()
+    if (!activeStoreId) {
+      setCustomers([])
+      return
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
-  // ---- Filtered list for manual search ----
+    const q = query(
+      collection(db, 'customers'),
+      where('storeId', '==', activeStoreId),
+      orderBy('name', 'asc'),
+    )
+
+    const unsub = onSnapshot(q, snap => {
+      const rows: Customer[] = snap.docs.map(d =>
+        mapFirestoreCustomer(d.id, d.data()),
+      )
+      setCustomers(rows)
+    })
+
+    return () => unsub()
+  }, [activeStoreId])
+
+  // Filtered list for manual product search
   const filteredProducts = useMemo(() => {
     if (!searchText.trim()) return products
     const term = searchText.trim().toLowerCase()
@@ -174,52 +228,44 @@ export default function Sell() {
     })
   }, [products, searchText])
 
-  // ---- Totals (including discount) ----
-  const {
-    subTotal,
-    taxTotal,
-    discountAmount,
-    grandTotal,
-  } = useMemo(() => {
-    let sub = 0
-    let tax = 0
+  // Filtered customers when mode is "existing"
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch.trim()) return customers.slice(0, 10)
+    const term = customerSearch.trim().toLowerCase()
+    return customers
+      .filter(c => {
+        const inName = c.name.toLowerCase().includes(term)
+        const inPhone = (c.phone ?? '').toLowerCase().includes(term)
+        const inEmail = (c.email ?? '').toLowerCase().includes(term)
+        return inName || inPhone || inEmail
+      })
+      .slice(0, 10)
+  }, [customers, customerSearch])
 
+  // Totals (cart subtotal, then VAT & discount input)
+  const subTotal = useMemo(() => {
+    let sub = 0
     for (const line of cart) {
       const lineSub = line.price * line.qty
-      const rate = Number(line.taxRate || 0)
-      const lineTax = rate > 0 ? lineSub * rate : 0
       sub += lineSub
-      tax += lineTax
     }
+    return sub
+  }, [cart])
 
-    const rawTotal = sub + tax
+  const vatAmount = useMemo(
+    () => parseAmountOrPercent(vatInput, subTotal),
+    [vatInput, subTotal],
+  )
 
-    let discount = 0
-    const trimmed = discountInput.trim()
-    if (trimmed) {
-      if (trimmed.endsWith('%')) {
-        const percent = Number(trimmed.slice(0, -1).trim())
-        if (Number.isFinite(percent) && percent > 0) {
-          discount = (rawTotal * percent) / 100
-        }
-      } else {
-        const abs = Number(trimmed)
-        if (Number.isFinite(abs) && abs > 0) {
-          discount = abs
-        }
-      }
-    }
+  const discountAmount = useMemo(
+    () => parseAmountOrPercent(discountInput, subTotal + vatAmount),
+    [discountInput, subTotal, vatAmount],
+  )
 
-    if (discount > rawTotal) discount = rawTotal
-    const totalAfterDiscount = rawTotal - discount
-
-    return {
-      subTotal: sub,
-      taxTotal: tax,
-      discountAmount: discount,
-      grandTotal: totalAfterDiscount,
-    }
-  }, [cart, discountInput])
+  const grandTotal = useMemo(() => {
+    const total = subTotal + vatAmount - discountAmount
+    return total > 0 ? total : 0
+  }, [subTotal, vatAmount, discountAmount])
 
   const amountPaid = useMemo(() => {
     const raw = Number(amountPaidInput)
@@ -233,7 +279,7 @@ export default function Sell() {
     return diff > 0 ? diff : 0
   }, [amountPaid, grandTotal])
 
-  // ---- Cart helpers ----
+  // Helper: add to cart
   function addProductToCart(product: Product, qty: number = 1) {
     if (!product.price || product.price < 0) {
       setScanStatus({
@@ -244,9 +290,7 @@ export default function Sell() {
     }
 
     setCart(prev => {
-      const existingIndex = prev.findIndex(
-        line => line.productId === product.id,
-      )
+      const existingIndex = prev.findIndex(line => line.productId === product.id)
       if (existingIndex >= 0) {
         const next = [...prev]
         next[existingIndex] = {
@@ -282,8 +326,8 @@ export default function Sell() {
     setCart(prev => prev.filter(line => line.productId !== productId))
   }
 
-  // ---- Shared helper: add product from barcode/SKU text ----
-  function addProductFromCode(rawCode: string) {
+  // 🔹 Shared barcode lookup (used by text box + camera)
+  function handleBarcodeLookup(rawCode: string) {
     const normalized = normalizeBarcode(rawCode)
     if (!normalized) {
       setScanStatus({
@@ -313,7 +357,7 @@ export default function Sell() {
     })
   }
 
-  // ---- Scan handler (works with USB/cable scanners that type into input) ----
+  // 🔹 Manual scan handler (USB scanner or typed code)
   function handleScanSubmit(event: React.FormEvent) {
     event.preventDefault()
     setScanStatus(null)
@@ -321,64 +365,111 @@ export default function Sell() {
     if (!scanInput.trim()) {
       setScanStatus({
         type: 'error',
-        message: 'Type or scan a barcode first.',
+        message: 'Enter or scan a barcode first.',
       })
       return
     }
 
-    addProductFromCode(scanInput)
+    handleBarcodeLookup(scanInput)
     setScanInput('')
   }
 
-  // ---- Camera scanner handlers (ZXing) ----
-  async function startCameraScanner() {
-    if (isCameraScanning) return
-    if (!videoRef.current) {
-      setCameraError('Camera preview not ready yet.')
+  // 🔹 Camera scanner (ZXing) hook
+  useEffect(() => {
+    if (!isCameraOpen) {
+      // Tear down
+      scannerControlsRef.current?.stop()
+      scannerControlsRef.current = null
+      setIsCameraReady(false)
+      setCameraError(null)
       return
     }
 
-    const reader = new BrowserMultiFormatReader()
-    scannerRef.current = reader
-    setCameraError(null)
-    setIsCameraOpen(true)
-
-    try {
-      const controls = await reader.decodeFromVideoDevice(
-        undefined, // use default camera
-        videoRef.current,
-        result => {
-          if (result) {
-            addProductFromCode(result.getText())
-          }
-        },
-      )
-      controlsRef.current = controls
-      setIsCameraScanning(true)
-    } catch (err: any) {
-      console.error('[sell] Camera scan error', err)
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCameraError(
-        'Could not access camera. Check permissions and that no other app is using it.',
+        'This browser does not allow camera access. Try Chrome on Android or Safari on iOS.',
       )
-      setIsCameraOpen(false)
-      setIsCameraScanning(false)
+      return
     }
+
+    let isCancelled = false
+    const codeReader = new BrowserMultiFormatReader()
+
+    async function startScanner() {
+      try {
+        const videoElement = videoRef.current
+        if (!videoElement) return
+
+        const devices = await BrowserMultiFormatReader.listVideoInputDevices()
+        const preferredDeviceId = devices[0]?.deviceId ?? undefined
+
+        const controls = await codeReader.decodeFromVideoDevice(
+          preferredDeviceId,
+          videoElement,
+          (result, err) => {
+            if (result) {
+              const text = result.getText()
+              const normalized = normalizeBarcode(text)
+              if (!normalized) return
+
+              const now = Date.now()
+              const last = lastScanRef.current
+              // Avoid spamming the same code every frame
+              if (last && last.code === normalized && now - last.ts < 1500) {
+                return
+              }
+              lastScanRef.current = { code: normalized, ts: now }
+
+              handleBarcodeLookup(normalized)
+            }
+            if (err && !(err as any).message?.includes('No MultiFormat Readers')) {
+              // ZXing will throw a lot while searching; ignore those
+              // Only show a generic message if needed
+              // console.debug('[scanner] error', err)
+            }
+          },
+        )
+
+        if (isCancelled) {
+          controls.stop()
+          return
+        }
+
+        scannerControlsRef.current = controls
+        setIsCameraReady(true)
+        setCameraError(null)
+      } catch (error: any) {
+        console.error('[scanner] Failed to start camera scanner', error)
+        setCameraError(
+          'Could not start camera. Check permissions and try again.',
+        )
+        setIsCameraReady(false)
+      }
+    }
+
+    startScanner()
+
+    return () => {
+      isCancelled = true
+      try {
+        scannerControlsRef.current?.stop()
+      } catch {
+        // ignore
+      }
+      scannerControlsRef.current = null
+      codeReader.reset()
+    }
+  }, [isCameraOpen, products]) // restart if product list changes
+
+  // 🔹 Customer helpers
+  function handleSelectExistingCustomer(cust: Customer) {
+    setSelectedCustomerId(cust.id)
+    setCustomerNameInput(cust.name)
+    setCustomerPhoneInput(cust.phone ?? '')
+    setCustomerSearch(`${cust.name}${cust.phone ? ` (${cust.phone})` : ''}`)
   }
 
-  async function stopCameraScanner() {
-    try {
-      await controlsRef.current?.stop()
-    } catch {
-      // ignore
-    }
-    controlsRef.current = null
-    scannerRef.current?.reset()
-    scannerRef.current = null
-    setIsCameraScanning(false)
-    setIsCameraOpen(false)
-  }
-
-  // ---- Commit sale ----
+  // 🔹 Commit sale
   async function handleCommitSale() {
     setErrorMessage(null)
     setSuccessMessage(null)
@@ -390,11 +481,6 @@ export default function Sell() {
     }
     if (!cart.length) {
       setErrorMessage('Add at least one item to the cart.')
-      return
-    }
-
-    if (customerMode === 'named' && !customerName.trim()) {
-      setErrorMessage('Enter a customer name or switch to Walk-in.')
       return
     }
 
@@ -410,9 +496,8 @@ export default function Sell() {
 
       const totals = {
         subTotal,
-        taxTotal,
+        taxTotal: vatAmount,
         discountTotal: discountAmount,
-        totalBeforeDiscount: subTotal + taxTotal,
         total: grandTotal,
       }
 
@@ -424,57 +509,54 @@ export default function Sell() {
             amount: grandTotal,
           },
         ],
-        amountPaid: amountPaid > 0 ? amountPaid : grandTotal,
-        changeDue,
       }
 
-      const customer =
-        customerMode === 'walk_in'
-          ? {
-              type: 'walk_in',
-              label: 'Walk-in customer',
-            }
-          : {
-              type: 'named',
-              name: customerName.trim(),
-              phone: customerPhone.trim() || null,
-            }
+      let customerPayload: any = null
+      if (customerMode === 'walk_in') {
+        if (customerNameInput || customerPhoneInput) {
+          customerPayload = {
+            type: 'walk_in',
+            name: customerNameInput || 'Walk-in customer',
+            phone: customerPhoneInput || null,
+          }
+        }
+      } else {
+        if (selectedCustomerId) {
+          customerPayload = {
+            type: 'existing',
+            id: selectedCustomerId,
+            name: customerNameInput || null,
+            phone: customerPhoneInput || null,
+          }
+        } else if (customerNameInput) {
+          customerPayload = {
+            type: 'named',
+            name: customerNameInput,
+            phone: customerPhoneInput || null,
+          }
+        }
+      }
 
-      const saleId = `sale_${activeStoreId}_${Date.now()}`
       const commitSaleFn = httpsCallable(functions, 'commitSale')
       await commitSaleFn({
         branchId: activeStoreId,
         items,
         totals,
         cashierId: user?.uid ?? null,
-        saleId,
+        saleId: `sale_${activeStoreId}_${Date.now()}`,
         payment,
-        customer,
+        customer: customerPayload,
       })
 
-      // Build receipt before clearing cart
-      const receipt: Receipt = {
-        saleId,
-        createdAt: new Date().toISOString(),
-        items: cart,
-        subTotal,
-        taxTotal,
-        discountAmount,
-        grandTotal,
-        paymentMethod,
-        amountPaid: payment.amountPaid,
-        changeDue,
-        customerDescription:
-          customerMode === 'walk_in'
-            ? 'Walk-in customer'
-            : `${customerName.trim()}${customerPhone.trim() ? ` (${customerPhone.trim()})` : ''}`,
-      }
-      setLastReceipt(receipt)
-
-      // Clear UI
       setCart([])
       setAmountPaidInput('')
+      setVatInput('')
       setDiscountInput('')
+      setCustomerMode('walk_in')
+      setCustomerSearch('')
+      setSelectedCustomerId(null)
+      setCustomerNameInput('')
+      setCustomerPhoneInput('')
       setSuccessMessage('Sale recorded successfully.')
     } catch (error: any) {
       console.error('[sell] Failed to commit sale', error)
@@ -488,31 +570,14 @@ export default function Sell() {
     }
   }
 
-  function handleClearCart() {
-    setCart([])
-    setAmountPaidInput('')
-    setDiscountInput('')
-    setScanStatus(null)
-    setErrorMessage(null)
-    setSuccessMessage(null)
-  }
-
-  function handlePrintReceipt() {
-    if (!lastReceipt) return
-    setIsReceiptPrintReady(true)
-    setTimeout(() => {
-      window.print()
-      setIsReceiptPrintReady(false)
-    }, 100)
-  }
-
   return (
     <div className="page sell-page">
       <header className="page__header sell-page__header">
         <div>
           <h2 className="page__title">Sell</h2>
           <p className="page__subtitle">
-            Scan barcodes with your camera or a scanner, build a cart, apply discounts, and record the sale.
+            Scan barcodes with your camera or a USB barcode scanner, build a cart, apply
+            discount, pick customer, then save the sale.
           </p>
         </div>
       </header>
@@ -523,15 +588,12 @@ export default function Sell() {
           <div className="sell-page__section-header">
             <h3>Scan barcode</h3>
             <p>
-              Use your phone camera or a USB barcode scanner. We match the code to the product SKU/barcode you saved.
+              Use your phone camera or a USB barcode scanner. We match the code to the
+              product SKU/barcode you saved.
             </p>
           </div>
 
-          {/* Text-based scan (works with external scanners) */}
-          <form
-            className="sell-page__scan-form"
-            onSubmit={handleScanSubmit}
-          >
+          <form className="sell-page__scan-form" onSubmit={handleScanSubmit}>
             <label className="field">
               <span className="field__label">Barcode / SKU</span>
               <input
@@ -549,38 +611,43 @@ export default function Sell() {
             </button>
           </form>
 
-          {/* Camera scanner (ZXing) */}
           <div className="sell-page__camera-block">
-            <div className="sell-page__camera-header">
-              <div>
-                <div className="sell-page__camera-title">Camera scanner (beta)</div>
-                <p className="sell-page__camera-subtitle">
-                  Opens your device camera and automatically adds items as you scan.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="button button--ghost"
-                onClick={isCameraScanning ? stopCameraScanner : startCameraScanner}
-              >
-                {isCameraScanning ? 'Stop camera' : 'Open camera scanner'}
-              </button>
-            </div>
+            <h4 className="sell-page__camera-title">Camera scanner (beta)</h4>
+            <p className="sell-page__camera-text">
+              Opens your device camera and automatically adds items as you scan.
+            </p>
+
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => setIsCameraOpen(open => !open)}
+            >
+              {isCameraOpen ? 'Close camera scanner' : 'Open camera scanner'}
+            </button>
 
             {isCameraOpen && (
-              <div className="sell-page__camera-preview">
+              <div className="sell-page__camera-wrapper">
                 <video
                   ref={videoRef}
-                  className="sell-page__camera-video"
+                  className="sell-page__camera-preview"
                   muted
                   playsInline
+                  autoPlay
                 />
+                {!isCameraReady && !cameraError && (
+                  <p className="sell-page__camera-hint">
+                    Initialising camera… hold barcode in front of the box.
+                  </p>
+                )}
+                {cameraError && (
+                  <p className="sell-page__camera-error">{cameraError}</p>
+                )}
               </div>
             )}
 
-            {cameraError && (
-              <p className="sell-page__message sell-page__message--error">
-                {cameraError}
+            {!isCameraOpen && (
+              <p className="sell-page__camera-hint sell-page__camera-hint--idle">
+                Camera preview not ready yet.
               </p>
             )}
           </div>
@@ -708,40 +775,50 @@ export default function Sell() {
             )}
           </div>
 
-          {/* Totals: Subtotal / VAT / Discount / Total */}
           <div className="sell-page__totals">
             <div className="sell-page__totals-row">
               <span>Subtotal</span>
               <strong>{formatCurrency(subTotal)}</strong>
             </div>
+
             <div className="sell-page__totals-row">
               <span>VAT / Tax</span>
-              <strong>{formatCurrency(taxTotal)}</strong>
-            </div>
-            <div className="sell-page__totals-row">
-              <span>Discount</span>
-              <div>
+              <div className="sell-page__totals-input">
                 <input
                   type="text"
-                  className="sell-page__discount-input"
                   placeholder="e.g. 5 or 5%"
+                  value={vatInput}
+                  onChange={e => setVatInput(e.target.value)}
+                />
+                <span>{formatCurrency(vatAmount)}</span>
+              </div>
+            </div>
+
+            <div className="sell-page__totals-row">
+              <span>Discount</span>
+              <div className="sell-page__totals-input">
+                <input
+                  type="text"
+                  placeholder="e.g. 10 or 5%"
                   value={discountInput}
                   onChange={e => setDiscountInput(e.target.value)}
                 />
+                <span>-{formatCurrency(discountAmount)}</span>
               </div>
             </div>
+
             <div className="sell-page__totals-row sell-page__totals-row--grand">
               <span>Total</span>
               <strong>{formatCurrency(grandTotal)}</strong>
             </div>
           </div>
 
-          {/* Customer + payment block */}
-          <div className="sell-page__payment">
-            <div className="field">
-              <label className="field__label">Customer</label>
-              <div className="sell-page__customer-options">
-                <label className="radio">
+          {/* Customer + payment */}
+          <div className="sell-page__customer">
+            <div className="sell-page__customer-header">
+              <span>Customer</span>
+              <div className="sell-page__customer-mode">
+                <label>
                   <input
                     type="radio"
                     name="customer-mode"
@@ -751,35 +828,87 @@ export default function Sell() {
                   />
                   <span>Walk-in</span>
                 </label>
-                <label className="radio">
+                <label>
                   <input
                     type="radio"
                     name="customer-mode"
-                    value="named"
-                    checked={customerMode === 'named'}
-                    onChange={() => setCustomerMode('named')}
+                    value="existing"
+                    checked={customerMode === 'existing'}
+                    onChange={() => setCustomerMode('existing')}
                   />
                   <span>Existing / named customer</span>
                 </label>
               </div>
-              {customerMode === 'named' && (
-                <div className="sell-page__customer-fields">
-                  <input
-                    type="text"
-                    placeholder="Customer name"
-                    value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
-                  />
-                  <input
-                    type="tel"
-                    placeholder="Phone (optional)"
-                    value={customerPhone}
-                    onChange={e => setCustomerPhone(e.target.value)}
-                  />
-                </div>
-              )}
             </div>
 
+            {customerMode === 'existing' && (
+              <div className="sell-page__customer-search">
+                <label className="field">
+                  <span className="field__label">Search customer</span>
+                  <input
+                    type="text"
+                    placeholder="Type name, phone, or email"
+                    value={customerSearch}
+                    onChange={e => {
+                      setCustomerSearch(e.target.value)
+                      setSelectedCustomerId(null)
+                    }}
+                  />
+                </label>
+
+                {filteredCustomers.length ? (
+                  <ul className="sell-page__customer-results">
+                    {filteredCustomers.map(c => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectExistingCustomer(c)}
+                        >
+                          <span className="sell-page__customer-results-name">
+                            {c.name}
+                          </span>
+                          <span className="sell-page__customer-results-meta">
+                            {c.phone || c.email || 'No contact on file'}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="sell-page__customer-results-empty">
+                    No customers match this search.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="sell-page__customer-details">
+              <div className="field">
+                <label className="field__label">Customer name</label>
+                <input
+                  type="text"
+                  value={customerNameInput}
+                  onChange={e => setCustomerNameInput(e.target.value)}
+                  placeholder={
+                    customerMode === 'walk_in'
+                      ? 'Optional – leave blank for walk-in'
+                      : 'Name of customer'
+                  }
+                />
+              </div>
+              <div className="field">
+                <label className="field__label">Phone (optional)</label>
+                <input
+                  type="tel"
+                  value={customerPhoneInput}
+                  onChange={e => setCustomerPhoneInput(e.target.value)}
+                  placeholder="Phone number"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="sell-page__payment">
             <div className="field">
               <label className="field__label">Payment method</label>
               <select
@@ -828,111 +957,35 @@ export default function Sell() {
             <button
               type="button"
               className="button button--ghost"
-              onClick={handleClearCart}
+              onClick={() => {
+                setCart([])
+                setAmountPaidInput('')
+                setVatInput('')
+                setDiscountInput('')
+                setScanStatus(null)
+                setErrorMessage(null)
+                setSuccessMessage(null)
+                setCustomerMode('walk_in')
+                setCustomerSearch('')
+                setSelectedCustomerId(null)
+                setCustomerNameInput('')
+                setCustomerPhoneInput('')
+              }}
               disabled={isSaving}
             >
               Clear cart
             </button>
-            <div className="sell-page__actions-right">
-              {lastReceipt && (
-                <button
-                  type="button"
-                  className="button button--ghost"
-                  onClick={handlePrintReceipt}
-                >
-                  Print last receipt
-                </button>
-              )}
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={handleCommitSale}
-                disabled={isSaving || !cart.length}
-              >
-                {isSaving ? 'Saving…' : 'Save sale'}
-              </button>
-            </div>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={handleCommitSale}
+              disabled={isSaving || !cart.length}
+            >
+              {isSaving ? 'Saving…' : 'Save sale'}
+            </button>
           </div>
         </section>
       </div>
-
-      {/* Printable receipt layout (uses Sell.css .receipt-print styles) */}
-      {lastReceipt && (
-        <div
-          className={
-            'receipt-print' +
-            (isReceiptPrintReady ? ' is-ready' : '')
-          }
-        >
-          <div className="receipt-print__inner">
-            <h3 className="receipt-print__title">Sedifex POS Receipt</h3>
-            <p className="receipt-print__meta">
-              Sale ID: {lastReceipt.saleId}
-              <br />
-              Date:{' '}
-              {new Date(lastReceipt.createdAt).toLocaleString()}
-              <br />
-              Customer: {lastReceipt.customerDescription}
-            </p>
-
-            <div className="receipt-print__section">
-              <table className="receipt-print__table">
-                <thead>
-                  <tr>
-                    <th>Item</th>
-                    <th>Qty</th>
-                    <th>Amt</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lastReceipt.items.map(line => (
-                    <tr key={line.productId}>
-                      <td>{line.name}</td>
-                      <td>{line.qty}</td>
-                      <td>
-                        {formatCurrency(line.price * line.qty)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="receipt-print__summary">
-              <div>
-                <span>Subtotal</span>
-                <span>{formatCurrency(lastReceipt.subTotal)}</span>
-              </div>
-              <div>
-                <span>VAT / Tax</span>
-                <span>{formatCurrency(lastReceipt.taxTotal)}</span>
-              </div>
-              <div>
-                <span>Discount</span>
-                <span>
-                  -{formatCurrency(lastReceipt.discountAmount)}
-                </span>
-              </div>
-              <div>
-                <strong>Total</strong>
-                <strong>{formatCurrency(lastReceipt.grandTotal)}</strong>
-              </div>
-              <div>
-                <span>Paid</span>
-                <span>{formatCurrency(lastReceipt.amountPaid)}</span>
-              </div>
-              <div>
-                <span>Change</span>
-                <span>{formatCurrency(lastReceipt.changeDue)}</span>
-              </div>
-            </div>
-
-            <p className="receipt-print__footer">
-              Thank you for shopping with us.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
