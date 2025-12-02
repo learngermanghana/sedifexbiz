@@ -103,6 +103,11 @@ Follow the flow below to connect Paystack as the card/mobile processor for Sedif
 1. **Create Paystack credentials**
    - Sign in to your Paystack dashboard and create a **Live** and **Test** secret key pair.
    - Store the keys in your deployment environment (e.g., Vercel, Firebase Functions config) rather than hard-coding them in the repo. The frontend only needs the public key; keep the secret key scoped to Cloud Functions.
+   - For Cloud Functions, set `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, and `APP_BASE_URL` (used for webhook verification and default redirects). For example:
+     ```bash
+     cd functions
+     firebase functions:config:set PAYSTACK_SECRET_KEY="sk_live_xxx" PAYSTACK_PUBLIC_KEY="pk_live_xxx" APP_BASE_URL="https://app.sedifex.com"
+     ```
 
 2. **Publish provider metadata to Firestore**
    - Open the `stores/<storeId>` document (or update your seeding script) and set `paymentProvider` to `paystack`.
