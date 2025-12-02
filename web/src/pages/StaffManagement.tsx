@@ -338,7 +338,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
 
           {members.length === 0 && !loading ? (
             <div className="staff-table__row" role="row">
-              <span role="cell" className="staff-table__empty" colSpan={5}>
+              <span role="cell" className="staff-table__empty">
                 No staff found for this workspace.
               </span>
             </div>

@@ -29,6 +29,7 @@ export const AccountBillingSection: React.FC<Props> = ({
   contractStatus,
   billingPlan,
   paymentProvider,
+  contractEndDate,
 }) => {
   const defaultPlanId = PLANS[0]?.id ?? ''
   const [selectedPlanId, setSelectedPlanId] = useState<string>(defaultPlanId)

@@ -36,6 +36,8 @@ type Product = {
   itemType: ItemType
   taxRate?: number | null
   lastReceiptAt?: unknown
+  createdAt?: unknown
+  updatedAt?: unknown
 }
 
 type CachedProduct = Omit<Product, 'id'>
@@ -102,6 +104,8 @@ function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product
     itemType,
     taxRate: sanitizeTaxRate(data.taxRate),
     lastReceiptAt: data.lastReceiptAt,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
   }
 }
 
