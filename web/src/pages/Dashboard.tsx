@@ -17,39 +17,6 @@ import {
   limit,
 } from 'firebase/firestore'
 
-const QUICK_LINKS: Array<{
-  to: string
-  title: string
-  description: string
-}> = [
-  {
-    to: '/products',
-    title: 'Products & Services',
-    description: 'Manage your catalogue, update prices, and keep stock levels accurate.',
-  },
-  {
-    to: '/sell',
-    title: 'Sell',
-    description: 'Ring up a customer, track the cart, and record a sale in seconds.',
-  },
-  {
-    to: '/receive',
-    title: 'Receive',
-    description: 'Log new inventory as it arrives so every aisle stays replenished.',
-  },
-  {
-    to: '/close-day',
-    title: 'Close Day',
-    description: 'Balance the till, review totals, and lock in a clean daily report.',
-  },
-  {
-    to: '/customers',
-    title: 'Customers',
-    description:
-      'Look up purchase history, reward loyal shoppers, and keep profiles up to date.',
-  },
-]
-
 function formatPercent(value: number) {
   const sign = value > 0 ? '+' : ''
   return `${sign}${value.toFixed(1)}%`
@@ -81,6 +48,15 @@ type DashboardExpense = {
   date: string // yyyy-mm-dd
 }
 
+type ExpiringProduct = {
+  id: string
+  name: string
+  expiryDate: Date | null
+  stockCount: number | null
+}
+
+const EXPIRY_LOOKAHEAD_DAYS = 90
+
 function isSameDay(a: Date, b: Date) {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -91,6 +67,41 @@ function isSameDay(a: Date, b: Date) {
 
 function isSameMonth(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()
+}
+
+function toDate(value: unknown): Date | null {
+  if (!value) return null
+  try {
+    if (typeof (value as any).toDate === 'function') {
+      return (value as any).toDate()
+    }
+    if (value instanceof Date) return value
+    if (typeof value === 'string') {
+      const parsed = new Date(value)
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+function describeExpiry(date: Date) {
+  const msPerDay = 1000 * 60 * 60 * 24
+  const diffDays = Math.ceil((date.getTime() - Date.now()) / msPerDay)
+
+  if (diffDays < 0) {
+    const absDiff = Math.abs(diffDays)
+    return {
+      label: `${absDiff} day${absDiff === 1 ? '' : 's'} overdue`,
+      tone: '#DC2626',
+    }
+  }
+
+  if (diffDays === 0) return { label: 'Expires today', tone: '#F97316' }
+  if (diffDays === 1) return { label: 'In 1 day', tone: '#F59E0B' }
+  if (diffDays <= 30) return { label: `In ${diffDays} days`, tone: '#F59E0B' }
+  return { label: `In ${diffDays} days`, tone: '#2563EB' }
 }
 
 export default function Dashboard() {
@@ -150,6 +161,10 @@ export default function Dashboard() {
   const [automationStatus, setAutomationStatus] = useState<string | null>(null)
   const [isBuildingSupplierDraft, setIsBuildingSupplierDraft] = useState(false)
 
+  const [expiringProducts, setExpiringProducts] = useState<ExpiringProduct[]>([])
+  const [isLoadingExpiries, setIsLoadingExpiries] = useState(false)
+  const [expiryError, setExpiryError] = useState<string | null>(null)
+
   // ---- New snapshot state ----
   const [sales, setSales] = useState<DashboardSale[]>([])
   const [expenses, setExpenses] = useState<DashboardExpense[]>([])
@@ -161,6 +176,59 @@ export default function Dashboard() {
     d.setDate(d.getDate() - 1)
     return d
   }, [now])
+
+  useEffect(() => {
+    if (!storeId) {
+      setExpiringProducts([])
+      setExpiryError(null)
+      return
+    }
+
+    setIsLoadingExpiries(true)
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() + EXPIRY_LOOKAHEAD_DAYS)
+
+    const q = query(
+      collection(db, 'products'),
+      where('storeId', '==', storeId),
+      orderBy('expiryDate', 'asc'),
+      limit(50),
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        const rows: ExpiringProduct[] = snapshot.docs.map(docSnap => {
+          const data = docSnap.data() as any
+          return {
+            id: docSnap.id,
+            name: typeof data.name === 'string' ? data.name : 'Unnamed item',
+            expiryDate: toDate(data.expiryDate),
+            stockCount:
+              typeof data.stockCount === 'number' && Number.isFinite(data.stockCount)
+                ? data.stockCount
+                : null,
+          }
+        })
+
+        const filtered = rows.filter(
+          item => item.expiryDate && item.expiryDate <= cutoff,
+        )
+
+        setExpiringProducts(filtered)
+        setExpiryError(null)
+        setIsLoadingExpiries(false)
+      },
+      error => {
+        console.error('[dashboard] Failed to load expiring products', error)
+        setExpiryError('Could not load expiry dates right now.')
+        setExpiringProducts([])
+        setIsLoadingExpiries(false)
+      },
+    )
+
+    return () => unsubscribe()
+  }, [storeId])
 
   // ---- Load sales for snapshot (last ~500 records for this store) ----
   useEffect(() => {
@@ -1424,7 +1492,7 @@ export default function Dashboard() {
           marginBottom: 32,
         }}
       >
-        {/* Quick links */}
+        {/* Expiring stock */}
         <article
           style={{
             background: '#FFFFFF',
@@ -1452,60 +1520,92 @@ export default function Dashboard() {
                   marginBottom: 4,
                 }}
               >
-                Quick links
+                Expiring soon
               </h3>
               <p style={{ fontSize: 13, color: '#64748B' }}>
-                Hop straight into the workspace you need.
+                Keep an eye on batches that will expire in the next {EXPIRY_LOOKAHEAD_DAYS}{' '}
+                days.
               </p>
             </div>
+            <Link to="/products" style={{ fontSize: 13, fontWeight: 600 }}>
+              Manage in Products
+            </Link>
           </div>
-          <ul
-            style={{
-              display: 'grid',
-              gap: 12,
-              listStyle: 'none',
-              margin: 0,
-              padding: 0,
-            }}
-          >
-            {QUICK_LINKS.map(link => (
-              <li key={link.to}>
-                <Link
-                  to={link.to}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    background: '#F8FAFC',
-                    borderRadius: 12,
-                    padding: '14px 16px',
-                    textDecoration: 'none',
-                    color: '#1E3A8A',
-                    border: '1px solid transparent',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{link.title}</div>
-                    <p
+
+          {isLoadingExpiries ? (
+            <p style={{ fontSize: 13, color: '#475569' }}>Loading expiry dates…</p>
+          ) : expiryError ? (
+            <p style={{ fontSize: 13, color: '#DC2626' }}>{expiryError}</p>
+          ) : expiringProducts.length ? (
+            <ul
+              style={{
+                listStyle: 'none',
+                margin: 0,
+                padding: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+              }}
+            >
+              {expiringProducts.slice(0, 8).map(item => {
+                const status = item.expiryDate
+                  ? describeExpiry(item.expiryDate)
+                  : { label: 'No date', tone: '#475569' }
+
+                return (
+                  <li
+                    key={item.id}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 12,
+                      border: '1px solid #E2E8F0',
+                      padding: '12px 14px',
+                      borderRadius: 12,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, color: '#0F172A' }}>{item.name}</div>
+                      <p style={{ margin: 0, color: '#475569', fontSize: 13 }}>
+                        {item.expiryDate
+                          ? `Expires on ${item.expiryDate.toLocaleDateString()}`
+                          : 'No expiry date captured yet'}
+                      </p>
+                      {typeof item.stockCount === 'number' && (
+                        <p style={{ margin: '2px 0 0', color: '#64748B', fontSize: 12 }}>
+                          On hand: {item.stockCount}
+                        </p>
+                      )}
+                    </div>
+                    <span
                       style={{
-                        margin: 0,
-                        fontSize: 13,
-                        color: '#475569',
+                        padding: '6px 10px',
+                        borderRadius: 999,
+                        background: '#F8FAFC',
+                        color: status.tone,
+                        fontWeight: 700,
+                        fontSize: 12,
+                        minWidth: 110,
+                        textAlign: 'center',
                       }}
                     >
-                      {link.description}
-                    </p>
-                  </div>
-                  <span
-                    aria-hidden="true"
-                    style={{ fontWeight: 700, color: '#4338CA' }}
-                  >
-                    →
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+                      {status.label}
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <div>
+              <p style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}>
+                No expiring stock in the next {EXPIRY_LOOKAHEAD_DAYS} days.
+              </p>
+              <p style={{ fontSize: 12, color: '#64748B' }}>
+                Add expiry dates to products in your inventory to keep pharmacy items fresh.
+              </p>
+            </div>
+          )}
         </article>
 
         {/* Restock soon / low stock */}

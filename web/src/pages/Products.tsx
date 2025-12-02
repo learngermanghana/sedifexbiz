@@ -37,6 +37,7 @@ type Product = {
   reorderPoint: number | null
   itemType: ItemType
   taxRate?: number | null
+  expiryDate?: Date | null
   lastReceiptAt?: unknown
   createdAt?: unknown
   updatedAt?: unknown
@@ -95,6 +96,22 @@ function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product
 
   const itemType = data.itemType === 'service' ? 'service' : 'product'
 
+  let expiryDate: Date | null = null
+  if (data.expiryDate) {
+    try {
+      if (typeof (data.expiryDate as any).toDate === 'function') {
+        expiryDate = (data.expiryDate as any).toDate()
+      } else if (data.expiryDate instanceof Date) {
+        expiryDate = data.expiryDate
+      } else if (typeof data.expiryDate === 'string') {
+        const parsed = new Date(data.expiryDate)
+        expiryDate = Number.isNaN(parsed.getTime()) ? null : parsed
+      }
+    } catch {
+      expiryDate = null
+    }
+  }
+
   return {
     id,
     name: nameRaw.trim() || 'Untitled item',
@@ -105,6 +122,7 @@ function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product
     reorderPoint: sanitizeNumber(data.reorderPoint),
     itemType,
     taxRate: sanitizeTaxRate(data.taxRate),
+    expiryDate,
     lastReceiptAt: data.lastReceiptAt,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
@@ -114,6 +132,24 @@ function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product
 function formatCurrency(amount: number | null | undefined): string {
   if (typeof amount !== 'number' || !Number.isFinite(amount)) return '—'
   return `GHS ${amount.toFixed(2)}`
+}
+
+function formatExpiry(expiryDate?: Date | null): string {
+  if (!expiryDate) return '—'
+  return expiryDate.toLocaleDateString()
+}
+
+function formatDateInputValue(date: Date | null | undefined): string {
+  if (!date) return ''
+  return date.toISOString().split('T')[0]
+}
+
+function parseDateInput(input: string): Date | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  const parsed = new Date(trimmed)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed
 }
 
 function formatLastReceipt(lastReceiptAt: unknown): string {
@@ -149,6 +185,7 @@ export default function Products() {
   const [taxRateInput, setTaxRateInput] = useState('')
   const [reorderPointInput, setReorderPointInput] = useState('')
   const [openingStockInput, setOpeningStockInput] = useState('')
+  const [expiryInput, setExpiryInput] = useState('')
 
   const [isSaving, setIsSaving] = useState(false)
   const [formStatus, setFormStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -162,6 +199,7 @@ export default function Products() {
   const [editTaxRateInput, setEditTaxRateInput] = useState('')
   const [editReorderPointInput, setEditReorderPointInput] = useState('')
   const [editStockInput, setEditStockInput] = useState('') // 🔹 On hand (stock) editable
+  const [editExpiryDateInput, setEditExpiryDateInput] = useState('')
 
   /**
    * Load products for the active store
@@ -384,6 +422,24 @@ export default function Products() {
         hideable: true,
       },
       {
+        id: 'expiry',
+        header: 'Expiry date',
+        render: product => {
+          if (product.itemType === 'service') return '—'
+          if (editingId === product.id) {
+            return (
+              <input
+                type="date"
+                value={editExpiryDateInput}
+                onChange={e => setEditExpiryDateInput(e.target.value)}
+              />
+            )
+          }
+          return formatExpiry(product.expiryDate)
+        },
+        hideable: true,
+      },
+      {
         id: 'lastReceipt',
         header: 'Last receipt',
         render: product => formatLastReceipt(product.lastReceiptAt),
@@ -439,6 +495,7 @@ export default function Products() {
       editReorderPointInput,
       editSku,
       editStockInput,
+      editExpiryDateInput,
       editTaxRateInput,
       editingId,
       handleDelete,
@@ -470,6 +527,7 @@ export default function Products() {
     const reorderPointNumber = reorderPointInput ? Number(reorderPointInput) : NaN
     const openingStockNumber = openingStockInput ? Number(openingStockInput) : NaN
     const taxRateNumber = parseTaxInput(taxRateInput)
+    const expiryDate = parseDateInput(expiryInput)
 
     if (!isService && (Number.isNaN(priceNumber) || priceNumber < 0)) {
       setFormStatus('error')
@@ -513,6 +571,7 @@ export default function Products() {
           !isService && !Number.isNaN(openingStockNumber) && openingStockNumber >= 0
             ? openingStockNumber
             : null,
+        expiryDate: !isService ? expiryDate : null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
@@ -554,6 +613,7 @@ export default function Products() {
     if (value === 'service') {
       // services should not have barcodes
       setSku('')
+      setExpiryInput('')
     }
   }
 
@@ -604,6 +664,7 @@ export default function Products() {
         ? String(product.stockCount)
         : '',
     )
+    setEditExpiryDateInput(formatDateInputValue(product.expiryDate))
     setFormStatus('idle')
     setFormError(null)
   }
@@ -630,6 +691,7 @@ export default function Products() {
     const taxRateNumber = parseTaxInput(editTaxRateInput)
     const stockNumberRaw =
       editStockInput.trim() === '' ? null : Number(editStockInput.trim())
+    const expiryDate = parseDateInput(editExpiryDateInput)
 
     if (!isSvc && (Number.isNaN(priceNumber) || priceNumber < 0)) {
       setFormStatus('error')
@@ -673,6 +735,7 @@ export default function Products() {
             ? reorderPointNumber
             : null,
         stockCount: finalStock,
+        expiryDate: !isSvc ? expiryDate : null,
         updatedAt: serverTimestamp(),
       })
 
@@ -866,6 +929,23 @@ export default function Products() {
                 disabled={isService}
               />
             </div>
+
+            {!isService && (
+              <div className="field">
+                <label className="field__label" htmlFor="add-expiry">
+                  Expiry date
+                </label>
+                <input
+                  id="add-expiry"
+                  type="date"
+                  value={expiryInput}
+                  onChange={e => setExpiryInput(e.target.value)}
+                />
+                <p className="field__hint">
+                  Stay ahead of expiring batches so pharmacy stock never goes to waste.
+                </p>
+              </div>
+            )}
 
             <div className="field">
               <label className="field__label" htmlFor="add-opening-stock">
