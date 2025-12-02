@@ -672,8 +672,7 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     items.forEach(item => {
       const qty = item.qty ?? 0
       if (!qty) return
-      const key = item.productId
-      if (!key) return
+      const key = item.productId || item.name || `line-${acc.size}`
       const existing = acc.get(key) ?? { name: item.name ?? 'Unnamed product', qty: 0 }
       existing.qty += qty
       if (item.name && !existing.name) {

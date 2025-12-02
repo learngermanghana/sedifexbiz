@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   addDoc,
   collection,
+  doc,
   limit,
   onSnapshot,
   orderBy,
@@ -105,6 +106,7 @@ export default function Sell() {
   const user = useAuthUser()
   const [searchParams] = useSearchParams()
 
+  const [storeName, setStoreName] = useState<string | null>(null)
   const [products, setProducts] = useState<Product[]>([])
   const [searchText, setSearchText] = useState('')
   const [cart, setCart] = useState<CartLine[]>([])
@@ -145,12 +147,37 @@ export default function Sell() {
     totals: { subTotal: number; taxTotal: number; discount: number; total: number }
     paymentMethod: PaymentMethod
     discountInput: string
+    companyName?: string | null
+    customerName?: string | null
   } | null>(null)
   const [receiptDownload, setReceiptDownload] = useState<{
     url: string
     fileName: string
     shareText: string
   } | null>(null)
+
+  useEffect(() => {
+    if (!activeStoreId) {
+      setStoreName(null)
+      return
+    }
+
+    const ref = doc(db, 'stores', activeStoreId)
+    return onSnapshot(
+      ref,
+      snapshot => {
+        const data = snapshot.data()
+        const name =
+          typeof data?.company === 'string' && data.company.trim()
+            ? data.company.trim()
+            : typeof data?.name === 'string' && data.name.trim()
+              ? data.name.trim()
+              : null
+        setStoreName(name)
+      },
+      () => setStoreName(null),
+    )
+  }, [activeStoreId])
 
   // Load products
   useEffect(() => {
@@ -467,6 +494,8 @@ export default function Sell() {
     totals: { subTotal: number; taxTotal: number; discount: number; total: number }
     paymentMethod: PaymentMethod
     discountInput: string
+    companyName?: string | null
+    customerName?: string | null
   }) {
     try {
       const iframe = document.createElement('iframe')
@@ -500,8 +529,15 @@ export default function Sell() {
     </head>
     <body>
       <h1>Sale receipt</h1>
+      ${
+        options.companyName
+          ? `<p class="meta"><strong>${options.companyName}</strong></p>`
+          : ''
+      }
       <p class="meta">Sale ID: ${options.saleId}</p>
       <p class="meta">${receiptDate}</p>
+      <p class="meta">Payment: ${options.paymentMethod.replace('_', ' ')}</p>
+      ${options.customerName ? `<p class="meta">Customer: ${options.customerName}</p>` : ''}
       <table>
         <thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead>
         <tbody>${lineRows}</tbody>
@@ -541,39 +577,48 @@ export default function Sell() {
     totals: { subTotal: number; taxTotal: number; discount: number; total: number }
     paymentMethod: PaymentMethod
     discountInput: string
+    companyName?: string | null
+    customerName?: string | null
   }) {
     try {
       const receiptDate = new Date().toLocaleString()
       const lines: string[] = [
+        options.companyName ? options.companyName : 'Sale receipt',
         `Sale ID: ${options.saleId}`,
         `Date: ${receiptDate}`,
         `Payment: ${options.paymentMethod.replace('_', ' ')}`,
+        options.customerName ? `Customer: ${options.customerName}` : '',
         'Items:',
       ]
 
+      const filteredLines = lines.filter(Boolean)
+
       options.items.forEach(item => {
         const total = formatCurrency(item.price * item.qty)
-        lines.push(`• ${item.qty} x ${item.name} @ ${formatCurrency(item.price)} = ${total}`)
+        filteredLines.push(`• ${item.qty} x ${item.name} @ ${formatCurrency(item.price)} = ${total}`)
       })
 
-      lines.push('Summary:')
-      lines.push(`Subtotal: ${formatCurrency(options.totals.subTotal)}`)
-      lines.push(`VAT / Tax: ${formatCurrency(options.totals.taxTotal)}`)
-      lines.push(
+      filteredLines.push('Summary:')
+      filteredLines.push(`Subtotal: ${formatCurrency(options.totals.subTotal)}`)
+      filteredLines.push(`VAT / Tax: ${formatCurrency(options.totals.taxTotal)}`)
+      filteredLines.push(
         `Discount: ${options.discountInput ? options.discountInput : formatCurrency(options.totals.discount)}`,
       )
-      lines.push(`Total: ${formatCurrency(options.totals.total)}`)
+      filteredLines.push(`Total: ${formatCurrency(options.totals.total)}`)
 
-      const pdfBytes = buildSimplePdf('Sale receipt', lines)
+      const pdfBytes = buildSimplePdf('Sale receipt', filteredLines)
       const blob = new Blob([pdfBytes], { type: 'application/pdf' })
       const url = URL.createObjectURL(blob)
 
       const shareText = [
-        `Sale receipt (${receiptDate})`,
+        options.companyName ? `${options.companyName} receipt` : `Sale receipt (${receiptDate})`,
         `Total: ${formatCurrency(options.totals.total)}`,
         `Payment: ${options.paymentMethod.replace('_', ' ')}`,
+        options.customerName ? `Customer: ${options.customerName}` : null,
         `Items: ${options.items.length}`,
-      ].join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n')
 
       return { url, fileName: `${options.saleId}.pdf`, shareText }
     } catch (error) {
@@ -809,15 +854,46 @@ export default function Sell() {
     }
   }
 
-  async function logSaleActivity(options: { saleId: string; total: number; itemCount: number }) {
+  function buildActivitySummary(items: CartLine[]) {
+    if (!items.length) return 'Recorded sale'
+
+    const labels = items.map(item => {
+      const product = products.find(p => p.id === item.productId)
+      const typeLabel = product?.itemType === 'service' ? 'service' : 'product'
+      const name = item.name || product?.name || 'Item'
+      return typeLabel === 'service' ? `${name} (service)` : name
+    })
+
+    if (labels.length === 1) return `Sold ${labels[0]}`
+
+    const [first, second, ...rest] = labels
+    const suffix = rest.length ? ` +${rest.length} more` : ''
+    return `Sold ${first}, ${second}${suffix}`
+  }
+
+  async function logSaleActivity(options: {
+    saleId: string
+    total: number
+    items: CartLine[]
+    paymentMethod: PaymentMethod
+  }) {
     if (!activeStoreId) return
 
     try {
+      const itemCount = options.items.reduce((sum, item) => sum + (item.qty || 0), 0)
+      const summary = buildActivitySummary(options.items)
+      const detail = [
+        `${itemCount || options.items.length} item${itemCount === 1 ? '' : 's'}`,
+        `Total ${formatCurrency(options.total)}`,
+        `Payment ${options.paymentMethod.replace('_', ' ')}`,
+        `ID ${options.saleId}`,
+      ].join(' · ')
+
       await addDoc(collection(db, 'activity'), {
         storeId: activeStoreId,
         type: 'sale',
-        summary: `Recorded sale ${options.saleId}`,
-        detail: `${options.itemCount} item${options.itemCount === 1 ? '' : 's'} · Total ${formatCurrency(options.total)}`,
+        summary,
+        detail,
         actor: activityActor,
         createdAt: serverTimestamp(),
       })
@@ -882,12 +958,14 @@ export default function Sell() {
         ],
       }
 
+      const customerName = customerMode === 'named' ? customerNameInput.trim() : null
+
       const customerPayload =
         customerMode === 'walk_in'
           ? null
           : {
               id: selectedCustomerId,
-              name: customerNameInput.trim(),
+              name: customerName,
               phone: customerPhoneInput.trim() || null,
             }
 
@@ -908,6 +986,8 @@ export default function Sell() {
         totals,
         paymentMethod,
         discountInput,
+        companyName: storeName,
+        customerName,
       })
 
       setLastReceipt({
@@ -916,12 +996,15 @@ export default function Sell() {
         totals,
         paymentMethod,
         discountInput,
+        companyName: storeName,
+        customerName,
       })
 
       await logSaleActivity({
         saleId,
         total: totalAfterDiscount,
-        itemCount: cartSnapshot.length,
+        items: cartSnapshot,
+        paymentMethod,
       })
 
       setCart([])
@@ -1428,6 +1511,8 @@ export default function Sell() {
                       totals: lastReceipt.totals,
                       paymentMethod: lastReceipt.paymentMethod,
                       discountInput: lastReceipt.discountInput,
+                      companyName: lastReceipt.companyName,
+                      customerName: lastReceipt.customerName,
                     })
                   }
                 >
