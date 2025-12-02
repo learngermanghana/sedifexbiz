@@ -1,4 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   collection,
   onSnapshot,
@@ -7,6 +12,8 @@ import {
   where,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
+import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser'
+
 import { db, functions } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useAuthUser } from '../hooks/useAuthUser'
@@ -38,6 +45,22 @@ type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'transfer'
 type ScanStatus = {
   type: 'success' | 'error'
   message: string
+}
+
+type CustomerMode = 'walk_in' | 'named'
+
+type Receipt = {
+  saleId: string
+  createdAt: string
+  items: CartLine[]
+  subTotal: number
+  taxTotal: number
+  discountAmount: number
+  grandTotal: number
+  paymentMethod: PaymentMethod
+  amountPaid: number
+  changeDue: number
+  customerDescription: string
 }
 
 function mapFirestoreProduct(id: string, data: any): Product {
@@ -82,15 +105,33 @@ export default function Sell() {
   const [cart, setCart] = useState<CartLine[]>([])
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
   const [amountPaidInput, setAmountPaidInput] = useState('')
+  const [discountInput, setDiscountInput] = useState('') // e.g. "5" or "5%"
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
-  // 🔹 Scan-specific state
+  // 🔹 Scan-specific state (text box)
   const [scanInput, setScanInput] = useState('')
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null)
 
-  // Load products for this store
+  // 🔹 Camera scanner state
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const scannerRef = useRef<BrowserMultiFormatReader | null>(null)
+  const controlsRef = useRef<IScannerControls | null>(null)
+  const [isCameraOpen, setIsCameraOpen] = useState(false)
+  const [isCameraScanning, setIsCameraScanning] = useState(false)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+
+  // 🔹 Customer state
+  const [customerMode, setCustomerMode] = useState<CustomerMode>('walk_in')
+  const [customerName, setCustomerName] = useState('')
+  const [customerPhone, setCustomerPhone] = useState('')
+
+  // 🔹 Receipt state
+  const [lastReceipt, setLastReceipt] = useState<Receipt | null>(null)
+  const [isReceiptPrintReady, setIsReceiptPrintReady] = useState(false)
+
+  // ---- Load products for this store ----
   useEffect(() => {
     if (!activeStoreId) {
       setProducts([])
@@ -113,7 +154,15 @@ export default function Sell() {
     return () => unsub()
   }, [activeStoreId])
 
-  // Filtered list for manual search
+  // ---- Clean up camera on unmount ----
+  useEffect(() => {
+    return () => {
+      void stopCameraScanner()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ---- Filtered list for manual search ----
   const filteredProducts = useMemo(() => {
     if (!searchText.trim()) return products
     const term = searchText.trim().toLowerCase()
@@ -125,10 +174,16 @@ export default function Sell() {
     })
   }, [products, searchText])
 
-  // Totals
-  const { subTotal, taxTotal, grandTotal } = useMemo(() => {
+  // ---- Totals (including discount) ----
+  const {
+    subTotal,
+    taxTotal,
+    discountAmount,
+    grandTotal,
+  } = useMemo(() => {
     let sub = 0
     let tax = 0
+
     for (const line of cart) {
       const lineSub = line.price * line.qty
       const rate = Number(line.taxRate || 0)
@@ -136,8 +191,35 @@ export default function Sell() {
       sub += lineSub
       tax += lineTax
     }
-    return { subTotal: sub, taxTotal: tax, grandTotal: sub + tax }
-  }, [cart])
+
+    const rawTotal = sub + tax
+
+    let discount = 0
+    const trimmed = discountInput.trim()
+    if (trimmed) {
+      if (trimmed.endsWith('%')) {
+        const percent = Number(trimmed.slice(0, -1).trim())
+        if (Number.isFinite(percent) && percent > 0) {
+          discount = (rawTotal * percent) / 100
+        }
+      } else {
+        const abs = Number(trimmed)
+        if (Number.isFinite(abs) && abs > 0) {
+          discount = abs
+        }
+      }
+    }
+
+    if (discount > rawTotal) discount = rawTotal
+    const totalAfterDiscount = rawTotal - discount
+
+    return {
+      subTotal: sub,
+      taxTotal: tax,
+      discountAmount: discount,
+      grandTotal: totalAfterDiscount,
+    }
+  }, [cart, discountInput])
 
   const amountPaid = useMemo(() => {
     const raw = Number(amountPaidInput)
@@ -151,6 +233,7 @@ export default function Sell() {
     return diff > 0 ? diff : 0
   }, [amountPaid, grandTotal])
 
+  // ---- Cart helpers ----
   function addProductToCart(product: Product, qty: number = 1) {
     if (!product.price || product.price < 0) {
       setScanStatus({
@@ -199,12 +282,9 @@ export default function Sell() {
     setCart(prev => prev.filter(line => line.productId !== productId))
   }
 
-  // 🔹 Scan handler (works with camera scanners that paste digits into input)
-  function handleScanSubmit(event: React.FormEvent) {
-    event.preventDefault()
-    setScanStatus(null)
-
-    const normalized = normalizeBarcode(scanInput)
+  // ---- Shared helper: add product from barcode/SKU text ----
+  function addProductFromCode(rawCode: string) {
+    const normalized = normalizeBarcode(rawCode)
     if (!normalized) {
       setScanStatus({
         type: 'error',
@@ -223,7 +303,6 @@ export default function Sell() {
         type: 'error',
         message: `No product found for code ${normalized}. Check the SKU/barcode on the Products page.`,
       })
-      setScanInput('')
       return
     }
 
@@ -232,9 +311,74 @@ export default function Sell() {
       type: 'success',
       message: `Added "${found.name}" to the cart.`,
     })
+  }
+
+  // ---- Scan handler (works with USB/cable scanners that type into input) ----
+  function handleScanSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    setScanStatus(null)
+
+    if (!scanInput.trim()) {
+      setScanStatus({
+        type: 'error',
+        message: 'Type or scan a barcode first.',
+      })
+      return
+    }
+
+    addProductFromCode(scanInput)
     setScanInput('')
   }
 
+  // ---- Camera scanner handlers (ZXing) ----
+  async function startCameraScanner() {
+    if (isCameraScanning) return
+    if (!videoRef.current) {
+      setCameraError('Camera preview not ready yet.')
+      return
+    }
+
+    const reader = new BrowserMultiFormatReader()
+    scannerRef.current = reader
+    setCameraError(null)
+    setIsCameraOpen(true)
+
+    try {
+      const controls = await reader.decodeFromVideoDevice(
+        undefined, // use default camera
+        videoRef.current,
+        result => {
+          if (result) {
+            addProductFromCode(result.getText())
+          }
+        },
+      )
+      controlsRef.current = controls
+      setIsCameraScanning(true)
+    } catch (err: any) {
+      console.error('[sell] Camera scan error', err)
+      setCameraError(
+        'Could not access camera. Check permissions and that no other app is using it.',
+      )
+      setIsCameraOpen(false)
+      setIsCameraScanning(false)
+    }
+  }
+
+  async function stopCameraScanner() {
+    try {
+      await controlsRef.current?.stop()
+    } catch {
+      // ignore
+    }
+    controlsRef.current = null
+    scannerRef.current?.reset()
+    scannerRef.current = null
+    setIsCameraScanning(false)
+    setIsCameraOpen(false)
+  }
+
+  // ---- Commit sale ----
   async function handleCommitSale() {
     setErrorMessage(null)
     setSuccessMessage(null)
@@ -249,6 +393,11 @@ export default function Sell() {
       return
     }
 
+    if (customerMode === 'named' && !customerName.trim()) {
+      setErrorMessage('Enter a customer name or switch to Walk-in.')
+      return
+    }
+
     setIsSaving(true)
     try {
       const items = cart.map(line => ({
@@ -260,8 +409,11 @@ export default function Sell() {
       }))
 
       const totals = {
-        total: grandTotal,
+        subTotal,
         taxTotal,
+        discountTotal: discountAmount,
+        totalBeforeDiscount: subTotal + taxTotal,
+        total: grandTotal,
       }
 
       const payment = {
@@ -272,21 +424,57 @@ export default function Sell() {
             amount: grandTotal,
           },
         ],
+        amountPaid: amountPaid > 0 ? amountPaid : grandTotal,
+        changeDue,
       }
 
+      const customer =
+        customerMode === 'walk_in'
+          ? {
+              type: 'walk_in',
+              label: 'Walk-in customer',
+            }
+          : {
+              type: 'named',
+              name: customerName.trim(),
+              phone: customerPhone.trim() || null,
+            }
+
+      const saleId = `sale_${activeStoreId}_${Date.now()}`
       const commitSaleFn = httpsCallable(functions, 'commitSale')
       await commitSaleFn({
         branchId: activeStoreId,
         items,
         totals,
         cashierId: user?.uid ?? null,
-        saleId: `sale_${activeStoreId}_${Date.now()}`,
+        saleId,
         payment,
-        customer: null,
+        customer,
       })
 
+      // Build receipt before clearing cart
+      const receipt: Receipt = {
+        saleId,
+        createdAt: new Date().toISOString(),
+        items: cart,
+        subTotal,
+        taxTotal,
+        discountAmount,
+        grandTotal,
+        paymentMethod,
+        amountPaid: payment.amountPaid,
+        changeDue,
+        customerDescription:
+          customerMode === 'walk_in'
+            ? 'Walk-in customer'
+            : `${customerName.trim()}${customerPhone.trim() ? ` (${customerPhone.trim()})` : ''}`,
+      }
+      setLastReceipt(receipt)
+
+      // Clear UI
       setCart([])
       setAmountPaidInput('')
+      setDiscountInput('')
       setSuccessMessage('Sale recorded successfully.')
     } catch (error: any) {
       console.error('[sell] Failed to commit sale', error)
@@ -300,13 +488,31 @@ export default function Sell() {
     }
   }
 
+  function handleClearCart() {
+    setCart([])
+    setAmountPaidInput('')
+    setDiscountInput('')
+    setScanStatus(null)
+    setErrorMessage(null)
+    setSuccessMessage(null)
+  }
+
+  function handlePrintReceipt() {
+    if (!lastReceipt) return
+    setIsReceiptPrintReady(true)
+    setTimeout(() => {
+      window.print()
+      setIsReceiptPrintReady(false)
+    }, 100)
+  }
+
   return (
     <div className="page sell-page">
       <header className="page__header sell-page__header">
         <div>
           <h2 className="page__title">Sell</h2>
           <p className="page__subtitle">
-            Scan barcodes or search for products, build a cart, and record the sale.
+            Scan barcodes with your camera or a scanner, build a cart, apply discounts, and record the sale.
           </p>
         </div>
       </header>
@@ -317,11 +523,11 @@ export default function Sell() {
           <div className="sell-page__section-header">
             <h3>Scan barcode</h3>
             <p>
-              Use your phone camera or barcode scanner. We match the code to the product
-              SKU/barcode you saved.
+              Use your phone camera or a USB barcode scanner. We match the code to the product SKU/barcode you saved.
             </p>
           </div>
 
+          {/* Text-based scan (works with external scanners) */}
           <form
             className="sell-page__scan-form"
             onSubmit={handleScanSubmit}
@@ -342,6 +548,42 @@ export default function Sell() {
               Add from barcode
             </button>
           </form>
+
+          {/* Camera scanner (ZXing) */}
+          <div className="sell-page__camera-block">
+            <div className="sell-page__camera-header">
+              <div>
+                <div className="sell-page__camera-title">Camera scanner (beta)</div>
+                <p className="sell-page__camera-subtitle">
+                  Opens your device camera and automatically adds items as you scan.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={isCameraScanning ? stopCameraScanner : startCameraScanner}
+              >
+                {isCameraScanning ? 'Stop camera' : 'Open camera scanner'}
+              </button>
+            </div>
+
+            {isCameraOpen && (
+              <div className="sell-page__camera-preview">
+                <video
+                  ref={videoRef}
+                  className="sell-page__camera-video"
+                  muted
+                  playsInline
+                />
+              </div>
+            )}
+
+            {cameraError && (
+              <p className="sell-page__message sell-page__message--error">
+                {cameraError}
+              </p>
+            )}
+          </div>
 
           {scanStatus && (
             <p
@@ -407,7 +649,7 @@ export default function Sell() {
         <section className="card sell-page__right">
           <div className="sell-page__section-header">
             <h3>Cart</h3>
-            <p>Review items before recording the sale.</p>
+            <p>Review items, apply discount, pick customer, then save the sale.</p>
           </div>
 
           <div className="sell-page__cart">
@@ -466,14 +708,27 @@ export default function Sell() {
             )}
           </div>
 
+          {/* Totals: Subtotal / VAT / Discount / Total */}
           <div className="sell-page__totals">
             <div className="sell-page__totals-row">
               <span>Subtotal</span>
               <strong>{formatCurrency(subTotal)}</strong>
             </div>
             <div className="sell-page__totals-row">
-              <span>Tax</span>
+              <span>VAT / Tax</span>
               <strong>{formatCurrency(taxTotal)}</strong>
+            </div>
+            <div className="sell-page__totals-row">
+              <span>Discount</span>
+              <div>
+                <input
+                  type="text"
+                  className="sell-page__discount-input"
+                  placeholder="e.g. 5 or 5%"
+                  value={discountInput}
+                  onChange={e => setDiscountInput(e.target.value)}
+                />
+              </div>
             </div>
             <div className="sell-page__totals-row sell-page__totals-row--grand">
               <span>Total</span>
@@ -481,7 +736,50 @@ export default function Sell() {
             </div>
           </div>
 
+          {/* Customer + payment block */}
           <div className="sell-page__payment">
+            <div className="field">
+              <label className="field__label">Customer</label>
+              <div className="sell-page__customer-options">
+                <label className="radio">
+                  <input
+                    type="radio"
+                    name="customer-mode"
+                    value="walk_in"
+                    checked={customerMode === 'walk_in'}
+                    onChange={() => setCustomerMode('walk_in')}
+                  />
+                  <span>Walk-in</span>
+                </label>
+                <label className="radio">
+                  <input
+                    type="radio"
+                    name="customer-mode"
+                    value="named"
+                    checked={customerMode === 'named'}
+                    onChange={() => setCustomerMode('named')}
+                  />
+                  <span>Existing / named customer</span>
+                </label>
+              </div>
+              {customerMode === 'named' && (
+                <div className="sell-page__customer-fields">
+                  <input
+                    type="text"
+                    placeholder="Customer name"
+                    value={customerName}
+                    onChange={e => setCustomerName(e.target.value)}
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Phone (optional)"
+                    value={customerPhone}
+                    onChange={e => setCustomerPhone(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
             <div className="field">
               <label className="field__label">Payment method</label>
               <select
@@ -530,28 +828,111 @@ export default function Sell() {
             <button
               type="button"
               className="button button--ghost"
-              onClick={() => {
-                setCart([])
-                setAmountPaidInput('')
-                setScanStatus(null)
-                setErrorMessage(null)
-                setSuccessMessage(null)
-              }}
+              onClick={handleClearCart}
               disabled={isSaving}
             >
               Clear cart
             </button>
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={handleCommitSale}
-              disabled={isSaving || !cart.length}
-            >
-              {isSaving ? 'Saving…' : 'Save sale'}
-            </button>
+            <div className="sell-page__actions-right">
+              {lastReceipt && (
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={handlePrintReceipt}
+                >
+                  Print last receipt
+                </button>
+              )}
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={handleCommitSale}
+                disabled={isSaving || !cart.length}
+              >
+                {isSaving ? 'Saving…' : 'Save sale'}
+              </button>
+            </div>
           </div>
         </section>
       </div>
+
+      {/* Printable receipt layout (uses Sell.css .receipt-print styles) */}
+      {lastReceipt && (
+        <div
+          className={
+            'receipt-print' +
+            (isReceiptPrintReady ? ' is-ready' : '')
+          }
+        >
+          <div className="receipt-print__inner">
+            <h3 className="receipt-print__title">Sedifex POS Receipt</h3>
+            <p className="receipt-print__meta">
+              Sale ID: {lastReceipt.saleId}
+              <br />
+              Date:{' '}
+              {new Date(lastReceipt.createdAt).toLocaleString()}
+              <br />
+              Customer: {lastReceipt.customerDescription}
+            </p>
+
+            <div className="receipt-print__section">
+              <table className="receipt-print__table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Amt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lastReceipt.items.map(line => (
+                    <tr key={line.productId}>
+                      <td>{line.name}</td>
+                      <td>{line.qty}</td>
+                      <td>
+                        {formatCurrency(line.price * line.qty)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="receipt-print__summary">
+              <div>
+                <span>Subtotal</span>
+                <span>{formatCurrency(lastReceipt.subTotal)}</span>
+              </div>
+              <div>
+                <span>VAT / Tax</span>
+                <span>{formatCurrency(lastReceipt.taxTotal)}</span>
+              </div>
+              <div>
+                <span>Discount</span>
+                <span>
+                  -{formatCurrency(lastReceipt.discountAmount)}
+                </span>
+              </div>
+              <div>
+                <strong>Total</strong>
+                <strong>{formatCurrency(lastReceipt.grandTotal)}</strong>
+              </div>
+              <div>
+                <span>Paid</span>
+                <span>{formatCurrency(lastReceipt.amountPaid)}</span>
+              </div>
+              <div>
+                <span>Change</span>
+                <span>{formatCurrency(lastReceipt.changeDue)}</span>
+              </div>
+            </div>
+
+            <p className="receipt-print__footer">
+              Thank you for shopping with us.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
