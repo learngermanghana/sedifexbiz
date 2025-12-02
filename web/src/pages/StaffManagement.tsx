@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   collection,
-  doc,
   type DocumentData,
   getDocs,
+  limit,
+  orderBy,
   query,
   type QueryDocumentSnapshot,
-  serverTimestamp,
-  setDoc,
   where,
 } from 'firebase/firestore'
 import { useToast } from '../components/ToastProvider'
@@ -29,6 +28,16 @@ type StaffMember = {
   updatedAt: Date | null
 }
 
+type StaffAuditEntry = {
+  id: string
+  action: 'invite' | 'reset' | 'deactivate'
+  outcome: 'success' | 'failure'
+  actorEmail: string | null
+  targetEmail: string
+  createdAt: Date | null
+  errorMessage: string | null
+}
+
 function toNullableString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
@@ -47,6 +56,24 @@ function mapMember(docSnap: QueryDocumentSnapshot<DocumentData>): StaffMember {
     status: toNullableString(data.status),
     createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : null,
     updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : null,
+  }
+}
+
+function mapAudit(docSnap: QueryDocumentSnapshot<DocumentData>): StaffAuditEntry {
+  const data = docSnap.data() || {}
+  const action = ['invite', 'reset', 'deactivate'].includes(data.action)
+    ? (data.action as StaffAuditEntry['action'])
+    : 'invite'
+  const outcome = data.outcome === 'failure' ? 'failure' : 'success'
+
+  return {
+    id: docSnap.id,
+    action,
+    outcome,
+    actorEmail: toNullableString(data.actorEmail),
+    targetEmail: toNullableString(data.targetEmail) ?? 'unknown',
+    createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : null,
+    errorMessage: toNullableString(data.errorMessage),
   }
 }
 
@@ -75,6 +102,8 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [refreshToken, setRefreshToken] = useState(0)
+  const [audits, setAudits] = useState<StaffAuditEntry[]>([])
+  const [auditLoading, setAuditLoading] = useState(false)
 
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<Membership['role']>('staff')
@@ -124,9 +153,48 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
     }
   }, [storeId, storeError, refreshToken])
 
+  useEffect(() => {
+    if (!storeId) {
+      setAudits([])
+      return
+    }
+
+    let cancelled = false
+    setAuditLoading(true)
+    const auditRef = collection(db, 'staffAudit')
+    const auditQuery = query(
+      auditRef,
+      where('storeId', '==', storeId),
+      orderBy('createdAt', 'desc'),
+      limit(15),
+    )
+
+    getDocs(auditQuery)
+      .then(snapshot => {
+        if (cancelled) return
+        setAudits(snapshot.docs.map(mapAudit))
+      })
+      .catch(err => {
+        if (cancelled) return
+        console.warn('[staff] Failed to load audit log', err)
+        setAudits([])
+      })
+      .finally(() => {
+        if (!cancelled) setAuditLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [storeId, refreshToken])
+
   async function handleInvite(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!storeId || inviting) return
+    if (!isOwner) {
+      publish({ message: 'Only owners can send invites.', tone: 'error' })
+      return
+    }
 
     const normalizedEmail = inviteEmail.trim().toLowerCase()
     if (!normalizedEmail) {
@@ -142,6 +210,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
         storeId,
         email: normalizedEmail,
         role: inviteRole,
+        action: 'invite',
         password: invitePassword.trim() || undefined,
       })
       publish({ message: 'Staff invite sent.', tone: 'success' })
@@ -165,6 +234,10 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
       publish({ message: 'Cannot reset password without an email address.', tone: 'error' })
       return
     }
+    if (!isOwner) {
+      publish({ message: 'Only owners can reset passwords.', tone: 'error' })
+      return
+    }
 
     const nextPassword = window.prompt(
       `Enter a new password for ${member.email}`,
@@ -183,6 +256,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
         storeId,
         email: member.email,
         role: member.role,
+        action: 'reset',
         password: trimmed,
       })
       publish({ message: 'Password reset successfully.', tone: 'success' })
@@ -195,16 +269,25 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
 
   async function handleDeactivate(member: StaffMember) {
     if (!storeId) return
+    if (!isOwner) {
+      publish({ message: 'Only owners can deactivate staff.', tone: 'error' })
+      return
+    }
+    if (!member.email) {
+      publish({ message: 'Cannot deactivate a user without an email address.', tone: 'error' })
+      return
+    }
 
     const confirmed = window.confirm(`Deactivate ${member.email ?? member.id}?`)
     if (!confirmed) return
 
     try {
-      await setDoc(
-        doc(db, 'teamMembers', member.id),
-        { status: 'inactive', updatedAt: serverTimestamp() },
-        { merge: true },
-      )
+      await manageStaffAccount({
+        storeId,
+        email: member.email,
+        role: member.role,
+        action: 'deactivate',
+      })
       publish({ message: 'Staff member deactivated.', tone: 'success' })
       setRefreshToken(token => token + 1)
     } catch (err) {
@@ -268,6 +351,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
               onChange={event => setInviteEmail(event.target.value)}
               placeholder="teammate@example.com"
               autoComplete="email"
+              disabled={!isOwner || inviting}
             />
           </label>
 
@@ -276,6 +360,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
             <select
               value={inviteRole}
               onChange={event => setInviteRole(event.target.value as Membership['role'])}
+              disabled={!isOwner || inviting}
             >
               <option value="owner">Owner</option>
               <option value="staff">Staff</option>
@@ -290,6 +375,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
               onChange={event => setInvitePassword(event.target.value)}
               placeholder="Auto-generate if empty"
               autoComplete="new-password"
+              disabled={!isOwner || inviting}
             />
           </label>
 
@@ -388,6 +474,70 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
         {loading && (
           <p className="staff-card__hint" role="status">
             Loading staff…
+          </p>
+        )}
+      </section>
+
+      <section className="card staff-card" aria-labelledby="staff-audit">
+        <div className="staff-card__header">
+          <div>
+            <p className="staff-card__eyebrow">Audit trail</p>
+            <h2 id="staff-audit">Recent staff changes</h2>
+            <p className="staff-card__hint">
+              Read-only log of recent invites, resets, and deactivations for this workspace.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="button button--ghost"
+            onClick={() => setRefreshToken(token => token + 1)}
+            disabled={auditLoading}
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="staff-table" role="table" aria-label="Staff audit log">
+          <div className="staff-table__row staff-table__header" role="row">
+            <span role="columnheader">When</span>
+            <span role="columnheader">Action</span>
+            <span role="columnheader">Target</span>
+            <span role="columnheader">By</span>
+            <span role="columnheader">Outcome</span>
+          </div>
+
+          {audits.length === 0 && !auditLoading ? (
+            <div className="staff-table__row" role="row">
+              <span role="cell" className="staff-table__empty" colSpan={5}>
+                No recent staff changes recorded.
+              </span>
+            </div>
+          ) : (
+            audits.map(entry => (
+              <div className="staff-table__row" role="row" key={entry.id}>
+                <span role="cell">{formatDate(entry.createdAt)}</span>
+                <span role="cell">{entry.action}</span>
+                <span role="cell">{entry.targetEmail}</span>
+                <span role="cell">{entry.actorEmail ?? '—'}</span>
+                <span role="cell">
+                  <span
+                    className="staff-table__status"
+                    data-variant={entry.outcome === 'success' ? 'active' : 'inactive'}
+                  >
+                    {entry.outcome === 'success' ? 'Success' : 'Failed'}
+                  </span>
+                  {entry.errorMessage && (
+                    <span className="staff-card__hint">{entry.errorMessage}</span>
+                  )}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+
+        {auditLoading && (
+          <p className="staff-card__hint" role="status">
+            Loading audit history…
           </p>
         )}
       </section>
