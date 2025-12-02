@@ -6,6 +6,20 @@
   margin-top: 8px;
 }
 
+@media (max-width: 1079px) {
+  .customers-page__list-card {
+    order: 1;
+  }
+
+  .customers-page__details-card {
+    order: 2;
+  }
+
+  .customers-page__form-card {
+    order: 3;
+  }
+}
+
 /* 3 columns on wider screens: form • list • details */
 @media (min-width: 1080px) {
   .customers-page__grid {
@@ -23,6 +37,12 @@
   border: 1px solid #e2e8f0;
   padding: 18px 20px;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+@media (max-width: 640px) {
+  .customers-page__grid > * {
+    padding: 14px 16px;
+  }
 }
 
 /* Section header (title + description) */
@@ -109,6 +129,12 @@
   flex-direction: column;
   gap: 16px;
   margin-bottom: 16px;
+}
+
+@media (max-width: 640px) {
+  .customers-page__toolbar {
+    gap: 12px;
+  }
 }
 
 .customers-page__search-field {
@@ -229,6 +255,86 @@
 .customers-page__row--selected {
   background: rgba(67, 56, 202, 0.08);
   box-shadow: inset 2px 0 0 #4338ca;
+}
+
+.customers-page__table {
+  width: 100%;
+}
+
+.customers-page__cell {
+  vertical-align: top;
+}
+
+.customers-page__cell-title {
+  font-weight: 700;
+}
+
+.customers-page__cell-subtitle {
+  color: #475569;
+}
+
+.customers-page__cell--contact {
+  min-width: 160px;
+}
+
+.customers-page__mobile-label {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .customers-page__table thead {
+    display: none;
+  }
+
+  .customers-page__table tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .customers-page__table tr {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #f8fafc;
+  }
+
+  .customers-page__table td {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0;
+  }
+
+  .customers-page__cell-title {
+    font-size: 15px;
+  }
+
+  .customers-page__cell-subtitle {
+    font-size: 13px;
+  }
+
+  .customers-page__cell--contact {
+    border-top: 1px dashed #e2e8f0;
+    padding-top: 10px;
+    min-width: unset;
+  }
+
+  .customers-page__mobile-label {
+    display: inline-flex;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #475569;
+    font-weight: 700;
+  }
+
+  .customers-page__cell-contact {
+    display: grid;
+    gap: 4px;
+  }
 }
 
 /* ============ Details / right-side panel ============ */
