@@ -46,6 +46,8 @@ export default function Expenses() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
+  const activityActor = user?.displayName || user?.email || 'Team member'
+
   const [expenses, setExpenses] = useState<Expense[]>([])
 
   // Load expenses for this store
@@ -102,6 +104,23 @@ export default function Expenses() {
     date.trim() !== '' &&
     category.trim() !== ''
 
+  async function logExpenseActivity(amountValue: number) {
+    if (!storeId) return
+
+    try {
+      await addDoc(collection(db, 'activity'), {
+        storeId,
+        type: 'expense',
+        summary: `Recorded expense of GHS ${amountValue.toFixed(2)}`,
+        detail: `${category} · ${description.trim() || 'No notes added'}`,
+        actor: activityActor,
+        createdAt: serverTimestamp(),
+      })
+    } catch (err) {
+      console.warn('[activity] Failed to log expense', err)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!storeId) {
@@ -130,6 +149,8 @@ export default function Expenses() {
         createdAt: serverTimestamp(),
         createdBy: user.uid,
       })
+
+      await logExpenseActivity(Number(amount))
 
       // clear form (keep date & category to make multiple entries easier)
       setAmount('')

@@ -155,6 +155,8 @@ export default function Customers() {
   const [customerFormError, setCustomerFormError] = useState<string | null>(null)
   const [customerFormSuccess, setCustomerFormSuccess] = useState<string | null>(null)
 
+  const activityActor = user?.displayName || user?.email || 'Team member'
+
   // ---------- Load customers ----------
   useEffect(() => {
     let cancelled = false
@@ -358,6 +360,23 @@ export default function Customers() {
 
   // ---------- Create customer from form ----------
 
+  async function logCustomerActivity(options: { name: string; contact: string }) {
+    if (!activeStoreId) return
+
+    try {
+      await addDoc(collection(db, 'activity'), {
+        storeId: activeStoreId,
+        type: 'customer',
+        summary: `Added customer ${options.name || options.contact || 'profile'}`,
+        detail: options.contact || 'No contact details provided',
+        actor: activityActor,
+        createdAt: serverTimestamp(),
+      })
+    } catch (error) {
+      console.warn('[activity] Failed to log customer activity', error)
+    }
+  }
+
   const handleCreateCustomer: React.FormEventHandler<HTMLFormElement> = async event => {
     event.preventDefault()
     setCustomerFormError(null)
@@ -393,6 +412,8 @@ export default function Customers() {
       }
 
       const docRef = await addDoc(collection(db, 'customers'), payload)
+
+      await logCustomerActivity({ name: trimmedName, contact: trimmedPhone || trimmedEmail })
 
       // Reset form
       setNewName('')
