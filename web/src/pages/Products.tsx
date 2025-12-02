@@ -18,6 +18,7 @@ import DataTable, { DataTableColumn } from '../components/DataTable'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useAuthUser } from '../hooks/useAuthUser'
+import { useMemberships } from '../hooks/useMemberships'
 import {
   PRODUCT_CACHE_LIMIT,
   loadCachedProducts,
@@ -171,6 +172,7 @@ function formatLastReceipt(lastReceiptAt: unknown): string {
 
 export default function Products() {
   const { storeId: activeStoreId } = useActiveStore()
+  const { memberships } = useMemberships()
   const user = useAuthUser()
 
   const [products, setProducts] = useState<Product[]>([])
@@ -200,6 +202,16 @@ export default function Products() {
   const [editReorderPointInput, setEditReorderPointInput] = useState('')
   const [editStockInput, setEditStockInput] = useState('') // 🔹 On hand (stock) editable
   const [editExpiryDateInput, setEditExpiryDateInput] = useState('')
+
+  const activeMembership = useMemo(
+    () =>
+      activeStoreId
+        ? memberships.find(membership => membership.storeId === activeStoreId) ?? null
+        : null,
+    [activeStoreId, memberships],
+  )
+
+  const canManageProducts = activeMembership?.role === 'owner'
 
   /**
    * Load products for the active store
@@ -450,7 +462,9 @@ export default function Products() {
         id: 'actions',
         header: 'Actions',
         render: product =>
-          editingId === product.id ? (
+          !canManageProducts ? (
+            <span>View only</span>
+          ) : editingId === product.id ? (
             <>
               <button
                 type="button"
@@ -498,6 +512,7 @@ export default function Products() {
       editExpiryDateInput,
       editTaxRateInput,
       editingId,
+      canManageProducts,
       handleDelete,
       handleSaveEdit,
       startEditing,
@@ -641,6 +656,8 @@ export default function Products() {
    * Edit helpers
    */
   function startEditing(product: Product) {
+    if (!canManageProducts) return
+
     setEditingId(product.id)
     setEditName(product.name)
     setEditSku(product.sku ?? '')
@@ -674,6 +691,7 @@ export default function Products() {
   }
 
   async function handleSaveEdit(product: Product) {
+    if (!canManageProducts) return
     if (!editingId || editingId !== product.id) return
 
     const trimmedName = editName.trim()
@@ -765,6 +783,8 @@ export default function Products() {
   }
 
   async function handleDelete(product: Product) {
+    if (!canManageProducts) return
+
     const confirmed = window.confirm(
       `Delete "${product.name}"? This cannot be undone.`,
     )

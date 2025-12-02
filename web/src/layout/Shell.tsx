@@ -1,18 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
 import { useStoreBilling } from '../hooks/useStoreBilling'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { useMemberships } from '../hooks/useMemberships'
 import SupportTicketLauncher from '../components/SupportTicketLauncher'
 import './Shell.css'
 import './Workspace.css'
 
 type NavItem = { to: string; label: string; end?: boolean }
 
-const NAV_ITEMS: NavItem[] = [
+const OWNER_NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/products', label: 'Products & Services' },
   { to: '/sell', label: 'Sell' },
@@ -22,6 +23,12 @@ const NAV_ITEMS: NavItem[] = [
   // 🔁 Replaced Close Day with Finance
   { to: '/finance', label: 'Finance' },
   { to: '/account', label: 'Account' },
+]
+
+const STAFF_NAV_ITEMS: NavItem[] = [
+  { to: '/sell', label: 'Sell' },
+  { to: '/customers', label: 'Customers' },
+  { to: '/close-day', label: 'Close day' },
 ]
 
 function navLinkClass(isActive: boolean) {
@@ -88,15 +95,27 @@ function buildBannerMessage(queueStatus: ReturnType<typeof useConnectivityStatus
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { storeId } = useActiveStore()
+  const { memberships, loading: membershipsLoading } = useMemberships()
   const user = useAuthUser()
   const userEmail = user?.email ?? 'Account'
   const connectivity = useConnectivityStatus()
   const { billing } = useStoreBilling()
   const location = useLocation()
+  const navigate = useNavigate()
 
   const { isOnline, isReachable, queue } = connectivity
 
   const [dismissedOn, setDismissedOn] = useState<string | null>(null)
+
+  const activeMembership = useMemo(
+    () =>
+      storeId
+        ? memberships.find(membership => membership.storeId === storeId) ?? null
+        : null,
+    [memberships, storeId],
+  )
+
+  const isStaff = activeMembership?.role === 'staff'
 
   const billingNotice = useMemo<BillingNotice | null>(() => {
     if (!billing) return null
@@ -147,13 +166,30 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   )
   const isBillingNoticeDismissed = dismissedOn === todayStamp
 
-  const showBillingNotice = Boolean(billingNotice && !isBillingNoticeDismissed)
+  const showBillingNotice = Boolean(
+    billingNotice && !isBillingNoticeDismissed && !isStaff,
+  )
 
   const [isMenuOpen, setIsMenuOpen] = useState(false)
 
   useEffect(() => {
     setIsMenuOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    if (membershipsLoading) return
+    if (!isStaff) return
+
+    const allowedPrefixes = ['/sell', '/customers', '/close-day']
+    const isAllowed = allowedPrefixes.some(
+      prefix =>
+        location.pathname === prefix || location.pathname.startsWith(`${prefix}/`),
+    )
+
+    if (!isAllowed) {
+      navigate('/sell', { replace: true })
+    }
+  }, [isStaff, location.pathname, membershipsLoading, navigate])
 
   function handleDismissBillingNotice() {
     setDismissedOn(todayStamp)
@@ -250,7 +286,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               aria-label="Primary"
               id="primary-nav"
             >
-              {NAV_ITEMS.map(item => (
+              {(isStaff ? STAFF_NAV_ITEMS : OWNER_NAV_ITEMS).map(item => (
                 <NavLink
                   key={item.to}
                   to={item.to}
