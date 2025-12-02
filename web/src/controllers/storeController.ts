@@ -9,6 +9,7 @@ export type ManageStaffAccountPayload = {
   storeId: string
   email: string
   role: StaffRole
+  action?: 'invite' | 'reset' | 'deactivate'
   /** Only used when creating a new staff user (server decides). */
   password?: string
 }
@@ -28,6 +29,8 @@ function normalizePayload(input: ManageStaffAccountPayload): ManageStaffAccountP
     storeId: input.storeId.trim(),
     email: input.email.trim().toLowerCase(),
     role: (input.role === 'owner' ? 'owner' : 'staff') as StaffRole,
+    action:
+      input.action === 'reset' || input.action === 'deactivate' ? input.action : 'invite',
     password: typeof input.password === 'string' && input.password.trim()
       ? input.password.trim()
       : undefined,

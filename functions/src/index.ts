@@ -45,6 +45,7 @@ type ManageStaffPayload = {
   email?: unknown
   role?: unknown
   password?: unknown
+  action?: unknown
 }
 
 type BillingStatus = 'trial' | 'active' | 'past_due'
@@ -207,6 +208,23 @@ function assertOwnerAccess(context: functions.https.CallableContext) {
   }
 }
 
+async function verifyOwnerForStore(uid: string, storeId: string) {
+  const memberRef = db.collection('teamMembers').doc(uid)
+  const memberSnap = await memberRef.get()
+  const memberData = (memberSnap.data() ?? {}) as Record<string, unknown>
+
+  const memberRole = typeof memberData.role === 'string' ? (memberData.role as string) : ''
+  const memberStoreId =
+    typeof memberData.storeId === 'string' ? (memberData.storeId as string) : ''
+
+  if (memberRole !== 'owner' || memberStoreId !== storeId) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Owner permission for this workspace is required',
+    )
+  }
+}
+
 function assertStaffAccess(context: functions.https.CallableContext) {
   assertAuthenticated(context)
   const role = getRoleFromToken(context.auth!.token as Record<string, unknown>)
@@ -267,7 +285,12 @@ function normalizeManageStaffPayload(data: ManageStaffPayload) {
     throw new functions.https.HttpsError('invalid-argument', 'Unsupported role requested')
   }
 
-  return { storeId, email, role, password }
+  const actionRaw = typeof data.action === 'string' ? data.action.trim() : 'invite'
+  const action = ['invite', 'reset', 'deactivate'].includes(actionRaw)
+    ? (actionRaw as 'invite' | 'reset' | 'deactivate')
+    : 'invite'
+
+  return { storeId, email, role, password, action }
 }
 
 function timestampDaysFromNow(days: number) {
@@ -749,6 +772,29 @@ export const resolveStoreAccess = functions.https.onCall(
  *  CALLABLE: manageStaffAccount (owner only)
  * ==========================================================================*/
 
+async function logStaffAudit(entry: {
+  action: 'invite' | 'reset' | 'deactivate'
+  storeId: string
+  actorUid: string | null
+  actorEmail: string | null
+  targetEmail: string
+  targetUid?: string | null
+  outcome: 'success' | 'failure'
+  errorMessage?: string | null
+}) {
+  const auditRef = db.collection('staffAudit').doc()
+  const payload: admin.firestore.DocumentData = {
+    ...entry,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  }
+
+  try {
+    await auditRef.set(payload)
+  } catch (error) {
+    console.error('[staff-audit] Failed to record audit entry', error)
+  }
+}
+
 async function ensureAuthUser(email: string, password?: string) {
   try {
     const record = await admin.auth().getUserByEmail(email)
@@ -779,33 +825,113 @@ export const manageStaffAccount = functions.https.onCall(
   async (data: unknown, context: functions.https.CallableContext) => {
     assertOwnerAccess(context)
 
-    const { storeId, email, role, password } = normalizeManageStaffPayload(
+    const { storeId, email, role, password, action } = normalizeManageStaffPayload(
       data as ManageStaffPayload,
     )
-    const invitedBy = context.auth?.uid ?? null
-    const { record, created } = await ensureAuthUser(email, password)
+    const actorUid = context.auth!.uid
+    const actorEmail =
+      typeof context.auth?.token?.email === 'string'
+        ? (context.auth.token.email as string)
+        : null
 
-    const memberRef = db.collection('teamMembers').doc(record.uid)
-    const memberSnap = await memberRef.get()
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
-    const memberData: admin.firestore.DocumentData = {
-      uid: record.uid,
-      email,
+    const getUserOrThrow = async () => {
+      try {
+        return await admin.auth().getUserByEmail(email)
+      } catch (error: any) {
+        if (error?.code === 'auth/user-not-found') {
+          throw new functions.https.HttpsError('not-found', 'No account found for that email')
+        }
+        throw error
+      }
+    }
+
+    const auditBase = {
+      action,
       storeId,
-      role,
-      invitedBy,
-      updatedAt: timestamp,
+      actorUid,
+      actorEmail,
+      targetEmail: email,
+    } as const
+
+    try {
+      await verifyOwnerForStore(actorUid, storeId)
+
+      let record: admin.auth.UserRecord
+      let created = false
+      let claims: Record<string, unknown> | undefined
+
+      if (action === 'invite') {
+        const ensured = await ensureAuthUser(email, password)
+        record = ensured.record
+        created = ensured.created
+        await admin.auth().updateUser(record.uid, { disabled: false })
+
+        const memberRef = db.collection('teamMembers').doc(record.uid)
+        const memberSnap = await memberRef.get()
+        const memberData: admin.firestore.DocumentData = {
+          uid: record.uid,
+          email,
+          storeId,
+          role,
+          invitedBy: actorUid,
+          status: 'active',
+          updatedAt: timestamp,
+        }
+
+        if (!memberSnap.exists) {
+          memberData.createdAt = timestamp
+        }
+
+        await memberRef.set(memberData, { merge: true })
+        claims = await updateUserClaims(record.uid, role)
+      } else if (action === 'reset') {
+        if (!password) {
+          throw new functions.https.HttpsError(
+            'invalid-argument',
+            'A new password is required to reset staff credentials',
+          )
+        }
+
+        record = await getUserOrThrow()
+        await admin.auth().updateUser(record.uid, { password, disabled: false })
+
+        const memberRef = db.collection('teamMembers').doc(record.uid)
+        await memberRef.set(
+          { uid: record.uid, email, storeId, role, status: 'active', updatedAt: timestamp },
+          { merge: true },
+        )
+        claims = await updateUserClaims(record.uid, role)
+      } else {
+        record = await getUserOrThrow()
+        await admin.auth().updateUser(record.uid, { disabled: true })
+
+        const memberRef = db.collection('teamMembers').doc(record.uid)
+        await memberRef.set(
+          { uid: record.uid, email, storeId, role, status: 'inactive', updatedAt: timestamp },
+          { merge: true },
+        )
+        created = false
+      }
+
+      await logStaffAudit({
+        ...auditBase,
+        targetUid: record.uid,
+        outcome: 'success',
+        errorMessage: null,
+      })
+
+      return { ok: true, role, email, uid: record.uid, created, storeId, claims }
+    } catch (error: any) {
+      await logStaffAudit({
+        ...auditBase,
+        outcome: 'failure',
+        targetUid: null,
+        errorMessage: typeof error?.message === 'string' ? error.message : 'Unknown error',
+      })
+      throw error
     }
-
-    if (!memberSnap.exists) {
-      memberData.createdAt = timestamp
-    }
-
-    await memberRef.set(memberData, { merge: true })
-    const claims = await updateUserClaims(record.uid, role)
-
-    return { ok: true, role, email, uid: record.uid, created, storeId, claims }
   },
 )
 
