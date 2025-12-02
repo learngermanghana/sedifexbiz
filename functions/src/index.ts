@@ -1312,23 +1312,33 @@ export const receiveStock = functions.https.onCall(
  * ==========================================================================*/
 
 const PAYSTACK_BASE_URL = 'https://api.paystack.co'
-const PAYSTACK_SECRET_KEY =
-  defineString('PAYSTACK_SECRET_KEY').value() || process.env.PAYSTACK_SECRET_KEY || ''
-const PAYSTACK_STANDARD_PLAN_CODE =
-  defineString('PAYSTACK_STANDARD_PLAN_CODE').value() ||
-  process.env.PAYSTACK_STANDARD_PLAN_CODE ||
-  ''
-const PAYSTACK_CURRENCY =
-  defineString('PAYSTACK_CURRENCY').value() || process.env.PAYSTACK_CURRENCY || 'GHS'
+const PAYSTACK_SECRET_KEY = defineString('PAYSTACK_SECRET_KEY')
+const PAYSTACK_STANDARD_PLAN_CODE = defineString('PAYSTACK_STANDARD_PLAN_CODE')
+const PAYSTACK_CURRENCY = defineString('PAYSTACK_CURRENCY')
 
-console.log('[paystack] startup config', {
-  hasSecret: !!PAYSTACK_SECRET_KEY,
-  hasPlan: !!PAYSTACK_STANDARD_PLAN_CODE,
-  currency: PAYSTACK_CURRENCY,
-})
+let paystackConfigLogged = false
+function getPaystackConfig() {
+  const secret = PAYSTACK_SECRET_KEY.value() || process.env.PAYSTACK_SECRET_KEY || ''
+  const plan =
+    PAYSTACK_STANDARD_PLAN_CODE.value() || process.env.PAYSTACK_STANDARD_PLAN_CODE || ''
+  const currency = PAYSTACK_CURRENCY.value() || process.env.PAYSTACK_CURRENCY || 'GHS'
+
+  if (!paystackConfigLogged) {
+    console.log('[paystack] startup config', {
+      hasSecret: !!secret,
+      hasPlan: !!plan,
+      currency,
+    })
+    paystackConfigLogged = true
+  }
+
+  return { secret, plan, currency }
+}
 
 function ensurePaystackConfig() {
-  if (!PAYSTACK_SECRET_KEY) {
+  const config = getPaystackConfig()
+
+  if (!config.secret) {
     console.error('[paystack] Missing PAYSTACK_SECRET_KEY env')
     throw new functions.https.HttpsError(
       'failed-precondition',
@@ -1336,13 +1346,15 @@ function ensurePaystackConfig() {
     )
   }
 
-  if (!PAYSTACK_STANDARD_PLAN_CODE) {
+  if (!config.plan) {
     console.error('[paystack] Missing PAYSTACK_STANDARD_PLAN_CODE env')
     throw new functions.https.HttpsError(
       'failed-precondition',
       'Subscription plan is not configured. Please contact support.',
     )
   }
+
+  return config
 }
 
 /** ============================================================================
@@ -1352,7 +1364,7 @@ function ensurePaystackConfig() {
 export const createPaystackCheckout = functions.https.onCall(
   async (data: unknown, context: functions.https.CallableContext) => {
     assertOwnerAccess(context)
-    ensurePaystackConfig()
+    const paystackConfig = ensurePaystackConfig()
 
     const uid = context.auth!.uid
     const token = context.auth!.token as Record<string, unknown>
@@ -1391,7 +1403,7 @@ export const createPaystackCheckout = functions.https.onCall(
     const body: any = {
       email: email || storeData.ownerEmail || undefined,
       amount: amountMinorUnits,
-      currency: PAYSTACK_CURRENCY,
+      currency: paystackConfig.currency,
       callback_url:
         typeof payload.redirectUrl === 'string'
           ? payload.redirectUrl
@@ -1403,7 +1415,7 @@ export const createPaystackCheckout = functions.https.onCall(
         userId: uid,
         planKey: 'standard',
       },
-      plan: PAYSTACK_STANDARD_PLAN_CODE,
+      plan: paystackConfig.plan,
     }
 
     let responseJson: any
@@ -1413,7 +1425,7 @@ export const createPaystackCheckout = functions.https.onCall(
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            Authorization: `Bearer ${paystackConfig.secret}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(body),
@@ -1486,7 +1498,9 @@ export const handlePaystackWebhook = functions.https.onRequest(
       return
     }
 
-    if (!PAYSTACK_SECRET_KEY) {
+    const { secret: paystackSecret, plan: paystackPlanCode } = getPaystackConfig()
+
+    if (!paystackSecret) {
       console.error('[paystack] Missing PAYSTACK_SECRET_KEY for webhook')
       res.status(500).send('PAYSTACK_SECRET_KEY_NOT_CONFIGURED')
       return
@@ -1502,7 +1516,7 @@ export const handlePaystackWebhook = functions.https.onRequest(
 
     const rawBody = (req as any).rawBody as Buffer
     const hash = crypto
-      .createHmac('sha512', PAYSTACK_SECRET_KEY)
+      .createHmac('sha512', paystackSecret)
       .update(rawBody)
       .digest('hex')
 
@@ -1542,8 +1556,7 @@ export const handlePaystackWebhook = functions.https.onRequest(
                 paystackCustomerCode: customer.customer_code || null,
                 paystackSubscriptionCode:
                   subscription.subscription_code || null,
-                paystackPlanCode:
-                  plan.plan_code || PAYSTACK_STANDARD_PLAN_CODE,
+                paystackPlanCode: plan.plan_code || paystackPlanCode,
                 currentPeriodEnd: data.paid_at || null,
                 lastEventAt: timestamp,
                 lastChargeReference: data.reference || null,
