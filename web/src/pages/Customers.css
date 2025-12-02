@@ -1,9 +1,19 @@
 /* ============ Layout ============ */
 
+.customers-page {
+  --customers-border: #e2e8f0;
+  --customers-muted: #64748b;
+  --customers-soft: #f8fafc;
+}
+
 .customers-page__grid {
   display: grid;
   gap: 24px;
   margin-top: 8px;
+  align-items: start;
+  max-width: 1380px;
+  margin-inline: auto;
+  width: 100%;
 }
 
 @media (max-width: 1079px) {
@@ -27,6 +37,16 @@
       minmax(0, 0.9fr)   /* New customer / edit form */
       minmax(0, 1.1fr)   /* Customer list */
       minmax(0, 1fr);    /* Details / CRM panel */
+  }
+}
+
+@media (min-width: 1320px) {
+  .customers-page__grid {
+    grid-template-columns:
+      minmax(320px, 0.95fr)
+      minmax(420px, 1.15fr)
+      minmax(360px, 1fr);
+    column-gap: 28px;
   }
 }
 
@@ -64,7 +84,7 @@
 .customers-page__section-header p {
   margin: 0;
   font-size: 13px;
-  color: #64748b;
+  color: var(--customers-muted);
 }
 
 /* ============ Form ============ */
@@ -129,6 +149,10 @@
   flex-direction: column;
   gap: 16px;
   margin-bottom: 16px;
+  padding: 14px 16px;
+  background: var(--customers-soft);
+  border: 1px solid var(--customers-border);
+  border-radius: 14px;
 }
 
 @media (max-width: 640px) {
@@ -149,6 +173,8 @@
   border: 1px solid #cbd5f5;
   font-size: 14px;
   height: 40px;
+  background: #fff;
+  box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.3);
 }
 
 .customers-page__tool-buttons {
@@ -245,24 +271,29 @@
 
 .customers-page__row {
   cursor: pointer;
-  transition: background-color 120ms ease, box-shadow 120ms ease;
+  transition: background-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
 
 .customers-page__row:hover {
   background: rgba(15, 23, 42, 0.02);
+  transform: translateY(-1px);
 }
 
 .customers-page__row--selected {
   background: rgba(67, 56, 202, 0.08);
-  box-shadow: inset 2px 0 0 #4338ca;
+  box-shadow: inset 2px 0 0 #4338ca, 0 8px 24px -14px rgba(67, 56, 202, 0.35);
 }
 
 .customers-page__table {
   width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .customers-page__cell {
   vertical-align: top;
+  padding-top: 14px;
+  padding-bottom: 14px;
 }
 
 .customers-page__cell-title {
@@ -279,6 +310,21 @@
 
 .customers-page__mobile-label {
   display: none;
+}
+
+.customers-page__table thead th {
+  position: sticky;
+  top: 0;
+  background: #f6f8fb;
+  z-index: 1;
+}
+
+.customers-page__table tbody td {
+  border-bottom: 1px solid var(--customers-border);
+}
+
+.customers-page__table tbody tr:last-of-type td {
+  border-bottom: none;
 }
 
 @media (max-width: 760px) {
