@@ -102,6 +102,7 @@ export default function Sell() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
   const [amountPaidInput, setAmountPaidInput] = useState('')
   const [discountInput, setDiscountInput] = useState('')
+  const [taxInput, setTaxInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -220,7 +221,7 @@ export default function Sell() {
   }, [products, searchText])
 
   // Totals (before discount)
-  const { subTotal, taxTotal, grossTotal } = useMemo(() => {
+  const { subTotal, autoTaxTotal } = useMemo(() => {
     let sub = 0
     let tax = 0
     for (const line of cart) {
@@ -232,10 +233,46 @@ export default function Sell() {
     }
     return {
       subTotal: sub,
-      taxTotal: tax,
-      grossTotal: sub + tax,
+      autoTaxTotal: tax,
     }
   }, [cart])
+
+  // Allow overriding VAT/tax if the cashier wants to adjust the default rate
+  const { effectiveTaxTotal, taxError } = useMemo(() => {
+    const input = taxInput.trim()
+    if (!input) {
+      return { effectiveTaxTotal: autoTaxTotal, taxError: null as string | null }
+    }
+
+    let amount = 0
+    let error: string | null = null
+
+    if (input.endsWith('%')) {
+      const num = Number(input.slice(0, -1).trim())
+      if (!Number.isFinite(num) || num < 0) {
+        error = 'Enter a valid percentage (e.g. 7.5%)'
+      } else {
+        amount = subTotal * (num / 100)
+      }
+    } else {
+      const num = Number(input)
+      if (!Number.isFinite(num) || num < 0) {
+        error = 'Enter a valid VAT amount or percent'
+      } else {
+        amount = num
+      }
+    }
+
+    return {
+      effectiveTaxTotal: Number.isFinite(amount) ? amount : autoTaxTotal,
+      taxError: error,
+    }
+  }, [autoTaxTotal, subTotal, taxInput])
+
+  const grossTotal = useMemo(
+    () => subTotal + effectiveTaxTotal,
+    [effectiveTaxTotal, subTotal],
+  )
 
   // Discount parsing
   const {
@@ -297,6 +334,78 @@ export default function Sell() {
     if (amountPaid <= 0) return false
     return amountPaid < totalAfterDiscount
   }, [amountPaid, totalAfterDiscount])
+
+  function printReceipt(options: {
+    saleId: string
+    items: CartLine[]
+    totals: { subTotal: number; taxTotal: number; discount: number; total: number }
+    paymentMethod: PaymentMethod
+    discountInput: string
+  }) {
+    try {
+      const iframe = document.createElement('iframe')
+      iframe.style.position = 'fixed'
+      iframe.style.width = '0'
+      iframe.style.height = '0'
+      iframe.style.border = '0'
+      iframe.style.visibility = 'hidden'
+
+      const receiptDate = new Date().toLocaleString()
+      const lineRows = options.items
+        .map(line => {
+          const total = line.price * line.qty
+          return `<tr><td>${line.name}</td><td style="text-align:right">${line.qty}</td><td style="text-align:right">${formatCurrency(line.price)}</td><td style="text-align:right">${formatCurrency(total)}</td></tr>`
+        })
+        .join('')
+
+      const receiptHtml = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 16px; color: #0f172a; }
+        h1 { font-size: 18px; margin: 0 0 12px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th, td { padding: 6px 4px; font-size: 13px; }
+        th { text-align: left; border-bottom: 1px solid #e2e8f0; }
+        tfoot td { font-weight: 700; border-top: 1px solid #e2e8f0; }
+        .meta { font-size: 12px; color: #475569; margin: 0; }
+      </style>
+    </head>
+    <body>
+      <h1>Sale receipt</h1>
+      <p class="meta">Sale ID: ${options.saleId}</p>
+      <p class="meta">${receiptDate}</p>
+      <table>
+        <thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead>
+        <tbody>${lineRows}</tbody>
+        <tfoot>
+          <tr><td colspan="3">Subtotal</td><td style="text-align:right">${formatCurrency(options.totals.subTotal)}</td></tr>
+          <tr><td colspan="3">VAT / Tax</td><td style="text-align:right">${formatCurrency(options.totals.taxTotal)}</td></tr>
+          <tr><td colspan="3">Discount</td><td style="text-align:right">${options.discountInput ? options.discountInput : 'None'}</td></tr>
+          <tr><td colspan="3">Total</td><td style="text-align:right">${formatCurrency(options.totals.total)}</td></tr>
+          <tr><td colspan="3">Payment</td><td style="text-align:right">${options.paymentMethod.replace('_', ' ')}</td></tr>
+        </tfoot>
+      </table>
+    </body>
+  </html>`
+
+      iframe.srcdoc = receiptHtml
+      document.body.appendChild(iframe)
+
+      const frameWindow = iframe.contentWindow
+      if (frameWindow) {
+        frameWindow.focus()
+        frameWindow.print()
+      }
+
+      setTimeout(() => {
+        document.body.removeChild(iframe)
+      }, 1000)
+    } catch (error) {
+      console.error('[sell] Unable to print receipt', error)
+    }
+  }
 
   function addProductToCart(product: Product, qty: number = 1) {
     if (!product.price || product.price < 0) {
@@ -538,6 +647,10 @@ export default function Sell() {
       setErrorMessage('Add at least one item to the cart.')
       return
     }
+    if (taxError) {
+      setErrorMessage('Please fix the VAT field before saving.')
+      return
+    }
     if (discountError) {
       setErrorMessage('Please fix the discount field before saving.')
       return
@@ -549,6 +662,9 @@ export default function Sell() {
 
     setIsSaving(true)
     try {
+      const saleId = `sale_${activeStoreId}_${Date.now()}`
+      const cartSnapshot = [...cart]
+
       const items = cart.map(line => ({
         productId: line.productId,
         name: line.name,
@@ -559,7 +675,7 @@ export default function Sell() {
 
       const totals = {
         subTotal,
-        taxTotal,
+        taxTotal: effectiveTaxTotal,
         discount: discountAmount,
         total: totalAfterDiscount,
       }
@@ -589,14 +705,23 @@ export default function Sell() {
         items,
         totals,
         cashierId: user?.uid ?? null,
-        saleId: `sale_${activeStoreId}_${Date.now()}`,
+        saleId,
         payment,
         customer: customerPayload,
+      })
+
+      printReceipt({
+        saleId,
+        items: cartSnapshot,
+        totals,
+        paymentMethod,
+        discountInput,
       })
 
       setCart([])
       setAmountPaidInput('')
       setDiscountInput('')
+      setTaxInput('')
       setCustomerNameInput('')
       setCustomerPhoneInput('')
       setSelectedCustomerId(null)
@@ -738,25 +863,36 @@ export default function Sell() {
 
           <div className="sell-page__product-list">
             {filteredProducts.length ? (
-              filteredProducts.map(p => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="sell-page__product-row"
-                  onClick={() => addProductToCart(p, 1)}
-                >
-                  <div className="sell-page__product-main">
-                    <div className="sell-page__product-name">{p.name}</div>
-                    <div className="sell-page__product-meta">
-                      {p.sku && <span>SKU: {p.sku}</span>}
-                      {p.barcode && <span>Code: {p.barcode}</span>}
+              filteredProducts.map(p => {
+                const isUnavailable =
+                  typeof p.price !== 'number' || !Number.isFinite(p.price) || p.price <= 0
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="sell-page__product-row"
+                    onClick={() => addProductToCart(p, 1)}
+                    disabled={isUnavailable}
+                  >
+                    <div className="sell-page__product-main">
+                      <div className="sell-page__product-name">{p.name}</div>
+                      <div className="sell-page__product-meta">
+                        {p.sku && <span>SKU: {p.sku}</span>}
+                        {p.barcode && <span>Code: {p.barcode}</span>}
+                      </div>
                     </div>
-                  </div>
-                  <div className="sell-page__product-price">
-                    {formatCurrency(p.price)}
-                  </div>
-                </button>
-              ))
+                    <div className="sell-page__product-price">
+                      {isUnavailable ? (
+                        <span style={{ color: '#b91c1c', fontSize: 12 }}>
+                          Price unavailable – set price to sell
+                        </span>
+                      ) : (
+                        formatCurrency(p.price)
+                      )}
+                    </div>
+                  </button>
+                )
+              })
             ) : (
               <p className="sell-page__empty-products">
                 No products match this search.
@@ -836,7 +972,34 @@ export default function Sell() {
             </div>
             <div className="sell-page__totals-row">
               <span>VAT / Tax</span>
-              <strong>{formatCurrency(taxTotal)}</strong>
+              <div style={{ textAlign: 'right' }}>
+                <input
+                  type="text"
+                  className={
+                    'sell-page__input' +
+                    (taxError ? ' sell-page__input--error' : '')
+                  }
+                  placeholder={`Auto: ${formatCurrency(autoTaxTotal)}`}
+                  value={taxInput}
+                  onChange={e => setTaxInput(e.target.value)}
+                  style={{ maxWidth: 140 }}
+                />
+                {!taxInput && (
+                  <div className="sell-page__totals-hint">
+                    Using VAT from the product setup.
+                  </div>
+                )}
+                {taxError && (
+                  <div className="sell-page__totals-hint sell-page__totals-hint--error">
+                    {taxError}
+                  </div>
+                )}
+                {taxInput && !taxError && (
+                  <div className="sell-page__totals-hint">
+                    Override total: {formatCurrency(effectiveTaxTotal)}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="sell-page__totals-row">
               <span>Discount</span>
@@ -1048,6 +1211,7 @@ export default function Sell() {
                 setCart([])
                 setAmountPaidInput('')
                 setDiscountInput('')
+                setTaxInput('')
                 setScanStatus(null)
                 setErrorMessage(null)
                 setSuccessMessage(null)
@@ -1065,7 +1229,7 @@ export default function Sell() {
               onClick={handleCommitSale}
               disabled={isSaving || !cart.length}
             >
-              {isSaving ? 'Saving…' : 'Save sale'}
+              {isSaving ? 'Saving…' : 'Record sale'}
             </button>
           </div>
         </section>
