@@ -23,6 +23,7 @@ import {
   BrowserMultiFormatReader,
   NotFoundException,
 } from '@zxing/browser'
+import { useKeyboardScanner } from '../components/BarcodeScanner'
 
 type ItemType = 'product' | 'service'
 
@@ -333,7 +334,10 @@ export default function Sell() {
   }
 
   // 🔹 Use decoded text for both manual + camera
-  function handleScanFromDecodedText(rawText: string) {
+  function handleScanFromDecodedText(
+    rawText: string,
+    source: 'manual' | 'camera' | 'keyboard' = 'manual',
+  ) {
     const normalized = normalizeBarcode(rawText)
     if (!normalized) {
       setScanStatus({
@@ -359,7 +363,10 @@ export default function Sell() {
     addProductToCart(found, 1)
     setScanStatus({
       type: 'success',
-      message: `Added "${found.name}" to the cart.`,
+      message:
+        source === 'keyboard'
+          ? `Added "${found.name}" via the scanner.`
+          : `Added "${found.name}" to the cart.`,
     })
   }
 
@@ -380,6 +387,18 @@ export default function Sell() {
     handleScanFromDecodedText(normalized)
     setScanInput('')
   }
+
+  useKeyboardScanner(
+    result => {
+      setScanStatus(null)
+      handleScanFromDecodedText(result.code, result.source)
+    },
+    message =>
+      setScanStatus({
+        type: 'error',
+        message,
+      }),
+  )
 
   // 🔹 Camera scanner logic (prefer back camera)
   useEffect(() => {
