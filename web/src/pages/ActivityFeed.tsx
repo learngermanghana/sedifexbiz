@@ -15,6 +15,7 @@ import {
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './ActivityFeed.css'
+import { FixedSizeList, ListChildComponentProps } from '../utils/VirtualizedList'
 
 type ActivityType = 'sale' | 'customer' | 'inventory' | 'task'
 type TimeRange = 'any' | '24h' | '7d' | '30d'
@@ -186,6 +187,38 @@ export default function ActivityFeed() {
       { sale: 0, customer: 0, inventory: 0, task: 0 },
     )
   }, [activities])
+
+  const shouldVirtualizeFeed = filteredActivities.length > 80
+  const feedRowHeight = 128
+  const feedViewportHeight = Math.min(
+    Math.max(feedRowHeight * 3, filteredActivities.length * feedRowHeight),
+    720,
+  )
+
+  const renderActivityCard = (activity: Activity) => (
+    <article key={activity.id} className="activity-item">
+      <div className="activity-type" style={{ color: TYPE_COLORS[activity.type] }}>
+        <span
+          className="activity-type__dot"
+          style={{ background: TYPE_COLORS[activity.type] }}
+        />
+        {TYPE_LABELS[activity.type]}
+      </div>
+      <div className="activity-body">
+        <div className="activity-body__row">
+          <h4>{activity.summary}</h4>
+          <span className="activity-timestamp">{formatTimestamp(activity.timestamp)}</span>
+        </div>
+        <p className="activity-detail">{activity.detail}</p>
+        <div className="activity-meta">By {activity.actor}</div>
+      </div>
+    </article>
+  )
+
+  const VirtualizedActivityRow = ({ index, style, data }: ListChildComponentProps<Activity[]>) => {
+    const activity = data[index]
+    return <div style={style} className="activity-feed__virtual-row">{renderActivityCard(activity)}</div>
+  }
 
   // 🟢 WRITE NEW ACTIVITY TO FIRESTORE
   async function addActivity(event: React.FormEvent) {
@@ -386,28 +419,19 @@ export default function ActivityFeed() {
           <div className="activity-empty">
             <p>No activity yet. Try adding a new entry or adjust your filters.</p>
           </div>
+        ) : shouldVirtualizeFeed ? (
+          <FixedSizeList
+            height={feedViewportHeight}
+            itemCount={filteredActivities.length}
+            itemData={filteredActivities}
+            itemKey={(index, items) => items[index].id}
+            itemSize={feedRowHeight}
+            className="activity-feed__virtual-list"
+          >
+            {VirtualizedActivityRow}
+          </FixedSizeList>
         ) : (
-          filteredActivities.map(activity => (
-            <article key={activity.id} className="activity-item">
-              <div className="activity-type" style={{ color: TYPE_COLORS[activity.type] }}>
-                <span
-                  className="activity-type__dot"
-                  style={{ background: TYPE_COLORS[activity.type] }}
-                />
-                {TYPE_LABELS[activity.type]}
-              </div>
-              <div className="activity-body">
-                <div className="activity-body__row">
-                  <h4>{activity.summary}</h4>
-                  <span className="activity-timestamp">
-                    {formatTimestamp(activity.timestamp)}
-                  </span>
-                </div>
-                <p className="activity-detail">{activity.detail}</p>
-                <div className="activity-meta">By {activity.actor}</div>
-              </div>
-            </article>
-          ))
+          filteredActivities.map(renderActivityCard)
         )}
       </section>
     </div>

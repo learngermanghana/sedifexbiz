@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import './Products.css'
+import DataTable, { DataTableColumn } from '../components/DataTable'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import {
@@ -268,6 +269,180 @@ export default function Products() {
         return p.stockCount <= p.reorderPoint
       }).length,
     [products],
+  )
+
+  const productColumns = useMemo<DataTableColumn<Product>[]>(
+    () => [
+      {
+        id: 'name',
+        header: 'Item',
+        render: product =>
+          editingId === product.id ? (
+            <input value={editName} onChange={e => setEditName(e.target.value)} />
+          ) : (
+            product.name
+          ),
+      },
+      {
+        id: 'type',
+        header: 'Type',
+        render: product => (product.itemType === 'service' ? 'Service' : 'Product'),
+        hideBelow: 'md',
+        hideable: true,
+      },
+      {
+        id: 'sku',
+        header: 'SKU',
+        render: product =>
+          editingId === product.id && product.itemType !== 'service' ? (
+            <input value={editSku} onChange={e => setEditSku(e.target.value)} />
+          ) : (
+            product.sku || '—'
+          ),
+        hideBelow: 'md',
+        hideable: true,
+      },
+      {
+        id: 'vat',
+        header: 'VAT',
+        render: product =>
+          editingId === product.id ? (
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={editTaxRateInput}
+              onChange={e => setEditTaxRateInput(e.target.value)}
+              placeholder="e.g. 15"
+            />
+          ) : (
+            formatVat(product.taxRate)
+          ),
+        hideBelow: 'md',
+        hideable: true,
+      },
+      {
+        id: 'price',
+        header: 'Price',
+        render: product =>
+          editingId === product.id ? (
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={editPriceInput}
+              onChange={e => setEditPriceInput(e.target.value)}
+            />
+          ) : (
+            formatCurrency(product.price)
+          ),
+        align: 'right',
+      },
+      {
+        id: 'stock',
+        header: 'On hand',
+        render: product => {
+          const isSvc = product.itemType === 'service'
+          if (editingId === product.id && !isSvc) {
+            return (
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={editStockInput}
+                onChange={e => setEditStockInput(e.target.value)}
+              />
+            )
+          }
+          if (isSvc) return '—'
+          return product.stockCount ?? 0
+        },
+        align: 'right',
+      },
+      {
+        id: 'reorder',
+        header: 'Reorder point',
+        render: product => {
+          const isSvc = product.itemType === 'service'
+          if (editingId === product.id && !isSvc) {
+            return (
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={editReorderPointInput}
+                onChange={e => setEditReorderPointInput(e.target.value)}
+              />
+            )
+          }
+          if (isSvc) return '—'
+          return product.reorderPoint ?? '—'
+        },
+        align: 'right',
+        hideable: true,
+      },
+      {
+        id: 'lastReceipt',
+        header: 'Last receipt',
+        render: product => formatLastReceipt(product.lastReceiptAt),
+        hideBelow: 'md',
+        hideable: true,
+      },
+      {
+        id: 'actions',
+        header: 'Actions',
+        render: product =>
+          editingId === product.id ? (
+            <>
+              <button
+                type="button"
+                className="button button--primary button--small"
+                onClick={() => handleSaveEdit(product)}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                className="button button--ghost button--small"
+                onClick={cancelEditing}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="button button--ghost button--small"
+                onClick={() => startEditing(product)}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className="button button--ghost button--small button--danger"
+                onClick={() => handleDelete(product)}
+              >
+                Delete
+              </button>
+            </>
+          ),
+        align: 'right',
+      },
+    ],
+    [
+      cancelEditing,
+      editName,
+      editPriceInput,
+      editReorderPointInput,
+      editSku,
+      editStockInput,
+      editTaxRateInput,
+      editingId,
+      handleDelete,
+      handleSaveEdit,
+      startEditing,
+    ],
   )
 
   /**
@@ -705,168 +880,22 @@ export default function Products() {
             </div>
           </div>
 
-          <div className="table-wrapper">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th scope="col">Item</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">SKU</th>
-                  <th scope="col">VAT</th>
-                  <th scope="col">Price</th>
-                  <th scope="col">On hand</th>
-                  <th scope="col">Reorder point</th>
-                  <th scope="col">Last receipt</th>
-                  <th scope="col" className="products-page__actions-column">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleProducts.length ? (
-                  visibleProducts.map(product => {
-                    const isSvc = product.itemType === 'service'
-                    const isEditing = editingId === product.id
-
-                    return (
-                      <tr key={product.id}>
-                        <td>
-                          {isEditing ? (
-                            <input
-                              value={editName}
-                              onChange={e => setEditName(e.target.value)}
-                            />
-                          ) : (
-                            product.name
-                          )}
-                        </td>
-                        <td>{isSvc ? 'Service' : 'Product'}</td>
-                        <td>
-                          {isEditing && !isSvc ? (
-                            <input
-                              value={editSku}
-                              onChange={e => setEditSku(e.target.value)}
-                            />
-                          ) : (
-                            product.sku || '—'
-                          )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={editTaxRateInput}
-                              onChange={e => setEditTaxRateInput(e.target.value)}
-                              placeholder="e.g. 15"
-                            />
-                          ) : (
-                            formatVat(product.taxRate)
-                          )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={editPriceInput}
-                              onChange={e => setEditPriceInput(e.target.value)}
-                            />
-                          ) : (
-                            formatCurrency(product.price)
-                          )}
-                        </td>
-                        <td>
-                          {isEditing && !isSvc ? (
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={editStockInput}
-                              onChange={e => setEditStockInput(e.target.value)}
-                            />
-                          ) : isSvc ? (
-                            '—'
-                          ) : (
-                            product.stockCount ?? 0
-                          )}
-                        </td>
-                        <td>
-                          {isEditing && !isSvc ? (
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={editReorderPointInput}
-                              onChange={e =>
-                                setEditReorderPointInput(e.target.value)
-                              }
-                            />
-                          ) : isSvc ? (
-                            '—'
-                          ) : (
-                            product.reorderPoint ?? '—'
-                          )}
-                        </td>
-                        <td>{formatLastReceipt(product.lastReceiptAt)}</td>
-                        <td className="products-page__actions-column">
-                          {isEditing ? (
-                            <>
-                              <button
-                                type="button"
-                                className="button button--primary button--small"
-                                onClick={() => handleSaveEdit(product)}
-                              >
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                className="button button--ghost button--small"
-                                onClick={cancelEditing}
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                className="button button--ghost button--small"
-                                onClick={() => startEditing(product)}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                className="button button--ghost button--small button--danger"
-                                onClick={() => handleDelete(product)}
-                              >
-                                Delete
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={9}>
-                      <div className="empty-state">
-                        <h3 className="empty-state__title">No items found</h3>
-                        <p>
-                          Try a different search term, or add new products and services
-                          using the form on the left.
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={productColumns}
+            data={visibleProducts}
+            pageSize={12}
+            density="compact"
+            enableColumnToggles
+            virtualizeThreshold={80}
+            emptyState={
+              <div className="empty-state">
+                <h3 className="empty-state__title">No items found</h3>
+                <p>
+                  Try a different search term, or add new products and services using the form on the left.
+                </p>
+              </div>
+            }
+          />
         </section>
       </div>
     </div>
