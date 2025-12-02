@@ -189,17 +189,16 @@ function buildCsvValue(value: string): string {
   return value
 }
 
-function normalizePhoneNumber(input: string): string {
+export function normalizePhoneNumber(input: string): string {
   const trimmed = input.trim()
   if (!trimmed) return ''
 
   const hasPlusPrefix = trimmed.startsWith('+')
   const digits = trimmed.replace(/\D/g, '')
-  const withoutLeadingZeros = digits.replace(/^0+/, '')
 
-  if (!withoutLeadingZeros) return ''
+  if (!digits) return ''
 
-  return hasPlusPrefix ? `+${withoutLeadingZeros}` : withoutLeadingZeros
+  return hasPlusPrefix ? `+${digits}` : digits
 }
 
 function buildPhoneKey(value: string | null | undefined): string {
