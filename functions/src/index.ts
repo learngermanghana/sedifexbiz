@@ -981,7 +981,14 @@ export const commitSale = functions.https.onCall(
           const qty = Number(it?.qty ?? 0) || 0
           const price = Number(it?.price ?? 0) || 0
           const taxRate = Number(it?.taxRate ?? 0) || 0
-          return { productId, name, qty, price, taxRate }
+          const typeRaw =
+            typeof it?.type === 'string'
+              ? it.type.trim().toLowerCase()
+              : null
+          const type = typeRaw === 'service' ? 'service' : typeRaw === 'product' ? 'product' : null
+          const isService = it?.isService === true || type === 'service'
+
+          return { productId, name, qty, price, taxRate, type, isService }
         })
       : []
 
@@ -1058,6 +1065,8 @@ export const commitSale = functions.https.onCall(
           qty: it.qty,
           price: it.price,
           taxRate: it.taxRate,
+          type: it.type,
+          isService: it.isService === true,
           storeId: normalizedBranchId,
           createdAt: timestamp,
         })
