@@ -11,9 +11,8 @@
   gap: 24px;
   margin-top: 8px;
   align-items: start;
-  max-width: 1380px;
+  width: min(100%, 1200px);
   margin-inline: auto;
-  width: 100%;
 }
 
 @media (max-width: 1079px) {
