@@ -24,7 +24,7 @@ const QUICK_LINKS: Array<{
 }> = [
   {
     to: '/products',
-    title: 'Products',
+    title: 'Products & Services',
     description: 'Manage your catalogue, update prices, and keep stock levels accurate.',
   },
   {
@@ -364,6 +364,14 @@ export default function Dashboard() {
       .reduce((sum, exp) => sum + exp.amount, 0)
   }, [expenses, now])
 
+  const todaySalesMixTotal = todayProductSalesTotal + todayServiceSalesTotal
+  const todayProductMixPercent =
+    todaySalesMixTotal > 0
+      ? Math.round((todayProductSalesTotal / todaySalesMixTotal) * 100)
+      : 0
+  const todayServiceMixPercent =
+    todaySalesMixTotal > 0 ? 100 - todayProductMixPercent : 0
+
   function buildLowStockCsv() {
     const header = ['Product', 'SKU', 'On hand', 'Reorder point']
     const rows = lowStock.map(item => [
@@ -681,6 +689,76 @@ export default function Dashboard() {
                 <strong>GHS {todayProductSalesTotal.toFixed(2)}</strong> · Services:{' '}
                 <strong>GHS {todayServiceSalesTotal.toFixed(2)}</strong>
               </p>
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 12,
+                    color: '#0F172A',
+                    fontWeight: 600,
+                  }}
+                >
+                  <span>Products vs services</span>
+                  <span>{todaySalesMixTotal > 0 ? 'Share of today\'s cash' : 'No sales yet'}</span>
+                </div>
+                <div
+                  style={{
+                    position: 'relative',
+                    height: 10,
+                    borderRadius: 9999,
+                    background: '#E2E8F0',
+                    overflow: 'hidden',
+                  }}
+                  aria-label="Product and service contribution today"
+                >
+                  {todayProductMixPercent > 0 && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${todayProductMixPercent}%`,
+                        background: '#0EA5E9',
+                      }}
+                    />
+                  )}
+                  {todayServiceMixPercent > 0 && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        right: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${todayServiceMixPercent}%`,
+                        background: '#8B5CF6',
+                      }}
+                    />
+                  )}
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 12,
+                    color: '#475569',
+                  }}
+                >
+                  <span>
+                    <span style={{ color: '#0EA5E9', fontWeight: 700 }}>
+                      Products ({todayProductMixPercent}%)
+                    </span>
+                    : GHS {todayProductSalesTotal.toFixed(2)}
+                  </span>
+                  <span style={{ textAlign: 'right' }}>
+                    <span style={{ color: '#8B5CF6', fontWeight: 700 }}>
+                      Services ({todayServiceMixPercent}%)
+                    </span>
+                    : GHS {todayServiceSalesTotal.toFixed(2)}
+                  </span>
+                </div>
+              </div>
             </article>
 
             {/* Yesterday */}

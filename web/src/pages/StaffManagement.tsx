@@ -508,7 +508,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
 
           {audits.length === 0 && !auditLoading ? (
             <div className="staff-table__row" role="row">
-              <span role="cell" className="staff-table__empty" colSpan={5}>
+              <span role="cell" className="staff-table__empty">
                 No recent staff changes recorded.
               </span>
             </div>
