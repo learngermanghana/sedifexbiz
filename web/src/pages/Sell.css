@@ -233,6 +233,37 @@
   justify-content: flex-end;
 }
 
+.sell-page__receipt-actions {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sell-page__receipt-actions-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sell-page__share-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.sell-page__share-row a {
+  color: #4338ca;
+  font-weight: 600;
+}
+
 .sell-page__totals-hint {
   font-size: 12px;
   color: #475569;

@@ -31,6 +31,7 @@ import './Sell.css'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { NotFoundException } from '@zxing/library'
 import { useKeyboardScanner } from '../components/BarcodeScanner'
+import { buildSimplePdf } from '../utils/pdf'
 
 type ItemType = 'product' | 'service'
 
@@ -136,6 +137,18 @@ export default function Sell() {
   const [customerSearchTerm, setCustomerSearchTerm] = useState('')
   const [allCustomers, setAllCustomers] = useState<Customer[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<{
+    saleId: string
+    items: CartLine[]
+    totals: { subTotal: number; taxTotal: number; discount: number; total: number }
+    paymentMethod: PaymentMethod
+    discountInput: string
+  } | null>(null)
+  const [receiptDownload, setReceiptDownload] = useState<{
+    url: string
+    fileName: string
+    shareText: string
+  } | null>(null)
 
   // Load products
   useEffect(() => {
@@ -190,6 +203,25 @@ export default function Sell() {
       unsub()
     }
   }, [activeStoreId])
+
+  useEffect(() => {
+    if (!lastReceipt) return
+
+    if (receiptDownload?.url) {
+      URL.revokeObjectURL(receiptDownload.url)
+    }
+
+    const built = buildReceiptPdf(lastReceipt)
+    setReceiptDownload(built)
+  }, [lastReceipt])
+
+  useEffect(() => {
+    return () => {
+      if (receiptDownload?.url) {
+        URL.revokeObjectURL(receiptDownload.url)
+      }
+    }
+  }, [receiptDownload])
 
   // Load customers
   useEffect(() => {
@@ -464,20 +496,69 @@ export default function Sell() {
     </body>
   </html>`
 
-      iframe.srcdoc = receiptHtml
-      document.body.appendChild(iframe)
+      iframe.onload = () => {
+        const frameWindow = iframe.contentWindow
+        if (frameWindow) {
+          frameWindow.focus()
+          frameWindow.print()
+        }
 
-      const frameWindow = iframe.contentWindow
-      if (frameWindow) {
-        frameWindow.focus()
-        frameWindow.print()
+        setTimeout(() => {
+          document.body.removeChild(iframe)
+        }, 500)
       }
 
-      setTimeout(() => {
-        document.body.removeChild(iframe)
-      }, 1000)
+      iframe.srcdoc = receiptHtml
+      document.body.appendChild(iframe)
     } catch (error) {
       console.error('[sell] Unable to print receipt', error)
+    }
+  }
+
+  function buildReceiptPdf(options: {
+    saleId: string
+    items: CartLine[]
+    totals: { subTotal: number; taxTotal: number; discount: number; total: number }
+    paymentMethod: PaymentMethod
+    discountInput: string
+  }) {
+    try {
+      const receiptDate = new Date().toLocaleString()
+      const lines: string[] = [
+        `Sale ID: ${options.saleId}`,
+        `Date: ${receiptDate}`,
+        `Payment: ${options.paymentMethod.replace('_', ' ')}`,
+        'Items:',
+      ]
+
+      options.items.forEach(item => {
+        const total = formatCurrency(item.price * item.qty)
+        lines.push(`• ${item.qty} x ${item.name} @ ${formatCurrency(item.price)} = ${total}`)
+      })
+
+      lines.push('Summary:')
+      lines.push(`Subtotal: ${formatCurrency(options.totals.subTotal)}`)
+      lines.push(`VAT / Tax: ${formatCurrency(options.totals.taxTotal)}`)
+      lines.push(
+        `Discount: ${options.discountInput ? options.discountInput : formatCurrency(options.totals.discount)}`,
+      )
+      lines.push(`Total: ${formatCurrency(options.totals.total)}`)
+
+      const pdfBytes = buildSimplePdf('Sale receipt', lines)
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+
+      const shareText = [
+        `Sale receipt (${receiptDate})`,
+        `Total: ${formatCurrency(options.totals.total)}`,
+        `Payment: ${options.paymentMethod.replace('_', ' ')}`,
+        `Items: ${options.items.length}`,
+      ].join('\n')
+
+      return { url, fileName: `${options.saleId}.pdf`, shareText }
+    } catch (error) {
+      console.error('[sell] Unable to build receipt PDF', error)
+      return null
     }
   }
 
@@ -785,6 +866,14 @@ export default function Sell() {
       })
 
       printReceipt({
+        saleId,
+        items: cartSnapshot,
+        totals,
+        paymentMethod,
+        discountInput,
+      })
+
+      setLastReceipt({
         saleId,
         items: cartSnapshot,
         totals,
@@ -1275,6 +1364,61 @@ export default function Sell() {
             <p className="sell-page__message sell-page__message--success">
               {successMessage}
             </p>
+          )}
+          {receiptDownload && lastReceipt && (
+            <div className="sell-page__receipt-actions" role="status">
+              <div className="sell-page__receipt-actions-row">
+                <a
+                  href={receiptDownload.url}
+                  download={receiptDownload.fileName}
+                  className="button button--ghost"
+                >
+                  Download PDF
+                </a>
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={() =>
+                    printReceipt({
+                      saleId: lastReceipt.saleId,
+                      items: lastReceipt.items,
+                      totals: lastReceipt.totals,
+                      paymentMethod: lastReceipt.paymentMethod,
+                      discountInput: lastReceipt.discountInput,
+                    })
+                  }
+                >
+                  Print again
+                </button>
+              </div>
+
+              <div className="sell-page__share-row">
+                <span>Share receipt:</span>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(receiptDownload.shareText)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  WhatsApp
+                </a>
+                <a
+                  href={`https://t.me/share/url?url=${encodeURIComponent(receiptDownload.url)}&text=${encodeURIComponent(
+                    receiptDownload.shareText,
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Telegram
+                </a>
+                <a
+                  href={`mailto:?subject=${encodeURIComponent('Sale receipt')}&body=${encodeURIComponent(
+                    `${receiptDownload.shareText}\n\nDownload: ${receiptDownload.url}`,
+                  )}`}
+                >
+                  Email
+                </a>
+              </div>
+            </div>
           )}
 
           <div className="sell-page__actions">
