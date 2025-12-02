@@ -1,5 +1,5 @@
 // src/components/SubscriptionBanner.tsx
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSubscriptionStatus } from '../hooks/useSubscriptionStatus'
 
@@ -7,13 +7,12 @@ type SubscriptionBannerProps = {
   subscription?: ReturnType<typeof useSubscriptionStatus>
 }
 
-function formatDaysRemaining(trialEndsAt: any): string | null {
+function formatDaysRemaining(trialEndsAt: any, nowMs: number): string | null {
   try {
     if (!trialEndsAt) return null
     const end =
       typeof trialEndsAt.toDate === 'function' ? trialEndsAt.toDate() : new Date(trialEndsAt)
-    const now = new Date()
-    const diffMs = end.getTime() - now.getTime()
+    const diffMs = end.getTime() - nowMs
     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
     if (!Number.isFinite(diffDays) || diffDays < 0) return null
     return `${diffDays} day${diffDays === 1 ? '' : 's'} remaining`
@@ -25,6 +24,12 @@ function formatDaysRemaining(trialEndsAt: any): string | null {
 export function SubscriptionBanner({ subscription }: SubscriptionBannerProps) {
   const navigate = useNavigate()
   const { loading, billing } = subscription ?? useSubscriptionStatus()
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000 * 60 * 60)
+    return () => window.clearInterval(id)
+  }, [])
 
   if (loading) return null
 
@@ -34,7 +39,7 @@ export function SubscriptionBanner({ subscription }: SubscriptionBannerProps) {
   // Only show banner when NOT active
   if (status === 'active') return null
 
-  const daysText = formatDaysRemaining(trialEndsAt)
+  const daysText = formatDaysRemaining(trialEndsAt, nowMs)
 
   let message: string
   if (status === 'trial') {
