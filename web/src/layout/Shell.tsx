@@ -214,29 +214,31 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         />
       )}
       <header className="shell__header">
-        <div className="shell__header-inner">
-          <div className="shell__brand">
-            <div className="shell__logo">Sedifex</div>
-            <span className="shell__tagline">Sell faster. Count smarter.</span>
-          </div>
+        <div className="shell__container">
+          <div className="shell__header-inner">
+            <div className="shell__brand">
+              <div className="shell__logo">Sedifex</div>
+              <span className="shell__tagline">Sell faster. Count smarter.</span>
+            </div>
 
-          <button
-            type="button"
-            className="shell__menu-toggle"
-            aria-expanded={isMenuOpen}
-            aria-controls="primary-nav"
-            onClick={() => setIsMenuOpen(open => !open)}
-          >
-            <span className="shell__menu-icon" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-            <span className="shell__menu-label">
-              {isMenuOpen ? 'Close' : 'Menu'}
-            </span>
-            <span className="shell__sr-only">Toggle navigation</span>
-          </button>
+            <button
+              type="button"
+              className="shell__menu-toggle"
+              aria-expanded={isMenuOpen}
+              aria-controls="primary-nav"
+              onClick={() => setIsMenuOpen(open => !open)}
+            >
+              <span className="shell__menu-icon" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <span className="shell__menu-label">
+                {isMenuOpen ? 'Close' : 'Menu'}
+              </span>
+              <span className="shell__sr-only">Toggle navigation</span>
+            </button>
+          </div>
 
           <div
             className={`shell__toolbar${
@@ -318,39 +320,45 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
         {showBillingNotice && billingNotice && (
           <div
-            className="shell__billing-banner"
-            role="status"
-            aria-live="polite"
+            className="shell__billing-banner-wrapper"
             data-tone={billingNotice.tone}
           >
-            <div>
-              <p className="shell__billing-title">
-                {billingNotice.title}
-              </p>
-              <p className="shell__billing-message">
-                {billingNotice.message}
-              </p>
-            </div>
-            <div className="shell__billing-actions">
-              <Link
-                className="button button--primary button--small"
-                to="/account"
-              >
-                Update payment
-              </Link>
-              <button
-                type="button"
-                className="button button--ghost button--small"
-                onClick={handleDismissBillingNotice}
-              >
-                Dismiss reminder
-              </button>
+            <div
+              className="shell__billing-banner shell__container"
+              role="status"
+              aria-live="polite"
+            >
+              <div>
+                <p className="shell__billing-title">
+                  {billingNotice.title}
+                </p>
+                <p className="shell__billing-message">
+                  {billingNotice.message}
+                </p>
+              </div>
+              <div className="shell__billing-actions">
+                <Link
+                  className="button button--primary button--small"
+                  to="/account"
+                >
+                  Update payment
+                </Link>
+                <button
+                  type="button"
+                  className="button button--ghost button--small"
+                  onClick={handleDismissBillingNotice}
+                >
+                  Dismiss reminder
+                </button>
+              </div>
             </div>
           </div>
         )}
       </header>
 
-      <main className="shell__main">{children}</main>
+      <main className="shell__main">
+        <div className="shell__container">{children}</div>
+      </main>
     </div>
   )
 }
