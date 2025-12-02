@@ -95,6 +95,41 @@ function getCustomerDisplayName(
   return '—'
 }
 
+function normalizePhoneNumberDigits(rawPhone?: string | null): string {
+  if (!rawPhone) return ''
+  const digits = rawPhone.replace(/[^\d]/g, '')
+  if (!digits) return ''
+
+  if (digits.startsWith('233')) {
+    const rest = digits.slice(3)
+    const trimmedRest = rest.startsWith('0') ? rest.slice(1) : rest
+    return `233${trimmedRest}`
+  }
+
+  if (digits.length === 10 && digits.startsWith('0')) {
+    return `233${digits.slice(1)}`
+  }
+
+  if (digits.length === 9) {
+    return `233${digits}`
+  }
+
+  return digits
+}
+
+function formatPhoneNumber(rawPhone?: string | null): string {
+  const normalized = normalizePhoneNumberDigits(rawPhone)
+  if (!normalized) return rawPhone?.trim() || ''
+
+  if (normalized.startsWith('233') && normalized.length === 12) {
+    const local = normalized.slice(3)
+    const formatted = `+233 ${local.slice(0, 2)} ${local.slice(2, 5)} ${local.slice(5)}`
+    return formatted.trim()
+  }
+
+  return `+${normalized}`
+}
+
 export default function Customers() {
   const { storeId: activeStoreId } = useActiveStore()
 
@@ -265,8 +300,16 @@ export default function Customers() {
     return customers.filter(c => {
       const name = getCustomerDisplayName(c).toLowerCase()
       const phone = (c.phone || '').toLowerCase()
+      const normalizedPhone = normalizePhoneNumberDigits(c.phone).toLowerCase()
+      const formattedPhone = formatPhoneNumber(c.phone).toLowerCase()
       const email = (c.email || '').toLowerCase()
-      return name.includes(q) || phone.includes(q) || email.includes(q)
+      return (
+        name.includes(q) ||
+        phone.includes(q) ||
+        normalizedPhone.includes(q) ||
+        formattedPhone.includes(q) ||
+        email.includes(q)
+      )
     })
   }, [customers, queryText])
 
@@ -284,7 +327,7 @@ export default function Customers() {
 
   const handleWhatsApp = useCallback(() => {
     if (!selectedCustomer || !selectedCustomer.phone) return
-    const digits = selectedCustomer.phone.replace(/[^\d]/g, '')
+    const digits = normalizePhoneNumberDigits(selectedCustomer.phone)
     const encodedText = encodeURIComponent(contactMessage || '')
     const href = digits
       ? `https://wa.me/${digits}?text=${encodedText}`
@@ -527,7 +570,7 @@ export default function Customers() {
                         <td className="customers-page__cell customers-page__cell--contact">
                           <span className="customers-page__mobile-label">Contact</span>
                           <div className="customers-page__cell-contact">
-                            <div>{c.phone || '—'}</div>
+                            <div>{formatPhoneNumber(c.phone) || '—'}</div>
                             <div className="table__secondary">{c.email || ''}</div>
                           </div>
                         </td>
@@ -566,7 +609,7 @@ export default function Customers() {
               <dl className="customers-page__detail-list">
                 <div>
                   <dt>Phone</dt>
-                  <dd>{selectedCustomer.phone || '—'}</dd>
+                  <dd>{formatPhoneNumber(selectedCustomer.phone) || '—'}</dd>
                 </div>
                 <div>
                   <dt>Email</dt>
