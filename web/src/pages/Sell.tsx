@@ -1,10 +1,6 @@
 // web/src/pages/Sell.tsx
-import React, {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   addDoc,
   collection,
@@ -107,6 +103,7 @@ function formatCurrency(amount: number | null | undefined): string {
 export default function Sell() {
   const { storeId: activeStoreId } = useActiveStore()
   const user = useAuthUser()
+  const [searchParams] = useSearchParams()
 
   const [products, setProducts] = useState<Product[]>([])
   const [searchText, setSearchText] = useState('')
@@ -133,6 +130,7 @@ export default function Sell() {
   const [lastCameraScanAt, setLastCameraScanAt] = useState<number | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const scannerControlsRef = useRef<{ stop: () => void } | null>(null)
+  const appliedCustomerFromParams = useRef<string | null>(null)
 
   // 🔹 Customer selection
   const [customerMode, setCustomerMode] = useState<CustomerMode>('walk_in')
@@ -291,6 +289,24 @@ export default function Sell() {
       unsub()
     }
   }, [activeStoreId])
+
+  const initialCustomerId = searchParams.get('customerId')
+
+  useEffect(() => {
+    if (!initialCustomerId) return
+
+    if (appliedCustomerFromParams.current === initialCustomerId) return
+
+    const match = allCustomers.find(customer => customer.id === initialCustomerId)
+    if (!match) return
+
+    setCustomerMode('named')
+    setSelectedCustomerId(match.id)
+    setCustomerNameInput(match.name)
+    setCustomerPhoneInput(match.phone ?? '')
+    setCustomerSearchTerm(match.name)
+    appliedCustomerFromParams.current = initialCustomerId
+  }, [initialCustomerId, allCustomers])
 
   const customerResults = useMemo(() => {
     if (customerMode !== 'named') return []

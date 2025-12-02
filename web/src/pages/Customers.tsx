@@ -13,7 +13,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { Timestamp } from 'firebase/firestore'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Customers.css'
@@ -189,8 +189,27 @@ function buildCsvValue(value: string): string {
   return value
 }
 
+function normalizePhoneNumber(input: string): string {
+  const trimmed = input.trim()
+  if (!trimmed) return ''
+
+  const hasPlusPrefix = trimmed.startsWith('+')
+  const digits = trimmed.replace(/\D/g, '')
+  const withoutLeadingZeros = digits.replace(/^0+/, '')
+
+  if (!withoutLeadingZeros) return ''
+
+  return hasPlusPrefix ? `+${withoutLeadingZeros}` : withoutLeadingZeros
+}
+
+function buildPhoneKey(value: string | null | undefined): string {
+  if (!value) return ''
+  return normalizePhoneNumber(value).replace(/\D/g, '')
+}
+
 export default function Customers() {
   const { storeId: activeStoreId } = useActiveStore()
+  const navigate = useNavigate()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -518,6 +537,35 @@ export default function Customers() {
     ? customerStats[selectedCustomerId] ?? { visits: 0, totalSpend: 0, lastVisit: null }
     : { visits: 0, totalSpend: 0, lastVisit: null }
 
+  const normalizedSelectedPhone = selectedCustomer?.phone
+    ? normalizePhoneNumber(selectedCustomer.phone)
+    : ''
+  const selectedCustomerPhoneForDisplay = normalizedSelectedPhone || selectedCustomer?.phone || ''
+  const whatsappLink = normalizedSelectedPhone
+    ? `https://wa.me/${normalizedSelectedPhone.replace(/^\+/, '')}`
+    : ''
+  const telegramLink = normalizedSelectedPhone
+    ? `https://t.me/${normalizedSelectedPhone.startsWith('+') ? normalizedSelectedPhone : `+${normalizedSelectedPhone}`}`
+    : ''
+  const emailLink = selectedCustomer?.email?.trim()
+    ? `mailto:${selectedCustomer.email.trim()}`
+    : ''
+
+  function openExternal(link: string | null) {
+    if (!link) return
+    window.open(link, '_blank', 'noreferrer')
+  }
+
+  function handleStartSale() {
+    if (!selectedCustomerId) return
+    navigate(`/sell?customerId=${encodeURIComponent(selectedCustomerId)}`)
+  }
+
+  function handleViewActivities() {
+    if (!selectedCustomerId) return
+    navigate('/activity')
+  }
+
   function resetForm() {
     setName('')
     setPhone('')
@@ -543,13 +591,14 @@ export default function Customers() {
     setError(null)
     try {
       const parsedTags = normalizeTags(tagsInput)
+      const normalizedPhone = normalizePhoneNumber(phone)
       if (editingCustomerId) {
         const updatePayload: Record<string, unknown> = {
           name: trimmedName,
           updatedAt: serverTimestamp(),
           storeId: activeStoreId,
         }
-        updatePayload.phone = phone.trim() ? phone.trim() : null
+        updatePayload.phone = normalizedPhone ? normalizedPhone : null
         updatePayload.email = email.trim() ? email.trim() : null
         updatePayload.notes = notes.trim() ? notes.trim() : null
         updatePayload.tags = parsedTags
@@ -560,7 +609,7 @@ export default function Customers() {
         await addDoc(collection(db, 'customers'), {
           name: trimmedName,
           storeId: activeStoreId,
-          ...(phone.trim() ? { phone: phone.trim() } : {}),
+          ...(normalizedPhone ? { phone: normalizedPhone } : {}),
           ...(email.trim() ? { email: email.trim() } : {}),
           ...(notes.trim() ? { notes: notes.trim() } : {}),
           ...(parsedTags.length ? { tags: parsedTags } : {}),
@@ -637,7 +686,7 @@ export default function Customers() {
           existingByEmail.set(customer.email.toLowerCase(), customer.id)
         }
         if (customer.phone) {
-          existingByPhone.set(customer.phone.replace(/\D/g, ''), customer.id)
+          existingByPhone.set(buildPhoneKey(customer.phone), customer.id)
         }
       })
 
@@ -654,12 +703,12 @@ export default function Customers() {
         const rawTags = tagsIndex >= 0 ? row[tagsIndex] ?? '' : ''
         const parsedTags = tagsIndex >= 0 ? normalizeTags(rawTags) : undefined
 
-        const normalizedPhone = rawPhone.replace(/\D/g, '')
+        const normalizedPhone = normalizePhoneNumber(rawPhone)
         const emailKey = rawEmail.toLowerCase()
         const existingId = emailKey
           ? existingByEmail.get(emailKey)
           : normalizedPhone
-          ? existingByPhone.get(normalizedPhone)
+          ? existingByPhone.get(buildPhoneKey(normalizedPhone))
           : undefined
 
         if (existingId) {
@@ -669,7 +718,7 @@ export default function Customers() {
             storeId: activeStoreId,
           }
           if (phoneIndex >= 0) {
-            payload.phone = rawPhone ? rawPhone : null
+            payload.phone = normalizedPhone ? normalizedPhone : null
           }
           if (emailIndex >= 0) {
             payload.email = rawEmail ? rawEmail : null
@@ -688,8 +737,8 @@ export default function Customers() {
             createdAt: serverTimestamp(),
             storeId: activeStoreId,
           }
-          if (rawPhone) {
-            payload.phone = rawPhone
+          if (normalizedPhone) {
+            payload.phone = normalizedPhone
           }
           if (rawEmail) {
             payload.email = rawEmail
@@ -1084,7 +1133,7 @@ export default function Customers() {
                 <div>
                   <dt>Contact</dt>
                   <dd>
-                    {selectedCustomer.phone ? <div>{selectedCustomer.phone}</div> : null}
+                    {selectedCustomerPhoneForDisplay ? <div>{selectedCustomerPhoneForDisplay}</div> : null}
                     {selectedCustomer.email ? <div>{selectedCustomer.email}</div> : null}
                     {!selectedCustomer.phone && !selectedCustomer.email ? '—' : null}
                   </dd>
@@ -1124,6 +1173,65 @@ export default function Customers() {
                   <dd>{formatDate(selectedCustomerStats.lastVisit)}</dd>
                 </div>
               </dl>
+
+              <div className="customers-page__action-grid">
+                <div className="customers-page__action-card">
+                  <h4 className="customers-page__action-title">Engage</h4>
+                  <p className="customers-page__action-hint">Send a quick message right from this profile.</p>
+                  <div className="customers-page__action-buttons">
+                    <button
+                      type="button"
+                      className="button button--outline button--small"
+                      disabled={!whatsappLink}
+                      onClick={() => openExternal(whatsappLink || null)}
+                    >
+                      Send WhatsApp
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--outline button--small"
+                      disabled={!telegramLink}
+                      onClick={() => openExternal(telegramLink || null)}
+                    >
+                      Message on Telegram
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      disabled={!emailLink}
+                      onClick={() => openExternal(emailLink || null)}
+                    >
+                      Send email
+                    </button>
+                  </div>
+                  {!whatsappLink && !telegramLink && !emailLink ? (
+                    <p className="customers-page__action-empty">Add contact info to reach out from here.</p>
+                  ) : null}
+                </div>
+
+                <div className="customers-page__action-card">
+                  <h4 className="customers-page__action-title">Shortcuts</h4>
+                  <p className="customers-page__action-hint">Jump to related workflows for this customer.</p>
+                  <div className="customers-page__action-buttons">
+                    <button
+                      type="button"
+                      className="button button--primary button--small"
+                      onClick={handleStartSale}
+                      disabled={!selectedCustomerId}
+                    >
+                      Sell to customer
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={handleViewActivities}
+                      disabled={!selectedCustomerId}
+                    >
+                      View activity feed
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               <div className="customers-page__history">
                 <h4>Recent transactions</h4>
