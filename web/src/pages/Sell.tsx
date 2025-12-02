@@ -7,6 +7,7 @@ import React, {
 } from 'react'
 import {
   collection,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -17,6 +18,14 @@ import { db, functions } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { normalizeBarcode } from '../utils/barcode'
+import {
+  CUSTOMER_CACHE_LIMIT,
+  PRODUCT_CACHE_LIMIT,
+  loadCachedCustomers,
+  loadCachedProducts,
+  saveCachedCustomers,
+  saveCachedProducts,
+} from '../utils/offlineCache'
 import './Sell.css'
 
 import { BrowserMultiFormatReader } from '@zxing/browser'
@@ -130,38 +139,93 @@ export default function Sell() {
 
   // Load products
   useEffect(() => {
+    let cancelled = false
+
     if (!activeStoreId) {
       setProducts([])
-      return
+      return () => {
+        cancelled = true
+      }
     }
+
+    // 1) Seed from offline cache for instant results / offline support
+    loadCachedProducts<Product>({ storeId: activeStoreId })
+      .then(cached => {
+        if (cancelled || !cached.length) return
+        setProducts(
+          cached
+            .map((item, index) =>
+              mapFirestoreProduct((item as any).id ?? `cached-${index}`, item as any),
+            )
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+        )
+      })
+      .catch(err => {
+        console.warn('[sell] Failed to load cached products', err)
+      })
 
     const q = query(
       collection(db, 'products'),
       where('storeId', '==', activeStoreId),
       orderBy('name', 'asc'),
+      limit(PRODUCT_CACHE_LIMIT),
     )
 
     const unsub = onSnapshot(q, snap => {
       const rows: Product[] = snap.docs.map(d =>
         mapFirestoreProduct(d.id, d.data()),
       )
+
+      saveCachedProducts(
+        rows.map(r => ({ ...r, id: undefined as any })),
+        { storeId: activeStoreId },
+      ).catch(err => {
+        console.warn('[sell] Failed to cache products', err)
+      })
       setProducts(rows)
     })
 
-    return () => unsub()
+    return () => {
+      cancelled = true
+      unsub()
+    }
   }, [activeStoreId])
 
   // Load customers
   useEffect(() => {
+    let cancelled = false
+
     if (!activeStoreId) {
       setAllCustomers([])
-      return
+      return () => {
+        cancelled = true
+      }
     }
+
+    // 1) Try cached customers first
+    loadCachedCustomers<Customer>({ storeId: activeStoreId })
+      .then(cached => {
+        if (cancelled || !cached.length) return
+        setAllCustomers(
+          cached
+            .map((item, index) => ({
+              id: (item as any).id ?? `cached-${index}`,
+              name: item.name,
+              phone: item.phone ?? null,
+              email: item.email ?? undefined,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+        )
+      })
+      .catch(err => {
+        console.warn('[sell] Failed to load cached customers', err)
+      })
 
     const q = query(
       collection(db, 'customers'),
       where('storeId', '==', activeStoreId),
       orderBy('name', 'asc'),
+      limit(CUSTOMER_CACHE_LIMIT),
     )
 
     const unsub = onSnapshot(q, snap => {
@@ -176,10 +240,20 @@ export default function Sell() {
             typeof data.email === 'string' ? data.email : undefined,
         }
       })
+
+      saveCachedCustomers(
+        rows.map(r => ({ ...r, id: undefined as any })),
+        { storeId: activeStoreId },
+      ).catch(err => {
+        console.warn('[sell] Failed to cache customers', err)
+      })
       setAllCustomers(rows)
     })
 
-    return () => unsub()
+    return () => {
+      cancelled = true
+      unsub()
+    }
   }, [activeStoreId])
 
   const customerResults = useMemo(() => {
