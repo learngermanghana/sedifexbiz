@@ -623,9 +623,18 @@ export function useStoreMetrics(): UseStoreMetricsResult {
 
   const lowStock = products
     .map(product => {
-      const stock = product.stockCount ?? 0
-      const minStock = product.minStock ?? 5
+      const stock =
+        typeof product.stockCount === 'number' && Number.isFinite(product.stockCount)
+          ? product.stockCount
+          : null
+      const minStock =
+        typeof product.minStock === 'number' && Number.isFinite(product.minStock)
+          ? product.minStock
+          : 5
+
+      if (stock === null) return null
       if (stock > minStock) return null
+
       const severity: InventorySeverity = stock <= 0 ? 'critical' : stock <= minStock ? 'warning' : 'info'
       const status = stock <= 0 ? 'Out of stock' : `Low (${stock} remaining)`
       return {
@@ -637,7 +646,10 @@ export function useStoreMetrics(): UseStoreMetricsResult {
     })
     .filter(Boolean) as InventoryAlert[]
 
-  const outOfStockCount = products.filter(product => (product.stockCount ?? 0) <= 0).length
+  const outOfStockCount = products.filter(product => {
+    if (typeof product.stockCount !== 'number' || !Number.isFinite(product.stockCount)) return false
+    return product.stockCount <= 0
+  }).length
 
   const hourBuckets = currentSales.reduce((acc, sale) => {
     const created = asDate(sale.createdAt)
