@@ -88,12 +88,16 @@ function getErrorMessage(error: unknown): string {
       case 'auth/wrong-password':
       case 'auth/user-not-found':
         return 'Incorrect email or password.'
+      case 'auth/invalid-email':
+        return 'Enter a valid email address.'
       case 'auth/too-many-requests':
         return 'Too many attempts. Please wait a moment and try again.'
       case 'auth/network-request-failed':
         return 'Network error. Please check your connection and try again.'
       case 'auth/email-already-in-use':
         return 'An account already exists with this email.'
+      case 'auth/missing-password':
+        return 'Enter your password to continue.'
       case 'auth/weak-password':
         return 'Please choose a stronger password. It must be at least 8 characters and include uppercase, lowercase, number, and symbol.'
       case 'functions/permission-denied': {
@@ -115,6 +119,18 @@ function getErrorMessage(error: unknown): string {
   }
 
   return 'Something went wrong. Please try again.'
+}
+
+function getAuthErrorMessage(error: unknown, mode: AuthMode): string {
+  const baseMessage = getErrorMessage(error)
+
+  if (baseMessage && baseMessage !== 'Something went wrong. Please try again.') {
+    return baseMessage
+  }
+
+  return mode === 'login'
+    ? 'We couldn’t sign you in. Please double-check your email and password and try again.'
+    : 'We couldn’t create your account. Please review your details and try again.'
 }
 
 function formatTrialReminder(
@@ -362,7 +378,7 @@ export default function AuthPage() {
           }
         } catch (error) {
           console.warn('[auth] Failed to resolve workspace access', error)
-          setStatus({ tone: 'error', message: getErrorMessage(error) })
+          setStatus({ tone: 'error', message: getAuthErrorMessage(error, 'login') })
           return
         }
       } else {
@@ -395,7 +411,7 @@ export default function AuthPage() {
           initializedStoreId = initialization.storeId
         } catch (error) {
           console.warn('[signup] Failed to initialize workspace', error)
-          setStatus({ tone: 'error', message: getErrorMessage(error) })
+          setStatus({ tone: 'error', message: getAuthErrorMessage(error, 'signup') })
           await cleanupFailedSignup(nextUser)
           return
         }
@@ -406,7 +422,7 @@ export default function AuthPage() {
           resolution = await resolveStoreAccess(initializedStoreId)
         } catch (error) {
           console.warn('[signup] Failed to resolve workspace access', error)
-          setStatus({ tone: 'error', message: getErrorMessage(error) })
+          setStatus({ tone: 'error', message: getAuthErrorMessage(error, 'signup') })
           await cleanupFailedSignup(nextUser)
           return
         }
@@ -493,7 +509,7 @@ export default function AuthPage() {
       setTown('')
       setAddress('')
     } catch (err: unknown) {
-      setStatus({ tone: 'error', message: getErrorMessage(err) })
+      setStatus({ tone: 'error', message: getAuthErrorMessage(err, mode) })
     }
   }
 
