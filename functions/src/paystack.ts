@@ -48,17 +48,24 @@ type PaystackEvent = {
 /**
  * Config
  */
-const PAYSTACK_SECRET: string =
-  defineString('PAYSTACK_SECRET_KEY').value() || process.env.PAYSTACK_SECRET_KEY || ''
-const PAYSTACK_PUBLIC: string =
-  defineString('PAYSTACK_PUBLIC_KEY').value() || process.env.PAYSTACK_PUBLIC_KEY || ''
-const APP_BASE_URL: string =
-  defineString('APP_BASE_URL').value() || process.env.APP_BASE_URL || ''
+const PAYSTACK_SECRET = defineString('PAYSTACK_SECRET_KEY')
+const PAYSTACK_PUBLIC = defineString('PAYSTACK_PUBLIC_KEY')
+const APP_BASE_URL = defineString('APP_BASE_URL')
 
-if (!PAYSTACK_SECRET) {
-  functions.logger.warn(
-    'Paystack secret not set. Run: firebase functions:config:set paystack.secret="sk_live_xxx"',
-  )
+let paystackConfigLogged = false
+function getPaystackConfig() {
+  const secret = PAYSTACK_SECRET.value() || process.env.PAYSTACK_SECRET_KEY || ''
+  const publicKey = PAYSTACK_PUBLIC.value() || process.env.PAYSTACK_PUBLIC_KEY || ''
+  const appBaseUrl = APP_BASE_URL.value() || process.env.APP_BASE_URL || ''
+
+  if (!paystackConfigLogged && !secret) {
+    functions.logger.warn(
+      'Paystack secret not set. Run: firebase functions:config:set paystack.secret="sk_live_xxx"',
+    )
+    paystackConfigLogged = true
+  }
+
+  return { secret, publicKey, appBaseUrl }
 }
 
 /**
@@ -92,7 +99,10 @@ function assertAuthenticated(context: functions.https.CallableContext) {
 export const createCheckout = functions.https.onCall(async (data, context) => {
   assertAuthenticated(context)
 
-  if (!PAYSTACK_SECRET) {
+  const { secret: paystackSecret, publicKey: paystackPublicKey, appBaseUrl } =
+    getPaystackConfig()
+
+  if (!paystackSecret) {
     throw new functions.https.HttpsError(
       'failed-precondition',
       'Paystack secret is not configured',
@@ -112,7 +122,7 @@ export const createCheckout = functions.https.onCall(async (data, context) => {
   const redirectUrlRaw =
     typeof data?.redirectUrl === 'string' ? data.redirectUrl.trim() : ''
   const redirectUrl =
-    redirectUrlRaw || (APP_BASE_URL ? `${APP_BASE_URL}/billing/verify` : undefined)
+    redirectUrlRaw || (appBaseUrl ? `${appBaseUrl}/billing/verify` : undefined)
 
   const metadataIn =
     data?.metadata && typeof data.metadata === 'object'
@@ -152,7 +162,7 @@ export const createCheckout = functions.https.onCall(async (data, context) => {
   const resp = await fetch('https://api.paystack.co/transaction/initialize', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${PAYSTACK_SECRET}`,
+      Authorization: `Bearer ${paystackSecret}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
@@ -194,7 +204,7 @@ export const createCheckout = functions.https.onCall(async (data, context) => {
     ok: true,
     authorizationUrl: authUrl,
     reference,
-    publicKey: PAYSTACK_PUBLIC || null,
+    publicKey: paystackPublicKey || null,
   }
 })
 
@@ -254,7 +264,7 @@ export const paystackWebhook = functions.https.onRequest(
       }
 
       const signature = req.get('x-paystack-signature') || ''
-      const secret = PAYSTACK_SECRET
+      const { secret } = getPaystackConfig()
       if (!secret) {
         res.status(500).send('Paystack secret not configured')
         return
