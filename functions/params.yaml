@@ -9,6 +9,12 @@ params:
   - name: PAYSTACK_CURRENCY
     type: string
     default: GHS
+  - name: PAYSTACK_PUBLIC_KEY
+    type: string
+    default: ""
+  - name: APP_BASE_URL
+    type: string
+    default: ""
   - name: SHEETS_SERVICE_ACCOUNT
     type: string
     default: ""
@@ -16,5 +22,8 @@ params:
     type: string
     default: ""
   - name: SHEETS_RANGE
+    type: string
+    default: ""
+  - name: REPORTS_SHEET_ID
     type: string
     default: ""
