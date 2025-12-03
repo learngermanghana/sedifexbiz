@@ -36,17 +36,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.exportDailyStoreReports = void 0;
 const functions = __importStar(require("firebase-functions/v1"));
 const params_1 = require("firebase-functions/params");
-const googleapis_1 = require("googleapis");
 const firestore_1 = require("./firestore");
 const REPORTS_SHEET_ID = (0, params_1.defineString)('REPORTS_SHEET_ID');
 function formatDateForSheet(date) {
     return date.toISOString().split('T')[0];
 }
-async function getAuthClient() {
-    const auth = new googleapis_1.google.auth.GoogleAuth({
+async function getSheetsClient() {
+    const { google } = await Promise.resolve().then(() => __importStar(require('googleapis')));
+    const auth = new google.auth.GoogleAuth({
         scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
-    return auth.getClient();
+    return google.sheets({ version: 'v4', auth: await auth.getClient() });
 }
 async function buildStoreRows() {
     const today = formatDateForSheet(new Date());
@@ -67,12 +67,11 @@ exports.exportDailyStoreReports = functions.pubsub
         functions.logger.error('Missing REPORTS_SHEET_ID config; skipping export');
         return;
     }
-    const [authClient, rows] = await Promise.all([getAuthClient(), buildStoreRows()]);
+    const [sheets, rows] = await Promise.all([getSheetsClient(), buildStoreRows()]);
     if (!rows.length) {
         functions.logger.info('No stores found to export');
         return;
     }
-    const sheets = googleapis_1.google.sheets({ version: 'v4', auth: authClient });
     const header = ['Date', 'Store ID', 'Display Name', 'Email'];
     const values = [header, ...rows];
     await sheets.spreadsheets.values.append({
