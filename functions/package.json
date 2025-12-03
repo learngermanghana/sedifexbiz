@@ -6,7 +6,7 @@
   },
   "main": "lib/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "rimraf lib && tsc",
     "clean": "rimraf lib",
     "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions --project sedifex-dev"
