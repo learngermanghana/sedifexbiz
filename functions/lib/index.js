@@ -986,11 +986,20 @@ const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 const PAYSTACK_SECRET_KEY = (0, params_1.defineString)('PAYSTACK_SECRET_KEY');
 const PAYSTACK_STANDARD_PLAN_CODE = (0, params_1.defineString)('PAYSTACK_STANDARD_PLAN_CODE');
 const PAYSTACK_CURRENCY = (0, params_1.defineString)('PAYSTACK_CURRENCY');
+function safeParamValue(param) {
+    try {
+        return param.value();
+    }
+    catch (error) {
+        console.log('[paystack] param not set; falling back to env', { error });
+        return '';
+    }
+}
 let paystackConfigLogged = false;
 function getPaystackConfig() {
-    const secret = PAYSTACK_SECRET_KEY.value() || process.env.PAYSTACK_SECRET_KEY || '';
-    const plan = PAYSTACK_STANDARD_PLAN_CODE.value() || process.env.PAYSTACK_STANDARD_PLAN_CODE || '';
-    const currency = PAYSTACK_CURRENCY.value() || process.env.PAYSTACK_CURRENCY || 'GHS';
+    const secret = safeParamValue(PAYSTACK_SECRET_KEY) || process.env.PAYSTACK_SECRET_KEY || '';
+    const plan = safeParamValue(PAYSTACK_STANDARD_PLAN_CODE) || process.env.PAYSTACK_STANDARD_PLAN_CODE || '';
+    const currency = safeParamValue(PAYSTACK_CURRENCY) || process.env.PAYSTACK_CURRENCY || 'GHS';
     if (!paystackConfigLogged) {
         console.log('[paystack] startup config', {
             hasSecret: !!secret,
