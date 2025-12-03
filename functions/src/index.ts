@@ -4,6 +4,7 @@ import * as admin from 'firebase-admin'
 import * as crypto from 'crypto'
 import { defineString } from 'firebase-functions/params'
 export { generateAiAdvice } from './aiAdvisor'
+export { exportDailyStoreReports } from './reports'
 
 /**
  * SINGLE FIRESTORE INSTANCE
