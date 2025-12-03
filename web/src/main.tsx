@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { createHashRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 
 import App from './App'
 import ShellLayout from './layout/ShellLayout'
@@ -30,7 +30,7 @@ import RefundPage from './pages/legal/RefundPage'
 
 import { ToastProvider } from './components/ToastProvider'
 
-const router = createHashRouter([
+const router = createBrowserRouter([
   {
     path: '/',
     element: <App />,
