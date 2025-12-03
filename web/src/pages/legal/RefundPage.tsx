@@ -12,136 +12,238 @@ export default function RefundPage() {
       </p>
 
       <h1 className="mb-2 text-3xl font-bold text-slate-900">
-        Refund &amp; Cancellation Policy
+        Subscription &amp; Refund Policy
       </h1>
 
       <p className="mb-8 text-sm text-slate-500">Last updated: {today}</p>
 
-      <p>
-        This policy explains how billing, trials, renewals and refunds work for
-        <strong> Sedifex</strong> subscriptions. Sedifex is owned and operated by{" "}
+      <p className="text-sm text-slate-500">
+        This Subscription &amp; Refund Policy explains how billing, renewal and
+        refunds work for your use of <strong>Sedifex</strong>, the POS,
+        inventory and store-listing system operated by{" "}
         <strong>Learn Language Education Academy</strong>.
       </p>
 
-      {/* ----------------------- SECTION 1 ----------------------- */}
+      <p className="mt-4 rounded-md bg-slate-50 p-3 text-xs text-slate-500">
+        This policy is intended as a clear explanation of how payments work for
+        Sedifex. It may not cover every situation under local law in every
+        country. If you need specific legal advice, please consult a qualified
+        professional in your jurisdiction.
+      </p>
+
+      {/* ------------------------- SECTION 1 ------------------------- */}
       <section className="mt-8">
-        <h2 className="text-xl font-semibold">1. Subscription model</h2>
+        <h2 className="text-xl font-semibold">1. Service description</h2>
+
+        <p>Sedifex provides:</p>
+
         <ul>
           <li>
-            Sedifex is a subscription service. Workspaces are billed on a{" "}
-            <strong>monthly</strong> basis by default.
+            A POS and inventory management system for small businesses,
+            primarily in West Africa.
           </li>
           <li>
-            Some plans offer <strong>yearly</strong> billing at a discounted rate.
-            Yearly plans are paid upfront for the full period.
+            A public store listing on <code>stores.sedifex.com</code>, where
+            your products and services are displayed with your business contact
+            details.
           </li>
           <li>
-            Payments are processed securely via third-party providers like Paystack.
-            Subscriptions renew automatically unless cancelled.
+            Automatic syncing: updates you make in the app (such as adding or
+            editing products or services) appear on{" "}
+            <code>stores.sedifex.com</code>.
+          </li>
+          <li>
+            Weekly reports sent to you so you can review your data and store
+            performance.
           </li>
         </ul>
-      </section>
 
-      {/* ----------------------- SECTION 2 ----------------------- */}
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold">2. Free trial</h2>
-        <ul>
-          <li>
-            New workspaces receive a <strong>trial period</strong> to explore
-            features and determine whether Sedifex meets their needs.
-          </li>
-          <li>You may cancel anytime during the trial without being charged.</li>
-          <li>
-            By activating a subscription (or allowing the trial to convert), you
-            confirm that you have evaluated the product and wish to continue.
-          </li>
-        </ul>
-      </section>
-
-      {/* ----------------------- SECTION 3 ----------------------- */}
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold">3. No-refund policy</h2>
         <p>
-          Because we provide a full trial period before billing starts, all{" "}
-          <strong>payments are final and non-refundable</strong>.
-        </p>
-
-        <ul>
-          <li>No refunds for partial months or unused time.</li>
-          <li>No refunds if you forget to cancel before renewal.</li>
-          <li>No refunds for downgrades mid-cycle; changes apply next period.</li>
-        </ul>
-
-        <p className="mt-3 text-sm text-slate-500">
-          In rare cases involving technical billing errors (e.g., duplicate
-          charges), we will work with our payment processor to correct the issue.
-          This is at our discretion and does not apply to standard renewals.
+          Sedifex itself <strong>does not collect or hold customer payments</strong> on your
+          behalf. Customers pay you directly using your own payment methods and
+          channels.
         </p>
       </section>
 
-      {/* ----------------------- SECTION 4 ----------------------- */}
+      {/* ------------------------- SECTION 2 ------------------------- */}
       <section className="mt-8">
-        <h2 className="text-xl font-semibold">4. Cancelling your subscription</h2>
+        <h2 className="text-xl font-semibold">
+          2. Subscription plans and billing
+        </h2>
+
         <ul>
           <li>
-            You may cancel anytime from your Sedifex workspace or by emailing{" "}
-            <a href="mailto:sedifexbiz@gmail.com">sedifexbiz@gmail.com</a>.
+            Sedifex is offered on a <strong>monthly</strong> or{" "}
+            <strong>yearly</strong> subscription basis.
           </li>
           <li>
-            After cancellation, your subscription remains active until the end of
-            the current billing period.
+            Subscription fees are charged <strong>in advance</strong> for each
+            billing period.
           </li>
           <li>
-            Your workspace loses access to paid features once the billing cycle
-            ends.
+            We currently process subscription payments using{" "}
+            <strong>Paystack</strong> and may add other payment providers in the
+            future.
+          </li>
+          <li>
+            By providing your payment details, you authorise us and our payment
+            provider to charge the subscription fee for each billing period.
           </li>
         </ul>
       </section>
 
-      {/* ----------------------- SECTION 5 ----------------------- */}
+      {/* ------------------------- SECTION 3 ------------------------- */}
       <section className="mt-8">
-        <h2 className="text-xl font-semibold">5. Data after cancellation</h2>
-        <p>After your subscription ends:</p>
-        <ul>
-          <li>
-            We may retain data briefly for reactivation or compliance purposes.
-          </li>
-          <li>
-            You may request export of important data before cancellation (subject
-            to technical limitations).
-          </li>
-          <li>
-            We may delete data for long-inactive workspaces following our Privacy
-            Policy.
-          </li>
-        </ul>
-      </section>
+        <h2 className="text-xl font-semibold">3. No refund policy</h2>
 
-      {/* ----------------------- SECTION 6 ----------------------- */}
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold">6. Changes to this policy</h2>
         <p>
-          We may update this Refund &amp; Cancellation Policy as needed. When
-          updates occur, we will revise the date above and may notify you via email
-          or in-app messages.
+          Because Sedifex provides immediate access to digital services,
+          dashboards and tools once payment is confirmed:
         </p>
-      </section>
-
-      {/* ----------------------- SECTION 7 ----------------------- */}
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold">7. Contact</h2>
-        <p>If you have questions or believe there has been a billing error:</p>
 
         <ul>
           <li>
-            <strong>Email:</strong>{" "}
-            <a href="mailto:sedifexbiz@gmail.com">sedifexbiz@gmail.com</a>
+            <strong>All subscription payments to Sedifex are non-refundable.</strong>
           </li>
           <li>
-            <strong>Business name:</strong> Learn Language Education Academy
+            We do not offer full or partial refunds if you stop using the
+            service during a billing period.
           </li>
           <li>
-            <strong>Product:</strong> Sedifex
+            We do not refund payments if you forget to cancel before the renewal
+            date.
+          </li>
+          <li>
+            We do not refund payments because of changes in your business
+            circumstances.
+          </li>
+        </ul>
+
+        <p>
+          Please choose your plan and billing period carefully before paying.
+          If applicable law in your country gives you additional mandatory
+          rights, we will comply with those legal requirements.
+        </p>
+      </section>
+
+      {/* ------------------------- SECTION 4 ------------------------- */}
+      <section className="mt-8">
+        <h2 className="text-xl font-semibold">4. Billing errors</h2>
+
+        <p>
+          While payments are non-refundable in normal situations, we will
+          investigate:
+        </p>
+
+        <ul>
+          <li>Duplicate payments for the same billing period.</li>
+          <li>Obvious technical errors in charging your account.</li>
+        </ul>
+
+        <p>
+          If we confirm that a payment was taken in error (for example, a
+          duplicate charge), we will correct the issue. This may be through a
+          refund or a credit on your account, depending on the circumstances and
+          the rules of the payment provider.
+        </p>
+
+        <p>
+          If you believe there has been a billing error, please contact us as
+          soon as possible at <strong>sedifexbiz@gmail.com</strong> with:
+        </p>
+
+        <ul>
+          <li>Your name and business name.</li>
+          <li>The date and amount of the payment.</li>
+          <li>
+            Any Paystack reference or screenshot that can help us locate the
+            transaction.
+          </li>
+        </ul>
+      </section>
+
+      {/* ------------------------- SECTION 5 ------------------------- */}
+      <section className="mt-8">
+        <h2 className="text-xl font-semibold">5. Renewal and cancellation</h2>
+
+        <ul>
+          <li>
+            Your subscription may renew automatically at the end of each billing
+            period using the same payment method, unless you cancel in advance.
+          </li>
+          <li>
+            You can request cancellation at any time by emailing{" "}
+            <strong>sedifexbiz@gmail.com</strong> or using any cancellation
+            option provided inside the app.
+          </li>
+          <li>
+            Cancelling stops <strong>future</strong> renewals only; it does not
+            trigger a refund for the current billing period.
+          </li>
+          <li>
+            After cancellation, you retain access to Sedifex until the end of
+            the period you have already paid for. After that, your workspace may
+            lose access to paid features.
+          </li>
+        </ul>
+      </section>
+
+      {/* ------------------------- SECTION 6 ------------------------- */}
+      <section className="mt-8">
+        <h2 className="text-xl font-semibold">
+          6. Account closure and data deletion
+        </h2>
+
+        <p>
+          If you want to completely close your account and request deletion of
+          your data, you can email <strong>sedifexbiz@gmail.com</strong>.
+        </p>
+
+        <ul>
+          <li>
+            We will delete or anonymise personal data and store data from our
+            systems, except where we are required to keep some information for
+            legal, tax, accounting or security reasons.
+          </li>
+          <li>
+            Once your data is deleted, it may not be possible to recover any of
+            your previous reports or records.
+          </li>
+        </ul>
+
+        <p>
+          For more information about how we handle your information, please see
+          our <strong>Privacy Policy</strong> at <code>/privacy</code>.
+        </p>
+      </section>
+
+      {/* ------------------------- SECTION 7 ------------------------- */}
+      <section className="mt-8">
+        <h2 className="text-xl font-semibold">7. Changes to this policy</h2>
+
+        <p>
+          We may update this Subscription &amp; Refund Policy from time to time.
+          When we do, we will update the “Last updated” date at the top of this
+          page and may provide an in-app or email notice for significant
+          changes.
+        </p>
+      </section>
+
+      {/* ------------------------- SECTION 8 ------------------------- */}
+      <section className="mt-8">
+        <h2 className="text-xl font-semibold">8. Contact us</h2>
+
+        <p>If you have any questions about this policy, please contact:</p>
+
+        <ul>
+          <li>
+            <strong>Email:</strong> sedifexbiz@gmail.com
+          </li>
+          <li>
+            <strong>Address:</strong> Kwamisa Street GA 5808547, Awoshie, Ghana
+          </li>
+          <li>
+            <strong>Owner:</strong> Learn Language Education Academy
           </li>
         </ul>
       </section>
