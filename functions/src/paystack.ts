@@ -53,11 +53,21 @@ const PAYSTACK_SECRET = defineString('PAYSTACK_SECRET_KEY')
 const PAYSTACK_PUBLIC = defineString('PAYSTACK_PUBLIC_KEY')
 const APP_BASE_URL = defineString('APP_BASE_URL')
 
+function safeParamValue(param: ReturnType<typeof defineString>) {
+  try {
+    return param.value()
+  } catch (error) {
+    functions.logger.debug('Param not set; falling back to env', { error })
+    return ''
+  }
+}
+
 let paystackConfigLogged = false
 function getPaystackConfig() {
-  const secret = PAYSTACK_SECRET.value() || process.env.PAYSTACK_SECRET_KEY || ''
-  const publicKey = PAYSTACK_PUBLIC.value() || process.env.PAYSTACK_PUBLIC_KEY || ''
-  const appBaseUrl = APP_BASE_URL.value() || process.env.APP_BASE_URL || ''
+  const secret = safeParamValue(PAYSTACK_SECRET) || process.env.PAYSTACK_SECRET_KEY || ''
+  const publicKey =
+    safeParamValue(PAYSTACK_PUBLIC) || process.env.PAYSTACK_PUBLIC_KEY || ''
+  const appBaseUrl = safeParamValue(APP_BASE_URL) || process.env.APP_BASE_URL || ''
 
   if (!paystackConfigLogged && !secret) {
     functions.logger.warn(

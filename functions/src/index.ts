@@ -1327,12 +1327,22 @@ const PAYSTACK_SECRET_KEY = defineString('PAYSTACK_SECRET_KEY')
 const PAYSTACK_STANDARD_PLAN_CODE = defineString('PAYSTACK_STANDARD_PLAN_CODE')
 const PAYSTACK_CURRENCY = defineString('PAYSTACK_CURRENCY')
 
+function safeParamValue(param: ReturnType<typeof defineString>) {
+  try {
+    return param.value()
+  } catch (error) {
+    console.log('[paystack] param not set; falling back to env', { error })
+    return ''
+  }
+}
+
 let paystackConfigLogged = false
 function getPaystackConfig() {
-  const secret = PAYSTACK_SECRET_KEY.value() || process.env.PAYSTACK_SECRET_KEY || ''
+  const secret = safeParamValue(PAYSTACK_SECRET_KEY) || process.env.PAYSTACK_SECRET_KEY || ''
   const plan =
-    PAYSTACK_STANDARD_PLAN_CODE.value() || process.env.PAYSTACK_STANDARD_PLAN_CODE || ''
-  const currency = PAYSTACK_CURRENCY.value() || process.env.PAYSTACK_CURRENCY || 'GHS'
+    safeParamValue(PAYSTACK_STANDARD_PLAN_CODE) || process.env.PAYSTACK_STANDARD_PLAN_CODE || ''
+  const currency =
+    safeParamValue(PAYSTACK_CURRENCY) || process.env.PAYSTACK_CURRENCY || 'GHS'
 
   if (!paystackConfigLogged) {
     console.log('[paystack] startup config', {

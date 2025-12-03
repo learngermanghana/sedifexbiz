@@ -45,11 +45,20 @@ const firestore_1 = require("./firestore");
 const PAYSTACK_SECRET = (0, params_1.defineString)('PAYSTACK_SECRET_KEY');
 const PAYSTACK_PUBLIC = (0, params_1.defineString)('PAYSTACK_PUBLIC_KEY');
 const APP_BASE_URL = (0, params_1.defineString)('APP_BASE_URL');
+function safeParamValue(param) {
+    try {
+        return param.value();
+    }
+    catch (error) {
+        functions.logger.debug('Param not set; falling back to env', { error });
+        return '';
+    }
+}
 let paystackConfigLogged = false;
 function getPaystackConfig() {
-    const secret = PAYSTACK_SECRET.value() || process.env.PAYSTACK_SECRET_KEY || '';
-    const publicKey = PAYSTACK_PUBLIC.value() || process.env.PAYSTACK_PUBLIC_KEY || '';
-    const appBaseUrl = APP_BASE_URL.value() || process.env.APP_BASE_URL || '';
+    const secret = safeParamValue(PAYSTACK_SECRET) || process.env.PAYSTACK_SECRET_KEY || '';
+    const publicKey = safeParamValue(PAYSTACK_PUBLIC) || process.env.PAYSTACK_PUBLIC_KEY || '';
+    const appBaseUrl = safeParamValue(APP_BASE_URL) || process.env.APP_BASE_URL || '';
     if (!paystackConfigLogged && !secret) {
         functions.logger.warn('Paystack secret not set. Run: firebase functions:config:set paystack.secret="sk_live_xxx"');
         paystackConfigLogged = true;
