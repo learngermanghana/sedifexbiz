@@ -33,12 +33,16 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.handlePaystackWebhook = exports.createCheckout = exports.createPaystackCheckout = exports.receiveStock = exports.logReceiptShare = exports.commitSale = exports.manageStaffAccount = exports.resolveStoreAccess = exports.initializeStore = exports.handleUserCreate = void 0;
+exports.handlePaystackWebhook = exports.createCheckout = exports.createPaystackCheckout = exports.receiveStock = exports.logReceiptShare = exports.commitSale = exports.manageStaffAccount = exports.resolveStoreAccess = exports.initializeStore = exports.handleUserCreate = exports.exportDailyStoreReports = exports.generateAiAdvice = void 0;
 // functions/src/index.ts
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
 const crypto = __importStar(require("crypto"));
 const params_1 = require("firebase-functions/params");
+var aiAdvisor_1 = require("./aiAdvisor");
+Object.defineProperty(exports, "generateAiAdvice", { enumerable: true, get: function () { return aiAdvisor_1.generateAiAdvice; } });
+var reports_1 = require("./reports");
+Object.defineProperty(exports, "exportDailyStoreReports", { enumerable: true, get: function () { return reports_1.exportDailyStoreReports; } });
 /**
  * SINGLE FIRESTORE INSTANCE
  */
@@ -747,7 +751,12 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
             const qty = Number(it?.qty ?? 0) || 0;
             const price = Number(it?.price ?? 0) || 0;
             const taxRate = Number(it?.taxRate ?? 0) || 0;
-            return { productId, name, qty, price, taxRate };
+            const typeRaw = typeof it?.type === 'string'
+                ? it.type.trim().toLowerCase()
+                : null;
+            const type = typeRaw === 'service' ? 'service' : typeRaw === 'product' ? 'product' : null;
+            const isService = it?.isService === true || type === 'service';
+            return { productId, name, qty, price, taxRate, type, isService };
         })
         : [];
     // Validate products before we even touch Firestore
@@ -802,6 +811,8 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
                 qty: it.qty,
                 price: it.price,
                 taxRate: it.taxRate,
+                type: it.type,
+                isService: it.isService === true,
                 storeId: normalizedBranchId,
                 createdAt: timestamp,
             });
