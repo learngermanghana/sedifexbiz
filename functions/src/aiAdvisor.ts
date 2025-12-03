@@ -19,6 +19,30 @@ type AdvisorResponse = {
   dataPreview: Record<string, unknown>
 }
 
+type SalesSummary = {
+  window: { start: string | unknown; end: string | unknown }
+  totalSales: number
+  totalTax: number
+  receiptCount: number
+  averageSaleValue: number
+  paymentBreakdown: Record<string, number>
+  topProducts: Array<{ name: string; qty: number; revenue: number }>
+}
+
+type CloseoutPreview = {
+  id: string
+  businessDay: unknown
+  salesTotal: number
+  expectedCash: number
+  countedCash: number
+  variance: number
+  cardAndDigital: number
+  cashRemoved: number
+  cashAdded: number
+  closedAt: unknown
+  closedByName: string
+}
+
 function coerceStoreId(data: AdvisorRequest, context: functions.https.CallableContext) {
   const explicitStoreId =
     typeof data.storeId === 'string' && data.storeId.trim() ? data.storeId.trim() : null
@@ -48,6 +72,11 @@ function normalizeJsonContext(raw: unknown): Record<string, unknown> | null {
 function normalizeTimestamp(value: unknown) {
   if (value instanceof Timestamp) return value.toDate().toISOString()
   return value
+}
+
+function normalizeNumber(value: unknown) {
+  const n = typeof value === 'number' ? value : Number(value ?? 0)
+  return Number.isFinite(n) ? n : 0
 }
 
 function pickWorkspaceData(raw: DocumentData | undefined | null) {
@@ -95,10 +124,126 @@ function truncateJson(data: unknown, maxChars: number) {
   return `${json.slice(0, maxChars)}\n…truncated…`
 }
 
+function getTodayRange() {
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 1)
+
+  return {
+    start: Timestamp.fromDate(start),
+    end: Timestamp.fromDate(end),
+  }
+}
+
+async function buildSalesSummary(storeId: string): Promise<SalesSummary> {
+  const { start, end } = getTodayRange()
+  const snapshot = await defaultDb
+    .collection('sales')
+    .where('storeId', '==', storeId)
+    .where('createdAt', '>=', start)
+    .where('createdAt', '<', end)
+    .orderBy('createdAt', 'desc')
+    .get()
+
+  let totalSales = 0
+  let totalTax = 0
+  let receiptCount = 0
+  const paymentBreakdown: Record<string, number> = {}
+  const productMap = new Map<string, { name: string; qty: number; revenue: number }>()
+
+  snapshot.forEach(docSnap => {
+    const data = docSnap.data() as any
+    const saleTotal = normalizeNumber(data.total)
+    const saleTax = normalizeNumber(data.taxTotal)
+
+    totalSales += saleTotal
+    totalTax += saleTax
+    receiptCount += 1
+
+    const tenders = Array.isArray(data.payment?.tenders) ? data.payment?.tenders : []
+    for (const tender of tenders) {
+      const method = typeof tender?.method === 'string' ? tender.method.toLowerCase() : 'unknown'
+      const amount = normalizeNumber(tender?.amount)
+      paymentBreakdown[method] = (paymentBreakdown[method] ?? 0) + amount
+    }
+
+    const items = Array.isArray(data.items) ? data.items : []
+    for (const item of items) {
+      const qty = normalizeNumber((item as any)?.qty)
+      const price = normalizeNumber((item as any)?.price)
+      const nameCandidate =
+        typeof (item as any)?.name === 'string' ? (item as any).name.trim() : 'Unknown product'
+      const name = nameCandidate || 'Unknown product'
+      const idCandidate = typeof (item as any)?.productId === 'string' ? (item as any).productId : name
+      const key = idCandidate || name
+      const existing = productMap.get(key) ?? { name, qty: 0, revenue: 0 }
+
+      existing.qty += qty
+      existing.revenue += qty * price
+      productMap.set(key, existing)
+    }
+  })
+
+  const averageSaleValue = receiptCount > 0 ? totalSales / receiptCount : 0
+  const topProducts = Array.from(productMap.values())
+    .sort((a, b) => {
+      if (b.qty !== a.qty) return b.qty - a.qty
+      return b.revenue - a.revenue
+    })
+    .slice(0, 5)
+
+  return {
+    window: {
+      start: normalizeTimestamp(start),
+      end: normalizeTimestamp(end),
+    },
+    totalSales,
+    totalTax,
+    receiptCount,
+    averageSaleValue,
+    paymentBreakdown,
+    topProducts,
+  }
+}
+
+async function fetchRecentCloseouts(storeId: string): Promise<CloseoutPreview[]> {
+  const closeouts = await defaultDb
+    .collection('closeouts')
+    .where('storeId', '==', storeId)
+    .orderBy('businessDay', 'desc')
+    .limit(5)
+    .get()
+
+  return closeouts.docs.map(docSnap => {
+    const data = docSnap.data() as any
+    return {
+      id: docSnap.id,
+      businessDay: normalizeTimestamp(data.businessDay),
+      salesTotal: normalizeNumber(data.salesTotal),
+      expectedCash: normalizeNumber(data.expectedCash),
+      countedCash: normalizeNumber(data.countedCash),
+      variance: normalizeNumber(data.variance),
+      cardAndDigital: normalizeNumber(data.cardAndDigital),
+      cashRemoved: normalizeNumber(data.cashRemoved),
+      cashAdded: normalizeNumber(data.cashAdded),
+      closedAt: normalizeTimestamp(data.closedAt),
+      closedByName:
+        typeof data.closedBy?.displayName === 'string'
+          ? data.closedBy.displayName
+          : typeof data.closedBy?.email === 'string'
+            ? data.closedBy.email
+            : 'Unknown',
+    }
+  })
+}
+
 async function buildContext(storeId: string, userContext: Record<string, unknown> | null) {
-  const [workspaceSnap, storeSnap] = await Promise.all([
+  const [workspaceSnap, storeSnap, salesSummary, closeouts] = await Promise.all([
     defaultDb.collection('workspaces').doc(storeId).get(),
     defaultDb.collection('stores').doc(storeId).get(),
+    buildSalesSummary(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
+    fetchRecentCloseouts(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
   ])
 
   const workspace = pickWorkspaceData(workspaceSnap.exists ? workspaceSnap.data() : null)
@@ -109,6 +254,8 @@ async function buildContext(storeId: string, userContext: Record<string, unknown
     workspace,
     store,
     userContext,
+    salesSummary,
+    recentCloseouts: Array.isArray(closeouts) ? closeouts : closeouts?.error,
   }
 }
 
