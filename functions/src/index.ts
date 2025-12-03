@@ -1329,10 +1329,9 @@ const PAYSTACK_CURRENCY = defineString('PAYSTACK_CURRENCY')
 
 let paystackConfigLogged = false
 function getPaystackConfig() {
-  const secret = PAYSTACK_SECRET_KEY.value() || process.env.PAYSTACK_SECRET_KEY || ''
-  const plan =
-    PAYSTACK_STANDARD_PLAN_CODE.value() || process.env.PAYSTACK_STANDARD_PLAN_CODE || ''
-  const currency = PAYSTACK_CURRENCY.value() || process.env.PAYSTACK_CURRENCY || 'GHS'
+  const secret = PAYSTACK_SECRET_KEY.value()
+  const plan = PAYSTACK_STANDARD_PLAN_CODE.value()
+  const currency = PAYSTACK_CURRENCY.value() || 'GHS'
 
   if (!paystackConfigLogged) {
     console.log('[paystack] startup config', {

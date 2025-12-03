@@ -47,11 +47,11 @@ const PAYSTACK_PUBLIC = (0, params_1.defineString)('PAYSTACK_PUBLIC_KEY');
 const APP_BASE_URL = (0, params_1.defineString)('APP_BASE_URL');
 let paystackConfigLogged = false;
 function getPaystackConfig() {
-    const secret = PAYSTACK_SECRET.value() || process.env.PAYSTACK_SECRET_KEY || '';
-    const publicKey = PAYSTACK_PUBLIC.value() || process.env.PAYSTACK_PUBLIC_KEY || '';
-    const appBaseUrl = APP_BASE_URL.value() || process.env.APP_BASE_URL || '';
+    const secret = PAYSTACK_SECRET.value();
+    const publicKey = PAYSTACK_PUBLIC.value();
+    const appBaseUrl = APP_BASE_URL.value();
     if (!paystackConfigLogged && !secret) {
-        functions.logger.warn('Paystack secret not set. Run: firebase functions:config:set paystack.secret="sk_live_xxx"');
+        functions.logger.warn('Paystack secret not set. Configure PAYSTACK_SECRET_KEY via params (e.g. firebase functions:config:set PAYSTACK_SECRET_KEY="sk_live_xxx")');
         paystackConfigLogged = true;
     }
     return { secret, publicKey, appBaseUrl };
