@@ -70,6 +70,9 @@ const router = createHashRouter([
       { path: 'legal/privacy', element: <PrivacyPage /> },
       { path: 'legal/cookies', element: <CookiesPage /> },
       { path: 'legal/refund', element: <RefundPage /> },
+      { path: 'privacy', element: <PrivacyPage /> },
+      { path: 'cookies', element: <CookiesPage /> },
+      { path: 'refund', element: <RefundPage /> },
     ],
   },
 ])

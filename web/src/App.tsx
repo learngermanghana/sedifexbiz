@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged } from 'firebase/auth'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import './App.css'
 import './pwa'
 import { auth } from './firebase'
@@ -17,6 +17,21 @@ import { useQueueMessageToasts } from './hooks/useQueueMessageToasts'
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
+  const location = useLocation()
+
+  const publicPaths = [
+    '/reset-password',
+    '/verify-email',
+    '/billing/verify',
+    '/legal/privacy',
+    '/legal/cookies',
+    '/legal/refund',
+    '/privacy',
+    '/cookies',
+    '/refund',
+  ]
+
+  const isPublicRoute = publicPaths.some(path => location.pathname.startsWith(path))
 
   useEffect(() => {
     configureAuthPersistence(auth).catch(error => {
@@ -39,7 +54,7 @@ export default function App() {
 
   const appStyle: React.CSSProperties = { minHeight: '100dvh' }
 
-  if (!isAuthReady) {
+  if (!isAuthReady && !isPublicRoute) {
     return (
       <main className="app" style={appStyle}>
         <div className="app__card">
@@ -49,7 +64,7 @@ export default function App() {
     )
   }
 
-  if (!user) {
+  if (!user && !isPublicRoute) {
     return <AuthPage />
   }
 
