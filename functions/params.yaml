@@ -9,3 +9,12 @@ params:
   - name: PAYSTACK_CURRENCY
     type: string
     default: GHS
+  - name: SHEETS_SERVICE_ACCOUNT
+    type: string
+    default: ""
+  - name: SHEETS_SPREADSHEET_ID
+    type: string
+    default: ""
+  - name: SHEETS_RANGE
+    type: string
+    default: ""
