@@ -22,6 +22,7 @@ import Finance from './pages/Finance'
 import Expenses from './pages/Expenses'
 import ResetPassword from './pages/ResetPassword'
 import VerifyEmail from './pages/VerifyEmail'
+import AiAdvisor from './pages/AiAdvisor'
 
 import PrivacyPage from './pages/legal/PrivacyPage'
 import CookiesPage from './pages/legal/CookiesPage'
@@ -58,6 +59,7 @@ const router = createHashRouter([
           { path: 'staff', element: <StaffManagement /> },
           { path: 'account', element: <AccountOverview /> },
           { path: 'support', element: <Support /> },
+          { path: 'advisor', element: <AiAdvisor /> },
         ],
       },
 

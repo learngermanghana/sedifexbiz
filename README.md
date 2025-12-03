@@ -96,6 +96,18 @@ If you create a Firebase Auth user and do **not** see corresponding documents in
 
 Following these steps should result in new documents at `teamMembers/<uid>` and `stores/<uid>` in the default database immediately after signup.
 
+## AI advisor (OpenAI + Firebase data)
+
+The PWA now ships with an **AI advisor** that summarizes workspace data and suggests next steps.
+
+- Configure your OpenAI key for Cloud Functions:
+  ```bash
+  cd functions
+  firebase functions:config:set OPENAI_API_KEY="sk-..."
+  ```
+- Deploy functions after adding the key so `generateAiAdvice` can call the OpenAI API.
+- In the app, open **AI advisor** from the navigation. Ask a question and the helper will package your store ID, billing status, and any extra JSON context for the model to analyze.
+
 ## Branding
 - Name: **Sedifex**
 - Tagline: *Sell faster. Count smarter.*

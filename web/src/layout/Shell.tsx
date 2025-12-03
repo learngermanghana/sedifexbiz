@@ -22,6 +22,7 @@ const OWNER_NAV_ITEMS: NavItem[] = [
   { to: '/activity', label: 'Activity' },
   // 🔁 Replaced Close Day with Finance
   { to: '/finance', label: 'Finance' },
+  { to: '/advisor', label: 'AI advisor' },
   { to: '/account', label: 'Account' },
 ]
 

@@ -3,6 +3,7 @@ import * as functions from 'firebase-functions/v1'
 import * as admin from 'firebase-admin'
 import * as crypto from 'crypto'
 import { defineString } from 'firebase-functions/params'
+export { generateAiAdvice } from './aiAdvisor'
 
 /**
  * SINGLE FIRESTORE INSTANCE
