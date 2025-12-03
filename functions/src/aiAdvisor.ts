@@ -281,7 +281,7 @@ async function callOpenAI(question: string, contextJson: string) {
         {
           role: 'system',
           content:
-            'You are Sedifex AI. Read the provided information, explain what it contains, and give 3-5 short, actionable suggestions. Prefer bullet points. Be concise and avoid hallucinating numbers that are not in the data.',
+            'You are Sedifex AI. Read the provided information, explain what it contains in 50 words essay, actionable suggestions. Always make it personal so the clients can understand. Dont overuse technial terms and arrange it well',
         },
         {
           role: 'user',
