@@ -1,42 +1,9 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.normalizeHeader = normalizeHeader;
 exports.fetchClientRowByEmail = fetchClientRowByEmail;
 exports.getDefaultSpreadsheetId = getDefaultSpreadsheetId;
-const functions = __importStar(require("firebase-functions"));
+const params_1 = require("firebase-functions/params");
 const googleapis_1 = require("googleapis");
 const DEFAULT_SPREADSHEET_ID = '1_oqRHePaZnpULD9zRUtxBIHQUaHccGAxSP3SPCJ0o7g';
 const DEFAULT_RANGE = 'Clients!A:ZZ';
@@ -47,6 +14,9 @@ const EMAIL_HEADER_MATCHERS = new Set([
     'primary_email',
     'member_email',
 ]);
+const SHEETS_SERVICE_ACCOUNT = (0, params_1.defineString)('SHEETS_SERVICE_ACCOUNT', { default: '' });
+const SHEETS_SPREADSHEET_ID = (0, params_1.defineString)('SHEETS_SPREADSHEET_ID', { default: '' });
+const SHEETS_RANGE = (0, params_1.defineString)('SHEETS_RANGE', { default: '' });
 let sheetsClientPromise = null;
 function normalizeHeader(header) {
     if (typeof header !== 'string')
@@ -85,12 +55,19 @@ function decodeServiceAccount(raw) {
         private_key: parsed.private_key.replace(/\\n/g, '\n'),
     };
 }
+function readConfig() {
+    const paramServiceAccount = SHEETS_SERVICE_ACCOUNT.value();
+    const serviceAccount = paramServiceAccount || process.env.SHEETS_SERVICE_ACCOUNT || null;
+    const spreadsheetIdParam = SHEETS_SPREADSHEET_ID.value();
+    const spreadsheetId = spreadsheetIdParam || null;
+    const rangeParam = SHEETS_RANGE.value();
+    const range = rangeParam || null;
+    return { serviceAccount, spreadsheetId, range };
+}
 async function getSheetsClient() {
     if (!sheetsClientPromise) {
-        const config = (functions.config()?.sheets ?? {});
-        const envCredentials = process.env.SHEETS_SERVICE_ACCOUNT;
-        const credentialsSource = config.service_account ?? envCredentials;
-        const credentials = decodeServiceAccount(credentialsSource ?? null);
+        const config = readConfig();
+        const credentials = decodeServiceAccount(config.serviceAccount);
         const auth = new googleapis_1.google.auth.GoogleAuth({
             credentials,
             scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
@@ -131,7 +108,7 @@ function resolveSpreadsheetId(config, sheetId) {
     const explicit = typeof sheetId === 'string' ? sheetId.trim() : '';
     if (explicit)
         return explicit;
-    const configured = typeof config.spreadsheet_id === 'string' ? config.spreadsheet_id.trim() : '';
+    const configured = typeof config.spreadsheetId === 'string' ? config.spreadsheetId.trim() : '';
     if (configured)
         return configured;
     return DEFAULT_SPREADSHEET_ID;
@@ -153,7 +130,7 @@ async function fetchClientRowByEmail(sheetId, email) {
     if (!normalizedEmail) {
         return null;
     }
-    const config = (functions.config()?.sheets ?? {});
+    const config = readConfig();
     const range = resolveRange(config);
     const spreadsheetId = resolveSpreadsheetId(config, sheetId);
     const sheets = await getSheetsClient();
@@ -193,6 +170,6 @@ async function fetchClientRowByEmail(sheetId, email) {
     return null;
 }
 function getDefaultSpreadsheetId() {
-    const config = (functions.config()?.sheets ?? {});
+    const config = readConfig();
     return resolveSpreadsheetId(config, null);
 }
