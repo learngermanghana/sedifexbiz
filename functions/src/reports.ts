@@ -1,7 +1,5 @@
 import * as functions from 'firebase-functions/v1'
 import { defineString } from 'firebase-functions/params'
-import { google } from 'googleapis'
-
 import { defaultDb } from './firestore'
 
 type StoreReportRow = [string, string, string, string]
@@ -12,12 +10,13 @@ function formatDateForSheet(date: Date) {
   return date.toISOString().split('T')[0]
 }
 
-async function getAuthClient() {
+async function getSheetsClient() {
+  const { google } = await import('googleapis')
   const auth = new google.auth.GoogleAuth({
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   })
 
-  return auth.getClient()
+  return google.sheets({ version: 'v4', auth: await auth.getClient() })
 }
 
 async function buildStoreRows(): Promise<StoreReportRow[]> {
@@ -44,14 +43,13 @@ export const exportDailyStoreReports = functions.pubsub
       return
     }
 
-    const [authClient, rows] = await Promise.all([getAuthClient(), buildStoreRows()])
+    const [sheets, rows] = await Promise.all([getSheetsClient(), buildStoreRows()])
 
     if (!rows.length) {
       functions.logger.info('No stores found to export')
       return
     }
 
-    const sheets = google.sheets({ version: 'v4', auth: authClient })
     const header: StoreReportRow = ['Date', 'Store ID', 'Display Name', 'Email']
     const values: StoreReportRow[] = [header, ...rows]
 
