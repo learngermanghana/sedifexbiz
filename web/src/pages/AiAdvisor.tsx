@@ -10,6 +10,7 @@ type AdvisorFormState = {
   loading: boolean
   error: string | null
   result: AiAdvisorResponse | null
+  lastQuestion: string | null
 }
 
 function buildJsonContext(storeId: string | null, billing: ReturnType<typeof useStoreBilling>['billing']) {
@@ -35,6 +36,7 @@ export default function AiAdvisor() {
     loading: false,
     error: null,
     result: null,
+    lastQuestion: null,
   })
 
   const jsonContext = useMemo(
@@ -44,16 +46,22 @@ export default function AiAdvisor() {
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (!state.question.trim()) {
+    const trimmedQuestion = state.question.trim()
+    if (!trimmedQuestion) {
       setState(prev => ({ ...prev, error: 'Ask a question for the AI to answer.' }))
       return
     }
 
-    setState(prev => ({ ...prev, loading: true, error: null }))
+    setState(prev => ({
+      ...prev,
+      loading: true,
+      error: null,
+      lastQuestion: trimmedQuestion,
+    }))
 
     try {
       const result = await requestAiAdvisor({
-        question: state.question,
+        question: trimmedQuestion,
         storeId: storeId ?? undefined,
         jsonContext,
       })
@@ -98,29 +106,41 @@ export default function AiAdvisor() {
           </div>
         </form>
 
-        <div className="advisor__grid">
-          <div className="advisor__card">
-            <div className="advisor__card-header">
-              <h3>Context sent to AI</h3>
-              <span className="advisor__badge">JSON</span>
+        <div className="advisor__card advisor__card--chat">
+          <div className="advisor__card-header">
+            <div>
+              <h3>AI chat</h3>
+              <p className="advisor__subtitle">
+                Ask a question above and follow the conversation like a chat thread.
+              </p>
             </div>
-            <pre className="advisor__code">{JSON.stringify(jsonContext, null, 2)}</pre>
+            <span className="advisor__badge advisor__badge--success">
+              {state.loading ? 'Responding…' : 'Live'}
+            </span>
           </div>
 
-          <div className="advisor__card">
-            <div className="advisor__card-header">
-              <h3>AI suggestions</h3>
-              <span className="advisor__badge advisor__badge--success">Live</span>
-            </div>
-            {state.result ? (
-              <div className="advisor__result">
-                <p className="advisor__meta">Workspace: {state.result.storeId}</p>
-                <div className="advisor__advice">{state.result.advice}</div>
+          {state.result ? (
+            <div className="advisor__messages">
+              <div className="advisor__message advisor__message--user">
+                <div className="advisor__message-header">
+                  <span className="advisor__message-label">You</span>
+                  <span className="advisor__meta">Workspace: {state.result.storeId}</span>
+                </div>
+                <p className="advisor__message-content">{state.lastQuestion ?? state.question}</p>
               </div>
-            ) : (
-              <p className="advisor__placeholder">Submit a question to see advice here.</p>
-            )}
-          </div>
+
+              <div className="advisor__message advisor__message--ai">
+                <div className="advisor__message-header">
+                  <span className="advisor__message-label">AI advisor</span>
+                </div>
+                <div className="advisor__message-content advisor__message-content--ai">
+                  {state.result.advice}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="advisor__placeholder">Submit a question to start the chat.</p>
+          )}
         </div>
       </div>
     </PageSection>
