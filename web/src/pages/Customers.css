@@ -140,6 +140,32 @@
   background: rgba(67, 56, 202, 0.08);
 }
 
+.customers-page__row--debt {
+  box-shadow: inset 2px 0 0 0 #dc2626;
+  background: rgba(220, 38, 38, 0.06);
+}
+
+.customers-page__debt-cell {
+  display: grid;
+  gap: 2px;
+  align-items: start;
+}
+
+.customers-page__debt-amount {
+  font-weight: 700;
+  color: #dc2626;
+}
+
+.customers-page__debt-meta {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.customers-page__debt-highlight {
+  color: #dc2626;
+  font-weight: 700;
+}
+
 .customers-page__details {
   display: flex;
   flex-direction: column;

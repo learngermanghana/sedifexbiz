@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner() {
+      return request.auth != null && request.auth.token.role == 'owner';
+    }
+
+    function isDebtChangeOnUpdate() {
+      return request.resource.data.diff(resource.data).changedKeys().hasAny([
+        'debt',
+        'debt.outstandingCents',
+        'debt.dueDate',
+        'debt.lastReminderAt',
+      ]);
+    }
+
+    function isDebtSetOnCreate() {
+      return request.resource.data.keys().hasAny(['debt']) && request.resource.data.debt != null;
+    }
+
+    match /{document=**} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (!isDebtSetOnCreate() || isOwner());
+      allow update: if isAuthenticated() && (!isDebtChangeOnUpdate() || isOwner());
+      allow delete: if isAuthenticated();
+    }
+  }
+}
