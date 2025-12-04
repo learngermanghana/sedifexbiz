@@ -16,6 +16,8 @@ import {
   where,
   limit,
 } from 'firebase/firestore'
+import { CUSTOMER_CACHE_LIMIT } from '../utils/offlineCache'
+import { CustomerDebt, DebtSummary, formatGhsFromCents, summarizeCustomerDebt } from '../utils/debt'
 
 function formatPercent(value: number) {
   const sign = value > 0 ? '+' : ''
@@ -169,6 +171,9 @@ export default function Dashboard() {
   const [sales, setSales] = useState<DashboardSale[]>([])
   const [expenses, setExpenses] = useState<DashboardExpense[]>([])
   const [isLoadingSnapshot, setIsLoadingSnapshot] = useState(true)
+  const [debtSummary, setDebtSummary] = useState<DebtSummary | null>(null)
+  const [isLoadingDebt, setIsLoadingDebt] = useState(false)
+  const [debtError, setDebtError] = useState<string | null>(null)
 
   const now = new Date()
   const yesterday = useMemo(() => {
@@ -181,6 +186,7 @@ export default function Dashboard() {
     if (!storeId) {
       setExpiringProducts([])
       setExpiryError(null)
+      setDebtSummary(null)
       return
     }
 
@@ -228,6 +234,44 @@ export default function Dashboard() {
     )
 
     return () => unsubscribe()
+  }, [storeId])
+
+  useEffect(() => {
+    if (!storeId) {
+      setDebtSummary(null)
+      setDebtError(null)
+      return () => {}
+    }
+
+    setIsLoadingDebt(true)
+    setDebtError(null)
+
+    const debtQuery = query(
+      collection(db, 'customers'),
+      where('storeId', '==', storeId),
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(CUSTOMER_CACHE_LIMIT),
+    )
+
+    const unsubscribe = onSnapshot(
+      debtQuery,
+      snapshot => {
+        const rows: CustomerDebt[] = snapshot.docs.map(docSnap => ({
+          ...(docSnap.data() as CustomerDebt),
+        }))
+
+        setDebtSummary(summarizeCustomerDebt(rows))
+        setIsLoadingDebt(false)
+      },
+      error => {
+        console.error('[dashboard] Failed to load customer debt', error)
+        setDebtError('Unable to load customer debt balances right now.')
+        setIsLoadingDebt(false)
+      },
+    )
+
+    return unsubscribe
   }, [storeId])
 
   // ---- Load sales for snapshot (last ~500 records for this store) ----
@@ -439,6 +483,9 @@ export default function Dashboard() {
       : 0
   const todayServiceMixPercent =
     todaySalesMixTotal > 0 ? 100 - todayProductMixPercent : 0
+  const debtNextDueLabel = debtSummary?.nextDueDate
+    ? debtSummary.nextDueDate.toLocaleDateString()
+    : 'No due dates set'
 
   function buildLowStockCsv() {
     const header = ['Product', 'SKU', 'On hand', 'Reorder point']
@@ -946,6 +993,74 @@ export default function Dashboard() {
               <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
                 Total VAT portion included in this month&apos;s sales.
               </p>
+            </article>
+
+            {/* Customer debt snapshot */}
+            <article
+              style={{
+                background: '#F8FAFC',
+                borderRadius: 14,
+                padding: '14px 16px',
+                border: '1px solid #E2E8F0',
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.6,
+                  color: '#64748B',
+                  fontWeight: 600,
+                }}
+              >
+                Outstanding customer debt
+              </p>
+
+              {debtError ? (
+                <p style={{ margin: '10px 0 0', color: '#DC2626', fontSize: 13 }}>
+                  {debtError}
+                </p>
+              ) : isLoadingDebt ? (
+                <p style={{ margin: '10px 0 0', color: '#475569', fontSize: 13 }}>
+                  Loading customer balances…
+                </p>
+              ) : (
+                <>
+                  <p
+                    style={{
+                      margin: '6px 0 2px',
+                      fontSize: 24,
+                      fontWeight: 700,
+                      color: '#0F172A',
+                    }}
+                  >
+                    {formatGhsFromCents(debtSummary?.totalOutstandingCents ?? 0)}
+                  </p>
+
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+                    {debtSummary?.debtorCount
+                      ? `${debtSummary.debtorCount} customer${
+                          debtSummary.debtorCount === 1 ? '' : 's'
+                        } owe you right now.`
+                      : 'No unpaid balances at the moment.'}
+                  </p>
+
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+                    {debtSummary?.overdueCount
+                      ? `Overdue: ${formatGhsFromCents(debtSummary.overdueCents)} (${
+                          debtSummary.overdueCount
+                        } customer${debtSummary.overdueCount === 1 ? '' : 's'})`
+                      : 'No overdue balances yet.'}
+                  </p>
+
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+                    {debtSummary?.nextDueDate
+                      ? `Next due ${debtNextDueLabel}`
+                      : 'No due dates set for customers.'}
+                  </p>
+                </>
+              )}
             </article>
           </div>
         )}

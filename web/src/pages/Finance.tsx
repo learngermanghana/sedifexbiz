@@ -7,9 +7,12 @@ import {
   orderBy,
   query,
   where,
+  limit,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { CUSTOMER_CACHE_LIMIT } from '../utils/offlineCache'
+import { DebtSummary, formatGhsFromCents, summarizeCustomerDebt } from '../utils/debt'
 
 type RangeKey = 'month' | '30d' | '7d' | 'all'
 type DownloadTab = 'sales' | 'products' | 'expenses'
@@ -60,6 +63,9 @@ export default function Finance() {
   const [range, setRange] = useState<RangeKey>('month')
   const [products, setProducts] = useState<ProductRow[]>([])
   const [activeDownloadTab, setActiveDownloadTab] = useState<DownloadTab>('sales')
+  const [debtSummary, setDebtSummary] = useState<DebtSummary | null>(null)
+  const [isLoadingDebt, setIsLoadingDebt] = useState(false)
+  const [debtError, setDebtError] = useState<string | null>(null)
 
   // --- Load sales for this workspace ---
   useEffect(() => {
@@ -102,6 +108,42 @@ export default function Finance() {
       })
       setSales(rows)
     })
+
+    return unsubscribe
+  }, [storeId])
+
+  // --- Load customer debt for this workspace ---
+  useEffect(() => {
+    if (!storeId) {
+      setDebtSummary(null)
+      setDebtError(null)
+      return () => {}
+    }
+
+    setIsLoadingDebt(true)
+    setDebtError(null)
+
+    const q = query(
+      collection(db, 'customers'),
+      where('storeId', '==', storeId),
+      orderBy('updatedAt', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(CUSTOMER_CACHE_LIMIT),
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        const rows = snapshot.docs.map(docSnap => docSnap.data())
+        setDebtSummary(summarizeCustomerDebt(rows))
+        setIsLoadingDebt(false)
+      },
+      error => {
+        console.error('[finance] Failed to load customer debt', error)
+        setDebtError('Unable to load customer debt balances right now.')
+        setIsLoadingDebt(false)
+      },
+    )
 
     return unsubscribe
   }, [storeId])
@@ -222,7 +264,11 @@ export default function Finance() {
   )
   const netProfit = grossSales - totalExpenses
 
-  const hasAnyData = sales.length > 0 || expenses.length > 0
+  const hasDebtData =
+    (debtSummary?.debtorCount ?? 0) > 0 ||
+    (debtSummary?.totalOutstandingCents ?? 0) > 0
+
+  const hasAnyData = sales.length > 0 || expenses.length > 0 || hasDebtData
 
   function rangeLabel(key: RangeKey): string {
     switch (key) {
@@ -402,6 +448,40 @@ export default function Finance() {
               <p className="card__subtitle">
                 Total VAT portion from all recorded sales in this period.
               </p>
+            </div>
+
+            <div className="info-card">
+              <h4>Outstanding customer debt</h4>
+
+              {debtError ? (
+                <p className="status status--error" role="alert" style={{ marginTop: 8 }}>
+                  {debtError}
+                </p>
+              ) : isLoadingDebt ? (
+                <p className="card__subtitle" style={{ marginTop: 8 }}>
+                  Loading customer balances…
+                </p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 24, fontWeight: 600 }}>
+                    {formatGhsFromCents(debtSummary?.totalOutstandingCents ?? 0)}
+                  </p>
+                  <p className="card__subtitle">
+                    {debtSummary?.debtorCount
+                      ? `${debtSummary.debtorCount} customer${
+                          debtSummary.debtorCount === 1 ? '' : 's'
+                        } owe you`
+                      : 'No unpaid balances recorded right now.'}
+                  </p>
+                  <p className="card__subtitle" style={{ marginTop: 4 }}>
+                    {debtSummary?.overdueCount
+                      ? `Overdue: ${formatGhsFromCents(debtSummary.overdueCents)} (${
+                          debtSummary.overdueCount
+                        } customer${debtSummary.overdueCount === 1 ? '' : 's'})`
+                      : 'No overdue debt at the moment.'}
+                  </p>
+                </>
+              )}
             </div>
 
             <div className="info-card">

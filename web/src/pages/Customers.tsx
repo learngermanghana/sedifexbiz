@@ -14,7 +14,8 @@ import {
 } from 'firebase/firestore'
 import { Timestamp } from 'firebase/firestore'
 import { Link, useNavigate } from 'react-router-dom'
-import { db } from '../firebase'
+import { httpsCallable } from 'firebase/functions'
+import { db, functions } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Customers.css'
 import {
@@ -70,6 +71,7 @@ type MessageChannel = 'whatsapp' | 'telegram' | 'email'
 
 const RECENT_VISIT_DAYS = 90
 const HIGH_VALUE_THRESHOLD = 1000
+const REMINDER_TEMPLATE_IDS = new Set(['payment-reminder', 'overdue-notice'])
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
   const displayName = customer.displayName?.trim()
@@ -272,6 +274,7 @@ export default function Customers() {
   >('all')
   const [messageChannel, setMessageChannel] = useState<MessageChannel | null>(null)
   const [messageBody, setMessageBody] = useState('')
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
   useEffect(() => {
     return () => {
       if (messageTimeoutRef.current) {
@@ -485,6 +488,8 @@ export default function Customers() {
     []
   )
 
+  const logPaymentReminder = useMemo(() => httpsCallable(functions, 'logPaymentReminder'), [])
+
   const allTags = useMemo(() => {
     const tagSet = new Set<string>()
     customers.forEach(customer => {
@@ -580,6 +585,19 @@ export default function Customers() {
   const selectedDueDate = normalizeDateLike(selectedCustomer?.debt?.dueDate)
   const selectedLastReminder = normalizeDateLike(selectedCustomer?.debt?.lastReminderAt)
 
+  const formattedOutstandingAmount = useMemo(
+    () =>
+      selectedOutstandingCents > 0
+        ? currencyFormatter.format(Math.abs(selectedOutstandingCents) / 100)
+        : '',
+    [currencyFormatter, selectedOutstandingCents],
+  )
+
+  const dueDateMessageLabel = useMemo(() => {
+    if (!selectedDueDate) return ''
+    return selectedDueDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  }, [selectedDueDate])
+
   const normalizedSelectedPhone = selectedCustomer?.phone
     ? normalizePhoneNumber(selectedCustomer.phone)
     : ''
@@ -594,8 +612,8 @@ export default function Customers() {
     ? `mailto:${selectedCustomer.email.trim()}`
     : ''
 
-  const messageTemplates = useMemo(
-    () => [
+  const messageTemplates = useMemo(() => {
+    const baseTemplates = [
       {
         id: 'thank-you',
         title: 'Thank you for your visit',
@@ -616,9 +634,33 @@ export default function Customers() {
         title: 'Follow up on inquiry',
         body: `${selectedCustomerName || 'Hi there'}, I’m following up on your last inquiry. Do you want me to prepare a quote or send more details?`,
       },
-    ],
-    [selectedCustomerName],
-  )
+    ]
+
+    if (selectedOutstandingCents > 0) {
+      const dueDateText = dueDateMessageLabel ? ` by ${dueDateMessageLabel}` : ''
+      const reminderTemplates = [
+        {
+          id: 'payment-reminder',
+          title: 'Payment reminder',
+          body: `Hi ${selectedCustomerName || 'there'}, this is a friendly reminder about your ${formattedOutstandingAmount} balance due${dueDateText}. Can I help you settle it today?`,
+        },
+        {
+          id: 'overdue-notice',
+          title: 'Overdue notice',
+          body: `Hello ${selectedCustomerName || 'there'}, your account shows an overdue balance of ${formattedOutstandingAmount}${dueDateText ? ` (due ${dueDateMessageLabel})` : ''}. Let me know if you need an updated invoice to complete payment.`,
+        },
+      ]
+
+      return [...reminderTemplates, ...baseTemplates]
+    }
+
+    return baseTemplates
+  }, [
+    dueDateMessageLabel,
+    formattedOutstandingAmount,
+    selectedCustomerName,
+    selectedOutstandingCents,
+  ])
 
   function openExternal(link: string | null) {
     if (!link) return
@@ -639,11 +681,13 @@ export default function Customers() {
     if (!selectedCustomerId) return
     setMessageChannel(channel)
     setMessageBody(messageTemplates[0]?.body ?? '')
+    setSelectedTemplateId(messageTemplates[0]?.id ?? null)
   }
 
   function closeMessageComposer() {
     setMessageChannel(null)
     setMessageBody('')
+    setSelectedTemplateId(null)
   }
 
   function getChannelLabel(channel: MessageChannel | null): string {
@@ -685,6 +729,25 @@ export default function Customers() {
     if (!messageChannel) return
     const link = buildMessageLink(messageChannel, messageBody)
     if (!link) return
+
+    const isReminderTemplateSelected =
+      selectedTemplateId !== null && REMINDER_TEMPLATE_IDS.has(selectedTemplateId)
+
+    if (isReminderTemplateSelected && activeStoreId && selectedCustomerId && selectedOutstandingCents > 0) {
+      void logPaymentReminder({
+        storeId: activeStoreId,
+        customerId: selectedCustomerId,
+        customerName: selectedCustomerName ? selectedCustomerName : null,
+        templateId: selectedTemplateId,
+        channel: messageChannel,
+        status: 'attempt',
+        amountCents: selectedOutstandingCents,
+        dueDate: selectedDueDate ? selectedDueDate.toISOString() : null,
+      }).catch(error => {
+        console.warn('[customers] Failed to log payment reminder', error)
+      })
+    }
+
     openExternal(link)
     closeMessageComposer()
   }
@@ -1478,7 +1541,10 @@ export default function Customers() {
                     <button
                       type="button"
                       className="button button--ghost button--small"
-                      onClick={() => setMessageBody(template.body)}
+                      onClick={() => {
+                        setMessageBody(template.body)
+                        setSelectedTemplateId(template.id)
+                      }}
                     >
                       Use template
                     </button>
@@ -1493,7 +1559,10 @@ export default function Customers() {
               <textarea
                 rows={4}
                 value={messageBody}
-                onChange={event => setMessageBody(event.target.value)}
+                onChange={event => {
+                  setMessageBody(event.target.value)
+                  setSelectedTemplateId(null)
+                }}
                 placeholder="Type or tweak your message before sending"
               />
             </label>

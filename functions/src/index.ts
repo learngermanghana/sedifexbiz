@@ -1105,6 +1105,9 @@ export const commitSale = functions.https.onCall(
 const RECEIPT_CHANNELS = new Set(['email', 'sms', 'whatsapp'])
 const RECEIPT_STATUSES = new Set(['attempt', 'failed', 'sent'])
 
+const REMINDER_CHANNELS = new Set(['email', 'telegram', 'whatsapp'])
+const REMINDER_STATUSES = new Set(['attempt', 'failed', 'sent'])
+
 export const logReceiptShare = functions.https.onCall(
   async (data: any, context: functions.https.CallableContext) => {
     assertStaffAccess(context)
@@ -1198,6 +1201,103 @@ export const logReceiptShare = functions.https.onCall(
     const ref = await db.collection('receiptShareLogs').add(payload)
 
     return { ok: true, shareId: ref.id }
+  },
+)
+
+/** ============================================================================
+ *  CALLABLE: logPaymentReminder (staff)
+ * ==========================================================================*/
+
+export const logPaymentReminder = functions.https.onCall(
+  async (data: any, context: functions.https.CallableContext) => {
+    assertStaffAccess(context)
+
+    const storeId = typeof data?.storeId === 'string' ? data.storeId.trim() : ''
+    const customerId = typeof data?.customerId === 'string' ? data.customerId.trim() : ''
+    const channel = typeof data?.channel === 'string' ? data.channel.trim() : ''
+    const status = typeof data?.status === 'string' ? data.status.trim() : ''
+
+    if (!storeId || !customerId) {
+      throw new functions.https.HttpsError('invalid-argument', 'storeId and customerId are required')
+    }
+
+    if (!REMINDER_CHANNELS.has(channel)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid channel')
+    }
+
+    if (!REMINDER_STATUSES.has(status)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid status')
+    }
+
+    const customerNameRaw = data?.customerName
+    const customerName =
+      customerNameRaw === null || customerNameRaw === undefined
+        ? null
+        : typeof customerNameRaw === 'string'
+          ? customerNameRaw.trim() || null
+          : (() => {
+              throw new functions.https.HttpsError(
+                'invalid-argument',
+                'customerName must be a string when provided',
+              )
+            })()
+
+    const templateIdRaw = data?.templateId
+    const templateId =
+      templateIdRaw === null || templateIdRaw === undefined
+        ? null
+        : typeof templateIdRaw === 'string'
+          ? templateIdRaw.trim() || null
+          : (() => {
+              throw new functions.https.HttpsError(
+                'invalid-argument',
+                'templateId must be a string when provided',
+              )
+            })()
+
+    const amountCentsRaw = data?.amountCents
+    const amountCents =
+      amountCentsRaw === null || amountCentsRaw === undefined
+        ? null
+        : Number.isFinite(Number(amountCentsRaw))
+          ? Number(amountCentsRaw)
+          : (() => {
+              throw new functions.https.HttpsError(
+                'invalid-argument',
+                'amountCents must be a number when provided',
+              )
+            })()
+
+    const dueDateRaw = data?.dueDate
+    const dueDate = (() => {
+      if (dueDateRaw === null || dueDateRaw === undefined) return null
+      if (typeof dueDateRaw === 'string' || typeof dueDateRaw === 'number') {
+        const parsed = new Date(dueDateRaw)
+        if (Number.isNaN(parsed.getTime())) {
+          throw new functions.https.HttpsError('invalid-argument', 'dueDate must be a valid date')
+        }
+        return admin.firestore.Timestamp.fromDate(parsed)
+      }
+      throw new functions.https.HttpsError('invalid-argument', 'dueDate must be a string or number when provided')
+    })()
+
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const payload: admin.firestore.DocumentData = {
+      storeId,
+      customerId,
+      customerName,
+      templateId,
+      channel,
+      status,
+      amountCents,
+      dueDate,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    const ref = await db.collection('paymentReminderLogs').add(payload)
+
+    return { ok: true, reminderId: ref.id }
   },
 )
 
