@@ -5,12 +5,16 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import { useStoreBilling } from '../hooks/useStoreBilling'
 import './AiAdvisor.css'
 
+type AdvisorTurn = {
+  question: string
+  response: AiAdvisorResponse
+}
+
 type AdvisorFormState = {
   question: string
   loading: boolean
   error: string | null
-  result: AiAdvisorResponse | null
-  lastQuestion: string | null
+  turns: AdvisorTurn[]
 }
 
 function buildJsonContext(storeId: string | null, billing: ReturnType<typeof useStoreBilling>['billing']) {
@@ -35,8 +39,7 @@ export default function AiAdvisor() {
     question: 'How can we improve sales and reduce stockouts based on this data?',
     loading: false,
     error: null,
-    result: null,
-    lastQuestion: null,
+    turns: [],
   })
 
   const jsonContext = useMemo(
@@ -56,7 +59,6 @@ export default function AiAdvisor() {
       ...prev,
       loading: true,
       error: null,
-      lastQuestion: trimmedQuestion,
     }))
 
     try {
@@ -66,7 +68,11 @@ export default function AiAdvisor() {
         jsonContext,
       })
 
-      setState(prev => ({ ...prev, result, loading: false }))
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        turns: [...prev.turns, { question: trimmedQuestion, response: result }],
+      }))
     } catch (error: unknown) {
       console.error('[AiAdvisor] Unable to fetch advice', error)
       const message =
@@ -119,24 +125,28 @@ export default function AiAdvisor() {
             </span>
           </div>
 
-          {state.result ? (
+          {state.turns.length ? (
             <div className="advisor__messages">
-              <div className="advisor__message advisor__message--user">
-                <div className="advisor__message-header">
-                  <span className="advisor__message-label">You</span>
-                  <span className="advisor__meta">Workspace: {state.result.storeId}</span>
-                </div>
-                <p className="advisor__message-content">{state.lastQuestion ?? state.question}</p>
-              </div>
+              {state.turns.map((turn, index) => (
+                <React.Fragment key={`turn-${index}-${turn.response.storeId}`}>
+                  <div className="advisor__message advisor__message--user">
+                    <div className="advisor__message-header">
+                      <span className="advisor__message-label">You</span>
+                      <span className="advisor__meta">Workspace: {turn.response.storeId}</span>
+                    </div>
+                    <p className="advisor__message-content">{turn.question}</p>
+                  </div>
 
-              <div className="advisor__message advisor__message--ai">
-                <div className="advisor__message-header">
-                  <span className="advisor__message-label">AI advisor</span>
-                </div>
-                <div className="advisor__message-content advisor__message-content--ai">
-                  {state.result.advice}
-                </div>
-              </div>
+                  <div className="advisor__message advisor__message--ai">
+                    <div className="advisor__message-header">
+                      <span className="advisor__message-label">AI advisor</span>
+                    </div>
+                    <div className="advisor__message-content advisor__message-content--ai">
+                      {turn.response.advice}
+                    </div>
+                  </div>
+                </React.Fragment>
+              ))}
             </div>
           ) : (
             <p className="advisor__placeholder">Submit a question to start the chat.</p>
