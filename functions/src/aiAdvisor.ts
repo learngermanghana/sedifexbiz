@@ -43,6 +43,12 @@ type CloseoutPreview = {
   closedByName: string
 }
 
+type ProductCounts = {
+  total: number
+  products: number
+  services: number
+}
+
 function coerceStoreId(data: AdvisorRequest, context: functions.https.CallableContext) {
   const explicitStoreId =
     typeof data.storeId === 'string' && data.storeId.trim() ? data.storeId.trim() : null
@@ -238,12 +244,31 @@ async function fetchRecentCloseouts(storeId: string): Promise<CloseoutPreview[]>
   })
 }
 
+async function fetchProductCounts(storeId: string): Promise<ProductCounts> {
+  const baseQuery = defaultDb.collection('products').where('storeId', '==', storeId)
+
+  const [allSnapshot, servicesSnapshot] = await Promise.all([
+    baseQuery.count().get(),
+    baseQuery.where('itemType', '==', 'service').count().get(),
+  ])
+
+  const total = allSnapshot.data().count
+  const services = servicesSnapshot.data().count
+
+  return {
+    total,
+    services,
+    products: Math.max(total - services, 0),
+  }
+}
+
 async function buildContext(storeId: string, userContext: Record<string, unknown> | null) {
-  const [workspaceSnap, storeSnap, salesSummary, closeouts] = await Promise.all([
+  const [workspaceSnap, storeSnap, salesSummary, closeouts, productCounts] = await Promise.all([
     defaultDb.collection('workspaces').doc(storeId).get(),
     defaultDb.collection('stores').doc(storeId).get(),
     buildSalesSummary(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
     fetchRecentCloseouts(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
+    fetchProductCounts(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
   ])
 
   const workspace = pickWorkspaceData(workspaceSnap.exists ? workspaceSnap.data() : null)
@@ -256,6 +281,7 @@ async function buildContext(storeId: string, userContext: Record<string, unknown
     userContext,
     salesSummary,
     recentCloseouts: Array.isArray(closeouts) ? closeouts : closeouts?.error,
+    productCounts,
   }
 }
 
