@@ -166,6 +166,21 @@ function getOutstandingCents(customer: Pick<Customer, 'debt'>): number {
   return Number.isFinite(asNumber) ? asNumber : 0
 }
 
+function parseAmountToCents(input: string): number | null {
+  const normalized = input.replace(/,/g, '').trim()
+  if (!normalized) return null
+  const value = Number.parseFloat(normalized)
+  if (!Number.isFinite(value) || value <= 0) return null
+  return Math.round(value * 100)
+}
+
+function parseDateInput(value: string): Date | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Date.parse(trimmed)
+  return Number.isNaN(parsed) ? null : new Date(parsed)
+}
+
 function formatDate(date: Date | null): string {
   if (!date) return '—'
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
@@ -257,6 +272,8 @@ export default function Customers() {
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
   const [tagsInput, setTagsInput] = useState('')
+  const [debtAmountInput, setDebtAmountInput] = useState('')
+  const [debtDueDateInput, setDebtDueDateInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -758,6 +775,8 @@ export default function Customers() {
     setEmail('')
     setNotes('')
     setTagsInput('')
+    setDebtAmountInput('')
+    setDebtDueDateInput('')
     setEditingCustomerId(null)
     setError(null)
   }
@@ -778,6 +797,8 @@ export default function Customers() {
     try {
       const parsedTags = normalizeTags(tagsInput)
       const normalizedPhone = normalizePhoneNumber(phone)
+      const parsedDebtCents = parseAmountToCents(debtAmountInput)
+      const parsedDueDate = parseDateInput(debtDueDateInput)
       if (editingCustomerId) {
         const updatePayload: Record<string, unknown> = {
           name: trimmedName,
@@ -788,6 +809,13 @@ export default function Customers() {
         updatePayload.email = email.trim() ? email.trim() : null
         updatePayload.notes = notes.trim() ? notes.trim() : null
         updatePayload.tags = parsedTags
+
+        if (parsedDebtCents && parsedDebtCents > 0) {
+          updatePayload['debt.outstandingCents'] = parsedDebtCents
+          updatePayload['debt.dueDate'] = parsedDueDate ?? null
+        } else {
+          updatePayload.debt = null
+        }
         await updateDoc(doc(db, 'customers', editingCustomerId), updatePayload)
         setSelectedCustomerId(editingCustomerId)
         showSuccess('Customer updated successfully.')
@@ -799,6 +827,9 @@ export default function Customers() {
           ...(email.trim() ? { email: email.trim() } : {}),
           ...(notes.trim() ? { notes: notes.trim() } : {}),
           ...(parsedTags.length ? { tags: parsedTags } : {}),
+          ...(parsedDebtCents && parsedDebtCents > 0
+            ? { debt: { outstandingCents: parsedDebtCents, dueDate: parsedDueDate ?? null } }
+            : {}),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
@@ -999,6 +1030,10 @@ export default function Customers() {
     setEmail(customer.email ?? '')
     setNotes(customer.notes ?? '')
     setTagsInput((customer.tags ?? []).join(', '))
+    const outstandingCents = getOutstandingCents(customer)
+    setDebtAmountInput(outstandingCents > 0 ? (outstandingCents / 100).toFixed(2) : '')
+    const dueDate = normalizeDateLike(customer.debt?.dueDate)
+    setDebtDueDateInput(dueDate ? dueDate.toISOString().slice(0, 10) : '')
   }
 
   function beginView(customer: Customer) {
@@ -1092,16 +1127,47 @@ export default function Customers() {
               />
             </div>
 
+            <div className="customers-page__form-row">
+              <div className="field">
+                <label className="field__label" htmlFor="customer-tags">Segmentation tags</label>
+                <input
+                  id="customer-tags"
+                  value={tagsInput}
+                  onChange={event => setTagsInput(event.target.value)}
+                  placeholder="e.g. VIP, Wholesale, Birthday Club"
+                  disabled={isFormDisabled}
+                />
+                <p className="field__hint">Separate multiple tags with commas to power quick filters and campaigns.</p>
+              </div>
+
+              <div className="field">
+                <label className="field__label" htmlFor="customer-debt">Outstanding balance (GHS)</label>
+                <input
+                  id="customer-debt"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={debtAmountInput}
+                  onChange={event => setDebtAmountInput(event.target.value)}
+                  placeholder="e.g. 120.50"
+                  disabled={isFormDisabled}
+                />
+                <p className="field__hint">
+                  Capture any money owed by this customer so it appears in finance and dashboard debt metrics.
+                </p>
+              </div>
+            </div>
+
             <div className="field">
-              <label className="field__label" htmlFor="customer-tags">Segmentation tags</label>
+              <label className="field__label" htmlFor="customer-debt-due">Debt due date (optional)</label>
               <input
-                id="customer-tags"
-                value={tagsInput}
-                onChange={event => setTagsInput(event.target.value)}
-                placeholder="e.g. VIP, Wholesale, Birthday Club"
+                id="customer-debt-due"
+                type="date"
+                value={debtDueDateInput}
+                onChange={event => setDebtDueDateInput(event.target.value)}
                 disabled={isFormDisabled}
               />
-              <p className="field__hint">Separate multiple tags with commas to power quick filters and campaigns.</p>
+              <p className="field__hint">Add a due date to highlight overdue balances in reminders and reports.</p>
             </div>
 
             {error && <p className="customers-page__message customers-page__message--error">{error}</p>}
