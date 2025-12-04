@@ -511,7 +511,6 @@ export default function Sell() {
     return amountPaid < totalAfterDiscount
   }, [amountPaid, totalAfterDiscount])
 
-
   function printReceipt(options: {
     saleId: string
     items: CartLine[]
@@ -522,6 +521,13 @@ export default function Sell() {
     customerName?: string | null
   }) {
     try {
+      const iframe = document.createElement('iframe')
+      iframe.style.position = 'fixed'
+      iframe.style.width = '0'
+      iframe.style.height = '0'
+      iframe.style.border = '0'
+      iframe.style.visibility = 'hidden'
+
       const receiptDate = new Date().toLocaleString()
       const lineRows = options.items
         .map(line => {
@@ -569,16 +575,6 @@ export default function Sell() {
     </body>
   </html>`
 
-      const iframe = document.createElement('iframe')
-      iframe.style.position = 'fixed'
-      iframe.style.top = '-10000px'
-      iframe.style.left = '-10000px'
-      iframe.style.width = '0'
-      iframe.style.height = '0'
-      iframe.style.border = '0'
-      iframe.style.visibility = 'hidden'
-      iframe.srcdoc = receiptHtml
-
       iframe.onload = () => {
         const frameWindow = iframe.contentWindow
         if (frameWindow) {
@@ -591,6 +587,7 @@ export default function Sell() {
         }, 500)
       }
 
+      iframe.srcdoc = receiptHtml
       document.body.appendChild(iframe)
     } catch (error) {
       console.error('[sell] Unable to print receipt', error)
