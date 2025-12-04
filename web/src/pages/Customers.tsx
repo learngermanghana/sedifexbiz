@@ -61,6 +61,8 @@ type CachedSaleRecord = {
   items?: unknown
 } & Record<string, unknown>
 
+type MessageChannel = 'whatsapp' | 'telegram' | 'email'
+
 const RECENT_VISIT_DAYS = 90
 const HIGH_VALUE_THRESHOLD = 1000
 
@@ -228,6 +230,8 @@ export default function Customers() {
   const [searchTerm, setSearchTerm] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [quickFilter, setQuickFilter] = useState<'all' | 'recent' | 'noPurchases' | 'highValue' | 'untagged'>('all')
+  const [messageChannel, setMessageChannel] = useState<MessageChannel | null>(null)
+  const [messageBody, setMessageBody] = useState('')
   useEffect(() => {
     return () => {
       if (messageTimeoutRef.current) {
@@ -550,6 +554,32 @@ export default function Customers() {
     ? `mailto:${selectedCustomer.email.trim()}`
     : ''
 
+  const messageTemplates = useMemo(
+    () => [
+      {
+        id: 'thank-you',
+        title: 'Thank you for your visit',
+        body: `Hi ${selectedCustomerName || 'there'}, thanks for stopping by today. Let me know if you have any questions about your purchase.`,
+      },
+      {
+        id: 'new-arrivals',
+        title: 'Share new arrivals',
+        body: `Hi ${selectedCustomerName || 'there'}, we just stocked a few new items that match what you like. Want me to reserve something for you?`,
+      },
+      {
+        id: 'feedback',
+        title: 'Ask for feedback',
+        body: `Hello ${selectedCustomerName || 'there'}, I hope you enjoyed your recent experience. I would love to hear any feedback so we can serve you even better.`,
+      },
+      {
+        id: 'follow-up',
+        title: 'Follow up on inquiry',
+        body: `${selectedCustomerName || 'Hi there'}, I’m following up on your last inquiry. Do you want me to prepare a quote or send more details?`,
+      },
+    ],
+    [selectedCustomerName],
+  )
+
   function openExternal(link: string | null) {
     if (!link) return
     window.open(link, '_blank', 'noreferrer')
@@ -563,6 +593,60 @@ export default function Customers() {
   function handleViewActivities() {
     if (!selectedCustomerId) return
     navigate('/activity')
+  }
+
+  function openMessageComposer(channel: MessageChannel) {
+    if (!selectedCustomerId) return
+    setMessageChannel(channel)
+    setMessageBody(messageTemplates[0]?.body ?? '')
+  }
+
+  function closeMessageComposer() {
+    setMessageChannel(null)
+    setMessageBody('')
+  }
+
+  function getChannelLabel(channel: MessageChannel | null): string {
+    switch (channel) {
+      case 'whatsapp':
+        return 'WhatsApp'
+      case 'telegram':
+        return 'Telegram'
+      case 'email':
+        return 'email'
+      default:
+        return 'message'
+    }
+  }
+
+  function buildMessageLink(channel: MessageChannel, message: string): string | null {
+    if (!message.trim()) return null
+    const encodedMessage = encodeURIComponent(message.trim())
+
+    switch (channel) {
+      case 'whatsapp':
+        return whatsappLink ? `${whatsappLink}?text=${encodedMessage}` : null
+      case 'telegram': {
+        if (normalizedSelectedPhone) {
+          return `${telegramLink}?text=${encodedMessage}`
+        }
+        return `https://t.me/share/url?text=${encodedMessage}`
+      }
+      case 'email': {
+        const subject = encodeURIComponent(`Message for ${selectedCustomerName || 'you'}`)
+        return emailLink ? `${emailLink}?subject=${subject}&body=${encodedMessage}` : null
+      }
+      default:
+        return null
+    }
+  }
+
+  function handleSendMessage() {
+    if (!messageChannel) return
+    const link = buildMessageLink(messageChannel, messageBody)
+    if (!link) return
+    openExternal(link)
+    closeMessageComposer()
   }
 
   function resetForm() {
@@ -1182,7 +1266,7 @@ export default function Customers() {
                       type="button"
                       className="button button--outline button--small"
                       disabled={!whatsappLink}
-                      onClick={() => openExternal(whatsappLink || null)}
+                      onClick={() => openMessageComposer('whatsapp')}
                     >
                       Send WhatsApp
                     </button>
@@ -1190,7 +1274,7 @@ export default function Customers() {
                       type="button"
                       className="button button--outline button--small"
                       disabled={!telegramLink}
-                      onClick={() => openExternal(telegramLink || null)}
+                      onClick={() => openMessageComposer('telegram')}
                     >
                       Message on Telegram
                     </button>
@@ -1198,7 +1282,7 @@ export default function Customers() {
                       type="button"
                       className="button button--ghost button--small"
                       disabled={!emailLink}
-                      onClick={() => openExternal(emailLink || null)}
+                      onClick={() => openMessageComposer('email')}
                     >
                       Send email
                     </button>
@@ -1293,6 +1377,66 @@ export default function Customers() {
           )}
         </section>
       </div>
+
+      {messageChannel ? (
+        <div className="customers-page__dialog" role="dialog" aria-modal="true">
+          <div className="customers-page__dialog-content">
+            <div className="customers-page__dialog-head">
+              <div>
+                <p className="customers-page__dialog-subtitle">Quick templates</p>
+                <h4 className="customers-page__dialog-title">
+                  Send a {getChannelLabel(messageChannel)} to {selectedCustomerName}
+                </h4>
+              </div>
+              <button type="button" className="customers-page__dialog-close" onClick={closeMessageComposer}>
+                Close
+              </button>
+            </div>
+
+            <div className="customers-page__template-list">
+              {messageTemplates.map(template => (
+                <div key={template.id} className="customers-page__template-card">
+                  <div className="customers-page__template-header">
+                    <h5>{template.title}</h5>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => setMessageBody(template.body)}
+                    >
+                      Use template
+                    </button>
+                  </div>
+                  <p>{template.body}</p>
+                </div>
+              ))}
+            </div>
+
+            <label className="customers-page__composer-field">
+              <span>Customize message</span>
+              <textarea
+                rows={4}
+                value={messageBody}
+                onChange={event => setMessageBody(event.target.value)}
+                placeholder="Type or tweak your message before sending"
+              />
+            </label>
+
+            <div className="customers-page__dialog-actions">
+              <button type="button" className="customers-page__cancel" onClick={closeMessageComposer}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={handleSendMessage}
+                disabled={!messageBody.trim()}
+              >
+                Send via {getChannelLabel(messageChannel)}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
