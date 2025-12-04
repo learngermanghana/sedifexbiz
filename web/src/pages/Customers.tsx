@@ -1393,35 +1393,33 @@ export default function Customers() {
               </button>
             </div>
 
-            <div className="customers-page__dialog-body">
-              <div className="customers-page__template-list">
-                {messageTemplates.map(template => (
-                  <div key={template.id} className="customers-page__template-card">
-                    <div className="customers-page__template-header">
-                      <h5>{template.title}</h5>
-                      <button
-                        type="button"
-                        className="button button--ghost button--small"
-                        onClick={() => setMessageBody(template.body)}
-                      >
-                        Use template
-                      </button>
-                    </div>
-                    <p>{template.body}</p>
+            <div className="customers-page__template-list">
+              {messageTemplates.map(template => (
+                <div key={template.id} className="customers-page__template-card">
+                  <div className="customers-page__template-header">
+                    <h5>{template.title}</h5>
+                    <button
+                      type="button"
+                      className="button button--ghost button--small"
+                      onClick={() => setMessageBody(template.body)}
+                    >
+                      Use template
+                    </button>
                   </div>
-                ))}
-              </div>
-
-              <label className="customers-page__composer-field">
-                <span>Customize message</span>
-                <textarea
-                  rows={4}
-                  value={messageBody}
-                  onChange={event => setMessageBody(event.target.value)}
-                  placeholder="Type or tweak your message before sending"
-                />
-              </label>
+                  <p>{template.body}</p>
+                </div>
+              ))}
             </div>
+
+            <label className="customers-page__composer-field">
+              <span>Customize message</span>
+              <textarea
+                rows={4}
+                value={messageBody}
+                onChange={event => setMessageBody(event.target.value)}
+                placeholder="Type or tweak your message before sending"
+              />
+            </label>
 
             <div className="customers-page__dialog-actions">
               <button type="button" className="customers-page__cancel" onClick={closeMessageComposer}>

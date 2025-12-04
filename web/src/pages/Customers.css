@@ -296,12 +296,10 @@
 
 .customers-page__dialog-content {
   background: #fff;
-  width: min(620px, calc(100% - 32px));
-  max-height: min(90vh, 760px);
+  width: min(720px, 100%);
   border-radius: 12px;
   padding: 20px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 16px;
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25);
 }
@@ -331,15 +329,6 @@
   border-radius: 6px;
   padding: 8px 12px;
   cursor: pointer;
-}
-
-.customers-page__dialog-body {
-  display: grid;
-  gap: 16px;
-  overflow-y: auto;
-  padding-right: 6px;
-  flex: 1;
-  min-height: 0;
 }
 
 .customers-page__template-list {
