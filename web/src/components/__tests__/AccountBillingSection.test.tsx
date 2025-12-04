@@ -4,16 +4,37 @@ import userEvent from '@testing-library/user-event'
 import { AccountBillingSection } from '../AccountBillingSection'
 
 const mockStartPaystackCheckout = vi.fn()
+const originalLocation = window.location
+
+function mockWindowAssign() {
+  const assignSpy = vi.fn()
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: { ...originalLocation, assign: assignSpy },
+  })
+  return assignSpy
+}
 
 vi.mock('../../lib/paystackClient', () => ({
   startPaystackCheckout: (...args: Parameters<typeof mockStartPaystackCheckout>) =>
     mockStartPaystackCheckout(...args),
 }))
 
-describe('AccountBillingSection', () => {
-  beforeEach(() => {
-    mockStartPaystackCheckout.mockReset()
-  })
+  describe('AccountBillingSection', () => {
+    beforeEach(() => {
+      mockStartPaystackCheckout.mockReset()
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: originalLocation,
+      })
+    })
+
+    afterAll(() => {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: originalLocation,
+      })
+    })
 
   it('shows a message when the user is not the owner', () => {
     render(<AccountBillingSection storeId="store-123" ownerEmail="owner@example.com" isOwner={false} />)
@@ -33,7 +54,7 @@ describe('AccountBillingSection', () => {
   })
 
   it('starts the Paystack checkout when everything is valid', async () => {
-    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => {})
+    const assignSpy = mockWindowAssign()
 
     mockStartPaystackCheckout.mockResolvedValue({
       ok: true,
@@ -60,7 +81,6 @@ describe('AccountBillingSection', () => {
     })
 
     expect(assignSpy).toHaveBeenCalledWith('https://paystack.example/checkout')
-    assignSpy.mockRestore()
   })
 
   it('surfaces backend errors when checkout fails', async () => {
@@ -86,8 +106,50 @@ describe('AccountBillingSection', () => {
       />,
     )
 
-    expect(screen.getByText(/contract is active/i)).toBeInTheDocument()
+    expect(screen.getByText(/contract is active on the starter – yearly plan/i)).toBeInTheDocument()
     expect(screen.getByText(/Dec 31, 2024, 10:00 AM/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /pay with paystack/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /upgrade to yearly/i })).not.toBeInTheDocument()
+  })
+
+  it('lets a monthly customer upgrade to yearly and shows the expiry date', async () => {
+    const user = userEvent.setup()
+    const assignSpy = mockWindowAssign()
+
+    mockStartPaystackCheckout.mockResolvedValue({
+      ok: true,
+      authorizationUrl: 'https://paystack.example/checkout',
+      reference: 'ref-456',
+      publicKey: 'pk_test',
+    })
+
+    render(
+      <AccountBillingSection
+        storeId="store-123"
+        ownerEmail="owner@example.com"
+        isOwner
+        contractStatus="active"
+        billingPlan="starter-monthly"
+        contractEndDate="Jan 31, 2025, 10:00 AM"
+      />,
+    )
+
+    expect(screen.getByText(/contract is active on the starter – monthly plan/i)).toBeInTheDocument()
+    expect(screen.getByText(/Jan 31, 2025, 10:00 AM/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /upgrade to yearly/i }))
+
+    await waitFor(() => {
+      expect(mockStartPaystackCheckout).toHaveBeenCalledWith({
+        email: 'owner@example.com',
+        storeId: 'store-123',
+        amount: 600,
+        plan: 'starter-yearly',
+        redirectUrl: expect.stringContaining('/billing/verify'),
+        metadata: { source: 'account-contract-billing' },
+      })
+    })
+
+    expect(assignSpy).toHaveBeenCalledWith('https://paystack.example/checkout')
   })
 })

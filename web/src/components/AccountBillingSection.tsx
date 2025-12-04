@@ -36,14 +36,14 @@ export const AccountBillingSection: React.FC<Props> = ({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const activePlan = PLANS.find(plan => plan.id === selectedPlanId) ?? PLANS[0]
+  const billingPlanDisplay =
+    PLANS.find(plan => plan.id === billingPlan)?.label ?? billingPlan ?? null
 
   const hasPaidContract =
     (contractStatus && contractStatus !== 'trial' && contractStatus !== 'unpaid') ||
     (billingPlan && billingPlan !== 'trial')
 
-  const handleStartCheckout = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const startCheckoutForPlan = async (planId: string) => {
     setError(null)
 
     if (!isOwner) {
@@ -61,7 +61,9 @@ export const AccountBillingSection: React.FC<Props> = ({
       return
     }
 
-    if (!activePlan) {
+    const targetPlan = PLANS.find(plan => plan.id === planId)
+
+    if (!targetPlan) {
       setError('No billing plans are available right now. Please try again later.')
       return
     }
@@ -74,8 +76,8 @@ export const AccountBillingSection: React.FC<Props> = ({
       const response = await startPaystackCheckout({
         email: ownerEmail,
         storeId,
-        amount: activePlan.amountGhs,
-        plan: activePlan.id,
+        amount: targetPlan.amountGhs,
+        plan: targetPlan.id,
         redirectUrl,
         metadata: {
           source: 'account-contract-billing',
@@ -97,6 +99,17 @@ export const AccountBillingSection: React.FC<Props> = ({
       setLoading(false)
     }
   }
+
+  const handleStartCheckout = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    await startCheckoutForPlan(selectedPlanId)
+  }
+
+  const handleUpgradeToYearly = async () => {
+    await startCheckoutForPlan('starter-yearly')
+  }
+
+  const isYearlyPlan = billingPlan?.toLowerCase().includes('year') ?? false
 
   if (!isOwner) {
     return (
@@ -131,11 +144,32 @@ export const AccountBillingSection: React.FC<Props> = ({
 
       {hasPaidContract ? (
         <div className="account-overview__notice" role="status">
-          <p className="text-sm text-gray-700">
-            Your contract is active. It will remain valid until{' '}
-            <strong>{contractEndDate ?? '—'}</strong>. If you need to make changes, contact your
-            Sedifex account manager.
-          </p>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-700">
+              Your contract is active
+              {billingPlanDisplay ? ` on the ${billingPlanDisplay} plan` : ''}. It will remain
+              valid until <strong>{contractEndDate ?? '—'}</strong>. If you need to make changes,
+              contact your Sedifex account manager.
+            </p>
+
+            {!isYearlyPlan && (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={handleUpgradeToYearly}
+                  disabled={loading}
+                >
+                  {loading ? 'Starting upgrade…' : 'Upgrade to yearly'}
+                </button>
+                <p className="text-xs text-gray-600">
+                  Switch to annual billing to keep your contract active for a full year.
+                </p>
+              </div>
+            )}
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
+          </div>
         </div>
       ) : (
         <>
