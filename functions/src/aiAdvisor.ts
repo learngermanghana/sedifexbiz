@@ -285,6 +285,26 @@ async function buildContext(storeId: string, userContext: Record<string, unknown
   }
 }
 
+function buildInsights(contextData: AdvisorContextData): AdvisorInsights {
+  const insights: AdvisorInsights = []
+
+  const counts = contextData.productCounts as ProductCounts | { error?: unknown } | undefined
+  if (counts && 'total' in counts) {
+    insights.push(
+      `Catalog totals — Products: ${counts.products}, Services: ${counts.services}, Combined: ${counts.total}.`,
+    )
+  }
+
+  const sales = contextData.salesSummary as SalesSummary | { error?: unknown } | undefined
+  if (sales && 'receiptCount' in sales) {
+    insights.push(
+      `Today so far — ${sales.receiptCount} receipts, $${sales.totalSales.toFixed(2)} gross, $${sales.totalTax.toFixed(2)} tax, avg ticket $${sales.averageSaleValue.toFixed(2)}.`,
+    )
+  }
+
+  return insights
+}
+
 async function callOpenAI(question: string, contextJson: string) {
   const apiKey = OPENAI_API_KEY.value()
   if (!apiKey) {
@@ -307,7 +327,7 @@ async function callOpenAI(question: string, contextJson: string) {
         {
           role: 'system',
           content:
-            'You are Sedifex AI. Read the provided information, explain what it contains in 50 words essay, actionable suggestions. Always make it personal so the clients can understand. Dont overuse technial terms and arrange it well',
+            'You are Sedifex AI. Use the insights and JSON context to answer the question directly. Always mention product and service totals when asked about inventory. Respond in under 80 words with a friendly, plain-language summary plus 2-3 concrete next steps. Avoid jargon and structure the advice cleanly.',
         },
         {
           role: 'user',
@@ -353,6 +373,7 @@ export const generateAiAdvice = functions.https.onCall(
     const userContext = normalizeJsonContext(data.jsonContext)
 
     const contextData = await buildContext(storeId, userContext)
+    contextData.insights = buildInsights(contextData)
     const contextJson = truncateJson(contextData, MAX_CONTEXT_CHARS)
 
     const advice = await callOpenAI(question, contextJson)
