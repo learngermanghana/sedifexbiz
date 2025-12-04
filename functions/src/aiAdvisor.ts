@@ -7,6 +7,8 @@ const OPENAI_API_KEY = defineString('OPENAI_API_KEY')
 const MODEL_NAME = 'gpt-4o-mini'
 const MAX_CONTEXT_CHARS = 12000
 
+// ---------- Request / response types ----------
+
 type AdvisorRequest = {
   storeId?: unknown
   question?: unknown
@@ -18,6 +20,8 @@ type AdvisorResponse = {
   storeId: string
   dataPreview: Record<string, unknown>
 }
+
+// ---------- Data shapes used in context ----------
 
 type SalesSummary = {
   window: { start: string | unknown; end: string | unknown }
@@ -48,6 +52,37 @@ type ProductCounts = {
   products: number
   services: number
 }
+
+type ActivityEntry = {
+  id: string
+  createdAt: unknown
+  type: string
+  summary: string
+  detail: string
+  actor: string
+}
+
+type TrendSummary = {
+  window: { start: string | unknown; end: string | unknown }
+  totalSales: number
+  avgDailySales: number
+  receiptCount: number
+}
+
+type GoalProgress = {
+  target: number | null
+  period: string | null
+  monthToDateSales: number
+  progressPct: number | null
+  projectedEndPct: number | null
+}
+
+type ExpenseSummary = {
+  window: { start: string | unknown; end: string | unknown }
+  totalExpenses: number
+}
+
+// ---------- Helpers: coercion / formatting ----------
 
 function coerceStoreId(data: AdvisorRequest, context: functions.https.CallableContext) {
   const explicitStoreId =
@@ -84,6 +119,44 @@ function normalizeNumber(value: unknown) {
   const n = typeof value === 'number' ? value : Number(value ?? 0)
   return Number.isFinite(n) ? n : 0
 }
+
+function truncateJson(data: unknown, maxChars: number) {
+  const json = JSON.stringify(data, null, 2)
+  if (json.length <= maxChars) return json
+  return `${json.slice(0, maxChars)}\n…truncated…`
+}
+
+// ---------- Time range helpers ----------
+
+function getDayRange(date: Date) {
+  const start = new Date(date)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 1)
+
+  return {
+    start: Timestamp.fromDate(start),
+    end: Timestamp.fromDate(end),
+  }
+}
+
+function getTodayRange() {
+  return getDayRange(new Date())
+}
+
+function getLastNDaysRange(days: number) {
+  const end = new Date()
+  end.setHours(0, 0, 0, 0) // today 00:00
+  const start = new Date(end)
+  start.setDate(start.getDate() - days)
+
+  return {
+    start: Timestamp.fromDate(start),
+    end: Timestamp.fromDate(end),
+  }
+}
+
+// ---------- Pick workspace/store fields ----------
 
 function pickWorkspaceData(raw: DocumentData | undefined | null) {
   if (!raw) return null
@@ -124,23 +197,7 @@ function pickStoreData(raw: DocumentData | undefined | null) {
   }
 }
 
-function truncateJson(data: unknown, maxChars: number) {
-  const json = JSON.stringify(data, null, 2)
-  if (json.length <= maxChars) return json
-  return `${json.slice(0, maxChars)}\n…truncated…`
-}
-
-function getTodayRange() {
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(start)
-  end.setDate(end.getDate() + 1)
-
-  return {
-    start: Timestamp.fromDate(start),
-    end: Timestamp.fromDate(end),
-  }
-}
+// ---------- Sales & expenses aggregation ----------
 
 async function buildSalesSummary(storeId: string): Promise<SalesSummary> {
   const { start, end } = getTodayRange()
@@ -213,6 +270,64 @@ async function buildSalesSummary(storeId: string): Promise<SalesSummary> {
   }
 }
 
+async function buildTrendSummary(storeId: string, days: number): Promise<TrendSummary> {
+  const { start, end } = getLastNDaysRange(days)
+  const snapshot = await defaultDb
+    .collection('sales')
+    .where('storeId', '==', storeId)
+    .where('createdAt', '>=', start)
+    .where('createdAt', '<', end)
+    .get()
+
+  let totalSales = 0
+  let receiptCount = 0
+
+  snapshot.forEach(docSnap => {
+    const data = docSnap.data() as any
+    totalSales += normalizeNumber(data.total)
+    receiptCount += 1
+  })
+
+  const avgDailySales = days > 0 ? totalSales / days : 0
+
+  return {
+    window: {
+      start: normalizeTimestamp(start),
+      end: normalizeTimestamp(end),
+    },
+    totalSales,
+    avgDailySales,
+    receiptCount,
+  }
+}
+
+async function buildExpenseSummary(storeId: string, days: number): Promise<ExpenseSummary> {
+  const { start, end } = getLastNDaysRange(days)
+  const snapshot = await defaultDb
+    .collection('expenses')
+    .where('storeId', '==', storeId)
+    .where('createdAt', '>=', start)
+    .where('createdAt', '<', end)
+    .get()
+
+  let totalExpenses = 0
+
+  snapshot.forEach(docSnap => {
+    const data = docSnap.data() as any
+    totalExpenses += normalizeNumber(data.amount ?? data.total ?? data.value)
+  })
+
+  return {
+    window: {
+      start: normalizeTimestamp(start),
+      end: normalizeTimestamp(end),
+    },
+    totalExpenses,
+  }
+}
+
+// ---------- Closeouts, products, activity, goals ----------
+
 async function fetchRecentCloseouts(storeId: string): Promise<CloseoutPreview[]> {
   const closeouts = await defaultDb
     .collection('closeouts')
@@ -262,28 +377,167 @@ async function fetchProductCounts(storeId: string): Promise<ProductCounts> {
   }
 }
 
+async function fetchRecentActivity(storeId: string): Promise<ActivityEntry[]> {
+  const snapshot = await defaultDb
+    .collection('activity')
+    .where('storeId', '==', storeId)
+    .orderBy('createdAt', 'desc')
+    .limit(50)
+    .get()
+
+  return snapshot.docs.map(docSnap => {
+    const data = docSnap.data() as any
+
+    // You can mask emails here if you like:
+    const actorRaw = typeof data.actor === 'string' ? data.actor : ''
+    const actor = actorRaw
+
+    return {
+      id: docSnap.id,
+      createdAt: normalizeTimestamp(data.createdAt),
+      type: typeof data.type === 'string' ? data.type : 'unknown',
+      summary: typeof data.summary === 'string' ? data.summary : '',
+      detail: typeof data.detail === 'string' ? data.detail : '',
+      actor,
+    }
+  })
+}
+
+async function fetchGoalProgress(storeId: string, monthSales: number): Promise<GoalProgress> {
+  // Assumes a document in storeGoals with id == storeId
+  const goalSnap = await defaultDb.collection('storeGoals').doc(storeId).get()
+  if (!goalSnap.exists) {
+    return {
+      target: null,
+      period: null,
+      monthToDateSales: monthSales,
+      progressPct: null,
+      projectedEndPct: null,
+    }
+  }
+
+  const data = goalSnap.data() as any
+  const target = normalizeNumber(data.target ?? data.salesTarget)
+  const period =
+    typeof data.period === 'string'
+      ? data.period
+      : typeof data.type === 'string'
+        ? data.type
+        : 'monthly'
+
+  // monthSales passed in is month-to-date sales
+  const progressPct = target > 0 ? (monthSales / target) * 100 : null
+
+  // rough projection: scale current pace to whole month length
+  const now = new Date()
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+  const dayOfMonth = now.getDate()
+  const projectedEnd = dayOfMonth > 0 ? (monthSales / dayOfMonth) * daysInMonth : monthSales
+  const projectedEndPct = target > 0 ? (projectedEnd / target) * 100 : null
+
+  return {
+    target,
+    period,
+    monthToDateSales: monthSales,
+    progressPct,
+    projectedEndPct,
+  }
+}
+
+// ---------- Build overall context ----------
+
 async function buildContext(storeId: string, userContext: Record<string, unknown> | null) {
-  const [workspaceSnap, storeSnap, salesSummary, closeouts, productCounts] = await Promise.all([
+  const todayRange = getTodayRange()
+  const monthStart = new Date()
+  monthStart.setDate(1)
+  monthStart.setHours(0, 0, 0, 0)
+  const monthStartTs = Timestamp.fromDate(monthStart)
+
+  const [
+    workspaceSnap,
+    storeSnap,
+    salesToday,
+    sales7d,
+    salesPrev7d,
+    expenses7d,
+    closeouts,
+    productCounts,
+    activity,
+    monthSalesSnap,
+  ] = await Promise.all([
     defaultDb.collection('workspaces').doc(storeId).get(),
     defaultDb.collection('stores').doc(storeId).get(),
-    buildSalesSummary(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
-    fetchRecentCloseouts(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
-    fetchProductCounts(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
+    buildSalesSummary(storeId).catch(error => ({
+      error: error instanceof Error ? error.message : String(error),
+    })),
+    buildTrendSummary(storeId, 7).catch(error => ({
+      error: error instanceof Error ? error.message : String(error),
+    })),
+    buildTrendSummary(storeId, 14).catch(error => ({
+      error: error instanceof Error ? error.message : String(error),
+    })), // use 7 vs previous 7 out of 14 days
+    buildExpenseSummary(storeId, 7).catch(error => ({
+      error: error instanceof Error ? error.message : String(error),
+    })),
+    fetchRecentCloseouts(storeId).catch(error => ({
+      error: error instanceof Error ? error.message : String(error),
+    })),
+    fetchProductCounts(storeId).catch(error => ({
+      error: error instanceof Error ? error.message : String(error),
+    })),
+    fetchRecentActivity(storeId).catch(error => ({
+      error: error instanceof Error ? error.message : String(error),
+    })),
+    defaultDb
+      .collection('sales')
+      .where('storeId', '==', storeId)
+      .where('createdAt', '>=', monthStartTs)
+      .where('createdAt', '<', todayRange.start) // up to start of today
+      .get()
+      .catch(error => ({
+        error: error instanceof Error ? error.message : String(error),
+      })),
   ])
 
   const workspace = pickWorkspaceData(workspaceSnap.exists ? workspaceSnap.data() : null)
   const store = pickStoreData(storeSnap.exists ? storeSnap.data() : null)
+
+  // Month-to-date sales calculation
+  let monthToDateSales = 0
+  if ('docs' in monthSalesSnap && Array.isArray((monthSalesSnap as any).docs)) {
+    ;(monthSalesSnap as any).docs.forEach((docSnap: any) => {
+      const data = docSnap.data()
+      monthToDateSales += normalizeNumber(data.total)
+    })
+  }
+
+  const goalProgress = await fetchGoalProgress(storeId, monthToDateSales).catch(error => ({
+    error: error instanceof Error ? error.message : String(error),
+  }))
+
+  // Build a simpler "kpi" block for managers
+  const kpis = {
+    today: salesToday,
+    trend7d: sales7d,
+    trendPrev7d: salesPrev7d,
+    expenses7d,
+    goalProgress,
+  }
 
   return {
     storeId,
     workspace,
     store,
     userContext,
-    salesSummary,
-    recentCloseouts: Array.isArray(closeouts) ? closeouts : closeouts?.error,
+    kpis,
+    salesSummary: salesToday,
+    recentCloseouts: Array.isArray(closeouts) ? closeouts : (closeouts as any)?.error,
     productCounts,
+    recentActivity: Array.isArray(activity) ? activity : (activity as any)?.error,
   }
 }
+
+// ---------- OpenAI call ----------
 
 async function callOpenAI(question: string, contextJson: string) {
   const apiKey = OPENAI_API_KEY.value()
@@ -307,11 +561,21 @@ async function callOpenAI(question: string, contextJson: string) {
         {
           role: 'system',
           content:
-            'You are Sedifex AI. Read the provided information, explain what it contains in 50 words essay, actionable suggestions. Always make it personal so the clients can understand. Dont overuse technial terms and arrange it well',
+            [
+              'You are "Sedifex AI", an assistant for busy shop managers.',
+              'They only have 30 seconds to read your answer.',
+              '',
+              'When you answer:',
+              '1) Start with 3–5 bullet points of the most important insights: big changes, risks, or opportunities.',
+              '2) Then show a section called "Actions for today" with 3–7 short bullet points.',
+              '   Each action must start with a verb, e.g. "Check…", "Increase…", "Talk to…".',
+              '3) Use simple business language. Avoid technical jargon or talking about JSON.',
+              '4) If the user asks a specific question, answer it first, then add any extra insights from the data.',
+            ].join('\n'),
         },
         {
           role: 'user',
-          content: `Firebase JSON (truncated to ${MAX_CONTEXT_CHARS} chars):\n${contextJson}\n\nQuestion: ${question}`,
+          content: `Store context (truncated to ${MAX_CONTEXT_CHARS} chars):\n${contextJson}\n\nQuestion from manager: ${question}`,
         },
       ],
     }),
@@ -329,14 +593,13 @@ async function callOpenAI(question: string, contextJson: string) {
   const advice = (json?.choices?.[0]?.message?.content as string | undefined)?.trim()
 
   if (!advice) {
-    throw new functions.https.HttpsError(
-      'internal',
-      'OpenAI returned an empty response.',
-    )
+    throw new functions.https.HttpsError('internal', 'OpenAI returned an empty response.')
   }
 
   return advice
 }
+
+// ---------- Cloud Function entrypoint ----------
 
 export const generateAiAdvice = functions.https.onCall(
   async (rawData: unknown, context): Promise<AdvisorResponse> => {
@@ -349,7 +612,8 @@ export const generateAiAdvice = functions.https.onCall(
     const question =
       typeof data.question === 'string' && data.question.trim()
         ? data.question.trim()
-        : 'Give me quick advice for this workspace.'
+        : 'Give me a daily manager briefing: key numbers, risks, and 3–7 concrete actions for today.'
+
     const userContext = normalizeJsonContext(data.jsonContext)
 
     const contextData = await buildContext(storeId, userContext)
