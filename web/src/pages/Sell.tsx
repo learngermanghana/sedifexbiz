@@ -523,6 +523,8 @@ export default function Sell() {
     try {
       const iframe = document.createElement('iframe')
       iframe.style.position = 'fixed'
+      iframe.style.top = '-10000px'
+      iframe.style.left = '-10000px'
       iframe.style.width = '0'
       iframe.style.height = '0'
       iframe.style.border = '0'
@@ -587,8 +589,14 @@ export default function Sell() {
         }, 500)
       }
 
-      iframe.srcdoc = receiptHtml
       document.body.appendChild(iframe)
+
+      const frameDoc = iframe.contentDocument || iframe.contentWindow?.document
+      if (frameDoc) {
+        frameDoc.open()
+        frameDoc.write(receiptHtml)
+        frameDoc.close()
+      }
     } catch (error) {
       console.error('[sell] Unable to print receipt', error)
     }
