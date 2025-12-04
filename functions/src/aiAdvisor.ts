@@ -49,19 +49,6 @@ type ProductCounts = {
   services: number
 }
 
-type AdvisorInsights = string[]
-
-type AdvisorContextData = {
-  storeId: string
-  workspace: Record<string, unknown> | null
-  store: ReturnType<typeof pickStoreData>
-  userContext: Record<string, unknown> | null
-  salesSummary: SalesSummary | { error?: unknown }
-  recentCloseouts: CloseoutPreview[] | unknown
-  productCounts: ProductCounts | { error?: unknown }
-  insights: AdvisorInsights
-}
-
 function coerceStoreId(data: AdvisorRequest, context: functions.https.CallableContext) {
   const explicitStoreId =
     typeof data.storeId === 'string' && data.storeId.trim() ? data.storeId.trim() : null
@@ -275,7 +262,7 @@ async function fetchProductCounts(storeId: string): Promise<ProductCounts> {
   }
 }
 
-async function buildContext(storeId: string, userContext: Record<string, unknown> | null): Promise<AdvisorContextData> {
+async function buildContext(storeId: string, userContext: Record<string, unknown> | null) {
   const [workspaceSnap, storeSnap, salesSummary, closeouts, productCounts] = await Promise.all([
     defaultDb.collection('workspaces').doc(storeId).get(),
     defaultDb.collection('stores').doc(storeId).get(),
@@ -295,7 +282,6 @@ async function buildContext(storeId: string, userContext: Record<string, unknown
     salesSummary,
     recentCloseouts: Array.isArray(closeouts) ? closeouts : closeouts?.error,
     productCounts,
-    insights: [],
   }
 }
 
