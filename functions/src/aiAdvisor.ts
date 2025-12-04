@@ -43,6 +43,25 @@ type CloseoutPreview = {
   closedByName: string
 }
 
+type ProductCounts = {
+  total: number
+  products: number
+  services: number
+}
+
+type AdvisorInsights = string[]
+
+type AdvisorContextData = {
+  storeId: string
+  workspace: Record<string, unknown> | null
+  store: ReturnType<typeof pickStoreData>
+  userContext: Record<string, unknown> | null
+  salesSummary: SalesSummary | { error?: unknown }
+  recentCloseouts: CloseoutPreview[] | unknown
+  productCounts: ProductCounts | { error?: unknown }
+  insights: AdvisorInsights
+}
+
 function coerceStoreId(data: AdvisorRequest, context: functions.https.CallableContext) {
   const explicitStoreId =
     typeof data.storeId === 'string' && data.storeId.trim() ? data.storeId.trim() : null
@@ -238,12 +257,31 @@ async function fetchRecentCloseouts(storeId: string): Promise<CloseoutPreview[]>
   })
 }
 
-async function buildContext(storeId: string, userContext: Record<string, unknown> | null) {
-  const [workspaceSnap, storeSnap, salesSummary, closeouts] = await Promise.all([
+async function fetchProductCounts(storeId: string): Promise<ProductCounts> {
+  const baseQuery = defaultDb.collection('products').where('storeId', '==', storeId)
+
+  const [allSnapshot, servicesSnapshot] = await Promise.all([
+    baseQuery.count().get(),
+    baseQuery.where('itemType', '==', 'service').count().get(),
+  ])
+
+  const total = allSnapshot.data().count
+  const services = servicesSnapshot.data().count
+
+  return {
+    total,
+    services,
+    products: Math.max(total - services, 0),
+  }
+}
+
+async function buildContext(storeId: string, userContext: Record<string, unknown> | null): Promise<AdvisorContextData> {
+  const [workspaceSnap, storeSnap, salesSummary, closeouts, productCounts] = await Promise.all([
     defaultDb.collection('workspaces').doc(storeId).get(),
     defaultDb.collection('stores').doc(storeId).get(),
     buildSalesSummary(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
     fetchRecentCloseouts(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
+    fetchProductCounts(storeId).catch(error => ({ error: error instanceof Error ? error.message : String(error) })),
   ])
 
   const workspace = pickWorkspaceData(workspaceSnap.exists ? workspaceSnap.data() : null)
@@ -256,7 +294,29 @@ async function buildContext(storeId: string, userContext: Record<string, unknown
     userContext,
     salesSummary,
     recentCloseouts: Array.isArray(closeouts) ? closeouts : closeouts?.error,
+    productCounts,
+    insights: [],
   }
+}
+
+function buildInsights(contextData: AdvisorContextData): AdvisorInsights {
+  const insights: AdvisorInsights = []
+
+  const counts = contextData.productCounts as ProductCounts | { error?: unknown } | undefined
+  if (counts && 'total' in counts) {
+    insights.push(
+      `Catalog totals — Products: ${counts.products}, Services: ${counts.services}, Combined: ${counts.total}.`,
+    )
+  }
+
+  const sales = contextData.salesSummary as SalesSummary | { error?: unknown } | undefined
+  if (sales && 'receiptCount' in sales) {
+    insights.push(
+      `Today so far — ${sales.receiptCount} receipts, $${sales.totalSales.toFixed(2)} gross, $${sales.totalTax.toFixed(2)} tax, avg ticket $${sales.averageSaleValue.toFixed(2)}.`,
+    )
+  }
+
+  return insights
 }
 
 async function callOpenAI(question: string, contextJson: string) {
@@ -281,7 +341,7 @@ async function callOpenAI(question: string, contextJson: string) {
         {
           role: 'system',
           content:
-            'You are Sedifex AI. Read the provided information, explain what it contains in 50 words essay, actionable suggestions. Always make it personal so the clients can understand. Dont overuse technial terms and arrange it well',
+            'You are Sedifex AI. Use the insights and JSON context to answer the question directly. Always mention product and service totals when asked about inventory. Respond in under 80 words with a friendly, plain-language summary plus 2-3 concrete next steps. Avoid jargon and structure the advice cleanly.',
         },
         {
           role: 'user',
@@ -327,6 +387,7 @@ export const generateAiAdvice = functions.https.onCall(
     const userContext = normalizeJsonContext(data.jsonContext)
 
     const contextData = await buildContext(storeId, userContext)
+    contextData.insights = buildInsights(contextData)
     const contextJson = truncateJson(contextData, MAX_CONTEXT_CHARS)
 
     const advice = await callOpenAI(question, contextJson)
