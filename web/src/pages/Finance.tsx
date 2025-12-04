@@ -12,6 +12,7 @@ import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 
 type RangeKey = 'month' | '30d' | '7d' | 'all'
+type DownloadTab = 'sales' | 'products' | 'expenses'
 
 type SaleRow = {
   id: string
@@ -25,6 +26,16 @@ type ExpenseRow = {
   amount: number
   date: string // yyyy-mm-dd
   createdAt: Date | null
+}
+
+type ProductRow = {
+  id: string
+  name: string
+  sku: string | null
+  price: number | null
+  stockCount: number | null
+  itemType: 'product' | 'service'
+  updatedAt: Date | null
 }
 
 function toDate(value: any): Date | null {
@@ -47,6 +58,8 @@ export default function Finance() {
   const [sales, setSales] = useState<SaleRow[]>([])
   const [expenses, setExpenses] = useState<ExpenseRow[]>([])
   const [range, setRange] = useState<RangeKey>('month')
+  const [products, setProducts] = useState<ProductRow[]>([])
+  const [activeDownloadTab, setActiveDownloadTab] = useState<DownloadTab>('sales')
 
   // --- Load sales for this workspace ---
   useEffect(() => {
@@ -126,6 +139,45 @@ export default function Finance() {
     return unsubscribe
   }, [storeId])
 
+  // --- Load products for this workspace ---
+  useEffect(() => {
+    if (!storeId) {
+      setProducts([])
+      return
+    }
+
+    const q = query(collection(db, 'products'), where('storeId', '==', storeId))
+
+    const unsubscribe = onSnapshot(q, snap => {
+      const rows: ProductRow[] = snap.docs.map(docSnap => {
+        const data = docSnap.data() as any
+
+        const price = typeof data.price === 'number' ? data.price : null
+        const stockCount =
+          typeof data.stockCount === 'number' && Number.isFinite(data.stockCount)
+            ? data.stockCount
+            : null
+
+        return {
+          id: docSnap.id,
+          name: typeof data.name === 'string' && data.name.trim() ? data.name : 'Unnamed item',
+          sku: typeof data.sku === 'string' && data.sku.trim() ? data.sku : null,
+          price,
+          stockCount,
+          itemType: data.itemType === 'service' ? 'service' : 'product',
+          updatedAt:
+            data.updatedAt && typeof data.updatedAt.toDate === 'function'
+              ? (data.updatedAt.toDate() as Date)
+              : null,
+        }
+      })
+
+      setProducts(rows)
+    })
+
+    return unsubscribe
+  }, [storeId])
+
   // --- Date range filtering ---
   const now = useMemo(() => new Date(), [])
 
@@ -184,6 +236,98 @@ export default function Finance() {
         return 'All time'
     }
   }
+
+  function escapeCsvValue(value: string | number | null | undefined): string {
+    if (value === null || value === undefined) return ''
+    const raw = typeof value === 'number' ? String(value) : value
+    const escaped = raw.replace(/"/g, '""')
+    return `"${escaped}"`
+  }
+
+  function toIsoString(date: Date | null): string {
+    return date ? date.toISOString() : ''
+  }
+
+  function downloadCsv(
+    filename: string,
+    headers: string[],
+    rows: Array<Array<string | number | null>>,
+  ) {
+    const csv = [
+      headers.map(escapeCsvValue).join(','),
+      ...rows.map(row => row.map(escapeCsvValue).join(',')),
+    ].join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(link.href)
+  }
+
+  function handleDownload(tab: DownloadTab) {
+    const today = new Date().toISOString().slice(0, 10)
+
+    if (tab === 'sales') {
+      downloadCsv(
+        `sales-${today}.csv`,
+        ['Sale ID', 'Created at', 'Gross total', 'VAT portion'],
+        sales.map(row => [row.id, toIsoString(row.createdAt), row.total, row.taxTotal]),
+      )
+      return
+    }
+
+    if (tab === 'products') {
+      downloadCsv(
+        `products-${today}.csv`,
+        ['Product ID', 'Name', 'SKU', 'Item type', 'Price', 'Stock count', 'Last updated'],
+        products.map(row => [
+          row.id,
+          row.name,
+          row.sku,
+          row.itemType,
+          row.price,
+          row.stockCount,
+          toIsoString(row.updatedAt),
+        ]),
+      )
+      return
+    }
+
+    downloadCsv(
+      `expenses-${today}.csv`,
+      ['Expense ID', 'Expense date', 'Amount', 'Created at'],
+      expenses.map(row => [row.id, row.date, row.amount, toIsoString(row.createdAt)]),
+    )
+  }
+
+  const downloadTabs: Array<{ key: DownloadTab; label: string; description: string; emptyCopy: string; total: number }> = [
+    {
+      key: 'sales',
+      label: 'Sales',
+      description: 'CSV export of your recorded sales, including VAT.',
+      emptyCopy: 'Record some sales to generate a CSV export.',
+      total: sales.length,
+    },
+    {
+      key: 'products',
+      label: 'Products',
+      description: 'All inventory items and services tracked in this workspace.',
+      emptyCopy: 'Add products or services to download a CSV.',
+      total: products.length,
+    },
+    {
+      key: 'expenses',
+      label: 'Expenses',
+      description: 'Expenses and payouts pulled from the Expenses page.',
+      emptyCopy: 'Track an expense to export your finance costs.',
+      total: expenses.length,
+    },
+  ]
+
+  const activeTabMeta = downloadTabs.find(tab => tab.key === activeDownloadTab)!
+  const canDownload = storeId && activeTabMeta.total > 0
 
   return (
     <div className="page">
@@ -293,6 +437,70 @@ export default function Finance() {
               Record sales from the <Link to="/sell">Sell</Link> page and track
               store costs on the <Link to="/expenses">Expenses</Link> page to see
               profit here.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* Downloads */}
+      <section className="card" style={{ marginTop: 24 }} aria-label="Download finance data">
+        <div className="page__header" style={{ padding: 0 }}>
+          <div>
+            <h3 className="card__title">Downloads</h3>
+            <p className="card__subtitle">
+              Export key finance data as CSV to share with accountants or other stakeholders.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            {downloadTabs.map(tab => (
+              <button
+                key={tab.key}
+                type="button"
+                className={
+                  activeDownloadTab === tab.key
+                    ? 'button button--primary button--small'
+                    : 'button button--ghost button--small'
+                }
+                onClick={() => setActiveDownloadTab(tab.key)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {!storeId ? (
+          <p className="status status--error" role="alert">
+            Select or create a workspace to fetch finance records for download.
+          </p>
+        ) : activeTabMeta.total === 0 ? (
+          <div className="empty-state" style={{ marginTop: 8 }}>
+            <h4 className="empty-state__title">No {activeTabMeta.label.toLowerCase()} to download</h4>
+            <p>{activeTabMeta.emptyCopy}</p>
+          </div>
+        ) : (
+          <div className="info-card" style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h4 style={{ marginBottom: 4 }}>{activeTabMeta.label} CSV</h4>
+                <p className="card__subtitle" style={{ marginBottom: 8 }}>
+                  {activeTabMeta.description} ({activeTabMeta.total} records)
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="button button--primary"
+                disabled={!canDownload}
+                onClick={() => handleDownload(activeDownloadTab)}
+              >
+                Download CSV
+              </button>
+            </div>
+
+            <p style={{ margin: 0, color: 'var(--text-muted, #6b7280)', fontSize: 13 }}>
+              CSV exports include identifiers, totals, and timestamps so finance partners can reconcile transactions.
             </p>
           </div>
         )}
