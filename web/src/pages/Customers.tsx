@@ -36,6 +36,11 @@ type Customer = {
   tags?: string[]
   createdAt?: Timestamp | null
   updatedAt?: Timestamp | null
+  debt?: {
+    outstandingCents?: number | null
+    dueDate?: Timestamp | null
+    lastReminderAt?: Timestamp | null
+  } | null
 }
 
 type SaleHistoryEntry = {
@@ -124,6 +129,39 @@ function normalizeTags(input: string): string[] {
         .map(tag => tag.replace(/^#/, ''))
     )
   )
+}
+
+function normalizeDateLike(value: unknown): Date | null {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value)
+  }
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? null : new Date(parsed)
+  }
+  if (typeof value === 'object') {
+    const anyValue = value as { toDate?: () => Date; seconds?: number; nanoseconds?: number }
+    if (typeof anyValue.toDate === 'function') {
+      try {
+        return anyValue.toDate()
+      } catch (error) {
+        console.warn('[customers] Failed to convert timestamp via toDate', error)
+      }
+    }
+    if (typeof anyValue.seconds === 'number') {
+      const millis = anyValue.seconds * 1000 + Math.round((anyValue.nanoseconds ?? 0) / 1_000_000)
+      return Number.isFinite(millis) ? new Date(millis) : null
+    }
+  }
+  return null
+}
+
+function getOutstandingCents(customer: Pick<Customer, 'debt'>): number {
+  const raw = customer.debt?.outstandingCents
+  const asNumber = typeof raw === 'number' ? raw : Number(raw ?? 0)
+  return Number.isFinite(asNumber) ? asNumber : 0
 }
 
 function formatDate(date: Date | null): string {
@@ -229,7 +267,9 @@ export default function Customers() {
   const [salesHistory, setSalesHistory] = useState<Record<string, SaleHistoryEntry[]>>({})
   const [searchTerm, setSearchTerm] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
-  const [quickFilter, setQuickFilter] = useState<'all' | 'recent' | 'noPurchases' | 'highValue' | 'untagged'>('all')
+  const [quickFilter, setQuickFilter] = useState<
+    'all' | 'recent' | 'noPurchases' | 'highValue' | 'untagged' | 'hasDebt'
+  >('all')
   const [messageChannel, setMessageChannel] = useState<MessageChannel | null>(null)
   const [messageBody, setMessageBody] = useState('')
   useEffect(() => {
@@ -312,30 +352,7 @@ export default function Customers() {
   }, [activeStoreId])
 
   function normalizeSaleDate(value: unknown): Date | null {
-    if (!value) return null
-    if (value instanceof Date) return value
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return new Date(value)
-    }
-    if (typeof value === 'string') {
-      const parsed = Date.parse(value)
-      return Number.isNaN(parsed) ? null : new Date(parsed)
-    }
-    if (typeof value === 'object') {
-      const anyValue = value as { toDate?: () => Date; seconds?: number; nanoseconds?: number }
-      if (typeof anyValue.toDate === 'function') {
-        try {
-          return anyValue.toDate()
-        } catch (error) {
-          console.warn('[customers] Failed to convert timestamp via toDate', error)
-        }
-      }
-      if (typeof anyValue.seconds === 'number') {
-        const millis = anyValue.seconds * 1000 + Math.round((anyValue.nanoseconds ?? 0) / 1_000_000)
-        return Number.isFinite(millis) ? new Date(millis) : null
-      }
-    }
-    return null
+    return normalizeDateLike(value)
   }
 
   function applySalesData(records: CachedSaleRecord[]) {
@@ -494,6 +511,7 @@ export default function Customers() {
 
       const matchesTag = tagFilter ? customer.tags?.includes(tagFilter) : true
       const stats = customerStats[customer.id]
+      const outstandingCents = getOutstandingCents(customer)
 
       let matchesQuick = true
       switch (quickFilter) {
@@ -513,6 +531,9 @@ export default function Customers() {
         case 'highValue':
           matchesQuick = (stats?.totalSpend ?? 0) >= HIGH_VALUE_THRESHOLD
           break
+        case 'hasDebt':
+          matchesQuick = outstandingCents > 0
+          break
         case 'untagged':
           matchesQuick = !(customer.tags?.length)
           break
@@ -522,6 +543,21 @@ export default function Customers() {
 
       return matchesSearch && matchesTag && matchesQuick
     })
+      .sort((a, b) => {
+        if (quickFilter !== 'hasDebt') {
+          return 0
+        }
+        const debtDiff = getOutstandingCents(b) - getOutstandingCents(a)
+        if (debtDiff !== 0) return debtDiff
+        const dueA = normalizeDateLike(a.debt?.dueDate)
+        const dueB = normalizeDateLike(b.debt?.dueDate)
+        if (dueA && dueB) return dueA.getTime() - dueB.getTime()
+        if (dueA && !dueB) return -1
+        if (!dueA && dueB) return 1
+        return getCustomerSortKey(a).localeCompare(getCustomerSortKey(b), undefined, {
+          sensitivity: 'base',
+        })
+      })
   }, [customers, searchTerm, tagFilter, quickFilter, customerStats])
 
   const selectedCustomer = selectedCustomerId
@@ -539,6 +575,10 @@ export default function Customers() {
   const selectedCustomerStats = selectedCustomerId
     ? customerStats[selectedCustomerId] ?? { visits: 0, totalSpend: 0, lastVisit: null }
     : { visits: 0, totalSpend: 0, lastVisit: null }
+
+  const selectedOutstandingCents = selectedCustomer ? getOutstandingCents(selectedCustomer) : 0
+  const selectedDueDate = normalizeDateLike(selectedCustomer?.debt?.dueDate)
+  const selectedLastReminder = normalizeDateLike(selectedCustomer?.debt?.lastReminderAt)
 
   const normalizedSelectedPhone = selectedCustomer?.phone
     ? normalizePhoneNumber(selectedCustomer.phone)
@@ -911,6 +951,7 @@ export default function Customers() {
     { id: 'recent', label: 'Visited recently' },
     { id: 'noPurchases', label: 'No purchases yet' },
     { id: 'highValue', label: 'High spenders' },
+    { id: 'hasDebt', label: 'Has debt' },
     { id: 'untagged', label: 'Untagged' },
   ]
 
@@ -1123,6 +1164,7 @@ export default function Customers() {
                     <th scope="col">Visits</th>
                     <th scope="col">Last visit</th>
                     <th scope="col">Total spend</th>
+                    <th scope="col">Debt</th>
                     <th scope="col">Actions</th>
                   </tr>
                 </thead>
@@ -1133,12 +1175,17 @@ export default function Customers() {
                     const visitCount = stats?.visits ?? 0
                     const lastVisit = stats?.lastVisit ?? null
                     const totalSpend = stats?.totalSpend ?? 0
+                    const outstandingCents = getOutstandingCents(customer)
+                    const hasDebt = outstandingCents > 0
+                    const dueDate = normalizeDateLike(customer.debt?.dueDate)
                     const isSelected = selectedCustomerId === customer.id
                     const customerName = getCustomerDisplayName(customer)
                     return (
                       <tr
                         key={customer.id}
-                        className={`customers-page__row${isSelected ? ' customers-page__row--selected' : ''}`}
+                        className={`customers-page__row${isSelected ? ' customers-page__row--selected' : ''}${
+                          hasDebt ? ' customers-page__row--debt' : ''
+                        }`}
                         onClick={() => beginView(customer)}
                       >
                         <td>{customerName}</td>
@@ -1157,6 +1204,20 @@ export default function Customers() {
                         <td>{visitCount}</td>
                         <td>{lastVisit ? lastVisit.toLocaleDateString() : '—'}</td>
                         <td>{visitCount ? currencyFormatter.format(totalSpend) : '—'}</td>
+                        <td>
+                          {hasDebt ? (
+                            <div className="customers-page__debt-cell" aria-label={`Debt for ${customerName}`}>
+                              <div className="customers-page__debt-amount">
+                                {currencyFormatter.format(outstandingCents / 100)}
+                              </div>
+                              <div className="customers-page__debt-meta">
+                                {dueDate ? `Due ${dueDate.toLocaleDateString()}` : 'No due date set'}
+                              </div>
+                            </div>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
                         <td className="customers-page__table-actions">
                           <button
                             type="button"
@@ -1250,6 +1311,22 @@ export default function Customers() {
                       ? currencyFormatter.format(selectedCustomerStats.totalSpend)
                       : '—'}
                   </dd>
+                </div>
+                <div>
+                  <dt>Outstanding balance</dt>
+                  <dd className={selectedOutstandingCents > 0 ? 'customers-page__debt-highlight' : ''}>
+                    {selectedOutstandingCents > 0
+                      ? currencyFormatter.format(selectedOutstandingCents / 100)
+                      : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Debt due date</dt>
+                  <dd>{selectedDueDate ? selectedDueDate.toLocaleDateString() : '—'}</dd>
+                </div>
+                <div>
+                  <dt>Last reminder sent</dt>
+                  <dd>{selectedLastReminder ? formatDate(selectedLastReminder) : '—'}</dd>
                 </div>
                 <div>
                   <dt>Last visit</dt>

@@ -15,6 +15,23 @@ type CacheEntry<T> = {
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
+function cloneForCache<T>(value: T): T {
+  const structuredCloneFn = (globalThis as unknown as { structuredClone?: <U>(input: U) => U }).structuredClone
+  if (typeof structuredCloneFn === 'function') {
+    try {
+      return structuredCloneFn(value)
+    } catch (error) {
+      console.warn('[offlineCache] Failed to structuredClone value', error)
+    }
+  }
+  try {
+    return JSON.parse(JSON.stringify(value)) as T
+  } catch (error) {
+    console.warn('[offlineCache] Failed to deep-clone value', error)
+    return value
+  }
+}
+
 function isIndexedDbAvailable() {
   return typeof indexedDB !== 'undefined'
 }
@@ -117,7 +134,7 @@ async function loadCachedList<T>(key: string, limit: number): Promise<T[]> {
       request.onerror = () => reject(request.error ?? new Error('Failed to read cached list.'))
       request.onsuccess = () => {
         const entry = request.result as CacheEntry<T> | undefined
-        resolve(entry ? sortAndTrim(entry.items ?? [], limit) : [])
+        resolve(entry ? sortAndTrim(entry.items ?? [], limit).map(cloneForCache) : [])
       }
     })
   } catch (error) {
@@ -133,9 +150,10 @@ async function saveCachedList<T>(key: string, items: T[], limit: number): Promis
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite')
       const store = tx.objectStore(STORE_NAME)
+      const safeItems = sortAndTrim(items, limit).map(cloneForCache)
       const entry: CacheEntry<T> = {
         key,
-        items: sortAndTrim(items, limit),
+        items: safeItems,
         savedAt: Date.now(),
       }
       const request = store.put(entry)
