@@ -5,6 +5,7 @@ import * as crypto from 'crypto'
 import { defineString } from 'firebase-functions/params'
 export { generateAiAdvice } from './aiAdvisor'
 export { exportDailyStoreReports } from './reports'
+export { checkSignupUnlock } from './paystack'
 
 /**
  * SINGLE FIRESTORE INSTANCE
