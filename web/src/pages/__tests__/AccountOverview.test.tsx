@@ -33,7 +33,11 @@ const setDocMock = vi.fn()
 const serverTimestampMock = vi.fn(() => 'server-timestamp')
 
 vi.mock('firebase/firestore', () => ({
-  Timestamp: class {},
+  Timestamp: class {
+    static now() {
+      return { toDate: () => new Date('2024-01-01T00:00:00Z') }
+    }
+  },
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
   getDoc: (...args: Parameters<typeof getDocMock>) => getDocMock(...args),
@@ -166,6 +170,90 @@ describe('AccountOverview', () => {
 
     expect(await screen.findByTestId('account-edit-team')).toBeInTheDocument()
     expect(screen.queryByTestId('account-invite-form')).not.toBeInTheDocument()
+  })
+
+  it('lets owners edit workspace details from the account page', async () => {
+    setDocMock.mockResolvedValueOnce(undefined)
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-1',
+          uid: 'owner-1',
+          role: 'owner',
+          storeId: 'store-123',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+
+    render(<AccountOverview />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const nameInput = await screen.findByTestId('account-profile-name')
+    const emailInput = await screen.findByTestId('account-profile-email')
+    expect(nameInput).toHaveValue('Sedifex Coffee')
+    expect(emailInput).toHaveValue('')
+
+    await userEvent.clear(nameInput)
+    await userEvent.type(nameInput, 'Sedifex Coffee Ltd')
+    await userEvent.type(emailInput, 'hello@sedifex.com')
+    await userEvent.type(
+      screen.getByTestId('account-profile-phone'),
+      '+233201234567',
+    )
+    await userEvent.type(
+      screen.getByTestId('account-profile-address1'),
+      '123 Market Street',
+    )
+    await userEvent.type(
+      screen.getByTestId('account-profile-address2'),
+      'Suite 4',
+    )
+    await userEvent.type(screen.getByTestId('account-profile-city'), 'Accra')
+    await userEvent.type(
+      screen.getByTestId('account-profile-region'),
+      'Greater Accra',
+    )
+    await userEvent.type(
+      screen.getByTestId('account-profile-postal'),
+      'GA-184-3210',
+    )
+    await userEvent.type(
+      screen.getByTestId('account-profile-country'),
+      'Ghana',
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: /save workspace details/i }))
+
+    await waitFor(() => expect(setDocMock).toHaveBeenCalled())
+    const [, payload, options] = setDocMock.mock.calls[0]
+    expect(payload).toMatchObject({
+      displayName: 'Sedifex Coffee Ltd',
+      name: 'Sedifex Coffee Ltd',
+      email: 'hello@sedifex.com',
+      phone: '+233201234567',
+      addressLine1: '123 Market Street',
+      addressLine2: 'Suite 4',
+      city: 'Accra',
+      region: 'Greater Accra',
+      postalCode: 'GA-184-3210',
+      country: 'Ghana',
+    })
+    expect(payload.updatedAt?.toDate).toBeInstanceOf(Function)
+    expect(options).toEqual({ merge: true })
+    expect(mockPublish).toHaveBeenCalledWith({
+      message: 'Workspace details updated.',
+      tone: 'success',
+    })
   })
 
   it('hides team editing until roster data is available', async () => {

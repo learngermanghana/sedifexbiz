@@ -248,6 +248,19 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const [rosterError, setRosterError] = useState<string | null>(null)
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
 
+  const [profileDraft, setProfileDraft] = useState({
+    displayName: '',
+    email: '',
+    phone: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    region: '',
+    postalCode: '',
+    country: '',
+  })
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+
   // Public directory edit state
   const [isSavingPublicProfile, setIsSavingPublicProfile] = useState(false)
   const [publicDescriptionDraft, setPublicDescriptionDraft] = useState('')
@@ -407,6 +420,102 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     setPublicDescriptionDraft(profile.publicDescription ?? '')
     setIsPublicDirectoryDraft(profile.isPublicDirectory ?? false)
   }, [profile])
+
+  useEffect(() => {
+    if (!profile) return
+
+    setProfileDraft({
+      displayName: profile.displayName ?? profile.name ?? '',
+      email: profile.email ?? '',
+      phone: profile.phone ?? '',
+      addressLine1: profile.addressLine1 ?? '',
+      addressLine2: profile.addressLine2 ?? '',
+      city: profile.city ?? '',
+      region: profile.region ?? '',
+      postalCode: profile.postalCode ?? '',
+      country: profile.country ?? '',
+    })
+  }, [profile])
+
+  function updateProfileDraft(
+    key: keyof typeof profileDraft,
+    value: string,
+  ): void {
+    setProfileDraft(current => ({ ...current, [key]: value }))
+  }
+
+  function normalizeInput(value: string) {
+    const trimmed = value.trim()
+    return trimmed === '' ? null : trimmed
+  }
+
+  async function handleSaveProfile(event?: React.FormEvent) {
+    event?.preventDefault()
+    if (!storeId) return
+
+    if (!isOwner) {
+      publish({
+        message: 'Only the workspace owner can update details.',
+        tone: 'error',
+      })
+      return
+    }
+
+    try {
+      setIsSavingProfile(true)
+      const updatedAt = Timestamp.now()
+      const ref = doc(db, 'stores', storeId)
+
+      const payload = {
+        displayName: normalizeInput(profileDraft.displayName),
+        name: normalizeInput(profileDraft.displayName),
+        email: normalizeInput(profileDraft.email),
+        phone: normalizeInput(profileDraft.phone),
+        addressLine1: normalizeInput(profileDraft.addressLine1),
+        addressLine2: normalizeInput(profileDraft.addressLine2),
+        city: normalizeInput(profileDraft.city),
+        region: normalizeInput(profileDraft.region),
+        postalCode: normalizeInput(profileDraft.postalCode),
+        country: normalizeInput(profileDraft.country),
+        updatedAt,
+      }
+
+      await setDoc(ref, payload, { merge: true })
+
+      setProfile(current =>
+        current
+          ? {
+              ...current,
+              displayName: payload.displayName,
+              name:
+                payload.name ??
+                current.displayName ??
+                current.name ??
+                null,
+              email: payload.email,
+              phone: payload.phone,
+              addressLine1: payload.addressLine1,
+              addressLine2: payload.addressLine2,
+              city: payload.city,
+              region: payload.region,
+              postalCode: payload.postalCode,
+              country: payload.country,
+              updatedAt,
+            }
+          : current,
+      )
+
+      publish({ message: 'Workspace details updated.', tone: 'success' })
+    } catch (error) {
+      console.error('[account] Failed to save workspace profile', error)
+      publish({
+        message: 'Unable to save workspace details. Please try again.',
+        tone: 'error',
+      })
+    } finally {
+      setIsSavingProfile(false)
+    }
+  }
 
   const Heading = headingLevel as keyof JSX.IntrinsicElements
 
@@ -696,6 +805,147 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
               <dd>{formatTimestamp(profile.updatedAt)}</dd>
             </div>
           </dl>
+
+          {isOwner && (
+            <form
+              className="account-overview__profile-form"
+              onSubmit={handleSaveProfile}
+              data-testid="account-profile-form"
+            >
+              <div className="account-overview__form-grid">
+                <label>
+                  <span>Workspace name</span>
+                  <input
+                    type="text"
+                    value={profileDraft.displayName}
+                    onChange={event =>
+                      updateProfileDraft('displayName', event.target.value)
+                    }
+                    placeholder="e.g. Sedifex Coffee"
+                    data-testid="account-profile-name"
+                  />
+                </label>
+
+                <label>
+                  <span>Contact email</span>
+                  <input
+                    type="email"
+                    value={profileDraft.email}
+                    onChange={event =>
+                      updateProfileDraft('email', event.target.value)
+                    }
+                    placeholder="you@example.com"
+                    data-testid="account-profile-email"
+                  />
+                </label>
+
+                <label>
+                  <span>Phone number</span>
+                  <input
+                    type="tel"
+                    value={profileDraft.phone}
+                    onChange={event =>
+                      updateProfileDraft('phone', event.target.value)
+                    }
+                    placeholder="+233 20 123 4567"
+                    data-testid="account-profile-phone"
+                  />
+                </label>
+
+                <label>
+                  <span>Address line 1</span>
+                  <input
+                    type="text"
+                    value={profileDraft.addressLine1}
+                    onChange={event =>
+                      updateProfileDraft('addressLine1', event.target.value)
+                    }
+                    placeholder="Street and house number"
+                    data-testid="account-profile-address1"
+                  />
+                </label>
+
+                <label>
+                  <span>Address line 2</span>
+                  <input
+                    type="text"
+                    value={profileDraft.addressLine2}
+                    onChange={event =>
+                      updateProfileDraft('addressLine2', event.target.value)
+                    }
+                    placeholder="Apartment, suite, etc."
+                    data-testid="account-profile-address2"
+                  />
+                </label>
+
+                <label>
+                  <span>City</span>
+                  <input
+                    type="text"
+                    value={profileDraft.city}
+                    onChange={event =>
+                      updateProfileDraft('city', event.target.value)
+                    }
+                    placeholder="Accra"
+                    data-testid="account-profile-city"
+                  />
+                </label>
+
+                <label>
+                  <span>Region / State</span>
+                  <input
+                    type="text"
+                    value={profileDraft.region}
+                    onChange={event =>
+                      updateProfileDraft('region', event.target.value)
+                    }
+                    placeholder="Greater Accra"
+                    data-testid="account-profile-region"
+                  />
+                </label>
+
+                <label>
+                  <span>Postal code</span>
+                  <input
+                    type="text"
+                    value={profileDraft.postalCode}
+                    onChange={event =>
+                      updateProfileDraft('postalCode', event.target.value)
+                    }
+                    placeholder="GA-184-3210"
+                    data-testid="account-profile-postal"
+                  />
+                </label>
+
+                <label>
+                  <span>Country</span>
+                  <input
+                    type="text"
+                    value={profileDraft.country}
+                    onChange={event =>
+                      updateProfileDraft('country', event.target.value)
+                    }
+                    placeholder="Ghana"
+                    data-testid="account-profile-country"
+                  />
+                </label>
+              </div>
+
+              <div className="account-overview__actions">
+                <p className="account-overview__hint">
+                  Update your workspace name and contact details for invoices and
+                  public listings.
+                </p>
+                <button
+                  type="submit"
+                  className="button button--primary"
+                  disabled={isSavingProfile}
+                >
+                  {isSavingProfile ? 'Saving…' : 'Save workspace details'}
+                </button>
+              </div>
+            </form>
+          )}
         </section>
       )}
 
