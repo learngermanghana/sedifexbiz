@@ -16,6 +16,7 @@ import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './ActivityFeed.css'
 import { FixedSizeList, ListChildComponentProps } from '../utils/VirtualizedList'
+import { buildReceiptPdf, type PaymentMethod, type ReceiptPayload } from '../utils/receipt'
 
 type ActivityType = 'sale' | 'customer' | 'inventory' | 'expense' | 'task'
 type TimeRange = 'any' | '24h' | '7d' | '30d'
@@ -28,6 +29,7 @@ type Activity = {
   detail: string
   actor: string
   timestamp: Date
+  receipt: ReceiptPayload | null
 }
 
 const TYPE_LABELS: Record<ActivityType, string> = {
@@ -58,6 +60,51 @@ function toDate(value: any): Date | null {
   }
   const ms = Date.parse(String(value))
   return Number.isNaN(ms) ? null : new Date(ms)
+}
+
+function toReceiptPayload(value: any): ReceiptPayload | null {
+  if (!value || typeof value !== 'object') return null
+
+  const saleId = typeof value.saleId === 'string' ? value.saleId : null
+  if (!saleId) return null
+
+  const rawItems = Array.isArray(value.items) ? value.items : []
+  const items = rawItems
+    .map(item => ({
+      name: typeof item?.name === 'string' ? item.name : 'Item',
+      qty: Number(item?.qty) || 0,
+      price: Number(item?.price) || 0,
+    }))
+    .filter(item => item.qty > 0)
+
+  const totalsRaw = typeof value.totals === 'object' && value.totals !== null ? value.totals : {}
+  const totals = {
+    subTotal: Number(totalsRaw.subTotal) || 0,
+    taxTotal: Number(totalsRaw.taxTotal) || 0,
+    discount: Number(totalsRaw.discount) || 0,
+    total: Number(totalsRaw.total) || 0,
+  }
+
+  const paymentMethod: PaymentMethod =
+    value.paymentMethod === 'card' ||
+    value.paymentMethod === 'mobile_money' ||
+    value.paymentMethod === 'transfer'
+      ? value.paymentMethod
+      : 'cash'
+
+  const discountInput = typeof value.discountInput === 'string' ? value.discountInput : ''
+  const companyName = typeof value.companyName === 'string' ? value.companyName : null
+  const customerName = typeof value.customerName === 'string' ? value.customerName : null
+
+  return {
+    saleId,
+    items,
+    totals,
+    paymentMethod,
+    discountInput,
+    companyName,
+    customerName,
+  }
 }
 
 function formatTimestamp(date: Date) {
@@ -96,6 +143,7 @@ export default function ActivityFeed() {
   const [actor, setActor] = useState('You')
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [receiptError, setReceiptError] = useState<string | null>(null)
 
   // 🔴 LIVE SUBSCRIPTION TO FIRESTORE
   useEffect(() => {
@@ -128,6 +176,7 @@ export default function ActivityFeed() {
             detail: data.detail ?? '',
             actor: data.actor ?? 'Team member',
             timestamp: toDate(data.createdAt) ?? new Date(),
+            receipt: toReceiptPayload(data.receipt),
           }
         })
         setActivities(rows)
@@ -197,6 +246,24 @@ export default function ActivityFeed() {
     720,
   )
 
+  function handleDownloadReceipt(receipt: ReceiptPayload) {
+    setReceiptError(null)
+
+    const built = buildReceiptPdf(receipt)
+    if (!built) {
+      setReceiptError('Unable to build the receipt right now. Please try again.')
+      return
+    }
+
+    const link = document.createElement('a')
+    link.href = built.url
+    link.download = built.fileName
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(built.url)
+  }
+
   const renderActivityCard = (activity: Activity) => (
     <article key={activity.id} className="activity-item">
       <div className="activity-type" style={{ color: TYPE_COLORS[activity.type] }}>
@@ -213,6 +280,17 @@ export default function ActivityFeed() {
         </div>
         <p className="activity-detail">{activity.detail}</p>
         <div className="activity-meta">By {activity.actor}</div>
+        {activity.type === 'sale' && activity.receipt && (
+          <div className="activity-actions-row">
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() => handleDownloadReceipt(activity.receipt)}
+            >
+              Download receipt
+            </button>
+          </div>
+        )}
       </div>
     </article>
   )
@@ -301,6 +379,7 @@ export default function ActivityFeed() {
 
       {storeError && <div className="activity-error">{storeError}</div>}
       {loadError && <div className="activity-error">{loadError}</div>}
+      {receiptError && <div className="activity-error">{receiptError}</div>}
       {loading && <p className="activity-loading">Loading activity…</p>}
 
       <section className="activity-controls" aria-label="Activity controls">

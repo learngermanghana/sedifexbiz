@@ -33,6 +33,14 @@
   max-width: 620px;
 }
 
+.activity-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecdd3;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
 .activity-actions {
   display: flex;
   gap: 12px;
@@ -238,6 +246,13 @@
 .activity-meta {
   color: #0f172a;
   font-weight: 600;
+}
+
+.activity-actions-row {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .activity-timestamp {

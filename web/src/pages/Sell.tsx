@@ -31,6 +31,12 @@ import { BrowserMultiFormatReader } from '@zxing/browser'
 import { NotFoundException } from '@zxing/library'
 import { useKeyboardScanner } from '../components/BarcodeScanner'
 import { buildSimplePdf } from '../utils/pdf'
+import {
+  PaymentMethod,
+  buildReceiptPdf,
+  type ReceiptLine,
+  type ReceiptPayload,
+} from '../utils/receipt'
 
 type ItemType = 'product' | 'service'
 
@@ -52,8 +58,6 @@ type CartLine = {
   taxRate: number
   itemType: ItemType
 }
-
-type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'transfer'
 
 type ScanStatus = {
   type: 'success' | 'error'
@@ -142,15 +146,7 @@ export default function Sell() {
   const [customerSearchTerm, setCustomerSearchTerm] = useState('')
   const [allCustomers, setAllCustomers] = useState<Customer[]>([])
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null)
-  const [lastReceipt, setLastReceipt] = useState<{
-    saleId: string
-    items: CartLine[]
-    totals: { subTotal: number; taxTotal: number; discount: number; total: number }
-    paymentMethod: PaymentMethod
-    discountInput: string
-    companyName?: string | null
-    customerName?: string | null
-  } | null>(null)
+  const [lastReceipt, setLastReceipt] = useState<ReceiptPayload | null>(null)
   const [receiptDownload, setReceiptDownload] = useState<{
     url: string
     fileName: string
@@ -513,7 +509,7 @@ export default function Sell() {
 
   function printReceipt(options: {
     saleId: string
-    items: CartLine[]
+    items: { name: string; qty: number; price: number }[]
     totals: { subTotal: number; taxTotal: number; discount: number; total: number }
     paymentMethod: PaymentMethod
     discountInput: string
@@ -591,62 +587,6 @@ export default function Sell() {
       document.body.appendChild(iframe)
     } catch (error) {
       console.error('[sell] Unable to print receipt', error)
-    }
-  }
-
-  function buildReceiptPdf(options: {
-    saleId: string
-    items: CartLine[]
-    totals: { subTotal: number; taxTotal: number; discount: number; total: number }
-    paymentMethod: PaymentMethod
-    discountInput: string
-    companyName?: string | null
-    customerName?: string | null
-  }) {
-    try {
-      const receiptDate = new Date().toLocaleString()
-      const lines: string[] = [
-        options.companyName ? options.companyName : 'Sale receipt',
-        `Sale ID: ${options.saleId}`,
-        `Date: ${receiptDate}`,
-        `Payment: ${options.paymentMethod.replace('_', ' ')}`,
-        options.customerName ? `Customer: ${options.customerName}` : '',
-        'Items:',
-      ]
-
-      const filteredLines = lines.filter(Boolean)
-
-      options.items.forEach(item => {
-        const total = formatCurrency(item.price * item.qty)
-        filteredLines.push(`• ${item.qty} x ${item.name} @ ${formatCurrency(item.price)} = ${total}`)
-      })
-
-      filteredLines.push('Summary:')
-      filteredLines.push(`Subtotal: ${formatCurrency(options.totals.subTotal)}`)
-      filteredLines.push(`VAT / Tax: ${formatCurrency(options.totals.taxTotal)}`)
-      filteredLines.push(
-        `Discount: ${options.discountInput ? options.discountInput : formatCurrency(options.totals.discount)}`,
-      )
-      filteredLines.push(`Total: ${formatCurrency(options.totals.total)}`)
-
-      const pdfBytes = buildSimplePdf('Sale receipt', filteredLines)
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' })
-      const url = URL.createObjectURL(blob)
-
-      const shareText = [
-        options.companyName ? `${options.companyName} receipt` : `Sale receipt (${receiptDate})`,
-        `Total: ${formatCurrency(options.totals.total)}`,
-        `Payment: ${options.paymentMethod.replace('_', ' ')}`,
-        options.customerName ? `Customer: ${options.customerName}` : null,
-        `Items: ${options.items.length}`,
-      ]
-        .filter(Boolean)
-        .join('\n')
-
-      return { url, fileName: `${options.saleId}.pdf`, shareText }
-    } catch (error) {
-      console.error('[sell] Unable to build receipt PDF', error)
-      return null
     }
   }
 
@@ -905,6 +845,7 @@ export default function Sell() {
     total: number
     items: CartLine[]
     paymentMethod: PaymentMethod
+    receipt: ReceiptPayload
   }) {
     if (!activeStoreId) return
 
@@ -918,6 +859,20 @@ export default function Sell() {
         `ID ${options.saleId}`,
       ].join(' · ')
 
+      const receiptPayload: ReceiptPayload = {
+        saleId: options.receipt.saleId,
+        items: options.receipt.items.map(item => ({
+          name: item.name,
+          qty: item.qty,
+          price: item.price,
+        })),
+        totals: options.receipt.totals,
+        paymentMethod: options.receipt.paymentMethod,
+        discountInput: options.receipt.discountInput,
+        companyName: options.receipt.companyName ?? null,
+        customerName: options.receipt.customerName ?? null,
+      }
+
       await addDoc(collection(db, 'activity'), {
         storeId: activeStoreId,
         type: 'sale',
@@ -925,6 +880,7 @@ export default function Sell() {
         detail,
         actor: activityActor,
         createdAt: serverTimestamp(),
+        receipt: receiptPayload,
       })
     } catch (error) {
       console.warn('[activity] Failed to log sale activity', error)
@@ -1011,6 +967,22 @@ export default function Sell() {
         customer: customerPayload,
       })
 
+      const receiptItems: ReceiptLine[] = cartSnapshot.map(line => ({
+        name: line.name,
+        qty: line.qty,
+        price: line.price,
+      }))
+
+      const receiptPayload: ReceiptPayload = {
+        saleId,
+        items: receiptItems,
+        totals,
+        paymentMethod,
+        discountInput,
+        companyName: storeName,
+        customerName,
+      }
+
       printReceipt({
         saleId,
         items: cartSnapshot,
@@ -1021,21 +993,14 @@ export default function Sell() {
         customerName,
       })
 
-      setLastReceipt({
-        saleId,
-        items: cartSnapshot,
-        totals,
-        paymentMethod,
-        discountInput,
-        companyName: storeName,
-        customerName,
-      })
+      setLastReceipt(receiptPayload)
 
       await logSaleActivity({
         saleId,
         total: totalAfterDiscount,
         items: cartSnapshot,
         paymentMethod,
+        receipt: receiptPayload,
       })
 
       setCart([])
