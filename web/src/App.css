@@ -534,6 +534,7 @@ body {
   gap: 10px;
   text-align: left;
   max-width: 360px;
+  pointer-events: none;
 }
 
 .app__visual-caption h2 {
