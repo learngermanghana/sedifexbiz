@@ -9,6 +9,7 @@ import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships } from '../hooks/useMemberships'
 import SupportTicketLauncher from '../components/SupportTicketLauncher'
 import { NAV_ITEMS, NavRole } from '../config/navigation'
+import { useWorkspaceIdentity } from '../hooks/useWorkspaceIdentity'
 import './Shell.css'
 import './Workspace.css'
 
@@ -85,6 +86,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
 
   const { isOnline, isReachable, queue } = connectivity
+  const { name: workspaceName, loading: workspaceLoading } = useWorkspaceIdentity()
 
   const [dismissedOn, setDismissedOn] = useState<string | null>(null)
 
@@ -225,6 +227,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }, [isOnline, isReachable, queue.lastError, queue.pending, queue.status])
 
   const workspaceStatus = billing?.planKey ?? 'Workspace ready'
+  const workspaceLabel = workspaceName || workspaceStatus
 
   return (
     <div className="shell">
@@ -266,22 +269,37 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               isMenuOpen ? ' is-open' : ''
             }`}
           >
-            <nav
-              className="shell__nav"
-              aria-label="Primary"
-              id="primary-nav"
-            >
-              {navItems.map(item => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  className={({ isActive }) => navLinkClass(isActive)}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
+            <div className="shell__nav-group">
+              <div
+                className="shell__workspace-pill"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="shell__workspace-label">Workspace</span>
+                <span className="shell__workspace-name">
+                  {workspaceLoading && !workspaceLabel
+                    ? 'Loading…'
+                    : workspaceLabel}
+                </span>
+              </div>
+
+              <nav
+                className="shell__nav"
+                aria-label="Primary"
+                id="primary-nav"
+              >
+                {navItems.map(item => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    className={({ isActive }) => navLinkClass(isActive)}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </nav>
+            </div>
 
             <div className="shell__controls">
               <div

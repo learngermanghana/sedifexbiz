@@ -143,6 +143,38 @@
   flex-grow: 1;
 }
 
+.shell__nav-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.shell__workspace-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(67, 56, 202, 0.25);
+  background: #f8fafc;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.shell__workspace-label {
+  color: #64748b;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.shell__workspace-name {
+  color: #0f172a;
+}
+
 .shell__nav-link {
   display: inline-flex;
   align-items: center;
@@ -397,6 +429,15 @@
     overflow-x: auto;
     padding-bottom: 6px;
     gap: 10px;
+  }
+
+  .shell__nav-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .shell__workspace-pill {
+    justify-content: space-between;
   }
 
   .shell__nav-link {
