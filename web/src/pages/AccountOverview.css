@@ -48,6 +48,41 @@
   gap: 8px;
 }
 
+.account-overview__profile-form {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.account-overview__form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.account-overview__profile-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.account-overview__profile-form input,
+.account-overview__profile-form textarea {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.account-overview__hint {
+  color: #6b7280;
+  font-size: 14px;
+  margin: 0;
+}
+
 .account-overview__status {
   display: inline-block;
   padding: 2px 8px;
