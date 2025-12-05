@@ -30,7 +30,6 @@ import {
 import { auth, db } from '../firebase'
 import { setOnboardingStatus } from '../utils/onboarding'
 
-const LOGIN_IMAGE_URL = 'https://i.imgur.com/fx9vne9.jpeg'
 const LOGI_PARTNER_IMAGE_URL =
   'https://raw.githubusercontent.com/learngermanghana/sedifexbiz/main/photos/pexels-omotayo-tajudeen-1650120-3213283%281%29.jpg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -814,29 +813,26 @@ export default function AuthPage() {
           )}
         </div>
 
-        <aside className="app__visual" aria-hidden="true">
-          <img
-            src={LOGIN_IMAGE_URL}
-            alt="Team members organizing inventory packages in a warehouse"
-            loading="lazy"
-          />
+        <aside
+          className="app__visual"
+          aria-label="Watch the Sedifex walkthrough before signing in"
+        >
+          <div className="app__visual-media" role="presentation">
+            <iframe
+              src="https://www.youtube.com/embed/Jgyfz1CT2YY"
+              title="Sedifex tutorial video"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          </div>
           <div className="app__visual-overlay" />
           <div className="app__visual-caption">
-            <span className="app__visual-pill">Operations snapshot</span>
-            <h2>Stay synced from the floor to finance</h2>
+            <span className="app__visual-pill">Quick tutorial</span>
+            <h2>See how Sedifex works before logging in</h2>
             <p>
-              <Link className="app__visual-link" to="/sell">
-                Live sales
-              </Link>
-              ,{' '}
-              <Link className="app__visual-link" to="/products">
-                inventory alerts
-              </Link>
-              , and{' '}
-              <Link className="app__visual-link" to="/finance">
-                smart finance
-              </Link>{' '}
-              help your whole team stay aligned from any device.
+              Watch the short walkthrough to learn how Sedifex connects sales, inventory,
+              and finance in one workspace. Start the video right here before creating an
+              account.
             </p>
           </div>
         </aside>

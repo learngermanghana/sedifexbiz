@@ -498,14 +498,23 @@ body {
   min-height: clamp(240px, 38vh, 360px);
   isolation: isolate;
   order: -1;
+  aspect-ratio: 16 / 9;
+  background: radial-gradient(circle at 30% 30%, rgba(56, 189, 248, 0.05), rgba(2, 6, 23, 0.65));
 }
 
-.app__visual img {
+.app__visual-media {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  overflow: hidden;
+}
+
+.app__visual iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
   display: block;
-  transform: scale(1.02);
 }
 
 .app__visual-overlay {
@@ -525,6 +534,7 @@ body {
   gap: 10px;
   text-align: left;
   max-width: 360px;
+  pointer-events: none;
 }
 
 .app__visual-caption h2 {
