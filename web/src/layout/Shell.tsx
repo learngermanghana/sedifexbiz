@@ -8,29 +8,9 @@ import { useStoreBilling } from '../hooks/useStoreBilling'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships } from '../hooks/useMemberships'
 import SupportTicketLauncher from '../components/SupportTicketLauncher'
+import { NAV_ITEMS, NavRole } from '../config/navigation'
 import './Shell.css'
 import './Workspace.css'
-
-type NavItem = { to: string; label: string; end?: boolean }
-
-const OWNER_NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/products', label: 'Products & Services' },
-  { to: '/sell', label: 'Sell' },
-  { to: '/receive', label: 'Receive' },
-  { to: '/customers', label: 'Customers' },
-  { to: '/activity', label: 'Activity' },
-  // 🔁 Replaced Close Day with Finance
-  { to: '/finance', label: 'Finance' },
-  { to: '/advisor', label: 'AI advisor' },
-  { to: '/account', label: 'Account' },
-]
-
-const STAFF_NAV_ITEMS: NavItem[] = [
-  { to: '/sell', label: 'Sell' },
-  { to: '/customers', label: 'Customers' },
-  { to: '/close-day', label: 'Close day' },
-]
 
 function navLinkClass(isActive: boolean) {
   return `shell__nav-link${isActive ? ' is-active' : ''}`
@@ -117,6 +97,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   )
 
   const isStaff = activeMembership?.role === 'staff'
+  const role: NavRole = isStaff ? 'staff' : 'owner'
+  const navItems = useMemo(
+    () => NAV_ITEMS.filter(item => item.roles.includes(role)),
+    [role],
+  )
 
   const billingNotice = useMemo<BillingNotice | null>(() => {
     if (!billing) return null
@@ -178,19 +163,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }, [location.pathname])
 
   useEffect(() => {
-    if (membershipsLoading) return
-    if (!isStaff) return
+    if (membershipsLoading || !isStaff) return
 
-    const allowedPrefixes = ['/sell', '/customers', '/close-day']
-    const isAllowed = allowedPrefixes.some(
-      prefix =>
-        location.pathname === prefix || location.pathname.startsWith(`${prefix}/`),
+    const isAllowed = navItems.some(
+      item =>
+        location.pathname === item.to ||
+        location.pathname.startsWith(`${item.to}/`),
     )
 
     if (!isAllowed) {
       navigate('/sell', { replace: true })
     }
-  }, [isStaff, location.pathname, membershipsLoading, navigate])
+  }, [isStaff, location.pathname, membershipsLoading, navigate, navItems])
 
   function handleDismissBillingNotice() {
     setDismissedOn(todayStamp)
@@ -287,7 +271,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               aria-label="Primary"
               id="primary-nav"
             >
-              {(isStaff ? STAFF_NAV_ITEMS : OWNER_NAV_ITEMS).map(item => (
+              {navItems.map(item => (
                 <NavLink
                   key={item.to}
                   to={item.to}
