@@ -523,7 +523,7 @@ export default function AuthPage() {
             <div>
               <h1 className="app__title">Sedifex</h1>
               <p className="app__tagline">
-                Sell faster. <span className="app__highlight">Count smarter.</span>
+                Smart AI inventory for <span className="app__highlight">small businesses.</span>
               </p>
             </div>
           </div>
@@ -828,11 +828,11 @@ export default function AuthPage() {
           <div className="app__visual-overlay" />
           <div className="app__visual-caption">
             <span className="app__visual-pill">Quick tutorial</span>
-            <h2>See how Sedifex works before logging in</h2>
+            <h2>See how our AI inventory system works before logging in</h2>
             <p>
-              Watch the short walkthrough to learn how Sedifex connects sales, inventory,
-              and finance in one workspace. Start the video right here before creating an
-              account.
+              Watch the short walkthrough to learn how Sedifex uses AI to connect sales,
+              inventory, and finance in one workspace built for small businesses. Start
+              the video right here before creating an account.
             </p>
           </div>
         </aside>
@@ -844,12 +844,12 @@ export default function AuthPage() {
       >
         <div className="app__partners-copy">
           <span className="app__pill">Store partners</span>
-          <h2>Share your store snapshot before partners sign in</h2>
+          <h2>Share your AI-backed store snapshot before partners sign in</h2>
           <p>
             Provide partners with a live, read-only view of non-sensitive store details.
             Your store name, location, and overview refresh automatically after sign
-            up—no extra setup required. We also list your store on
-            stores.sedifex.com automatically for free SEO visibility.
+            up—no extra setup required. Our AI keeps inventory details accurate while we
+            list your store on stores.sedifex.com automatically for free SEO visibility.
           </p>
 
           {partnerStores.length > 0 && (
@@ -891,10 +891,10 @@ export default function AuthPage() {
 
       <section className="app__features" aria-label="Sedifex workspace pages">
         <header className="app__features-header">
-          <h2>Explore the workspace</h2>
+          <h2>Explore the AI workspace</h2>
           <p>
-            Every Sedifex page is built to keep retail operations synchronized—from the
-            sales floor to finance.
+            Every Sedifex page is built to keep retail operations synchronized with
+            AI-powered inventory insights—from the sales floor to finance.
           </p>
         </header>
 
@@ -923,14 +923,14 @@ export default function AuthPage() {
         <article className="info-card">
           <h3>About Sedifex</h3>
           <p>
-            Sedifex is the operations control tower for modern retail teams. We unite
+            Sedifex is the smart AI inventory system for modern small businesses. We unite
             store execution, warehouse visibility, and merchandising insights so every
             location can act on the same live source of truth.
           </p>
           <p>
             Connect your POS, ecommerce, and supplier systems in minutes to orchestrate
-            the entire product journey—from forecast to fulfillment—with less manual work
-            and far fewer stockouts.
+            the entire product journey—from forecast to fulfillment—with less manual work,
+            fewer stockouts, and smarter AI-driven decisions.
           </p>
           <footer>
             <ul className="info-card__list">
@@ -945,11 +945,11 @@ export default function AuthPage() {
           <h3>Our Mission</h3>
           <p>
             We believe resilient retailers win by responding to change faster than their
-            inventory can move. Sedifex exists to give operators the clarity and
-            confidence to do exactly that.
+            inventory can move. Sedifex exists to give small business operators the AI
+            clarity and confidence to do exactly that.
           </p>
           <ul className="info-card__list">
-            <li>Deliver every SKU promise with predictive inventory intelligence</li>
+            <li>Deliver every SKU promise with predictive AI inventory intelligence</li>
             <li>Empower teams with guided workflows, not spreadsheets</li>
             <li>Earn shopper loyalty through always-on availability</li>
           </ul>
