@@ -111,6 +111,131 @@
   align-items: center;
 }
 
+.products-page__advisor-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: stretch;
+  margin: 16px 0;
+}
+
+.products-page__advisor-card {
+  flex: 1 1 320px;
+  border: 1px solid #e5e7eb;
+  padding: 14px;
+  background: #fff;
+}
+
+.products-page__advisor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.products-page__advisor-subtitle {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.products-page__advisor-badge {
+  display: inline-flex;
+  padding: 4px 10px;
+  background: #ecfeff;
+  color: #0f172a;
+  border: 1px solid #bae6fd;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.products-page__advisor-form {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.products-page__advisor-textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.products-page__advisor-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.products-page__advisor-error {
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.products-page__advisor-message {
+  margin-top: 12px;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.products-page__advisor-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  align-items: start;
+}
+
+.products-page__advisor-meta--ai {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.products-page__advisor-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.products-page__advisor-label--ai {
+  background: #ecfeff;
+  color: #0f172a;
+}
+
+.products-page__advisor-question {
+  margin: 0;
+}
+
+.products-page__advisor-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.products-page__advisor-paragraph {
+  margin: 0;
+}
+
+.products-page__advisor-placeholder {
+  margin: 10px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
 .products-page__warning {
   margin-top: 8px;
   color: #b45309;
