@@ -886,7 +886,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                     onChange={event =>
                       updateProfileDraft('city', event.target.value)
                     }
-                    placeholder="Accra"
+                    placeholder="Nairobi"
                     data-testid="account-profile-city"
                   />
                 </label>
@@ -899,7 +899,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                     onChange={event =>
                       updateProfileDraft('region', event.target.value)
                     }
-                    placeholder="Greater Accra"
+                    placeholder="Nairobi County"
                     data-testid="account-profile-region"
                   />
                 </label>
@@ -912,7 +912,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                     onChange={event =>
                       updateProfileDraft('postalCode', event.target.value)
                     }
-                    placeholder="GA-184-3210"
+                    placeholder="00100"
                     data-testid="account-profile-postal"
                   />
                 </label>
@@ -925,7 +925,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                     onChange={event =>
                       updateProfileDraft('country', event.target.value)
                     }
-                    placeholder="Ghana"
+                    placeholder="Kenya or Ghana"
                     data-testid="account-profile-country"
                   />
                 </label>
@@ -1006,7 +1006,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                     rows={3}
                     value={publicDescriptionDraft}
                     onChange={e => setPublicDescriptionDraft(e.target.value)}
-                    placeholder="E.g. We sell fresh fish, feed and equipment for aquaculture farms in Accra."
+                    placeholder="E.g. We sell fresh fish, feed and equipment for aquaculture farms across Lagos."
                     style={{ width: '100%', resize: 'vertical' }}
                   />
                 </label>

@@ -208,7 +208,7 @@ describe('AccountOverview', () => {
     await userEvent.type(emailInput, 'hello@sedifex.com')
     await userEvent.type(
       screen.getByTestId('account-profile-phone'),
-      '+233201234567',
+      '+254712345678',
     )
     await userEvent.type(
       screen.getByTestId('account-profile-address1'),
@@ -218,18 +218,18 @@ describe('AccountOverview', () => {
       screen.getByTestId('account-profile-address2'),
       'Suite 4',
     )
-    await userEvent.type(screen.getByTestId('account-profile-city'), 'Accra')
+    await userEvent.type(screen.getByTestId('account-profile-city'), 'Nairobi')
     await userEvent.type(
       screen.getByTestId('account-profile-region'),
-      'Greater Accra',
+      'Nairobi County',
     )
     await userEvent.type(
       screen.getByTestId('account-profile-postal'),
-      'GA-184-3210',
+      '00100',
     )
     await userEvent.type(
       screen.getByTestId('account-profile-country'),
-      'Ghana',
+      'Kenya',
     )
 
     await userEvent.click(screen.getByRole('button', { name: /save workspace details/i }))
@@ -240,13 +240,13 @@ describe('AccountOverview', () => {
       displayName: 'Sedifex Coffee Ltd',
       name: 'Sedifex Coffee Ltd',
       email: 'hello@sedifex.com',
-      phone: '+233201234567',
+      phone: '+254712345678',
       addressLine1: '123 Market Street',
       addressLine2: 'Suite 4',
-      city: 'Accra',
-      region: 'Greater Accra',
-      postalCode: 'GA-184-3210',
-      country: 'Ghana',
+      city: 'Nairobi',
+      region: 'Nairobi County',
+      postalCode: '00100',
+      country: 'Kenya',
     })
     expect(payload.updatedAt?.toDate).toBeInstanceOf(Function)
     expect(options).toEqual({ merge: true })

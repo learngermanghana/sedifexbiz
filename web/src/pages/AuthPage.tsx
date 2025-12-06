@@ -636,7 +636,7 @@ export default function AuthPage() {
                   onBlur={() => setPhone(current => sanitizePhone(current))}
                   type="tel"
                   autoComplete="tel"
-                  placeholder="233 20 123 4567"
+                  placeholder="254 712 345 678"
                   required
                   disabled={isLoading}
                   aria-invalid={phone.length > 0 && normalizedPhone.length === 0}
@@ -658,7 +658,7 @@ export default function AuthPage() {
                   onBlur={() => setCountry(current => current.trim())}
                   type="text"
                   autoComplete="country-name"
-                  placeholder="Ghana"
+                  placeholder="Kenya or Ghana"
                   required
                   disabled={isLoading}
                   aria-invalid={country.length > 0 && normalizedCountry.length === 0}
@@ -680,7 +680,7 @@ export default function AuthPage() {
                   onBlur={() => setTown(current => current.trim())}
                   type="text"
                   autoComplete="address-level2"
-                  placeholder="Accra"
+                  placeholder="Nairobi"
                   required
                   disabled={isLoading}
                   aria-invalid={town.length > 0 && normalizedTown.length === 0}
