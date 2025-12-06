@@ -25,6 +25,7 @@ import {
   saveCachedProducts,
 } from '../utils/offlineCache'
 import { normalizeBarcode } from '../utils/barcode'
+import { requestAiAdvisor, type AiAdvisorResponse } from '../api/aiAdvisor'
 
 type ItemType = 'product' | 'service'
 
@@ -178,6 +179,14 @@ export default function Products() {
   const [products, setProducts] = useState<Product[]>([])
   const [searchText, setSearchText] = useState('')
   const [showLowStockOnly, setShowLowStockOnly] = useState(false)
+  const [advisorQuestion, setAdvisorQuestion] = useState(
+    'How should we handle these low-stock items?',
+  )
+  const [advisorLoading, setAdvisorLoading] = useState(false)
+  const [advisorError, setAdvisorError] = useState<string | null>(null)
+  const [advisorTurn, setAdvisorTurn] = useState<
+    { question: string; response: AiAdvisorResponse } | null
+  >(null)
 
   // add-item form state
   const [name, setName] = useState('')
@@ -322,6 +331,69 @@ export default function Products() {
       }).length,
     [products],
   )
+
+  const lowStockDetails = useMemo(
+    () =>
+      products
+        .filter(p => {
+          if (p.itemType === 'service') return false
+          if (typeof p.stockCount !== 'number') return false
+          if (typeof p.reorderPoint !== 'number') return false
+          return p.stockCount <= p.reorderPoint
+        })
+        .map(p => ({
+          id: p.id,
+          name: p.name,
+          stockCount: p.stockCount ?? 0,
+          reorderPoint: p.reorderPoint ?? 0,
+          lastReceiptAt: formatLastReceipt(p.lastReceiptAt),
+        })),
+    [products],
+  )
+
+  const advisorJsonContext = useMemo(
+    () => ({
+      lowStock: lowStockDetails,
+      reorderPoints: products
+        .filter(p => p.itemType === 'product')
+        .map(p => ({
+          id: p.id,
+          name: p.name,
+          stockCount: p.stockCount ?? null,
+          reorderPoint: p.reorderPoint ?? null,
+        })),
+      totals: {
+        products: products.length,
+        lowStockCount,
+      },
+    }),
+    [lowStockDetails, lowStockCount, products],
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const cached = window.localStorage.getItem('products-ai-advice')
+    if (!cached) return
+    try {
+      const parsed = JSON.parse(cached) as {
+        question: string
+        response: AiAdvisorResponse
+      }
+      setAdvisorTurn(parsed)
+      if (parsed.question) {
+        setAdvisorQuestion(parsed.question)
+      }
+    } catch (error) {
+      console.warn('[products] Failed to parse cached AI advice', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (advisorTurn) {
+      window.localStorage.setItem('products-ai-advice', JSON.stringify(advisorTurn))
+    }
+  }, [advisorTurn])
 
   const productColumns = useMemo<DataTableColumn<Product>[]>(
     () => [
@@ -812,6 +884,58 @@ export default function Products() {
     }
   }
 
+  async function handleAdvisorSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    const trimmedQuestion = advisorQuestion.trim()
+    if (!trimmedQuestion) {
+      setAdvisorError('Ask a question about your inventory to get suggestions.')
+      return
+    }
+
+    setAdvisorLoading(true)
+    setAdvisorError(null)
+
+    try {
+      const response = await requestAiAdvisor({
+        question: trimmedQuestion,
+        storeId: activeStoreId ?? undefined,
+        jsonContext: advisorJsonContext,
+      })
+      setAdvisorTurn({
+        question: trimmedQuestion,
+        response,
+      })
+    } catch (error) {
+      console.error('[products] Unable to fetch AI advice', error)
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'We could not fetch advice right now. Please try again.'
+      setAdvisorError(message)
+    } finally {
+      setAdvisorLoading(false)
+    }
+  }
+
+  function renderAdvisorAdvice(advice: string) {
+    const parts = advice
+      .split('\n')
+      .map(part => part.trim())
+      .filter(Boolean)
+
+    if (parts.length > 1) {
+      return (
+        <ul className="products-page__advisor-list">
+          {parts.map((part, index) => (
+            <li key={`advice-${index}`}>{part}</li>
+          ))}
+        </ul>
+      )
+    }
+
+    return <p className="products-page__advisor-paragraph">{advice}</p>
+  }
+
   return (
     <div className="page products-page">
       <header className="page__header products-page__header">
@@ -1007,7 +1131,9 @@ export default function Products() {
                 onChange={e => setSearchText(e.target.value)}
               />
             </div>
+          </div>
 
+          <div className="products-page__advisor-row">
             <div className="products-page__list-controls">
               <label className="checkbox">
                 <input
@@ -1021,6 +1147,66 @@ export default function Products() {
                 Download reorder list
               </button>
             </div>
+
+            <section className="card products-page__advisor-card" aria-live="polite">
+              <div className="products-page__advisor-header">
+                <div>
+                  <h4>Ask AI about inventory</h4>
+                  <p className="products-page__advisor-subtitle">
+                    Use low-stock and reorder data already on this page to plan your next moves.
+                  </p>
+                </div>
+                <span className="products-page__advisor-badge">
+                  {advisorLoading ? 'Responding…' : 'Ready'}
+                </span>
+              </div>
+
+              <form className="products-page__advisor-form" onSubmit={handleAdvisorSubmit}>
+                <label className="field__label" htmlFor="products-advisor-question">
+                  Question
+                </label>
+                <textarea
+                  id="products-advisor-question"
+                  rows={3}
+                  value={advisorQuestion}
+                  onChange={event => {
+                    setAdvisorQuestion(event.target.value)
+                    setAdvisorError(null)
+                  }}
+                  placeholder="E.g., Which suppliers should we contact first?"
+                  className="products-page__advisor-textarea"
+                />
+
+                <div className="products-page__advisor-actions">
+                  <button type="submit" className="button" disabled={advisorLoading}>
+                    {advisorLoading ? 'Generating…' : 'Ask AI'}
+                  </button>
+                  {advisorError ? (
+                    <span className="products-page__advisor-error">{advisorError}</span>
+                  ) : null}
+                </div>
+              </form>
+
+              {advisorTurn ? (
+                <div className="products-page__advisor-message">
+                  <div className="products-page__advisor-meta">
+                    <span className="products-page__advisor-label">You</span>
+                    <p className="products-page__advisor-question">{advisorTurn.question}</p>
+                  </div>
+
+                  <div className="products-page__advisor-meta products-page__advisor-meta--ai">
+                    <span className="products-page__advisor-label products-page__advisor-label--ai">
+                      AI advisor
+                    </span>
+                    {renderAdvisorAdvice(advisorTurn.response.advice)}
+                  </div>
+                </div>
+              ) : (
+                <p className="products-page__advisor-placeholder">
+                  Ask for quick tips on what to reorder next, bundled by the low-stock items here.
+                </p>
+              )}
+            </section>
           </div>
 
           <DataTable
