@@ -523,7 +523,7 @@ export default function AuthPage() {
             <div>
               <h1 className="app__title">Sedifex</h1>
               <p className="app__tagline">
-                Smart AI inventory for <span className="app__highlight">small businesses.</span>
+                Sell faster. <span className="app__highlight">Count smarter.</span>
               </p>
             </div>
           </div>
