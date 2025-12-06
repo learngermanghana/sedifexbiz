@@ -106,6 +106,124 @@ function describeExpiry(date: Date) {
   return { label: `In ${diffDays} days`, tone: '#2563EB' }
 }
 
+type MiniBarChartProps = {
+  data: number[]
+  color?: string
+  fallback?: string
+}
+
+function MiniBarChart({ data, color = '#4338CA', fallback = 'No activity yet.' }: MiniBarChartProps) {
+  const maxValue = Math.max(...data, 0)
+
+  if (!data.length || maxValue <= 0) {
+    return <p style={{ margin: 0, fontSize: 13, color: '#94A3B8' }}>{fallback}</p>
+  }
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${data.length}, minmax(6px, 1fr))`,
+        gap: 6,
+        alignItems: 'end',
+        height: 100,
+      }}
+      aria-hidden="true"
+    >
+      {data.map((value, index) => {
+        const heightPercent = Math.max((value / maxValue) * 100, 4)
+        return (
+          <div
+            key={index}
+            style={{
+              background: color,
+              borderRadius: 6,
+              height: `${heightPercent}%`,
+              transition: 'height 0.2s ease',
+              opacity: value === maxValue ? 1 : 0.78,
+            }}
+            title={`Day ${index + 1}: ${value}`}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+type SegmentedBarProps = {
+  segments: { label: string; value: number; color: string }[]
+}
+
+function SegmentedBar({ segments }: SegmentedBarProps) {
+  const total = segments.reduce((sum, segment) => sum + segment.value, 0)
+
+  if (total <= 0) {
+    return <p style={{ margin: 0, fontSize: 13, color: '#94A3B8' }}>No sales recorded today.</p>
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div
+        aria-hidden="true"
+        style={{
+          display: 'flex',
+          width: '100%',
+          height: 20,
+          borderRadius: 999,
+          overflow: 'hidden',
+          border: '1px solid #E2E8F0',
+          background: '#F8FAFC',
+        }}
+      >
+        {segments.map(segment => {
+          const widthPercent = Math.max((segment.value / total) * 100, 1)
+          return (
+            <div
+              key={segment.label}
+              style={{
+                width: `${widthPercent}%`,
+                background: segment.color,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#FFFFFF',
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+              title={`${segment.label}: ${Math.round(widthPercent)}%`}
+            />
+          )
+        })}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {segments.map(segment => {
+          const widthPercent = Math.round((segment.value / total) * 100)
+          return (
+            <div
+              key={segment.label}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569' }}
+            >
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 4,
+                  background: segment.color,
+                  display: 'inline-block',
+                }}
+              />
+              <span style={{ fontWeight: 700, color: '#0F172A' }}>{segment.label}</span>
+              <span>{widthPercent}%</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const {
     rangePresets,
@@ -486,6 +604,22 @@ export default function Dashboard() {
   const debtNextDueLabel = debtSummary?.nextDueDate
     ? debtSummary.nextDueDate.toLocaleDateString()
     : 'No due dates set'
+
+  const revenueMetric = metrics.find(metric => metric.id === 'revenue')
+  const ticketMetric = metrics.find(metric => metric.id === 'ticket')
+  const transactionsMetric = metrics.find(metric => metric.id === 'transactions')
+
+  const revenueSeries = revenueMetric?.sparkline ?? []
+  const revenueComparisonSeries = revenueMetric?.comparisonSparkline ?? []
+  const ticketSeries = ticketMetric?.sparkline ?? []
+  const transactionSeries = transactionsMetric?.sparkline ?? []
+  const maxTransactions = transactionSeries.length
+    ? Math.max(...transactionSeries)
+    : 0
+  const revenueChangeLabel =
+    revenueMetric && revenueMetric.changePercent !== null && revenueMetric.changePercent !== undefined
+      ? formatPercent(revenueMetric.changePercent)
+      : '—'
 
   function buildLowStockCsv() {
     const header = ['Product', 'SKU', 'On hand', 'Reorder point']
@@ -1345,6 +1479,155 @@ export default function Dashboard() {
               </article>
             )
           })}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <h3
+            style={{
+              margin: 0,
+              fontSize: 17,
+              fontWeight: 700,
+              color: '#0F172A',
+            }}
+          >
+            Visual charts
+          </h3>
+          <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+            Explore the trends behind the KPIs — the visuals compare your selected window to
+            previous performance and break down today’s mix.
+          </p>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+              gap: 14,
+            }}
+          >
+            <article
+              style={{
+                background: '#FFFFFF',
+                borderRadius: 14,
+                padding: '16px 18px',
+                border: '1px solid #E2E8F0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: 13, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>
+                Revenue trend
+              </div>
+              <div style={{ height: 110 }}>
+                {revenueSeries.length ? (
+                  <Sparkline
+                    data={revenueSeries}
+                    comparisonData={revenueComparisonSeries.length ? revenueComparisonSeries : undefined}
+                    color="#4338CA"
+                    comparisonColor="#A5B4FC"
+                  />
+                ) : (
+                  <p style={{ margin: 0, fontSize: 13, color: '#94A3B8' }}>
+                    No revenue data for this range yet.
+                  </p>
+                )}
+              </div>
+              <p style={{ margin: 0, fontSize: 13, color: '#475569' }}>
+                Showing {rangeSummary}. Change {revenueChangeLabel} compared with the previous
+                {resolvedRangeId === 'today' ? ' day' : ' period'}.
+              </p>
+            </article>
+
+            <article
+              style={{
+                background: '#FFFFFF',
+                borderRadius: 14,
+                padding: '16px 18px',
+                border: '1px solid #E2E8F0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: 13, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>
+                Daily transactions
+              </div>
+              <MiniBarChart
+                data={transactionSeries}
+                fallback="No transactions recorded for this range."
+              />
+              <p style={{ margin: 0, fontSize: 13, color: '#475569' }}>
+                {transactionSeries.length
+                  ? `Highest day: ${maxTransactions} transaction${maxTransactions === 1 ? '' : 's'}.`
+                  : 'Awaiting activity in this window.'}{' '}
+                Covers {rangeDaysLabel.toLowerCase()} for your current selection.
+              </p>
+            </article>
+
+            <article
+              style={{
+                background: '#FFFFFF',
+                borderRadius: 14,
+                padding: '16px 18px',
+                border: '1px solid #E2E8F0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: 13, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>
+                Today’s sales mix
+              </div>
+              <SegmentedBar
+                segments={[
+                  { label: 'Products', value: todayProductSalesTotal, color: '#4338CA' },
+                  { label: 'Services', value: todayServiceSalesTotal, color: '#F97316' },
+                ]}
+              />
+              <p style={{ margin: 0, fontSize: 13, color: '#475569' }}>
+                Products {todayProductMixPercent}% vs services {todayServiceMixPercent}% of
+                today’s GHS {todaySalesTotal.toFixed(2)} cash received.
+              </p>
+            </article>
+
+            <article
+              style={{
+                background: '#FFFFFF',
+                borderRadius: 14,
+                padding: '16px 18px',
+                border: '1px solid #E2E8F0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: 13, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>
+                Average basket trend
+              </div>
+              <div style={{ height: 110 }}>
+                {ticketSeries.length ? (
+                  <Sparkline
+                    data={ticketSeries}
+                    comparisonData={
+                      ticketMetric?.comparisonSparkline && ticketMetric.comparisonSparkline.length
+                        ? ticketMetric.comparisonSparkline
+                        : undefined
+                    }
+                    color="#0EA5E9"
+                    comparisonColor="#BAE6FD"
+                  />
+                ) : (
+                  <p style={{ margin: 0, fontSize: 13, color: '#94A3B8' }}>
+                    No basket size data for this range yet.
+                  </p>
+                )}
+              </div>
+              <p style={{ margin: 0, fontSize: 13, color: '#475569' }}>
+                Track how spend per sale is evolving across {rangeSummary.toLowerCase()} to spot
+                upsell opportunities.
+              </p>
+            </article>
+          </div>
         </div>
 
         <div
