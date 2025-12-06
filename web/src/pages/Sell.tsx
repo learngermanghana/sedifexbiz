@@ -37,6 +37,7 @@ import {
   type ReceiptLine,
   type ReceiptPayload,
 } from '../utils/receipt'
+import { requestAiAdvisor } from '../api/aiAdvisor'
 
 type ItemType = 'product' | 'service'
 
@@ -122,6 +123,11 @@ export default function Sell() {
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [aiTip, setAiTip] = useState<string | null>(null)
+  const [aiTipLoading, setAiTipLoading] = useState(false)
+  const [aiTipError, setAiTipError] = useState<string | null>(null)
+  const [aiTipOffline, setAiTipOffline] = useState(false)
+  const aiTipSignatureRef = useRef<string>('')
 
   const activityActor = user?.displayName || user?.email || 'Team member'
 
@@ -506,6 +512,101 @@ export default function Sell() {
     if (amountPaid <= 0) return false
     return amountPaid < totalAfterDiscount
   }, [amountPaid, totalAfterDiscount])
+
+  const aiCartContext = useMemo(() => {
+    if (!cart.length) return null
+
+    return {
+      items: cart.map(line => ({
+        id: line.productId,
+        name: line.name,
+        qty: line.qty,
+        price: line.price,
+        taxRate: line.taxRate,
+        itemType: line.itemType,
+        lineTotal: line.qty * line.price,
+      })),
+      totals: {
+        subTotal,
+        taxTotal: effectiveTaxTotal,
+        discount: discountAmount,
+        total: totalAfterDiscount,
+      },
+      paymentMethod,
+      discountInput: discountInput.trim() || undefined,
+      taxInput: taxInput.trim() || undefined,
+    }
+  }, [
+    cart,
+    discountAmount,
+    discountInput,
+    effectiveTaxTotal,
+    paymentMethod,
+    subTotal,
+    taxInput,
+    totalAfterDiscount,
+  ])
+
+  const aiCartSignature = useMemo(
+    () => (aiCartContext ? JSON.stringify(aiCartContext) : ''),
+    [aiCartContext],
+  )
+
+  async function fetchAiTip(manual = false) {
+    if (!aiCartContext) return
+    if (!manual && aiCartSignature === aiTipSignatureRef.current) return
+
+    setAiTipLoading(true)
+    setAiTipError(null)
+
+    try {
+      const response = await requestAiAdvisor({
+        question: 'Suggest upsell or promo ideas for this cart.',
+        storeId: activeStoreId ?? undefined,
+        jsonContext: aiCartContext,
+      })
+
+      setAiTip(response.advice)
+      aiTipSignatureRef.current = aiCartSignature
+      setAiTipOffline(false)
+    } catch (error) {
+      console.error('[sell] Unable to fetch AI tip', error)
+      const offline =
+        !navigator.onLine || (error as any)?.code === 'unavailable'
+
+      setAiTipOffline(offline)
+      setAiTipError(
+        offline
+          ? 'You appear to be offline. Reconnect to refresh advice.'
+          : 'We could not fetch advice right now. Please try again.',
+      )
+    } finally {
+      setAiTipLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!aiCartSignature) {
+      setAiTip(null)
+      setAiTipError(null)
+      setAiTipOffline(false)
+      aiTipSignatureRef.current = ''
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void fetchAiTip()
+    }, 700)
+
+    return () => window.clearTimeout(timer)
+  }, [aiCartSignature])
+
+  const handleRetryAiTip = () => {
+    setAiTipOffline(false)
+    void fetchAiTip(true)
+  }
+
+  const isAiRefreshDisabled = aiTipLoading || aiTipOffline || !aiCartContext
 
   function printReceipt(options: {
     saleId: string
@@ -1249,78 +1350,137 @@ export default function Sell() {
             )}
           </div>
 
-          {/* Totals */}
-          <div className="sell-page__totals">
-            <div className="sell-page__totals-row">
-              <span>Subtotal</span>
-              <strong>{formatCurrency(subTotal)}</strong>
-            </div>
-            <div className="sell-page__totals-row">
-              <span>VAT / Tax</span>
-              <div style={{ textAlign: 'right' }}>
-                <input
-                  type="text"
-                  className={
-                    'sell-page__input' +
-                    (taxError ? ' sell-page__input--error' : '')
-                  }
-                  placeholder={`Auto: ${formatCurrency(autoTaxTotal)}`}
-                  value={taxInput}
-                  onChange={e => setTaxInput(e.target.value)}
-                  style={{ maxWidth: 140 }}
-                />
-                {!taxInput && (
-                  <div className="sell-page__totals-hint">
-                    Using VAT from the product setup.
-                  </div>
-                )}
-                {taxError && (
-                  <div className="sell-page__totals-hint sell-page__totals-hint--error">
-                    {taxError}
-                  </div>
-                )}
-                {taxInput && !taxError && (
-                  <div className="sell-page__totals-hint">
-                    Override total: {formatCurrency(effectiveTaxTotal)}
-                  </div>
-                )}
+          {/* Totals + AI tip */}
+          <div className="sell-page__summary">
+            <div className="sell-page__totals">
+              <div className="sell-page__totals-row">
+                <span>Subtotal</span>
+                <strong>{formatCurrency(subTotal)}</strong>
+              </div>
+              <div className="sell-page__totals-row">
+                <span>VAT / Tax</span>
+                <div style={{ textAlign: 'right' }}>
+                  <input
+                    type="text"
+                    className={
+                      'sell-page__input' +
+                      (taxError ? ' sell-page__input--error' : '')
+                    }
+                    placeholder={`Auto: ${formatCurrency(autoTaxTotal)}`}
+                    value={taxInput}
+                    onChange={e => setTaxInput(e.target.value)}
+                    style={{ maxWidth: 140 }}
+                  />
+                  {!taxInput && (
+                    <div className="sell-page__totals-hint">
+                      Using VAT from the product setup.
+                    </div>
+                  )}
+                  {taxError && (
+                    <div className="sell-page__totals-hint sell-page__totals-hint--error">
+                      {taxError}
+                    </div>
+                  )}
+                  {taxInput && !taxError && (
+                    <div className="sell-page__totals-hint">
+                      Override total: {formatCurrency(effectiveTaxTotal)}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="sell-page__totals-row">
+                <span>Discount</span>
+                <div style={{ textAlign: 'right' }}>
+                  <input
+                    type="text"
+                    className={
+                      'sell-page__input' +
+                      (discountError ? ' sell-page__input--error' : '')
+                    }
+                    placeholder="e.g. 5 or 5%"
+                    value={discountInput}
+                    onChange={e => setDiscountInput(e.target.value)}
+                    style={{ maxWidth: 140 }}
+                  />
+                  {discountAmount > 0 && !discountError && (
+                    <div style={{ fontSize: 12, color: '#4b5563' }}>
+                      − {formatCurrency(discountAmount)}
+                    </div>
+                  )}
+                  {discountError && (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: '#b91c1c',
+                        marginTop: 2,
+                      }}
+                    >
+                      {discountError}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="sell-page__totals-row sell-page__totals-row--grand">
+                <span>Total</span>
+                <strong>{formatCurrency(totalAfterDiscount)}</strong>
               </div>
             </div>
-            <div className="sell-page__totals-row">
-              <span>Discount</span>
-              <div style={{ textAlign: 'right' }}>
-                <input
-                  type="text"
-                  className={
-                    'sell-page__input' +
-                    (discountError ? ' sell-page__input--error' : '')
+
+            <div className="sell-page__ai-tip">
+              <div className="sell-page__ai-tip-header">
+                <div>
+                  <p className="sell-page__ai-tip-title">AI tip</p>
+                  <p className="sell-page__ai-tip-subtitle">
+                    Quick ideas based on the cart in memory.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="button button--ghost button--small"
+                  disabled={isAiRefreshDisabled}
+                  onClick={() => fetchAiTip(true)}
+                  title={
+                    aiTipOffline
+                      ? 'Offline — check your connection to refresh advice'
+                      : undefined
                   }
-                  placeholder="e.g. 5 or 5%"
-                  value={discountInput}
-                  onChange={e => setDiscountInput(e.target.value)}
-                  style={{ maxWidth: 140 }}
-                />
-                {discountAmount > 0 && !discountError && (
-                  <div style={{ fontSize: 12, color: '#4b5563' }}>
-                    − {formatCurrency(discountAmount)}
-                  </div>
+                >
+                  {aiTipLoading ? 'Loading…' : 'Refresh advice'}
+                </button>
+              </div>
+
+              <div className="sell-page__ai-tip-body">
+                {aiTipLoading ? (
+                  <p className="sell-page__ai-tip-status">
+                    <span className="sell-page__ai-tip-spinner" aria-hidden />
+                    Thinking…
+                  </p>
+                ) : aiTip ? (
+                  <p className="sell-page__ai-tip-text">{aiTip}</p>
+                ) : (
+                  <p className="sell-page__ai-tip-status">
+                    {cart.length
+                      ? 'We will suggest upsells once the cart settles.'
+                      : 'Add items to the cart to get a tailored tip.'}
+                  </p>
                 )}
-                {discountError && (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: '#b91c1c',
-                      marginTop: 2,
-                    }}
-                  >
-                    {discountError}
-                  </div>
+
+                {aiTipError && (
+                  <p className="sell-page__ai-tip-error">
+                    {aiTipError}{' '}
+                    {aiCartContext && (
+                      <button
+                        type="button"
+                        className="sell-page__ai-tip-retry"
+                        onClick={handleRetryAiTip}
+                        disabled={aiTipLoading}
+                      >
+                        Retry now
+                      </button>
+                    )}
+                  </p>
                 )}
               </div>
-            </div>
-            <div className="sell-page__totals-row sell-page__totals-row--grand">
-              <span>Total</span>
-              <strong>{formatCurrency(totalAfterDiscount)}</strong>
             </div>
           </div>
 
