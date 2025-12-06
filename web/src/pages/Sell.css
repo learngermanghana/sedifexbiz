@@ -214,6 +214,101 @@
    Layout + responsive tweaks
    ====================== */
 
+.sell-page__summary {
+  display: grid;
+  grid-template-columns: 1fr minmax(260px, 0.9fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 12px;
+}
+
+.sell-page__ai-tip {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sell-page__ai-tip-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sell-page__ai-tip-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.sell-page__ai-tip-subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #475569;
+}
+
+.sell-page__ai-tip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.sell-page__ai-tip-status {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #475569;
+}
+
+.sell-page__ai-tip-text {
+  margin: 0;
+}
+
+.sell-page__ai-tip-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.sell-page__ai-tip-retry {
+  border: none;
+  background: none;
+  padding: 0;
+  color: #4338ca;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sell-page__ai-tip-retry:disabled {
+  color: #94a3b8;
+  cursor: default;
+  text-decoration: none;
+}
+
+.sell-page__ai-tip-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid #cbd5e1;
+  border-top-color: #4338ca;
+  animation: sell-spin 0.9s linear infinite;
+}
+
+@keyframes sell-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .sell-page__grid {
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
@@ -276,6 +371,10 @@
 
 @media (max-width: 900px) {
   .sell-page__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sell-page__summary {
     grid-template-columns: 1fr;
   }
 
