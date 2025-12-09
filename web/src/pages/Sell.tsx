@@ -730,6 +730,19 @@ export default function Sell() {
     if (!isCameraOpen || !videoRef.current) return
 
     const reader = new BrowserMultiFormatReader()
+    const hints = new Map<DecodeHintType, any>()
+    hints.set(DecodeHintType.TRY_HARDER, true)
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.ITF,
+      BarcodeFormat.QR_CODE,
+    ])
+    reader.setHints(hints)
     setCameraError(null)
     setIsCameraReady(false)
     setLastCameraScanAt(null)
@@ -764,6 +777,9 @@ export default function Sell() {
             if (cancelled) return
 
             setIsCameraReady(true)
+            setCameraStatusMessage(
+              'Camera is on. Center the barcode in the guide box and hold steady.',
+            )
 
             if (result) {
               setLastCameraScanAt(Date.now())
@@ -820,7 +836,7 @@ export default function Sell() {
         )
       } else {
         setCameraStatusMessage(
-          'No barcode detected yet. Move it closer to the camera and improve lighting.',
+          'No barcode detected yet. Fill the guide box with the barcode and improve lighting.',
         )
       }
     }, 1200)
@@ -1108,13 +1124,16 @@ export default function Sell() {
 
           {isCameraOpen ? (
             <div className="sell-page__camera-panel">
-              <video
-                ref={videoRef}
-                className="sell-page__camera-preview"
-                autoPlay
-                muted
-                playsInline
-              />
+              <div className="sell-page__camera-viewport">
+                <video
+                  ref={videoRef}
+                  className="sell-page__camera-preview"
+                  autoPlay
+                  muted
+                  playsInline
+                />
+                <div className="sell-page__camera-overlay" aria-hidden="true" />
+              </div>
               <div className="sell-page__camera-actions">
                 <button
                   type="button"
