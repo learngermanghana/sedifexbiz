@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { checkSignupUnlockStatus } from '../lib/paystackClient'
+import { usePwaContext } from '../context/PwaContext'
 
 function useQuery() {
   const { search } = useLocation()
@@ -10,6 +11,7 @@ function useQuery() {
 export const BillingVerifyPage: React.FC = () => {
   const query = useQuery()
   const navigate = useNavigate()
+  const { isPwaApp } = usePwaContext()
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -18,6 +20,10 @@ export const BillingVerifyPage: React.FC = () => {
   const [plan, setPlan] = useState<string | null>(null)
 
   useEffect(() => {
+    if (isPwaApp) {
+      return
+    }
+
     const storeId = query.get('storeId')
 
     if (!storeId) {
@@ -59,7 +65,22 @@ export const BillingVerifyPage: React.FC = () => {
     return () => {
       cancelled = true
     }
-  }, [query, navigate])
+  }, [query, navigate, isPwaApp])
+
+  if (isPwaApp) {
+    return (
+      <main className="p-4">
+        <h1 className="text-lg font-semibold mb-2">Manage subscription in your browser</h1>
+        <p className="text-sm text-gray-700 mb-2">
+          To start or renew your Sedifex subscription, please visit <strong>sedifex.com</strong> in
+          your browser and log in there.
+        </p>
+        <p className="text-sm text-gray-700">
+          Once your subscription is active, you can use this app to access your account.
+        </p>
+      </main>
+    )
+  }
 
   if (loading) {
     return (

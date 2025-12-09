@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { startPaystackCheckout } from '../lib/paystackClient'
+import { usePwaContext } from '../context/PwaContext'
 
 type Props = {
   storeId: string | null
@@ -31,6 +32,7 @@ export const AccountBillingSection: React.FC<Props> = ({
   paymentProvider,
   contractEndDate,
 }) => {
+  const { isPwaApp } = usePwaContext()
   const defaultPlanId = PLANS[0]?.id ?? ''
   const [selectedPlanId, setSelectedPlanId] = useState<string>(defaultPlanId)
   const [loading, setLoading] = useState(false)
@@ -110,6 +112,37 @@ export const AccountBillingSection: React.FC<Props> = ({
   }
 
   const isYearlyPlan = billingPlan?.toLowerCase().includes('year') ?? false
+
+  if (isPwaApp) {
+    return (
+      <section id="account-overview-contract">
+        <h2>Contract &amp; billing</h2>
+
+        <dl className="account-overview__grid">
+          <div>
+            <dt>Contract status</dt>
+            <dd>{contractStatus ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>Billing plan</dt>
+            <dd>{billingPlan ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>Payment provider</dt>
+            <dd>{paymentProvider ?? '—'}</dd>
+          </div>
+        </dl>
+
+        <div className="account-overview__notice" role="note">
+          <p className="text-sm text-gray-700">
+            To start or renew your Sedifex subscription, please visit{' '}
+            <strong>sedifex.com</strong> in your browser and log in there. Once your subscription is
+            active, you can use this app to access your account.
+          </p>
+        </div>
+      </section>
+    )
+  }
 
   if (!isOwner) {
     return (
