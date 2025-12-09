@@ -27,8 +27,12 @@ import {
 } from '../utils/offlineCache'
 import './Sell.css'
 
-import { BrowserMultiFormatReader } from '@zxing/browser'
-import { NotFoundException } from '@zxing/library'
+import { BrowserMultiFormatReader, BrowserQRCodeSvgWriter } from '@zxing/browser'
+import {
+  BarcodeFormat,
+  DecodeHintType,
+  NotFoundException,
+} from '@zxing/library'
 import { useKeyboardScanner } from '../components/BarcodeScanner'
 import { buildSimplePdf } from '../utils/pdf'
 import {
@@ -158,6 +162,7 @@ export default function Sell() {
     fileName: string
     shareText: string
   } | null>(null)
+  const [receiptQrSvg, setReceiptQrSvg] = useState<string | null>(null)
 
   function extractStoreName(data: any): string | null {
     const candidates = [
@@ -268,6 +273,24 @@ export default function Sell() {
     const built = buildReceiptPdf(lastReceipt)
     setReceiptDownload(built)
   }, [lastReceipt])
+
+  useEffect(() => {
+    if (!receiptDownload?.url) {
+      setReceiptQrSvg(null)
+      return
+    }
+
+    try {
+      const writer = new BrowserQRCodeSvgWriter()
+      const svg = writer.write(receiptDownload.url, 200, 200)
+      svg.setAttribute('role', 'img')
+      svg.setAttribute('aria-label', 'Receipt QR code')
+      setReceiptQrSvg(svg.outerHTML)
+    } catch (error) {
+      console.warn('[sell] Failed to build receipt QR code', error)
+      setReceiptQrSvg(null)
+    }
+  }, [receiptDownload])
 
   useEffect(() => {
     return () => {
@@ -812,6 +835,19 @@ export default function Sell() {
     if (!isCameraOpen || !videoRef.current) return
 
     const reader = new BrowserMultiFormatReader()
+    const hints = new Map<DecodeHintType, any>()
+    hints.set(DecodeHintType.TRY_HARDER, true)
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.ITF,
+      BarcodeFormat.QR_CODE,
+    ])
+    reader.setHints(hints)
     setCameraError(null)
     setIsCameraReady(false)
     setLastCameraScanAt(null)
@@ -846,6 +882,9 @@ export default function Sell() {
             if (cancelled) return
 
             setIsCameraReady(true)
+            setCameraStatusMessage(
+              'Camera is on. Center the barcode in the guide box and hold steady.',
+            )
 
             if (result) {
               setLastCameraScanAt(Date.now())
@@ -902,7 +941,7 @@ export default function Sell() {
         )
       } else {
         setCameraStatusMessage(
-          'No barcode detected yet. Move it closer to the camera and improve lighting.',
+          'No barcode detected yet. Fill the guide box with the barcode and improve lighting.',
         )
       }
     }, 1200)
@@ -1190,13 +1229,16 @@ export default function Sell() {
 
           {isCameraOpen ? (
             <div className="sell-page__camera-panel">
-              <video
-                ref={videoRef}
-                className="sell-page__camera-preview"
-                autoPlay
-                muted
-                playsInline
-              />
+              <div className="sell-page__camera-viewport">
+                <video
+                  ref={videoRef}
+                  className="sell-page__camera-preview"
+                  autoPlay
+                  muted
+                  playsInline
+                />
+                <div className="sell-page__camera-overlay" aria-hidden="true" />
+              </div>
               <div className="sell-page__camera-actions">
                 <button
                   type="button"
@@ -1701,6 +1743,31 @@ export default function Sell() {
                 >
                   Email
                 </a>
+              </div>
+
+              <div className="sell-page__qr">
+                <div className="sell-page__qr-header">
+                  <p className="sell-page__qr-title">Receipt QR</p>
+                  <p className="sell-page__qr-subtitle">
+                    Scan on a customer phone or second device to open the receipt link
+                    quickly.
+                  </p>
+                </div>
+
+                <div
+                  className="sell-page__qr-code"
+                  dangerouslySetInnerHTML={
+                    receiptQrSvg ? { __html: receiptQrSvg } : undefined
+                  }
+                  aria-hidden={!receiptQrSvg}
+                >
+                  {!receiptQrSvg && <span className="sell-page__qr-empty">QR unavailable</span>}
+                </div>
+
+                <p className="sell-page__qr-hint">
+                  Tip: Print this after checkout or have customers scan it directly at the
+                  counter.
+                </p>
               </div>
             </div>
           )}
