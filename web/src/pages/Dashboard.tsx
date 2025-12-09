@@ -307,6 +307,7 @@ export default function Dashboard() {
     loading: false,
     lastContextKey: null,
   })
+  const [metricFilter, setMetricFilter] = useState<'all' | 'sales' | 'inventory'>('all')
 
   const now = new Date()
   const todayKey = useMemo(
@@ -372,6 +373,18 @@ export default function Dashboard() {
 
     return () => unsubscribe()
   }, [storeId])
+
+  const filteredMetrics = useMemo(() => {
+    if (metricFilter === 'sales') {
+      return metrics.filter(metric => ['revenue', 'ticket', 'transactions'].includes(metric.id))
+    }
+
+    if (metricFilter === 'inventory') {
+      return metrics.filter(metric => metric.id === 'inventory')
+    }
+
+    return metrics
+  }, [metricFilter, metrics])
 
   useEffect(() => {
     if (!storeId) {
@@ -1539,12 +1552,44 @@ export default function Dashboard() {
       >
         <div
           style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ color: '#475569', fontSize: 13 }}>
+            Choose which metrics to show to keep this view tidy.
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+            <span style={{ color: '#0F172A', fontWeight: 600 }}>Metrics shown</span>
+            <select
+              value={metricFilter}
+              onChange={event => setMetricFilter(event.target.value as typeof metricFilter)}
+              style={{
+                borderRadius: 8,
+                border: '1px solid #CBD5F5',
+                padding: '6px 10px',
+                fontSize: 13,
+                background: '#FFFFFF',
+              }}
+            >
+              <option value="all">All metrics</option>
+              <option value="sales">Sales performance</option>
+              <option value="inventory">Inventory snapshot</option>
+            </select>
+          </label>
+        </div>
+
+        <div
+          style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
             gap: 16,
           }}
         >
-          {metrics.map(metric => {
+          {filteredMetrics.map(metric => {
             const change = metric.changePercent
             const color =
               change === null ? '#475569' : change < 0 ? '#DC2626' : '#16A34A'
