@@ -12,6 +12,7 @@ import { NAV_ITEMS, NavRole } from '../config/navigation'
 import { useWorkspaceIdentity } from '../hooks/useWorkspaceIdentity'
 import './Shell.css'
 import './Workspace.css'
+import { usePwaContext } from '../context/PwaContext'
 
 function navLinkClass(isActive: boolean) {
   return `shell__nav-link${isActive ? ' is-active' : ''}`
@@ -79,6 +80,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const { storeId } = useActiveStore()
   const { memberships, loading: membershipsLoading } = useMemberships()
   const user = useAuthUser()
+  const { isPwaApp } = usePwaContext()
   const userEmail = user?.email ?? 'Account'
   const connectivity = useConnectivityStatus()
   const { billing } = useStoreBilling()
@@ -375,21 +377,29 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   {billingNotice.message}
                 </p>
               </div>
-              <div className="shell__billing-actions">
-                <Link
-                  className="button button--primary button--small"
-                  to="/account"
-                >
-                  Update payment
-                </Link>
-                <button
-                  type="button"
-                  className="button button--ghost button--small"
-                  onClick={handleDismissBillingNotice}
-                >
-                  Dismiss reminder
-                </button>
-              </div>
+              {!isPwaApp ? (
+                <div className="shell__billing-actions">
+                  <Link
+                    className="button button--primary button--small"
+                    to="/account"
+                  >
+                    Update payment
+                  </Link>
+                  <button
+                    type="button"
+                    className="button button--ghost button--small"
+                    onClick={handleDismissBillingNotice}
+                  >
+                    Dismiss reminder
+                  </button>
+                </div>
+              ) : (
+                <div className="shell__billing-actions">
+                  <p className="text-sm text-gray-100">
+                    To manage your subscription, please visit sedifex.com in your browser.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}

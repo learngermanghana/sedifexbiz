@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSubscriptionStatus } from '../hooks/useSubscriptionStatus'
+import { usePwaContext } from '../context/PwaContext'
 
 type SubscriptionBannerProps = {
   subscription?: ReturnType<typeof useSubscriptionStatus>
@@ -24,6 +25,7 @@ function formatDaysRemaining(trialEndsAt: any, nowMs: number): string | null {
 export function SubscriptionBanner({ subscription }: SubscriptionBannerProps) {
   const navigate = useNavigate()
   const { loading, billing } = subscription ?? useSubscriptionStatus()
+  const { isPwaApp } = usePwaContext()
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   useEffect(() => {
@@ -59,16 +61,24 @@ export function SubscriptionBanner({ subscription }: SubscriptionBannerProps) {
     <div className={`subscription-banner subscription-banner--${status}`} role="status">
       <div className="subscription-banner__inner">
         <div className="subscription-banner__text">
-          <strong>Subscription:</strong> {message} Subscribe for <strong>$10/month</strong> to
-          keep unlimited sales and inventory.
+          <strong>Subscription:</strong> {message}{' '}
+          {isPwaApp ? (
+            'Manage your plan at sedifex.com to unlock full features.'
+          ) : (
+            <>
+              Subscribe for <strong>$10/month</strong> to keep unlimited sales and inventory.
+            </>
+          )}
         </div>
-        <button
-          type="button"
-          className="subscription-banner__button"
-          onClick={() => navigate('/account')}
-        >
-          Manage subscription
-        </button>
+        {!isPwaApp && (
+          <button
+            type="button"
+            className="subscription-banner__button"
+            onClick={() => navigate('/account')}
+          >
+            Manage subscription
+          </button>
+        )}
       </div>
     </div>
   )
