@@ -359,6 +359,64 @@
   font-weight: 600;
 }
 
+.sell-page__qr {
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 12px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sell-page__qr-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sell-page__qr-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.sell-page__qr-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: #475569;
+}
+
+.sell-page__qr-code {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+}
+
+.sell-page__qr-code svg {
+  width: 100%;
+  max-width: 200px;
+  height: auto;
+  display: block;
+}
+
+.sell-page__qr-empty {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.sell-page__qr-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #475569;
+}
+
 .sell-page__totals-hint {
   font-size: 12px;
   color: #475569;
