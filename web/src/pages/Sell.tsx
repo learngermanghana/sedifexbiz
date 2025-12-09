@@ -27,7 +27,7 @@ import {
 } from '../utils/offlineCache'
 import './Sell.css'
 
-import { BrowserMultiFormatReader } from '@zxing/browser'
+import { BrowserMultiFormatReader, BrowserQRCodeSvgWriter } from '@zxing/browser'
 import { NotFoundException } from '@zxing/library'
 import { useKeyboardScanner } from '../components/BarcodeScanner'
 import { buildSimplePdf } from '../utils/pdf'
@@ -158,6 +158,7 @@ export default function Sell() {
     fileName: string
     shareText: string
   } | null>(null)
+  const [receiptQrSvg, setReceiptQrSvg] = useState<string | null>(null)
 
   function extractStoreName(data: any): string | null {
     const candidates = [
@@ -268,6 +269,24 @@ export default function Sell() {
     const built = buildReceiptPdf(lastReceipt)
     setReceiptDownload(built)
   }, [lastReceipt])
+
+  useEffect(() => {
+    if (!receiptDownload?.url) {
+      setReceiptQrSvg(null)
+      return
+    }
+
+    try {
+      const writer = new BrowserQRCodeSvgWriter()
+      const svg = writer.write(receiptDownload.url, 200, 200)
+      svg.setAttribute('role', 'img')
+      svg.setAttribute('aria-label', 'Receipt QR code')
+      setReceiptQrSvg(svg.outerHTML)
+    } catch (error) {
+      console.warn('[sell] Failed to build receipt QR code', error)
+      setReceiptQrSvg(null)
+    }
+  }, [receiptDownload])
 
   useEffect(() => {
     return () => {
@@ -1701,6 +1720,31 @@ export default function Sell() {
                 >
                   Email
                 </a>
+              </div>
+
+              <div className="sell-page__qr">
+                <div className="sell-page__qr-header">
+                  <p className="sell-page__qr-title">Receipt QR</p>
+                  <p className="sell-page__qr-subtitle">
+                    Scan on a customer phone or second device to open the receipt link
+                    quickly.
+                  </p>
+                </div>
+
+                <div
+                  className="sell-page__qr-code"
+                  dangerouslySetInnerHTML={
+                    receiptQrSvg ? { __html: receiptQrSvg } : undefined
+                  }
+                  aria-hidden={!receiptQrSvg}
+                >
+                  {!receiptQrSvg && <span className="sell-page__qr-empty">QR unavailable</span>}
+                </div>
+
+                <p className="sell-page__qr-hint">
+                  Tip: Print this after checkout or have customers scan it directly at the
+                  counter.
+                </p>
               </div>
             </div>
           )}
