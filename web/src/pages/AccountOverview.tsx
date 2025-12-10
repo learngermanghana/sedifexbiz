@@ -1087,6 +1087,45 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         </section>
       )}
 
+      <section aria-labelledby="account-overview-deletion">
+        <div className="account-overview__section-header">
+          <h2 id="account-overview-deletion">Data controls</h2>
+          <p className="account-overview__subtitle">
+            Manage data kept in Firebase and request workspace deletion.
+          </p>
+        </div>
+
+        <div className="account-overview__data-grid">
+          <article className="account-overview__card">
+            <h3>Request account deletion</h3>
+            <p className="account-overview__hint">
+              Tell us you want to close your workspace. We’ll confirm ownership
+              and remove your Sedifex data from Firebase and backups.
+            </p>
+            <Link className="button button--primary" to="/support">
+              Request deletion
+            </Link>
+          </article>
+
+          <article className="account-overview__card">
+            <h3>Open Firebase console</h3>
+            <p className="account-overview__hint">
+              Authentication, billing records, and roster data are stored in
+              Firebase. Review or export what you need directly from the
+              console.
+            </p>
+            <a
+              className="button button--ghost"
+              href="https://console.firebase.google.com/"
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              Go to Firebase
+            </a>
+          </article>
+        </div>
+      </section>
+
       <section aria-labelledby="account-overview-roster">
         <h2 id="account-overview-roster">Team roster</h2>
 

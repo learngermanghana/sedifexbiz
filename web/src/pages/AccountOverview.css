@@ -105,3 +105,25 @@
   color: #8b5e00;
   border-color: #ffd591;
 }
+
+.account-overview__data-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin: 12px 0 8px;
+}
+
+.account-overview__card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.account-overview__card h3 {
+  margin: 0;
+  font-size: 16px;
+}
