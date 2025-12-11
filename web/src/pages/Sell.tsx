@@ -1663,15 +1663,17 @@ export default function Sell() {
                   </p>
                 </div>
 
-                <div
-                  className="sell-page__qr-code"
-                  dangerouslySetInnerHTML={
-                    receiptQrSvg ? { __html: receiptQrSvg } : undefined
-                  }
-                  aria-hidden={!receiptQrSvg}
-                >
-                  {!receiptQrSvg && <span className="sell-page__qr-empty">QR unavailable</span>}
-                </div>
+                {receiptQrSvg ? (
+                  <div
+                    className="sell-page__qr-code"
+                    dangerouslySetInnerHTML={{ __html: receiptQrSvg }}
+                    aria-hidden={!receiptQrSvg}
+                  />
+                ) : (
+                  <div className="sell-page__qr-code">
+                    <span className="sell-page__qr-empty">QR unavailable</span>
+                  </div>
+                )}
 
                 <p className="sell-page__qr-hint">
                   Tip: Print this after checkout or have customers scan it directly at the
