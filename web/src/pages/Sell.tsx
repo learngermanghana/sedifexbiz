@@ -1035,12 +1035,17 @@ export default function Sell() {
         total: totalAfterDiscount,
       }
 
+      const amountPaidValue = amountPaid > 0 ? amountPaid : totalAfterDiscount
+      const changeDueValue = Math.max(0, amountPaidValue - totalAfterDiscount)
+
       const payment = {
         method: paymentMethod,
+        amountPaid: amountPaidValue,
+        changeDue: changeDueValue,
         tenders: [
           {
             method: paymentMethod,
-            amount: totalAfterDiscount,
+            amount: amountPaidValue,
           },
         ],
       }
