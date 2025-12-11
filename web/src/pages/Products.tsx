@@ -40,6 +40,10 @@ type Product = {
   itemType: ItemType
   taxRate?: number | null
   expiryDate?: Date | null
+  manufacturerName?: string | null
+  productionDate?: Date | null
+  batchNumber?: string | null
+  showOnReceipt?: boolean
   lastReceiptAt?: unknown
   createdAt?: unknown
   updatedAt?: unknown
@@ -82,6 +86,26 @@ function formatVat(taxRate?: number | null): string {
   return `${(taxRate * 100).toFixed(0)}%`
 }
 
+function toDate(value: unknown): Date | null {
+  if (!value) return null
+  try {
+    if (typeof (value as any).toDate === 'function') {
+      const d: Date = (value as any).toDate()
+      return Number.isNaN(d.getTime()) ? null : d
+    }
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value
+    }
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value)
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
 function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product {
   const nameRaw = typeof data.name === 'string' ? data.name : ''
   const skuRaw = typeof data.sku === 'string' ? data.sku : ''
@@ -98,21 +122,11 @@ function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product
 
   const itemType = data.itemType === 'service' ? 'service' : 'product'
 
-  let expiryDate: Date | null = null
-  if (data.expiryDate) {
-    try {
-      if (typeof (data.expiryDate as any).toDate === 'function') {
-        expiryDate = (data.expiryDate as any).toDate()
-      } else if (data.expiryDate instanceof Date) {
-        expiryDate = data.expiryDate
-      } else if (typeof data.expiryDate === 'string') {
-        const parsed = new Date(data.expiryDate)
-        expiryDate = Number.isNaN(parsed.getTime()) ? null : parsed
-      }
-    } catch {
-      expiryDate = null
-    }
-  }
+  const expiryDate = toDate(data.expiryDate)
+  const productionDate = toDate(data.productionDate)
+  const manufacturerName = typeof data.manufacturerName === 'string' ? data.manufacturerName.trim() : ''
+  const batchNumber = typeof data.batchNumber === 'string' ? data.batchNumber.trim() : ''
+  const showOnReceipt = data.showOnReceipt === true
 
   return {
     id,
@@ -125,9 +139,38 @@ function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product
     itemType,
     taxRate: sanitizeTaxRate(data.taxRate),
     expiryDate,
+    productionDate,
+    manufacturerName: manufacturerName || null,
+    batchNumber: batchNumber || null,
+    showOnReceipt,
     lastReceiptAt: data.lastReceiptAt,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
+  }
+}
+
+const BACKFILLED_PRODUCTS = new Set<string>()
+
+async function backfillProductDefaults(
+  productId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (BACKFILLED_PRODUCTS.has(productId)) return
+
+  const updates: Record<string, unknown> = {}
+  if (!('manufacturerName' in data)) updates.manufacturerName = null
+  if (!('productionDate' in data)) updates.productionDate = null
+  if (!('batchNumber' in data)) updates.batchNumber = null
+  if (!('showOnReceipt' in data)) updates.showOnReceipt = false
+
+  if (!Object.keys(updates).length) return
+
+  BACKFILLED_PRODUCTS.add(productId)
+  try {
+    await updateDoc(doc(db, 'products', productId), updates)
+  } catch (error) {
+    BACKFILLED_PRODUCTS.delete(productId)
+    console.warn('[products] Failed to backfill metadata defaults', error)
   }
 }
 
@@ -197,6 +240,10 @@ export default function Products() {
   const [reorderPointInput, setReorderPointInput] = useState('')
   const [openingStockInput, setOpeningStockInput] = useState('')
   const [expiryInput, setExpiryInput] = useState('')
+  const [manufacturerInput, setManufacturerInput] = useState('')
+  const [productionDateInput, setProductionDateInput] = useState('')
+  const [batchNumberInput, setBatchNumberInput] = useState('')
+  const [showOnReceiptInput, setShowOnReceiptInput] = useState(false)
 
   const [isSaving, setIsSaving] = useState(false)
   const [formStatus, setFormStatus] = useState<'idle' | 'success' | 'error'>('idle')
@@ -211,6 +258,10 @@ export default function Products() {
   const [editReorderPointInput, setEditReorderPointInput] = useState('')
   const [editStockInput, setEditStockInput] = useState('') // 🔹 On hand (stock) editable
   const [editExpiryDateInput, setEditExpiryDateInput] = useState('')
+  const [editProductionDateInput, setEditProductionDateInput] = useState('')
+  const [editManufacturerInput, setEditManufacturerInput] = useState('')
+  const [editBatchNumberInput, setEditBatchNumberInput] = useState('')
+  const [editShowOnReceipt, setEditShowOnReceipt] = useState(false)
 
   const activeMembership = useMemo(
     () =>
@@ -266,9 +317,11 @@ export default function Products() {
     )
 
     const unsubscribe = onSnapshot(q, snapshot => {
-      const rows: Product[] = snapshot.docs.map(d =>
-        mapFirestoreProduct(d.id, d.data() as Record<string, unknown>),
-      )
+      const rows: Product[] = snapshot.docs.map(d => {
+        const raw = d.data() as Record<string, unknown>
+        backfillProductDefaults(d.id, raw)
+        return mapFirestoreProduct(d.id, raw)
+      })
 
       // save for offline
       saveCachedProducts(
@@ -320,6 +373,11 @@ export default function Products() {
 
     return result
   }, [products, searchText, showLowStockOnly])
+
+  const editingProduct = useMemo(
+    () => products.find(product => product.id === editingId) ?? null,
+    [editingId, products],
+  )
 
   const lowStockCount = useMemo(
     () =>
@@ -615,6 +673,9 @@ export default function Products() {
     const openingStockNumber = openingStockInput ? Number(openingStockInput) : NaN
     const taxRateNumber = parseTaxInput(taxRateInput)
     const expiryDate = parseDateInput(expiryInput)
+    const productionDate = parseDateInput(productionDateInput)
+    const manufacturerName = manufacturerInput.trim()
+    const batchNumber = batchNumberInput.trim()
 
     if (!isService && (Number.isNaN(priceNumber) || priceNumber < 0)) {
       setFormStatus('error')
@@ -659,6 +720,10 @@ export default function Products() {
             ? openingStockNumber
             : null,
         expiryDate: !isService ? expiryDate : null,
+        productionDate: !isService ? productionDate : null,
+        manufacturerName: !isService && manufacturerName ? manufacturerName : null,
+        batchNumber: !isService && batchNumber ? batchNumber : null,
+        showOnReceipt: !isService && showOnReceiptInput,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
@@ -674,6 +739,10 @@ export default function Products() {
       setTaxRateInput('')
       setReorderPointInput('')
       setOpeningStockInput('')
+      setManufacturerInput('')
+      setProductionDateInput('')
+      setBatchNumberInput('')
+      setShowOnReceiptInput(false)
 
       await logInventoryActivity(
         `Added ${trimmedName}`,
@@ -701,6 +770,10 @@ export default function Products() {
       // services should not have barcodes
       setSku('')
       setExpiryInput('')
+      setManufacturerInput('')
+      setProductionDateInput('')
+      setBatchNumberInput('')
+      setShowOnReceiptInput(false)
     }
   }
 
@@ -754,6 +827,10 @@ export default function Products() {
         : '',
     )
     setEditExpiryDateInput(formatDateInputValue(product.expiryDate))
+    setEditProductionDateInput(formatDateInputValue(product.productionDate))
+    setEditManufacturerInput(product.manufacturerName ?? '')
+    setEditBatchNumberInput(product.batchNumber ?? '')
+    setEditShowOnReceipt(product.showOnReceipt === true)
     setFormStatus('idle')
     setFormError(null)
   }
@@ -782,6 +859,9 @@ export default function Products() {
     const stockNumberRaw =
       editStockInput.trim() === '' ? null : Number(editStockInput.trim())
     const expiryDate = parseDateInput(editExpiryDateInput)
+    const productionDate = parseDateInput(editProductionDateInput)
+    const manufacturerName = editManufacturerInput.trim()
+    const batchNumber = editBatchNumberInput.trim()
 
     if (!isSvc && (Number.isNaN(priceNumber) || priceNumber < 0)) {
       setFormStatus('error')
@@ -826,6 +906,10 @@ export default function Products() {
             : null,
         stockCount: finalStock,
         expiryDate: !isSvc ? expiryDate : null,
+        productionDate: !isSvc ? productionDate : null,
+        manufacturerName: !isSvc && manufacturerName ? manufacturerName : null,
+        batchNumber: !isSvc && batchNumber ? batchNumber : null,
+        showOnReceipt: !isSvc && editShowOnReceipt,
         updatedAt: serverTimestamp(),
       })
 
@@ -1091,6 +1175,58 @@ export default function Products() {
               </div>
             )}
 
+            {!isService && (
+              <>
+                <div className="field">
+                  <label className="field__label" htmlFor="add-production">
+                    Production date <span className="field__optional">(optional)</span>
+                  </label>
+                  <input
+                    id="add-production"
+                    type="date"
+                    value={productionDateInput}
+                    onChange={e => setProductionDateInput(e.target.value)}
+                  />
+                </div>
+
+                <div className="field">
+                  <label className="field__label" htmlFor="add-manufacturer">
+                    Manufacturer name <span className="field__optional">(optional)</span>
+                  </label>
+                  <input
+                    id="add-manufacturer"
+                    type="text"
+                    value={manufacturerInput}
+                    onChange={e => setManufacturerInput(e.target.value)}
+                  />
+                </div>
+
+                <div className="field">
+                  <label className="field__label" htmlFor="add-batch">
+                    Batch number <span className="field__optional">(optional)</span>
+                  </label>
+                  <input
+                    id="add-batch"
+                    type="text"
+                    value={batchNumberInput}
+                    onChange={e => setBatchNumberInput(e.target.value)}
+                  />
+                </div>
+
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={showOnReceiptInput}
+                    onChange={event => setShowOnReceiptInput(event.target.checked)}
+                  />
+                  <span>
+                    Show production details on receipts and labels{' '}
+                    <span className="field__optional">(optional)</span>
+                  </span>
+                </label>
+              </>
+            )}
+
             <div className="field">
               <label className="field__label" htmlFor="add-opening-stock">
                 Opening stock
@@ -1208,6 +1344,72 @@ export default function Products() {
               )}
             </section>
           </div>
+
+          {editingProduct ? (
+            editingProduct.itemType === 'service' ? (
+              <section className="card products-page__edit-card" aria-live="polite">
+                <p className="field__hint">
+                  Receipt and batch details only apply to products. Switch this item back to a
+                  product to edit its manufacturing info.
+                </p>
+              </section>
+            ) : (
+              <section className="card products-page__edit-card" aria-live="polite">
+                <h4>Receipt &amp; batch details</h4>
+                <p className="field__hint">
+                  Add optional production details that can appear on receipts, labels, and invoices.
+                </p>
+
+                <div className="field">
+                  <label className="field__label" htmlFor="edit-production">
+                    Production date <span className="field__optional">(optional)</span>
+                  </label>
+                  <input
+                    id="edit-production"
+                    type="date"
+                    value={editProductionDateInput}
+                    onChange={event => setEditProductionDateInput(event.target.value)}
+                  />
+                </div>
+
+                <div className="field">
+                  <label className="field__label" htmlFor="edit-manufacturer">
+                    Manufacturer name <span className="field__optional">(optional)</span>
+                  </label>
+                  <input
+                    id="edit-manufacturer"
+                    type="text"
+                    value={editManufacturerInput}
+                    onChange={event => setEditManufacturerInput(event.target.value)}
+                  />
+                </div>
+
+                <div className="field">
+                  <label className="field__label" htmlFor="edit-batch">
+                    Batch number <span className="field__optional">(optional)</span>
+                  </label>
+                  <input
+                    id="edit-batch"
+                    type="text"
+                    value={editBatchNumberInput}
+                    onChange={event => setEditBatchNumberInput(event.target.value)}
+                  />
+                </div>
+
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={editShowOnReceipt}
+                    onChange={event => setEditShowOnReceipt(event.target.checked)}
+                  />
+                  <span>
+                    Show production details on receipts and labels{' '}
+                    <span className="field__optional">(optional)</span>
+                  </span>
+                </label>
+              </section>
+            )
+          ) : null}
 
           <DataTable
             columns={productColumns}

@@ -6,6 +6,21 @@
   margin-bottom: 24px;
 }
 
+.field__optional {
+  color: #6b7280;
+  font-weight: 400;
+  margin-left: 6px;
+  font-size: 12px;
+}
+
+.products-page__edit-card {
+  margin: 12px 0;
+}
+
+.products-page__edit-card h4 {
+  margin: 0 0 6px;
+}
+
 .products-page__toolbar {
   display: flex;
   flex-wrap: wrap;
