@@ -1199,9 +1199,6 @@ export default function Products() {
                     value={manufacturerInput}
                     onChange={e => setManufacturerInput(e.target.value)}
                   />
-                  <p className="field__hint">
-                    Leave blank if the manufacturer is unknown or not shown on packaging.
-                  </p>
                 </div>
 
                 <div className="field">
@@ -1385,9 +1382,6 @@ export default function Products() {
                     value={editManufacturerInput}
                     onChange={event => setEditManufacturerInput(event.target.value)}
                   />
-                  <p className="field__hint">
-                    Leave blank if the manufacturer is unknown or not shown on packaging.
-                  </p>
                 </div>
 
                 <div className="field">
