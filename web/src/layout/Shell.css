@@ -5,6 +5,10 @@
   color: #0f172a;
 }
 
+body.shell--menu-open {
+  overflow: hidden;
+}
+
 .shell__container {
   max-width: 1200px;
   margin: 0 auto;
@@ -44,6 +48,9 @@
   background: rgba(15, 23, 42, 0.55);
   backdrop-filter: blur(2px);
   z-index: 20;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 .shell__menu-toggle {
@@ -393,6 +400,13 @@
 
   .shell__tagline {
     font-size: 12px;
+    color: #475569;
+    flex: 1;
+  }
+
+  .shell__tagline,
+  .shell__workspace-pill .shell__workspace-label {
+    display: none;
   }
 
   .shell__menu-toggle {
@@ -423,12 +437,10 @@
   }
 
   .shell__nav {
-    flex-wrap: nowrap;
-    justify-content: flex-start;
+    flex-direction: column;
+    align-items: stretch;
     width: 100%;
-    overflow-x: auto;
-    padding-bottom: 6px;
-    gap: 10px;
+    gap: 12px;
   }
 
   .shell__nav-group {
@@ -442,6 +454,10 @@
 
   .shell__nav-link {
     flex: 0 0 auto;
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    padding: 12px 14px;
   }
 
   .shell__controls {

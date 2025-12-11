@@ -167,6 +167,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   }, [location.pathname])
 
   useEffect(() => {
+    document.body.classList.toggle('shell--menu-open', isMenuOpen)
+
+    return () => {
+      document.body.classList.remove('shell--menu-open')
+    }
+  }, [isMenuOpen])
+
+  useEffect(() => {
     if (membershipsLoading || !isStaff) return
 
     const isAllowed = navItems.some(
@@ -226,7 +234,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     }
 
     return null
-  }, [isOnline, isReachable, queue.lastError, queue.pending, queue.status])
+  }, [isOnline, isReachable, queue, queue.lastError, queue.pending, queue.status])
 
   const workspaceStatus = billing?.planKey ?? 'Workspace ready'
   const workspaceLabel = workspaceName || workspaceStatus
@@ -234,8 +242,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="shell">
       {isMenuOpen && (
-        <div
+        <button
+          type="button"
           className="shell__backdrop"
+          aria-label="Close navigation"
           onClick={() => setIsMenuOpen(false)}
         />
       )}
