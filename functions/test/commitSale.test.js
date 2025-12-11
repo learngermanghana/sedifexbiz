@@ -103,6 +103,29 @@ async function run() {
   assert.strictEqual(ledgerEntries.length, 1)
   assert.strictEqual(ledgerEntries[0].data.refId, 'sale-123')
 
+  // Made-to-order and services should not move stock or ledger
+  const madeToOrderPayload = {
+    ...payload,
+    saleId: 'sale-456',
+    items: [
+      {
+        productId: 'prod-1',
+        name: 'Custom meal',
+        qty: 2,
+        price: 50,
+        taxRate: 0,
+        type: 'made_to_order',
+        prepDate: '2024-01-01',
+      },
+    ],
+  }
+
+  const resultNonInventory = await commitSale.run(madeToOrderPayload, context)
+  assert.strictEqual(resultNonInventory.ok, true)
+  assert.strictEqual(currentDb.getDoc('products/prod-1').stockCount, 4)
+  const ledgerAfterNonInventory = currentDb.listCollection('ledger')
+  assert.strictEqual(ledgerAfterNonInventory.length, 1)
+
   console.log('commitSale tests passed')
 }
 

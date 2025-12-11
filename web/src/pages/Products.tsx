@@ -26,8 +26,9 @@ import {
 } from '../utils/offlineCache'
 import { normalizeBarcode } from '../utils/barcode'
 import { requestAiAdvisor, type AiAdvisorResponse } from '../api/aiAdvisor'
+import { useStorePreferences } from '../hooks/useStorePreferences'
 
-type ItemType = 'product' | 'service'
+type ItemType = 'product' | 'service' | 'made_to_order'
 
 type Product = {
   id: string
@@ -120,7 +121,12 @@ function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product
 
   const normalizedBarcode = normalizeBarcode(barcodeSource)
 
-  const itemType = data.itemType === 'service' ? 'service' : 'product'
+  const itemType =
+    data.itemType === 'service'
+      ? 'service'
+      : data.itemType === 'made_to_order'
+        ? 'made_to_order'
+        : 'product'
 
   const expiryDate = toDate(data.expiryDate)
   const productionDate = toDate(data.productionDate)
@@ -218,6 +224,7 @@ export default function Products() {
   const { storeId: activeStoreId } = useActiveStore()
   const { memberships } = useMemberships()
   const user = useAuthUser()
+  const { preferences } = useStorePreferences(activeStoreId)
 
   const [products, setProducts] = useState<Product[]>([])
   const [searchText, setSearchText] = useState('')
@@ -262,6 +269,11 @@ export default function Products() {
   const [editManufacturerInput, setEditManufacturerInput] = useState('')
   const [editBatchNumberInput, setEditBatchNumberInput] = useState('')
   const [editShowOnReceipt, setEditShowOnReceipt] = useState(false)
+
+  useEffect(() => {
+    if (editingId) return
+    setItemType(preferences.productDefaults.defaultItemType)
+  }, [editingId, preferences.productDefaults.defaultItemType])
 
   const activeMembership = useMemo(
     () =>
@@ -354,7 +366,7 @@ export default function Products() {
 
     if (showLowStockOnly) {
       result = result.filter(p => {
-        if (p.itemType === 'service') return false
+        if (p.itemType !== 'product') return false
         if (typeof p.stockCount !== 'number') return false
         if (typeof p.reorderPoint !== 'number') return false
         return p.stockCount <= p.reorderPoint
@@ -382,7 +394,7 @@ export default function Products() {
   const lowStockCount = useMemo(
     () =>
       products.filter(p => {
-        if (p.itemType === 'service') return false
+        if (p.itemType !== 'product') return false
         if (typeof p.stockCount !== 'number') return false
         if (typeof p.reorderPoint !== 'number') return false
         return p.stockCount <= p.reorderPoint
@@ -394,7 +406,7 @@ export default function Products() {
     () =>
       products
         .filter(p => {
-          if (p.itemType === 'service') return false
+          if (p.itemType !== 'product') return false
           if (typeof p.stockCount !== 'number') return false
           if (typeof p.reorderPoint !== 'number') return false
           return p.stockCount <= p.reorderPoint
@@ -468,7 +480,12 @@ export default function Products() {
       {
         id: 'type',
         header: 'Type',
-        render: product => (product.itemType === 'service' ? 'Service' : 'Product'),
+        render: product =>
+          product.itemType === 'service'
+            ? 'Service'
+            : product.itemType === 'made_to_order'
+              ? 'Made-to-order'
+              : 'Product',
         hideBelow: 'md',
         hideable: true,
       },
@@ -524,8 +541,8 @@ export default function Products() {
         id: 'stock',
         header: 'On hand',
         render: product => {
-          const isSvc = product.itemType === 'service'
-          if (editingId === product.id && !isSvc) {
+          const isStockTracked = product.itemType === 'product'
+          if (editingId === product.id && isStockTracked) {
             return (
               <input
                 type="number"
@@ -536,7 +553,7 @@ export default function Products() {
               />
             )
           }
-          if (isSvc) return '—'
+          if (!isStockTracked) return '—'
           return product.stockCount ?? 0
         },
         align: 'right',
@@ -545,8 +562,8 @@ export default function Products() {
         id: 'reorder',
         header: 'Reorder point',
         render: product => {
-          const isSvc = product.itemType === 'service'
-          if (editingId === product.id && !isSvc) {
+          const isStockTracked = product.itemType === 'product'
+          if (editingId === product.id && isStockTracked) {
             return (
               <input
                 type="number"
@@ -557,7 +574,7 @@ export default function Products() {
               />
             )
           }
-          if (isSvc) return '—'
+          if (!isStockTracked) return '—'
           return product.reorderPoint ?? '—'
         },
         align: 'right',
@@ -567,7 +584,7 @@ export default function Products() {
         id: 'expiry',
         header: 'Expiry date',
         render: product => {
-          if (product.itemType === 'service') return '—'
+          if (product.itemType !== 'product') return '—'
           if (editingId === product.id) {
             return (
               <input
@@ -684,7 +701,7 @@ export default function Products() {
     }
 
     if (
-      !isService &&
+      isStockTracked &&
       openingStockInput &&
       (Number.isNaN(openingStockNumber) || openingStockNumber < 0)
     ) {
@@ -712,14 +729,14 @@ export default function Products() {
         barcode: isService ? null : normalizeBarcode(trimmedSku) || null,
         taxRate: taxRateNumber,
         reorderPoint:
-          !isService && !Number.isNaN(reorderPointNumber) && reorderPointNumber >= 0
+          isStockTracked && !Number.isNaN(reorderPointNumber) && reorderPointNumber >= 0
             ? reorderPointNumber
             : null,
         stockCount:
-          !isService && !Number.isNaN(openingStockNumber) && openingStockNumber >= 0
+          isStockTracked && !Number.isNaN(openingStockNumber) && openingStockNumber >= 0
             ? openingStockNumber
             : null,
-        expiryDate: !isService ? expiryDate : null,
+        expiryDate: isStockTracked ? expiryDate : null,
         productionDate: !isService ? productionDate : null,
         manufacturerName: !isService && manufacturerName ? manufacturerName : null,
         batchNumber: !isService && batchNumber ? batchNumber : null,
@@ -778,6 +795,7 @@ export default function Products() {
   }
 
   const isService = itemType === 'service'
+  const isStockTracked = itemType === 'product'
   const activityActor = user?.displayName || user?.email || 'Team member'
 
   async function logInventoryActivity(summary: string, detail: string) {
@@ -850,7 +868,7 @@ export default function Products() {
       return
     }
 
-    const isSvc = product.itemType === 'service'
+    const isStockTracked = product.itemType === 'product'
     const priceNumber = editPriceInput ? Number(editPriceInput) : NaN
     const reorderPointNumber = editReorderPointInput
       ? Number(editReorderPointInput)
@@ -863,13 +881,13 @@ export default function Products() {
     const manufacturerName = editManufacturerInput.trim()
     const batchNumber = editBatchNumberInput.trim()
 
-    if (!isSvc && (Number.isNaN(priceNumber) || priceNumber < 0)) {
+    if (!isStockTracked && (Number.isNaN(priceNumber) || priceNumber < 0)) {
       setFormStatus('error')
       setFormError('Enter a valid selling price.')
       return
     }
 
-    if (!isSvc && stockNumberRaw !== null) {
+    if (isStockTracked && stockNumberRaw !== null) {
       if (!Number.isFinite(stockNumberRaw) || stockNumberRaw < 0) {
         setFormStatus('error')
         setFormError('On hand must be zero or more.')
@@ -883,7 +901,7 @@ export default function Products() {
     }
 
     const finalStock =
-      isSvc || stockNumberRaw === null ? null : Math.floor(stockNumberRaw)
+      !isStockTracked || stockNumberRaw === null ? null : Math.floor(stockNumberRaw)
 
     const trimmedSku = editSku.trim()
 
@@ -894,22 +912,22 @@ export default function Products() {
       const ref = doc(db, 'products', product.id)
       await updateDoc(ref, {
         name: trimmedName,
-        sku: isSvc ? null : trimmedSku || null,
-        barcode: isSvc ? null : normalizeBarcode(trimmedSku) || null,
+        sku: isStockTracked ? trimmedSku || null : null,
+        barcode: isStockTracked ? normalizeBarcode(trimmedSku) || null : null,
         price: finalPrice,
         taxRate: taxRateNumber,
         reorderPoint:
-          !isSvc &&
+          isStockTracked &&
           !Number.isNaN(reorderPointNumber) &&
           reorderPointNumber >= 0
             ? reorderPointNumber
             : null,
         stockCount: finalStock,
-        expiryDate: !isSvc ? expiryDate : null,
-        productionDate: !isSvc ? productionDate : null,
-        manufacturerName: !isSvc && manufacturerName ? manufacturerName : null,
-        batchNumber: !isSvc && batchNumber ? batchNumber : null,
-        showOnReceipt: !isSvc && editShowOnReceipt,
+        expiryDate: isStockTracked ? expiryDate : null,
+        productionDate: isStockTracked ? productionDate : null,
+        manufacturerName: isStockTracked && manufacturerName ? manufacturerName : null,
+        batchNumber: isStockTracked && batchNumber ? batchNumber : null,
+        showOnReceipt: isStockTracked && editShowOnReceipt,
         updatedAt: serverTimestamp(),
       })
 
@@ -919,13 +937,13 @@ export default function Products() {
 
       await logInventoryActivity(
         `Updated ${trimmedName}`,
-        isSvc
-          ? 'Service details updated'
-          : `SKU ${trimmedSku || '—'} · Stock ${
+        isStockTracked
+          ? `SKU ${trimmedSku || '—'} · Stock ${
               typeof finalStock === 'number' ? finalStock : '—'
             } · Price ${
               typeof finalPrice === 'number' ? `GHS ${finalPrice.toFixed(2)}` : '—'
-            }`,
+            }`
+          : 'Service or made-to-order details updated',
       )
     } catch (error) {
       console.error('[products] Failed to update item', error)
@@ -1081,11 +1099,18 @@ export default function Products() {
               </label>
               <select id="add-type" value={itemType} onChange={handleItemTypeChange}>
                 <option value="product">Physical product</option>
+                <option value="made_to_order">Made-to-order (no stock counts)</option>
                 <option value="service">Service</option>
               </select>
               {isService && (
                 <p className="field__hint">
                   Services don&apos;t track stock. You can still set a selling price.
+                </p>
+              )}
+              {itemType === 'made_to_order' && (
+                <p className="field__hint">
+                  Use for cooked-to-order items. Sales are recorded without deducting stock, but
+                  you can still capture production details.
                 </p>
               )}
             </div>
