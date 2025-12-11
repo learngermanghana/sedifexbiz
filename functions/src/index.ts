@@ -988,10 +988,21 @@ export const commitSale = functions.https.onCall(
             typeof it?.type === 'string'
               ? it.type.trim().toLowerCase()
               : null
-          const type = typeRaw === 'service' ? 'service' : typeRaw === 'product' ? 'product' : null
+          const type =
+            typeRaw === 'service'
+              ? 'service'
+              : typeRaw === 'made_to_order'
+                ? 'made_to_order'
+                : typeRaw === 'product'
+                  ? 'product'
+                  : null
           const isService = it?.isService === true || type === 'service'
+          const prepDate =
+            typeof it?.prepDate === 'string' && it.prepDate.trim()
+              ? it.prepDate
+              : null
 
-          return { productId, name, qty, price, taxRate, type, isService }
+          return { productId, name, qty, price, taxRate, type, isService, prepDate }
         })
       : []
 
@@ -1070,28 +1081,31 @@ export const commitSale = functions.https.onCall(
           taxRate: it.taxRate,
           type: it.type,
           isService: it.isService === true,
+          prepDate: it.prepDate ?? null,
           storeId: normalizedBranchId,
           createdAt: timestamp,
         })
 
-        // product stock update
-        const pRef = productRefs[productId]
-        const pSnap = productSnaps[productId]
-        const curr = Number(pSnap.get('stockCount') || 0)
-        const next = curr - Math.abs(it.qty || 0)
+        const isInventoryTracked = it.type !== 'service' && it.type !== 'made_to_order'
 
-        tx.update(pRef, { stockCount: next, updatedAt: timestamp })
+        if (isInventoryTracked) {
+          const pRef = productRefs[productId]
+          const pSnap = productSnaps[productId]
+          const curr = Number(pSnap.get('stockCount') || 0)
+          const next = curr - Math.abs(it.qty || 0)
 
-        // ledger entry
-        const ledgerId = db.collection('_').doc().id
-        tx.set(db.collection('ledger').doc(ledgerId), {
-          productId,
-          qtyChange: -Math.abs(it.qty || 0),
-          type: 'sale',
-          refId: saleId,
-          storeId: normalizedBranchId,
-          createdAt: timestamp,
-        })
+          tx.update(pRef, { stockCount: next, updatedAt: timestamp })
+
+          const ledgerId = db.collection('_').doc().id
+          tx.set(db.collection('ledger').doc(ledgerId), {
+            productId,
+            qtyChange: -Math.abs(it.qty || 0),
+            type: 'sale',
+            refId: saleId,
+            storeId: normalizedBranchId,
+            createdAt: timestamp,
+          })
+        }
       }
     })
 
