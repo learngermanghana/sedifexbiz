@@ -74,6 +74,11 @@ function toReceiptPayload(value: any): ReceiptPayload | null {
       name: typeof item?.name === 'string' ? item.name : 'Item',
       qty: Number(item?.qty) || 0,
       price: Number(item?.price) || 0,
+      metadata: Array.isArray((item as any).metadata)
+        ? (item as any).metadata
+            .map((entry: unknown) => (typeof entry === 'string' ? entry.trim() : ''))
+            .filter(Boolean)
+        : [],
     }))
     .filter(item => item.qty > 0)
 

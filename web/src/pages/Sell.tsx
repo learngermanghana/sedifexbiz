@@ -48,6 +48,11 @@ type Product = {
   price: number | null
   taxRate?: number | null
   itemType: ItemType
+  manufacturerName?: string | null
+  productionDate?: Date | null
+  batchNumber?: string | null
+  expiryDate?: Date | null
+  showOnReceipt?: boolean
 }
 
 type CartLine = {
@@ -57,6 +62,7 @@ type CartLine = {
   price: number
   taxRate: number
   itemType: ItemType
+  metadata?: string[]
 }
 
 type ScanStatus = {
@@ -72,6 +78,26 @@ type Customer = {
 }
 
 type CustomerMode = 'walk_in' | 'named'
+
+function toDate(value: unknown): Date | null {
+  if (!value) return null
+  try {
+    if (typeof (value as any).toDate === 'function') {
+      const d: Date = (value as any).toDate()
+      return Number.isNaN(d.getTime()) ? null : d
+    }
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value
+    }
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value)
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+  } catch {
+    return null
+  }
+  return null
+}
 
 function mapFirestoreProduct(id: string, data: any): Product {
   const nameRaw = typeof data.name === 'string' ? data.name : ''
@@ -98,12 +124,44 @@ function mapFirestoreProduct(id: string, data: any): Product {
         ? data.taxRate
         : null,
     itemType: data.itemType === 'service' ? 'service' : 'product',
+    manufacturerName:
+      typeof data.manufacturerName === 'string' && data.manufacturerName.trim()
+        ? data.manufacturerName.trim()
+        : null,
+    productionDate: toDate(data.productionDate),
+    batchNumber:
+      typeof data.batchNumber === 'string' && data.batchNumber.trim()
+        ? data.batchNumber.trim()
+        : null,
+    expiryDate: toDate(data.expiryDate),
+    showOnReceipt: data.showOnReceipt === true,
   }
 }
 
 function formatCurrency(amount: number | null | undefined): string {
   if (typeof amount !== 'number' || !Number.isFinite(amount)) return 'GHS 0.00'
   return `GHS ${amount.toFixed(2)}`
+}
+
+function formatMetadataDate(value: Date | null | undefined): string | null {
+  if (!value) return null
+  const label = value.toLocaleDateString()
+  return label || null
+}
+
+function buildProductMetadata(product: Product): string[] {
+  if (!product.showOnReceipt) return []
+
+  const metadata: string[] = []
+
+  if (product.manufacturerName) metadata.push(`Manufacturer: ${product.manufacturerName}`)
+  const producedOn = formatMetadataDate(product.productionDate)
+  if (producedOn) metadata.push(`Produced: ${producedOn}`)
+  if (product.batchNumber) metadata.push(`Batch: ${product.batchNumber}`)
+  const expiresOn = formatMetadataDate(product.expiryDate)
+  if (expiresOn) metadata.push(`Expires: ${expiresOn}`)
+
+  return metadata
 }
 
 export default function Sell() {
@@ -528,7 +586,7 @@ export default function Sell() {
 
   function printReceipt(options: {
     saleId: string
-    items: { name: string; qty: number; price: number }[]
+    items: { name: string; qty: number; price: number; metadata?: string[] }[]
     totals: { subTotal: number; taxTotal: number; discount: number; total: number }
     paymentMethod: PaymentMethod
     discountInput: string
@@ -547,7 +605,11 @@ export default function Sell() {
       const lineRows = options.items
         .map(line => {
           const total = line.price * line.qty
-          return `<tr><td>${line.name}</td><td style="text-align:right">${line.qty}</td><td style="text-align:right">${formatCurrency(line.price)}</td><td style="text-align:right">${formatCurrency(total)}</td></tr>`
+          const metadataRows = (line.metadata ?? [])
+            .map(entry => `<tr class="meta-row"><td colspan="4">${entry}</td></tr>`)
+            .join('')
+
+          return `<tr><td>${line.name}</td><td style="text-align:right">${line.qty}</td><td style="text-align:right">${formatCurrency(line.price)}</td><td style="text-align:right">${formatCurrency(total)}</td></tr>${metadataRows}`
         })
         .join('')
 
@@ -563,6 +625,7 @@ export default function Sell() {
         th { text-align: left; border-bottom: 1px solid #e2e8f0; }
         tfoot td { font-weight: 700; border-top: 1px solid #e2e8f0; }
         .meta { font-size: 12px; color: #475569; margin: 0; }
+        .meta-row td { font-size: 12px; color: #475569; padding-top: 0; }
       </style>
     </head>
     <body>
@@ -639,6 +702,7 @@ export default function Sell() {
           price: product.price,
           taxRate: product.taxRate || 0,
           itemType: product.itemType,
+          metadata: buildProductMetadata(product),
         },
       ]
     })
@@ -900,6 +964,7 @@ export default function Sell() {
           name: item.name,
           qty: item.qty,
           price: item.price,
+          metadata: item.metadata?.length ? [...item.metadata] : undefined,
         })),
         totals: options.receipt.totals,
         paymentMethod: options.receipt.paymentMethod,
@@ -1006,6 +1071,7 @@ export default function Sell() {
         name: line.name,
         qty: line.qty,
         price: line.price,
+        metadata: line.metadata?.length ? [...line.metadata] : undefined,
       }))
 
       const receiptPayload: ReceiptPayload = {

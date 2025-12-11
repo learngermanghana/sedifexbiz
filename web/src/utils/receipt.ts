@@ -6,6 +6,7 @@ type ReceiptLine = {
   name: string
   qty: number
   price: number
+  metadata?: string[]
 }
 
 type ReceiptTotals = { subTotal: number; taxTotal: number; discount: number; total: number }
@@ -31,6 +32,11 @@ function normalizeLines(lines: ReceiptLine[]): ReceiptLine[] {
       name: typeof line.name === 'string' ? line.name : 'Item',
       qty: Number.isFinite(line.qty) ? line.qty : 0,
       price: Number.isFinite(line.price) ? line.price : 0,
+      metadata: Array.isArray(line.metadata)
+        ? line.metadata
+            .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+            .filter(Boolean)
+        : [],
     }))
     .filter(line => line.qty > 0)
 }
@@ -64,6 +70,11 @@ export function buildReceiptPdf(options: ReceiptPayload) {
     items.forEach(item => {
       const total = formatCurrency(item.price * item.qty)
       filteredLines.push(`• ${item.qty} x ${item.name} @ ${formatCurrency(item.price)} = ${total}`)
+      if (item.metadata?.length) {
+        item.metadata.forEach(entry => {
+          filteredLines.push(`   - ${entry}`)
+        })
+      }
     })
 
     filteredLines.push('Summary:')
