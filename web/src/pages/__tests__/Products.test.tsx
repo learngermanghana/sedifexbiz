@@ -175,6 +175,10 @@ describe('Products page', () => {
               stockCount: 2,
               reorderLevel: 5,
               lastReceipt: { qty: 12, supplier: 'ACME' },
+              manufacturerName: null,
+              productionDate: null,
+              batchNumber: null,
+              showOnReceipt: false,
             }),
           },
         ],
@@ -295,9 +299,12 @@ describe('Products page', () => {
         name: 'New Blend',
         sku: 'NB-01',
         price: 18,
-        reorderLevel: 4,
-        reorderThreshold: 4,
+        reorderPoint: 4,
         stockCount: 10,
+        productionDate: null,
+        manufacturerName: null,
+        batchNumber: null,
+        showOnReceipt: false,
       }),
     )
     expect(screen.getByText('Syncing…')).toBeInTheDocument()
@@ -359,6 +366,10 @@ describe('Products page', () => {
               sku: 'LEG-01',
               price: 10,
               stockCount: 5,
+              manufacturerName: null,
+              productionDate: null,
+              batchNumber: null,
+              showOnReceipt: false,
             }),
           },
         ],
@@ -381,6 +392,72 @@ describe('Products page', () => {
     expect(updateDocMock).toHaveBeenCalledWith(
       expect.objectContaining({ path: 'products/product-9' }),
       expect.objectContaining({ price: 20 }),
+    )
+  })
+
+  it('saves receipt metadata when toggled during edit', async () => {
+    const user = userEvent.setup()
+    let snapshotHandler: ((snap: { docs: { id: string; data: () => Record<string, unknown> }[] }) => void) | null = null
+    onSnapshotMock.mockImplementation((queryRef, onNext) => {
+      snapshotHandler = onNext
+      return () => {}
+    })
+
+    render(
+      <MemoryRouter>
+        <Products />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(onSnapshotMock).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      snapshotHandler?.({
+        docs: [
+          {
+            id: 'product-10',
+            data: () => ({
+              name: 'Pain Relief Gel',
+              sku: 'PA-10',
+              price: 40,
+              stockCount: 20,
+              manufacturerName: null,
+              productionDate: null,
+              batchNumber: null,
+              showOnReceipt: false,
+            }),
+          },
+        ],
+      })
+    })
+
+    const editButton = await screen.findByRole('button', { name: /edit/i })
+    await user.click(editButton)
+
+    const editCardHeading = await screen.findByText(/Receipt & batch details/i)
+    const editCard = editCardHeading.closest('section') ?? document.body
+
+    await user.type(within(editCard).getByLabelText(/Production date/i), '2024-01-01')
+    await user.type(
+      within(editCard).getByLabelText(/Manufacturer name/i),
+      'ACME Labs',
+    )
+    await user.type(within(editCard).getByLabelText(/Batch number/i), 'B-100')
+    await user.click(within(editCard).getByLabelText(/Show production details on receipts/i))
+
+    const saveButton = await screen.findByRole('button', { name: /save/i })
+    await user.click(saveButton)
+
+    await waitFor(() => expect(updateDocMock).toHaveBeenCalled())
+
+    expect(updateDocMock).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'products/product-10' }),
+      expect.objectContaining({
+        manufacturerName: 'ACME Labs',
+        batchNumber: 'B-100',
+        showOnReceipt: true,
+        productionDate: expect.any(Date),
+      }),
     )
   })
 })
