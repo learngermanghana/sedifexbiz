@@ -618,7 +618,14 @@ export default function Sell() {
     <head>
       <meta charset="utf-8" />
       <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 16px; color: #0f172a; }
+        @page { size: 80mm auto; margin: 8mm; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          margin: 0;
+          padding: 8px;
+          color: #0f172a;
+          width: 64mm;
+        }
         h1 { font-size: 18px; margin: 0 0 12px; }
         table { width: 100%; border-collapse: collapse; margin-top: 8px; }
         th, td { padding: 6px 4px; font-size: 13px; }
