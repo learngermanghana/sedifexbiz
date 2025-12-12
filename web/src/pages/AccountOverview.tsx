@@ -1192,7 +1192,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
             <h3>Delete workspace data</h3>
             <p className="account-overview__hint">
               Remove products, customers, sales, expenses, team members, the
-              activity log, and your workspace profile from Firebase. This
+              activity log, and your workspace profile from Sedifex. This
               action cannot be undone.
             </p>
             <div className="account-overview__danger-actions">
@@ -1239,22 +1239,6 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
             </div>
           </article>
 
-          <article className="account-overview__card">
-            <h3>Open Firebase console</h3>
-            <p className="account-overview__hint">
-              Authentication, billing records, and roster data are stored in
-              Firebase. Review or export what you need directly from the
-              console.
-            </p>
-            <a
-              className="button button--ghost"
-              href="https://console.firebase.google.com/"
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              Go to Firebase
-            </a>
-          </article>
         </div>
       </section>
 
