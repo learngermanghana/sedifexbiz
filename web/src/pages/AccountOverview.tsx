@@ -21,6 +21,7 @@ import { useMemberships, type Membership } from '../hooks/useMemberships'
 import { useToast } from '../components/ToastProvider'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { AccountBillingSection } from '../components/AccountBillingSection'
+import { deleteWorkspaceData } from '../controllers/dataDeletion'
 import { getStoreIdFromRecord } from '../utils/storeId'
 import './AccountOverview.css'
 
@@ -247,6 +248,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterError, setRosterError] = useState<string | null>(null)
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
+  const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false)
 
   const [profileDraft, setProfileDraft] = useState({
     displayName: '',
@@ -617,6 +619,41 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       })
     } finally {
       setIsSavingPublicProfile(false)
+    }
+  }
+
+  async function handleDeleteWorkspaceData() {
+    if (!storeId) return
+
+    if (!isOwner) {
+      publish({
+        message: 'Only the workspace owner can delete workspace data.',
+        tone: 'error',
+      })
+      return
+    }
+
+    const confirmed = window.confirm(
+      'This will permanently delete all workspace data, including products, sales, customers, expenses, team members and activity. This action cannot be undone. Continue?',
+    )
+
+    if (!confirmed) return
+
+    try {
+      setIsDeletingWorkspace(true)
+      await deleteWorkspaceData(storeId)
+      publish({
+        message: 'All workspace data deleted.',
+        tone: 'success',
+      })
+    } catch (error) {
+      console.error('[account] Failed to delete workspace data', error)
+      publish({
+        message: 'Unable to delete workspace data. Please try again.',
+        tone: 'error',
+      })
+    } finally {
+      setIsDeletingWorkspace(false)
     }
   }
 
@@ -1091,20 +1128,37 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         <div className="account-overview__section-header">
           <h2 id="account-overview-deletion">Data controls</h2>
           <p className="account-overview__subtitle">
-            Manage data kept in Firebase and request workspace deletion.
+            Delete your workspace data instantly when you no longer want to keep
+            it.
           </p>
         </div>
 
         <div className="account-overview__data-grid">
           <article className="account-overview__card">
-            <h3>Request account deletion</h3>
+            <h3>Delete workspace data</h3>
             <p className="account-overview__hint">
-              Tell us you want to close your workspace. We’ll confirm ownership
-              and remove your Sedifex data from Firebase and backups.
+              Remove products, customers, sales, expenses, team members, the
+              activity log, and your workspace profile from Firebase. This
+              action cannot be undone.
             </p>
-            <Link className="button button--primary" to="/support">
-              Request deletion
-            </Link>
+            <div className="account-overview__danger-actions">
+              <button
+                type="button"
+                className="button button--danger"
+                onClick={handleDeleteWorkspaceData}
+                disabled={!isOwner || isDeletingWorkspace}
+                data-testid="account-delete-data"
+              >
+                {isDeletingWorkspace
+                  ? 'Deleting workspace data…'
+                  : 'Delete all workspace data'}
+              </button>
+              {!isOwner && (
+                <p className="account-overview__hint" role="note">
+                  Only the workspace owner can delete data.
+                </p>
+              )}
+            </div>
           </article>
 
           <article className="account-overview__card">

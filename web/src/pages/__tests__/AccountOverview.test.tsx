@@ -30,6 +30,7 @@ const getDocsMock = vi.fn()
 const queryMock = vi.fn((ref: unknown, ...clauses: unknown[]) => ({ ref, clauses }))
 const whereMock = vi.fn((field: string, op: string, value: unknown) => ({ field, op, value }))
 const setDocMock = vi.fn()
+const deleteDocMock = vi.fn()
 const serverTimestampMock = vi.fn(() => 'server-timestamp')
 
 vi.mock('firebase/firestore', () => ({
@@ -45,7 +46,14 @@ vi.mock('firebase/firestore', () => ({
   query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   setDoc: (...args: Parameters<typeof setDocMock>) => setDocMock(...args),
+  deleteDoc: (...args: Parameters<typeof deleteDocMock>) => deleteDocMock(...args),
   serverTimestamp: serverTimestampMock,
+}))
+
+const deleteWorkspaceDataMock = vi.fn()
+vi.mock('../../controllers/dataDeletion', () => ({
+  deleteWorkspaceData: (...args: Parameters<typeof deleteWorkspaceDataMock>) =>
+    deleteWorkspaceDataMock(...args),
 }))
 
 vi.mock('../../firebase', () => ({
@@ -82,7 +90,9 @@ describe('AccountOverview', () => {
     queryMock.mockClear()
     whereMock.mockClear()
     setDocMock.mockReset()
+    deleteDocMock.mockReset()
     serverTimestampMock.mockReset()
+    deleteWorkspaceDataMock.mockReset()
 
     mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
     getDocMock.mockImplementation(async ref => {
@@ -504,5 +514,77 @@ describe('AccountOverview', () => {
     expect(rosterRow).toHaveAttribute('data-uid', 'member-2')
     expect(rosterRow).toHaveAttribute('data-store-id', 'store-456')
     expect(rosterRow).not.toHaveAttribute('data-first-signup-email')
+  })
+
+  it('allows owners to delete workspace data from account settings', async () => {
+    deleteWorkspaceDataMock.mockResolvedValueOnce(12)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-1',
+          uid: 'owner-1',
+          role: 'owner',
+          storeId: 'store-123',
+          email: 'owner@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+
+    render(<AccountOverview />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const deleteButton = await screen.findByTestId('account-delete-data')
+    await userEvent.click(deleteButton)
+
+    await waitFor(() =>
+      expect(deleteWorkspaceDataMock).toHaveBeenCalledWith('store-123'),
+    )
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(mockPublish).toHaveBeenCalledWith({
+      message: 'All workspace data deleted.',
+      tone: 'success',
+    })
+
+    confirmSpy.mockRestore()
+  })
+
+  it('disables workspace deletion for non-owners', async () => {
+    mockUseMemberships.mockReturnValue({
+      memberships: [
+        {
+          id: 'm-1',
+          uid: 'staff-1',
+          role: 'staff',
+          storeId: 'store-123',
+          email: 'staff@example.com',
+          phone: null,
+          invitedBy: null,
+          firstSignupEmail: null,
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      loading: false,
+      error: null,
+    })
+
+    render(<AccountOverview />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const deleteButton = await screen.findByTestId('account-delete-data')
+    expect(deleteButton).toBeDisabled()
   })
 })
