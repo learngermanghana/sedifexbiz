@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import {
   Timestamp,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -15,6 +16,7 @@ import {
   type DocumentSnapshot,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
+import { deleteUser } from 'firebase/auth'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships, type Membership } from '../hooks/useMemberships'
@@ -249,6 +251,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const [rosterError, setRosterError] = useState<string | null>(null)
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
   const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false)
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false)
 
   const [profileDraft, setProfileDraft] = useState({
     displayName: '',
@@ -654,6 +657,57 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       })
     } finally {
       setIsDeletingWorkspace(false)
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (!user) {
+      publish({
+        message: 'You need to be signed in to delete your account.',
+        tone: 'error',
+      })
+      return
+    }
+
+    const confirmed = window.confirm(
+      'This will permanently delete your Sedifex account and remove you from all workspaces. This action cannot be undone. Continue?',
+    )
+
+    if (!confirmed) return
+
+    try {
+      setIsDeletingAccount(true)
+
+      const membershipQuery = query(
+        collection(db, 'teamMembers'),
+        where('uid', '==', user.uid),
+      )
+      const membershipSnapshot = await getDocs(membershipQuery)
+
+      await Promise.all(
+        membershipSnapshot.docs.map(snapshot =>
+          deleteDoc(doc(db, 'teamMembers', snapshot.id)),
+        ),
+      )
+
+      await deleteUser(user)
+
+      publish({
+        message: 'Your account has been deleted.',
+        tone: 'success',
+      })
+    } catch (error) {
+      console.error('[account] Failed to delete account', error)
+
+      const errorCode = (error as { code?: unknown })?.code
+      const message =
+        errorCode === 'auth/requires-recent-login'
+          ? 'Please sign in again to delete your account.'
+          : 'Unable to delete your account. Please try again.'
+
+      publish({ message, tone: 'error' })
+    } finally {
+      setIsDeletingAccount(false)
     }
   }
 
@@ -1156,6 +1210,30 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
               {!isOwner && (
                 <p className="account-overview__hint" role="note">
                   Only the workspace owner can delete data.
+                </p>
+              )}
+            </div>
+          </article>
+
+          <article className="account-overview__card">
+            <h3>Delete your account</h3>
+            <p className="account-overview__hint">
+              Remove your Sedifex account and leave all workspaces. You may need
+              to sign in again before deleting. This action cannot be undone.
+            </p>
+            <div className="account-overview__danger-actions">
+              <button
+                type="button"
+                className="button button--danger"
+                onClick={handleDeleteAccount}
+                disabled={!user || isDeletingAccount}
+                data-testid="account-delete-account"
+              >
+                {isDeletingAccount ? 'Deleting account…' : 'Delete my account'}
+              </button>
+              {!user && (
+                <p className="account-overview__hint" role="note">
+                  Sign in to delete your account.
                 </p>
               )}
             </div>

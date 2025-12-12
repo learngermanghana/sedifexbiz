@@ -19,6 +19,17 @@ vi.mock('../../hooks/useMemberships', () => ({
   useMemberships: () => mockUseMemberships(),
 }))
 
+vi.mock('react-router-dom', () => ({
+  Link: ({ children, ...props }: React.PropsWithChildren<React.AnchorHTMLAttributes<HTMLAnchorElement>>) => (
+    <a {...props}>{children}</a>
+  ),
+}))
+
+const mockUseAuthUser = vi.fn()
+vi.mock('../../hooks/useAuthUser', () => ({
+  useAuthUser: () => mockUseAuthUser(),
+}))
+
 
 const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collection', path }))
 const docMock = vi.fn((_db: unknown, path: string, id?: string) => ({
@@ -31,13 +42,19 @@ const queryMock = vi.fn((ref: unknown, ...clauses: unknown[]) => ({ ref, clauses
 const whereMock = vi.fn((field: string, op: string, value: unknown) => ({ field, op, value }))
 const setDocMock = vi.fn()
 const deleteDocMock = vi.fn()
-const serverTimestampMock = vi.fn(() => 'server-timestamp')
+let serverTimestampMock: ReturnType<typeof vi.fn>
 
 vi.mock('firebase/firestore', () => ({
   Timestamp: class {
     static now() {
       return { toDate: () => new Date('2024-01-01T00:00:00Z') }
     }
+  },
+  get serverTimestampMock() {
+    return serverTimestampMock
+  },
+  set serverTimestampMock(value) {
+    serverTimestampMock = value
   },
   collection: (...args: Parameters<typeof collectionMock>) => collectionMock(...args),
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
@@ -47,7 +64,10 @@ vi.mock('firebase/firestore', () => ({
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   setDoc: (...args: Parameters<typeof setDocMock>) => setDocMock(...args),
   deleteDoc: (...args: Parameters<typeof deleteDocMock>) => deleteDocMock(...args),
-  serverTimestamp: serverTimestampMock,
+  serverTimestamp: () => {
+    serverTimestampMock ||= vi.fn(() => 'server-timestamp')
+    return serverTimestampMock()
+  },
 }))
 
 const deleteWorkspaceDataMock = vi.fn()
@@ -56,7 +76,21 @@ vi.mock('../../controllers/dataDeletion', () => ({
     deleteWorkspaceDataMock(...args),
 }))
 
+const deleteUserMock = vi.fn()
+vi.mock('firebase/auth', () => ({
+  deleteUser: (...args: Parameters<typeof deleteUserMock>) => deleteUserMock(...args),
+}))
+
+vi.mock('../../lib/paystackClient', () => ({
+  startPaystackCheckout: vi.fn(),
+  checkSignupUnlockStatus: vi.fn(),
+}))
+
 vi.mock('../../firebase', () => ({
+  app: {},
+  auth: {},
+  functions: {},
+  storage: {},
   db: {},
 }))
 
@@ -83,6 +117,7 @@ describe('AccountOverview', () => {
     mockPublish.mockReset()
     mockUseActiveStore.mockReset()
     mockUseMemberships.mockReset()
+    mockUseAuthUser.mockReset()
     collectionMock.mockClear()
     docMock.mockClear()
     getDocMock.mockReset()
@@ -91,10 +126,21 @@ describe('AccountOverview', () => {
     whereMock.mockClear()
     setDocMock.mockReset()
     deleteDocMock.mockReset()
-    serverTimestampMock.mockReset()
+    serverTimestampMock?.mockReset()
     deleteWorkspaceDataMock.mockReset()
+    deleteUserMock.mockReset()
 
     mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
+    mockUseAuthUser.mockReturnValue({
+      uid: 'owner-1',
+      email: 'owner@example.com',
+    })
+    mockUseMemberships.mockReturnValue({
+      memberships: [],
+      loading: false,
+      error: null,
+    })
+    serverTimestampMock = vi.fn(() => 'server-timestamp')
     getDocMock.mockImplementation(async ref => {
       const path = (ref as { path?: string } | undefined)?.path
       if (path === 'stores/store-123') {
@@ -466,7 +512,8 @@ describe('AccountOverview', () => {
       { field: 'ownerId', op: '==', value: 'owner-1' },
     )
 
-    expect(await screen.findByText('Fallback Coffee')).toBeInTheDocument()
+    const workspaceNames = await screen.findAllByText('Fallback Coffee')
+    expect(workspaceNames.length).toBeGreaterThan(0)
     const rosterRow = await screen.findByTestId('account-roster-member-owner')
     expect(rosterRow).toHaveAttribute('data-uid', 'owner-1')
   })
@@ -555,6 +602,63 @@ describe('AccountOverview', () => {
       message: 'All workspace data deleted.',
       tone: 'success',
     })
+
+    confirmSpy.mockRestore()
+  })
+
+  it('allows users to delete their account from account settings', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = { uid: 'user-123', email: 'user@example.com' }
+
+    mockUseAuthUser.mockReturnValue(user as unknown as any)
+
+    getDocsMock.mockResolvedValueOnce({
+      docs: [
+        {
+          id: 'member-1',
+          data: () => ({
+            uid: 'uid-member-1',
+            storeId: 'store-123',
+            email: 'owner@example.com',
+            role: 'owner',
+            invitedBy: 'admin@example.com',
+            phone: '+233201234567',
+            firstSignupEmail: 'owner-invite@example.com',
+            updatedAt: { toDate: () => new Date('2023-02-01T00:00:00Z') },
+          }),
+        },
+      ],
+    })
+
+    getDocsMock.mockResolvedValueOnce({
+      docs: [
+        { id: 'member-1', data: () => ({ uid: 'user-123' }) },
+        { id: 'member-2', data: () => ({ uid: 'user-123' }) },
+      ],
+    })
+
+    render(<AccountOverview />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const deleteButton = await screen.findByTestId('account-delete-account')
+    await userEvent.click(deleteButton)
+
+    await waitFor(() => expect(deleteUserMock).toHaveBeenCalledWith(user))
+    expect(deleteDocMock).toHaveBeenCalledWith({
+      type: 'doc',
+      path: 'teamMembers/member-1',
+    })
+    expect(deleteDocMock).toHaveBeenCalledWith({
+      type: 'doc',
+      path: 'teamMembers/member-2',
+    })
+    expect(mockPublish).toHaveBeenCalledWith({
+      message: 'Your account has been deleted.',
+      tone: 'success',
+    })
+    expect(confirmSpy).toHaveBeenCalled()
 
     confirmSpy.mockRestore()
   })
