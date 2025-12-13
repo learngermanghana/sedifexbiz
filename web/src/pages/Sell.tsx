@@ -36,6 +36,7 @@ import {
   buildReceiptPdf,
   type ReceiptLine,
   type ReceiptPayload,
+  type ReceiptTender,
 } from '../utils/receipt'
 
 type ItemType = 'product' | 'service'
@@ -164,6 +165,10 @@ function buildProductMetadata(product: Product): string[] {
   return metadata
 }
 
+function createTenderId() {
+  return Math.random().toString(36).slice(2, 10)
+}
+
 export default function Sell() {
   const { storeId: activeStoreId } = useActiveStore()
   const user = useAuthUser()
@@ -175,6 +180,9 @@ export default function Sell() {
   const [cart, setCart] = useState<CartLine[]>([])
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
   const [amountPaidInput, setAmountPaidInput] = useState('')
+  const [additionalTenders, setAdditionalTenders] = useState<
+    { id: string; method: PaymentMethod; amount: string }[]
+  >([])
   const [discountInput, setDiscountInput] = useState('')
   const [taxInput, setTaxInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
@@ -567,28 +575,71 @@ export default function Sell() {
     }
   }, [discountInput, grossTotal])
 
-  const amountPaid = useMemo(() => {
+  const primaryAmountPaid = useMemo(() => {
     const raw = Number(amountPaidInput)
     if (!Number.isFinite(raw) || raw < 0) return 0
     return raw
   }, [amountPaidInput])
 
+  const additionalAmountPaid = useMemo(
+    () =>
+      additionalTenders.reduce((sum, tender) => {
+        const parsed = Number(tender.amount)
+        if (!Number.isFinite(parsed) || parsed < 0) return sum
+        return sum + parsed
+      }, 0),
+    [additionalTenders],
+  )
+
+  const totalAmountPaid = useMemo(
+    () => primaryAmountPaid + additionalAmountPaid,
+    [additionalAmountPaid, primaryAmountPaid],
+  )
+
   const changeDue = useMemo(() => {
-    const diff = amountPaid - totalAfterDiscount
+    const diff = totalAmountPaid - totalAfterDiscount
     if (!Number.isFinite(diff)) return 0
     return diff > 0 ? diff : 0
-  }, [amountPaid, totalAfterDiscount])
+  }, [totalAfterDiscount, totalAmountPaid])
 
   const isShortPayment = useMemo(() => {
-    if (amountPaid <= 0) return false
-    return amountPaid < totalAfterDiscount
-  }, [amountPaid, totalAfterDiscount])
+    if (totalAmountPaid <= 0) return false
+    return totalAmountPaid < totalAfterDiscount
+  }, [totalAfterDiscount, totalAmountPaid])
+
+  function handleAddTender() {
+    setAdditionalTenders(current => [
+      ...current,
+      { id: createTenderId(), method: 'cash', amount: '' },
+    ])
+  }
+
+  function handleTenderChange(
+    id: string,
+    updates: Partial<{ method: PaymentMethod; amount: string }>,
+  ) {
+    setAdditionalTenders(current =>
+      current.map(tender =>
+        tender.id === id
+          ? {
+              ...tender,
+              ...updates,
+            }
+          : tender,
+      ),
+    )
+  }
+
+  function handleTenderRemove(id: string) {
+    setAdditionalTenders(current => current.filter(tender => tender.id !== id))
+  }
 
   function printReceipt(options: {
     saleId: string
     items: { name: string; qty: number; price: number; metadata?: string[] }[]
     totals: { subTotal: number; taxTotal: number; discount: number; total: number }
     paymentMethod: PaymentMethod
+    tenders?: ReceiptTender[]
     discountInput: string
     companyName?: string | null
     customerName?: string | null
@@ -602,6 +653,14 @@ export default function Sell() {
       iframe.style.visibility = 'hidden'
 
       const receiptDate = new Date().toLocaleString()
+      const paymentLabel =
+        options.tenders && options.tenders.length > 1
+          ? options.tenders
+              .map(tender =>
+                `${tender.method.replace('_', ' ')} (${formatCurrency(tender.amount)})`,
+              )
+              .join(' + ')
+          : options.paymentMethod.replace('_', ' ')
       const lineRows = options.items
         .map(line => {
           const total = line.price * line.qty
@@ -644,7 +703,7 @@ export default function Sell() {
       }
       <p class="meta">Sale ID: ${options.saleId}</p>
       <p class="meta">${receiptDate}</p>
-      <p class="meta">Payment: ${options.paymentMethod.replace('_', ' ')}</p>
+      <p class="meta">Payment: ${paymentLabel}</p>
       ${options.customerName ? `<p class="meta">Customer: ${options.customerName}</p>` : ''}
       <table>
         <thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead>
@@ -654,7 +713,7 @@ export default function Sell() {
           <tr><td colspan="3">VAT / Tax</td><td style="text-align:right">${formatCurrency(options.totals.taxTotal)}</td></tr>
           <tr><td colspan="3">Discount</td><td style="text-align:right">${options.discountInput ? options.discountInput : 'None'}</td></tr>
           <tr><td colspan="3">Total</td><td style="text-align:right">${formatCurrency(options.totals.total)}</td></tr>
-          <tr><td colspan="3">Payment</td><td style="text-align:right">${options.paymentMethod.replace('_', ' ')}</td></tr>
+          <tr><td colspan="3">Payment</td><td style="text-align:right">${paymentLabel}</td></tr>
         </tfoot>
       </table>
     </body>
@@ -951,6 +1010,7 @@ export default function Sell() {
     total: number
     items: CartLine[]
     paymentMethod: PaymentMethod
+    tenders?: ReceiptTender[]
     receipt: ReceiptPayload
   }) {
     if (!activeStoreId) return
@@ -958,10 +1018,18 @@ export default function Sell() {
     try {
       const itemCount = options.items.reduce((sum, item) => sum + (item.qty || 0), 0)
       const summary = buildActivitySummary(options.items)
+      const paymentLabel =
+        options.tenders && options.tenders.length > 1
+          ? options.tenders
+              .map(tender =>
+                `${tender.method.replace('_', ' ')} ${formatCurrency(tender.amount)}`,
+              )
+              .join(' + ')
+          : options.paymentMethod.replace('_', ' ')
       const detail = [
         `${itemCount || options.items.length} item${itemCount === 1 ? '' : 's'}`,
         `Total ${formatCurrency(options.total)}`,
-        `Payment ${options.paymentMethod.replace('_', ' ')}`,
+        `Payment ${paymentLabel}`,
         `ID ${options.saleId}`,
       ].join(' · ')
 
@@ -1042,19 +1110,47 @@ export default function Sell() {
         total: totalAfterDiscount,
       }
 
-      const amountPaidValue = amountPaid > 0 ? amountPaid : totalAfterDiscount
+      const amountPaidValue =
+        totalAmountPaid > 0 ? totalAmountPaid : totalAfterDiscount
       const changeDueValue = Math.max(0, amountPaidValue - totalAfterDiscount)
 
+      const parsedAdditionalTenders: ReceiptTender[] = additionalTenders
+        .map(tender => ({
+          method: tender.method,
+          amount: Number(tender.amount),
+        }))
+        .filter(tender => Number.isFinite(tender.amount) && tender.amount > 0)
+
+      const primaryTenderAmount =
+        totalAmountPaid > 0 && primaryAmountPaid > 0 ? primaryAmountPaid : 0
+
+      const tenders: ReceiptTender[] =
+        totalAmountPaid > 0
+          ? [
+              ...(primaryTenderAmount > 0
+                ? [
+                    {
+                      method: paymentMethod,
+                      amount: primaryTenderAmount,
+                    },
+                  ]
+                : []),
+              ...parsedAdditionalTenders,
+            ]
+          : [
+              {
+                method: paymentMethod,
+                amount: totalAfterDiscount,
+              },
+            ]
+
+      const primaryPaymentMethod = tenders[0]?.method ?? paymentMethod
+
       const payment = {
-        method: paymentMethod,
+        method: primaryPaymentMethod,
         amountPaid: amountPaidValue,
         changeDue: changeDueValue,
-        tenders: [
-          {
-            method: paymentMethod,
-            amount: amountPaidValue,
-          },
-        ],
+        tenders,
       }
 
       const customerName = customerMode === 'named' ? customerNameInput.trim() : null
@@ -1090,7 +1186,8 @@ export default function Sell() {
         saleId,
         items: receiptItems,
         totals,
-        paymentMethod,
+        paymentMethod: primaryPaymentMethod,
+        tenders,
         discountInput,
         companyName: storeName,
         customerName,
@@ -1100,7 +1197,8 @@ export default function Sell() {
         saleId,
         items: cartSnapshot,
         totals,
-        paymentMethod,
+        paymentMethod: primaryPaymentMethod,
+        tenders,
         discountInput,
         companyName: storeName,
         customerName,
@@ -1112,12 +1210,14 @@ export default function Sell() {
         saleId,
         total: totalAfterDiscount,
         items: cartSnapshot,
-        paymentMethod,
+        paymentMethod: primaryPaymentMethod,
+        tenders,
         receipt: receiptPayload,
       })
 
       setCart([])
       setAmountPaidInput('')
+      setAdditionalTenders([])
       setDiscountInput('')
       setTaxInput('')
       setCustomerNameInput('')
@@ -1578,7 +1678,7 @@ export default function Sell() {
                 value={amountPaidInput}
                 onChange={e => setAmountPaidInput(e.target.value)}
               />
-              {amountPaid > 0 && (
+              {totalAmountPaid > 0 && (
                 <p
                   className={
                     'sell-page__change ' +
@@ -1587,10 +1687,69 @@ export default function Sell() {
                 >
                   {isShortPayment
                     ? `Short by ${formatCurrency(
-                        totalAfterDiscount - amountPaid,
+                        totalAfterDiscount - totalAmountPaid,
                       )}`
                     : `Change due: ${formatCurrency(changeDue)}`}
                 </p>
+              )}
+            </div>
+
+            <div className="sell-page__additional-payments">
+              <div className="sell-page__additional-header">
+                <span>Additional payment methods (optional)</span>
+                <button
+                  type="button"
+                  className="button button--ghost"
+                  onClick={handleAddTender}
+                >
+                  Add method
+                </button>
+              </div>
+
+              {additionalTenders.length === 0 ? (
+                <p className="sell-page__additional-hint">
+                  Use this to record split payments such as part cash and part
+                  mobile money.
+                </p>
+              ) : (
+                <ul className="sell-page__additional-list">
+                  {additionalTenders.map(tender => (
+                    <li key={tender.id} className="sell-page__additional-row">
+                      <select
+                        value={tender.method}
+                        onChange={e =>
+                          handleTenderChange(tender.id, {
+                            method: e.target.value as PaymentMethod,
+                          })
+                        }
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="card">Card</option>
+                        <option value="mobile_money">Mobile money</option>
+                        <option value="transfer">Bank transfer</option>
+                      </select>
+
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Amount"
+                        value={tender.amount}
+                        onChange={e =>
+                          handleTenderChange(tender.id, { amount: e.target.value })
+                        }
+                      />
+
+                      <button
+                        type="button"
+                        className="button button--ghost"
+                        onClick={() => handleTenderRemove(tender.id)}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           </div>
