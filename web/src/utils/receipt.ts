@@ -9,6 +9,8 @@ type ReceiptLine = {
   metadata?: string[]
 }
 
+type ReceiptTender = { method: PaymentMethod; amount: number }
+
 type ReceiptTotals = { subTotal: number; taxTotal: number; discount: number; total: number }
 
 type ReceiptPayload = {
@@ -16,6 +18,7 @@ type ReceiptPayload = {
   items: ReceiptLine[]
   totals: ReceiptTotals
   paymentMethod: PaymentMethod
+  tenders?: ReceiptTender[]
   discountInput: string
   companyName?: string | null
   customerName?: string | null
@@ -56,11 +59,20 @@ export function buildReceiptPdf(options: ReceiptPayload) {
     const items = normalizeLines(options.items)
     const totals = normalizeTotals(options.totals)
 
+    const paymentLabel =
+      options.tenders && options.tenders.length > 1
+        ? options.tenders
+            .map(tender =>
+              `${tender.method.replace('_', ' ')} (${formatCurrency(tender.amount)})`,
+            )
+            .join(' + ')
+        : options.paymentMethod.replace('_', ' ')
+
     const lines: string[] = [
       options.companyName ? options.companyName : 'Sale receipt',
       `Sale ID: ${options.saleId}`,
       `Date: ${receiptDate}`,
-      `Payment: ${options.paymentMethod.replace('_', ' ')}`,
+      `Payment: ${paymentLabel}`,
       options.customerName ? `Customer: ${options.customerName}` : '',
       'Items:',
     ]
@@ -90,7 +102,7 @@ export function buildReceiptPdf(options: ReceiptPayload) {
     const shareText = [
       options.companyName ? `${options.companyName} receipt` : `Sale receipt (${receiptDate})`,
       `Total: ${formatCurrency(totals.total)}`,
-      `Payment: ${options.paymentMethod.replace('_', ' ')}`,
+      `Payment: ${paymentLabel}`,
       options.customerName ? `Customer: ${options.customerName}` : null,
       `Items: ${items.length}`,
     ]
@@ -104,4 +116,10 @@ export function buildReceiptPdf(options: ReceiptPayload) {
   }
 }
 
-export type { PaymentMethod, ReceiptLine, ReceiptPayload, ReceiptTotals }
+export type {
+  PaymentMethod,
+  ReceiptLine,
+  ReceiptPayload,
+  ReceiptTender,
+  ReceiptTotals,
+}
