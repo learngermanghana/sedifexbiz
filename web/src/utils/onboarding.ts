@@ -75,7 +75,15 @@ export async function fetchOnboardingStatus(
   try {
     const ref = doc(db, 'teamMembers', uid)
     const snapshot = await getDoc(ref)
-    const rawValue = snapshot.data()?.onboardingStatus
+    const data = snapshot.data()
+
+    // Staff members shouldn't be blocked by owner onboarding.
+    if (data?.role === 'staff') {
+      setCachedOnboardingStatus(uid, 'completed')
+      return 'completed'
+    }
+
+    const rawValue = data?.onboardingStatus
     if (rawValue === 'pending' || rawValue === 'completed') {
       setCachedOnboardingStatus(uid, rawValue)
       return rawValue
