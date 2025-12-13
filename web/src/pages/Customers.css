@@ -402,6 +402,14 @@
   border-radius: 8px;
   resize: vertical;
   min-height: 120px;
+  color: #111827;
+  background-color: #fff;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.customers-page__composer-field textarea::placeholder {
+  color: #4b5563;
 }
 
 .customers-page__dialog-actions {
