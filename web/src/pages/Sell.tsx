@@ -645,6 +645,13 @@ export default function Sell() {
     customerName?: string | null
   }) {
     try {
+      const iframe = document.createElement('iframe')
+      iframe.style.position = 'fixed'
+      iframe.style.width = '0'
+      iframe.style.height = '0'
+      iframe.style.border = '0'
+      iframe.style.visibility = 'hidden'
+
       const receiptDate = new Date().toLocaleString()
       const paymentLabel =
         options.tenders && options.tenders.length > 1
@@ -711,24 +718,6 @@ export default function Sell() {
       </table>
     </body>
   </html>`
-
-      const popup = window.open('', '_blank', 'noopener,noreferrer')
-      if (popup) {
-        popup.document.open()
-        popup.document.write(receiptHtml)
-        popup.document.close()
-        popup.focus()
-        popup.print()
-        setTimeout(() => popup.close(), 500)
-        return
-      }
-
-      const iframe = document.createElement('iframe')
-      iframe.style.position = 'fixed'
-      iframe.style.width = '0'
-      iframe.style.height = '0'
-      iframe.style.border = '0'
-      iframe.style.visibility = 'hidden'
 
       iframe.onload = () => {
         const frameWindow = iframe.contentWindow
