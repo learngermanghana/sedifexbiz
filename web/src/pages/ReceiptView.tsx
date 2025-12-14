@@ -71,6 +71,7 @@ export default function ReceiptView() {
       <p><strong>Sale ID:</strong> {receipt.saleId}</p>
       {receipt.companyName ? <p><strong>Company:</strong> {receipt.companyName}</p> : null}
       {receipt.customerName ? <p><strong>Customer:</strong> {receipt.customerName}</p> : null}
+      {receipt.customerPhone ? <p><strong>Phone:</strong> {receipt.customerPhone}</p> : null}
       <p><strong>Payment:</strong> {String(receipt.paymentMethod).replace('_', ' ')}</p>
 
       <div style={{ marginTop: 16 }}>

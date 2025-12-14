@@ -260,6 +260,16 @@ export default function Sell() {
     return null
   }
 
+  function withCollectionPath<T extends object>(ref: T | null, path: string) {
+    if (!ref) return ref
+    if (!(ref as any).collection) {
+      try {
+        ;(ref as any).collection = { path }
+      } catch {}
+    }
+    return ref
+  }
+
   useEffect(() => {
     if (!activeStoreId) {
       setStoreName(null)
@@ -267,20 +277,21 @@ export default function Sell() {
     }
 
     const refs = [
-      doc(db, 'stores', activeStoreId),
-      doc(db, 'workspaces', activeStoreId),
-    ]
+      withCollectionPath(doc(db, 'stores', activeStoreId), 'stores'),
+      withCollectionPath(doc(db, 'workspaces', activeStoreId), 'workspaces'),
+    ].filter(Boolean) as Array<ReturnType<typeof doc>>
 
-    const unsubscribers = refs.map(ref =>
-      onSnapshot(
-        ref,
-        snapshot => {
-          const name = extractStoreName(snapshot.data())
-          setStoreName(prev => (name ? name : prev ?? null))
-        },
-        () => setStoreName(prev => prev ?? null),
-      ),
-    )
+      const unsubscribers = refs.map(ref =>
+        onSnapshot(
+          ref,
+          snapshot => {
+            const data = typeof (snapshot as any).data === 'function' ? snapshot.data() : null
+            const name = extractStoreName(data)
+            setStoreName(prev => (name ? name : prev ?? null))
+          },
+          () => setStoreName(prev => prev ?? null),
+        ),
+      )
 
     return () => unsubscribers.forEach(unsub => unsub())
   }, [activeStoreId])
@@ -493,6 +504,14 @@ export default function Sell() {
     }
   }, [customerMode, customerNameInput])
 
+  function handleSelectCustomer(customer: Customer) {
+    setCustomerMode('named')
+    setSelectedCustomerId(customer.id)
+    setCustomerNameInput(customer.name)
+    setCustomerPhoneInput(customer.phone ?? '')
+    setCustomerSearchTerm(customer.name)
+  }
+
   const filteredProducts = useMemo(() => {
     if (!searchText.trim()) return products
     const term = searchText.trim().toLowerCase()
@@ -609,6 +628,7 @@ export default function Sell() {
   function handleTenderRemove(id: string) {
     setAdditionalTenders(current => current.filter(t => t.id !== id))
   }
+
   function printReceipt(options: {
     saleId: string
     items: { name: string; qty: number; price: number; metadata?: string[] }[]
@@ -618,6 +638,7 @@ export default function Sell() {
     discountInput: string
     companyName?: string | null
     customerName?: string | null
+    customerPhone?: string | null
   }) {
     const receiptDate = new Date().toLocaleString()
     const paymentLabel =
@@ -626,6 +647,13 @@ export default function Sell() {
             .map(tender => `${tender.method.replace('_', ' ')} (${formatCurrency(tender.amount)})`)
             .join(' + ')
         : options.paymentMethod.replace('_', ' ')
+
+    const customerLine =
+      options.customerName || options.customerPhone
+        ? `Customer: ${options.customerName ?? 'Walk-in'}${
+            options.customerPhone ? ` (${options.customerPhone})` : ''
+          }`
+        : null
 
     const lineRows = options.items
       .map(line => {
@@ -674,7 +702,7 @@ export default function Sell() {
   <p class="meta">Sale ID: ${options.saleId}</p>
   <p class="meta">${receiptDate}</p>
   <p class="meta">Payment: ${paymentLabel}</p>
-  ${options.customerName ? `<p class="meta">Customer: ${options.customerName}</p>` : ''}
+  ${customerLine ? `<p class="meta">${customerLine}</p>` : ''}
 
   <table>
     <thead>
@@ -1026,14 +1054,17 @@ export default function Sell() {
         tenders,
       }
 
-      const customerName = customerMode === 'named' ? customerNameInput.trim() : null
+      const trimmedCustomerName = customerNameInput.trim()
+      const customerName =
+        customerMode === 'named' ? trimmedCustomerName : trimmedCustomerName || 'Walk-in'
+      const customerPhone = customerPhoneInput.trim() || null
       const customerPayload =
         customerMode === 'walk_in'
           ? null
           : {
               id: selectedCustomerId,
               name: customerName,
-              phone: customerPhoneInput.trim() || null,
+              phone: customerPhone,
             }
 
       const commitSaleFn = httpsCallable(functions, 'commitSale')
@@ -1064,6 +1095,7 @@ export default function Sell() {
         discountInput,
         companyName: storeName,
         customerName,
+        customerPhone,
       } as any
 
       // ✅ Save to receipts/{saleId} so QR works on other phones
@@ -1083,6 +1115,7 @@ export default function Sell() {
         discountInput,
         companyName: storeName,
         customerName,
+        customerPhone,
       })
 
       setLastReceipt(receiptPayload)
@@ -1138,6 +1171,7 @@ export default function Sell() {
               <input
                 type="text"
                 inputMode="numeric"
+                aria-label="Scan or type a barcode"
                 autoCorrect="off"
                 autoCapitalize="off"
                 placeholder="Tap here, then scan the product barcode"
@@ -1145,7 +1179,7 @@ export default function Sell() {
                 onChange={e => setScanInput(e.target.value)}
               />
             </label>
-            <button type="submit" className="button button--primary">
+            <button type="submit" className="button button--primary" aria-label="Add">
               Add from barcode
             </button>
           </form>
@@ -1354,6 +1388,94 @@ export default function Sell() {
             </div>
           </div>
 
+          <div className="sell-page__customer" aria-labelledby="sell-customer-heading">
+            <div className="sell-page__customer-header">
+              <span id="sell-customer-heading">Customer</span>
+              <div className="sell-page__customer-mode" role="group" aria-label="Customer type">
+                <button
+                  type="button"
+                  className={customerMode === 'walk_in' ? 'is-active' : ''}
+                  onClick={() => setCustomerMode('walk_in')}
+                >
+                  Walk-in
+                </button>
+                <button
+                  type="button"
+                  className={customerMode === 'named' ? 'is-active' : ''}
+                  onClick={() => setCustomerMode('named')}
+                >
+                  Existing customer
+                </button>
+              </div>
+            </div>
+
+            {customerMode === 'named' && (
+              <div className="sell-page__customer-search">
+                <label className="field">
+                  <span className="field__label">Search customers</span>
+                  <input
+                    placeholder="Type a name or phone number"
+                    value={customerSearchTerm}
+                    onChange={e => {
+                      setCustomerSearchTerm(e.target.value)
+                      setSelectedCustomerId(null)
+                    }}
+                  />
+                </label>
+
+                <ul className="sell-page__customer-results">
+                  {customerResults.length ? (
+                    customerResults.map(customer => (
+                      <li key={customer.id}>
+                        <button
+                          type="button"
+                          className={selectedCustomerId === customer.id ? 'is-active' : ''}
+                          onClick={() => handleSelectCustomer(customer)}
+                        >
+                          <span className="sell-page__customer-results-name">{customer.name}</span>
+                          {(customer.phone || customer.email) && (
+                            <span className="sell-page__customer-results-meta">
+                              {[customer.phone, customer.email].filter(Boolean).join(' • ')}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))
+                  ) : (
+                    <li>
+                      <p className="sell-page__customer-results-empty">No customers match this search.</p>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            <div className="sell-page__customer-details">
+              <label className="field">
+                <span className="field__label">
+                  Customer name {customerMode === 'named' ? '(required)' : '(optional)'}
+                </span>
+                <input
+                  placeholder={customerMode === 'named' ? 'Select or enter a customer name' : 'Enter name (optional)'}
+                  value={customerNameInput}
+                  onChange={e => {
+                    setCustomerNameInput(e.target.value)
+                    setSelectedCustomerId(null)
+                  }}
+                />
+              </label>
+
+              <label className="field">
+                <span className="field__label">Customer phone (optional)</span>
+                <input
+                  placeholder="Add a phone number for the receipt"
+                  value={customerPhoneInput}
+                  onChange={e => setCustomerPhoneInput(e.target.value)}
+                />
+              </label>
+            </div>
+          </div>
+
           {/* Payment */}
           <div className="sell-page__payment" style={{ marginTop: 20 }}>
             <div className="field">
@@ -1460,6 +1582,7 @@ export default function Sell() {
                       discountInput: lastReceipt.discountInput,
                       companyName: lastReceipt.companyName,
                       customerName: lastReceipt.customerName,
+                      customerPhone: (lastReceipt as any).customerPhone ?? null,
                     })
                   }
                 >
