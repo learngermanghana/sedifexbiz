@@ -22,6 +22,7 @@ type ReceiptPayload = {
   discountInput: string
   companyName?: string | null
   customerName?: string | null
+  customerPhone?: string | null
 }
 
 function formatCurrency(amount: number | null | undefined): string {
@@ -68,12 +69,19 @@ export function buildReceiptPdf(options: ReceiptPayload) {
             .join(' + ')
         : options.paymentMethod.replace('_', ' ')
 
+    const customerLine =
+      options.customerName || options.customerPhone
+        ? `Customer: ${options.customerName ?? 'Walk-in'}${
+            options.customerPhone ? ` (${options.customerPhone})` : ''
+          }`
+        : ''
+
     const lines: string[] = [
       options.companyName ? options.companyName : 'Sale receipt',
       `Sale ID: ${options.saleId}`,
       `Date: ${receiptDate}`,
       `Payment: ${paymentLabel}`,
-      options.customerName ? `Customer: ${options.customerName}` : '',
+      customerLine,
       'Items:',
     ]
 
@@ -103,7 +111,7 @@ export function buildReceiptPdf(options: ReceiptPayload) {
       options.companyName ? `${options.companyName} receipt` : `Sale receipt (${receiptDate})`,
       `Total: ${formatCurrency(totals.total)}`,
       `Payment: ${paymentLabel}`,
-      options.customerName ? `Customer: ${options.customerName}` : null,
+      customerLine || null,
       `Items: ${items.length}`,
     ]
       .filter(Boolean)
