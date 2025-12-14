@@ -32,8 +32,8 @@ import {
   BarcodeFormat,
   DecodeHintType,
   EncodeHintType,
-  ErrorCorrectionLevel,
   NotFoundException,
+  QRCodeDecoderErrorCorrectionLevel,
 } from '@zxing/library'
 import { useKeyboardScanner } from '../components/BarcodeScanner'
 
@@ -368,7 +368,10 @@ export default function Sell() {
       const writer = new BrowserQRCodeSvgWriter()
       const encodeHints = new Map<EncodeHintType, unknown>()
       encodeHints.set(EncodeHintType.MARGIN, 2)
-      encodeHints.set(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.H)
+      encodeHints.set(
+        EncodeHintType.ERROR_CORRECTION,
+        QRCodeDecoderErrorCorrectionLevel.H,
+      )
 
       const svg = writer.write(receiptDownload.shareUrl, 220, 220, encodeHints)
       svg.setAttribute('role', 'img')
