@@ -24,6 +24,9 @@ import ResetPassword from './pages/ResetPassword'
 import VerifyEmail from './pages/VerifyEmail'
 import AiAdvisor from './pages/AiAdvisor'
 
+// ✅ NEW: public receipt page used by QR/share
+import ReceiptView from './pages/ReceiptView'
+
 import PrivacyPage from './pages/legal/PrivacyPage'
 import CookiesPage from './pages/legal/CookiesPage'
 import RefundPage from './pages/legal/RefundPage'
@@ -63,7 +66,8 @@ const router = createBrowserRouter([
         ],
       },
 
-      // Public routes (outside ShellLayout)
+      // ✅ Public routes (outside ShellLayout)
+      { path: 'receipt/:saleId', element: <ReceiptView /> }, // <-- NEW
       { path: 'reset-password', element: <ResetPassword /> },
       { path: 'verify-email', element: <VerifyEmail /> },
       { path: 'billing/verify', element: <BillingVerifyPage /> },
