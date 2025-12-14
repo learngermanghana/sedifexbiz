@@ -28,7 +28,13 @@ import {
 import './Sell.css'
 
 import { BrowserMultiFormatReader, BrowserQRCodeSvgWriter } from '@zxing/browser'
-import { BarcodeFormat, DecodeHintType, NotFoundException } from '@zxing/library'
+import {
+  BarcodeFormat,
+  DecodeHintType,
+  EncodeHintType,
+  ErrorCorrectionLevel,
+  NotFoundException,
+} from '@zxing/library'
 import { useKeyboardScanner } from '../components/BarcodeScanner'
 
 import {
@@ -360,9 +366,16 @@ export default function Sell() {
 
     try {
       const writer = new BrowserQRCodeSvgWriter()
-      const svg = writer.write(receiptDownload.shareUrl, 200, 200)
+      const encodeHints = new Map<EncodeHintType, unknown>()
+      encodeHints.set(EncodeHintType.MARGIN, 2)
+      encodeHints.set(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.H)
+
+      const svg = writer.write(receiptDownload.shareUrl, 220, 220, encodeHints)
       svg.setAttribute('role', 'img')
       svg.setAttribute('aria-label', 'Receipt QR code')
+      svg.setAttribute('width', '220')
+      svg.setAttribute('height', '220')
+      svg.setAttribute('viewBox', '0 0 220 220')
       setReceiptQrSvg(svg.outerHTML)
     } catch (error) {
       console.warn('[sell] Failed to build receipt QR code', error)
