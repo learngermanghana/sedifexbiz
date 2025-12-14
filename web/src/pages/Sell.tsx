@@ -235,7 +235,7 @@ export default function Sell() {
    * - `shareUrl` is a REAL route that works on other phones
    */
   const [receiptDownload, setReceiptDownload] = useState<{
-    url: string
+    url: string | null
     fileName: string
     shareText: string
     shareUrl: string
@@ -349,8 +349,8 @@ export default function Sell() {
     const shareText = `Sale receipt${lastReceipt.companyName ? ` - ${lastReceipt.companyName}` : ''}\nView receipt: ${shareUrl}`
 
     setReceiptDownload({
-      url: built.url,
-      fileName: built.fileName,
+      url: built?.url ?? null,
+      fileName: built?.fileName ?? `${lastReceipt.saleId}.pdf`,
       shareText,
       shareUrl,
     })
@@ -1432,9 +1432,17 @@ export default function Sell() {
           {receiptDownload && lastReceipt && (
             <div className="sell-page__receipt-actions" role="status">
               <div className="sell-page__receipt-actions-row">
-                <a href={receiptDownload.url} download={receiptDownload.fileName} className="button button--ghost">
-                  Download PDF (this device)
-                </a>
+                {receiptDownload.url ? (
+                  <a
+                    href={receiptDownload.url}
+                    download={receiptDownload.fileName}
+                    className="button button--ghost"
+                  >
+                    Download PDF (this device)
+                  </a>
+                ) : (
+                  <span className="sell-page__receipt-hint">Preparing receipt file…</span>
+                )}
 
                 <button
                   type="button"
