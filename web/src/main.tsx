@@ -34,6 +34,9 @@ import RefundPage from './pages/legal/RefundPage'
 import { ToastProvider } from './components/ToastProvider'
 
 const router = createBrowserRouter([
+  // Public receipt route bypasses App-level redirects
+  { path: '/receipt/:saleId', element: <ReceiptView /> },
+
   {
     path: '/',
     element: <App />,
@@ -66,8 +69,7 @@ const router = createBrowserRouter([
         ],
       },
 
-      // ✅ Public routes (outside ShellLayout)
-      { path: 'receipt/:saleId', element: <ReceiptView /> }, // <-- NEW
+      // Public routes (still under App)
       { path: 'reset-password', element: <ResetPassword /> },
       { path: 'verify-email', element: <VerifyEmail /> },
       { path: 'billing/verify', element: <BillingVerifyPage /> },
