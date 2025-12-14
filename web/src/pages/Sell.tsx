@@ -644,98 +644,153 @@ export default function Sell() {
     companyName?: string | null
     customerName?: string | null
   }) {
-    try {
-      const iframe = document.createElement('iframe')
-      iframe.style.position = 'fixed'
-      iframe.style.width = '0'
-      iframe.style.height = '0'
-      iframe.style.border = '0'
-      iframe.style.visibility = 'hidden'
+    const receiptDate = new Date().toLocaleString()
+    const paymentLabel =
+      options.tenders && options.tenders.length > 1
+        ? options.tenders
+            .map(tender => `${tender.method.replace('_', ' ')} (${formatCurrency(tender.amount)})`)
+            .join(' + ')
+        : options.paymentMethod.replace('_', ' ')
 
-      const receiptDate = new Date().toLocaleString()
-      const paymentLabel =
-        options.tenders && options.tenders.length > 1
-          ? options.tenders
-              .map(tender =>
-                `${tender.method.replace('_', ' ')} (${formatCurrency(tender.amount)})`,
-              )
-              .join(' + ')
-          : options.paymentMethod.replace('_', ' ')
-      const lineRows = options.items
-        .map(line => {
-          const total = line.price * line.qty
-          const metadataRows = (line.metadata ?? [])
-            .map(entry => `<tr class="meta-row"><td colspan="4">${entry}</td></tr>`)
-            .join('')
+    const lineRows = options.items
+      .map(line => {
+        const total = line.price * line.qty
+        const metadataRows = (line.metadata ?? [])
+          .map(entry => `<tr class="meta-row"><td colspan="4">${entry}</td></tr>`)
+          .join('')
+        return `<tr>
+        <td>${line.name}</td>
+        <td style="text-align:right">${line.qty}</td>
+        <td style="text-align:right">${formatCurrency(line.price)}</td>
+        <td style="text-align:right">${formatCurrency(total)}</td>
+      </tr>${metadataRows}`
+      })
+      .join('')
 
-          return `<tr><td>${line.name}</td><td style="text-align:right">${line.qty}</td><td style="text-align:right">${formatCurrency(line.price)}</td><td style="text-align:right">${formatCurrency(total)}</td></tr>${metadataRows}`
-        })
-        .join('')
-
-      const receiptHtml = `<!doctype html>
-  <html>
-    <head>
-      <meta charset="utf-8" />
-      <style>
-        @page { size: 80mm auto; margin: 8mm; }
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          margin: 0;
-          padding: 8px;
-          color: #0f172a;
-          width: 64mm;
-        }
-        h1 { font-size: 18px; margin: 0 0 12px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-        th, td { padding: 6px 4px; font-size: 13px; }
-        th { text-align: left; border-bottom: 1px solid #e2e8f0; }
-        tfoot td { font-weight: 700; border-top: 1px solid #e2e8f0; }
-        .meta { font-size: 12px; color: #475569; margin: 0; }
-        .meta-row td { font-size: 12px; color: #475569; padding-top: 0; }
-      </style>
-    </head>
-    <body>
-      <h1>Sale receipt</h1>
-      ${
-        options.companyName
-          ? `<p class="meta"><strong>${options.companyName}</strong></p>`
-          : ''
+    const receiptHtml = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      @page { size: 80mm auto; margin: 8mm; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        margin: 0;
+        padding: 8px;
+        color: #0f172a;
+        width: 64mm;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
-      <p class="meta">Sale ID: ${options.saleId}</p>
-      <p class="meta">${receiptDate}</p>
-      <p class="meta">Payment: ${paymentLabel}</p>
-      ${options.customerName ? `<p class="meta">Customer: ${options.customerName}</p>` : ''}
-      <table>
-        <thead><tr><th>Item</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead>
-        <tbody>${lineRows}</tbody>
-        <tfoot>
-          <tr><td colspan="3">Subtotal</td><td style="text-align:right">${formatCurrency(options.totals.subTotal)}</td></tr>
-          <tr><td colspan="3">VAT / Tax</td><td style="text-align:right">${formatCurrency(options.totals.taxTotal)}</td></tr>
-          <tr><td colspan="3">Discount</td><td style="text-align:right">${options.discountInput ? options.discountInput : 'None'}</td></tr>
-          <tr><td colspan="3">Total</td><td style="text-align:right">${formatCurrency(options.totals.total)}</td></tr>
-          <tr><td colspan="3">Payment</td><td style="text-align:right">${paymentLabel}</td></tr>
-        </tfoot>
-      </table>
-    </body>
-  </html>`
+      h1 { font-size: 18px; margin: 0 0 12px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+      th, td { padding: 6px 4px; font-size: 13px; }
+      th { text-align: left; border-bottom: 1px solid #e2e8f0; }
+      tfoot td { font-weight: 700; border-top: 1px solid #e2e8f0; }
+      .meta { font-size: 12px; color: #475569; margin: 0; }
+      .meta-row td { font-size: 12px; color: #475569; padding-top: 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Sale receipt</h1>
+    ${options.companyName ? `<p class="meta"><strong>${options.companyName}</strong></p>` : ''}
+    <p class="meta">Sale ID: ${options.saleId}</p>
+    <p class="meta">${receiptDate}</p>
+    <p class="meta">Payment: ${paymentLabel}</p>
+    ${options.customerName ? `<p class="meta">Customer: ${options.customerName}</p>` : ''}
 
-      iframe.onload = () => {
-        const frameWindow = iframe.contentWindow
-        if (frameWindow) {
-          frameWindow.focus()
-          frameWindow.print()
+    <table>
+      <thead>
+        <tr>
+          <th>Item</th><th style="text-align:right">Qty</th>
+          <th style="text-align:right">Price</th><th style="text-align:right">Total</th>
+        </tr>
+      </thead>
+      <tbody>${lineRows}</tbody>
+      <tfoot>
+        <tr><td colspan="3">Subtotal</td><td style="text-align:right">${formatCurrency(options.totals.subTotal)}</td></tr>
+        <tr><td colspan="3">VAT / Tax</td><td style="text-align:right">${formatCurrency(options.totals.taxTotal)}</td></tr>
+        <tr><td colspan="3">Discount</td><td style="text-align:right">${options.discountInput ? options.discountInput : 'None'}</td></tr>
+        <tr><td colspan="3">Total</td><td style="text-align:right">${formatCurrency(options.totals.total)}</td></tr>
+        <tr><td colspan="3">Payment</td><td style="text-align:right">${paymentLabel}</td></tr>
+      </tfoot>
+    </table>
+  </body>
+</html>`
+
+    const isMobile =
+      (navigator as any).userAgentData?.mobile === true ||
+      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+
+    // ✅ Mobile: new tab/window print (more reliable than hidden iframe)
+    if (isMobile) {
+      const win = window.open('', '_blank', 'noopener,noreferrer')
+      if (!win) {
+        // fallback to iframe if popup blocked
+        // (still better than nothing)
+      } else {
+        win.document.open()
+        win.document.write(receiptHtml)
+        win.document.close()
+
+        const doPrint = async () => {
+          try {
+            // wait for fonts if supported
+            // @ts-ignore
+            await win.document.fonts?.ready
+          } catch {}
+          win.focus()
+          win.print()
+          win.addEventListener('afterprint', () => win.close(), { once: true })
         }
 
-        setTimeout(() => {
-          document.body.removeChild(iframe)
-        }, 500)
+        // Give the browser a moment to render
+        setTimeout(doPrint, 250)
+        return
       }
-
-      iframe.srcdoc = receiptHtml
-      document.body.appendChild(iframe)
-    } catch (error) {
-      console.error('[sell] Unable to print receipt', error)
     }
+
+    // ✅ Desktop: iframe printing
+    const iframe = document.createElement('iframe')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '1px'
+    iframe.style.height = '1px'
+    iframe.style.opacity = '0'
+    iframe.style.pointerEvents = 'none'
+    iframe.style.border = '0'
+    document.body.appendChild(iframe)
+
+    const cleanup = () => {
+      try {
+        document.body.removeChild(iframe)
+      } catch {}
+    }
+
+    const doc = iframe.contentWindow?.document
+    if (!doc) {
+      cleanup()
+      return
+    }
+
+    doc.open()
+    doc.write(receiptHtml)
+    doc.close()
+
+    const doPrint = async () => {
+      try {
+        // @ts-ignore
+        await doc.fonts?.ready
+      } catch {}
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+      iframe.contentWindow?.addEventListener('afterprint', cleanup, { once: true })
+      setTimeout(cleanup, 1500)
+    }
+
+    setTimeout(doPrint, 250)
   }
 
   function addProductToCart(product: Product, qty: number = 1) {
@@ -1783,6 +1838,7 @@ export default function Sell() {
                       items: lastReceipt.items,
                       totals: lastReceipt.totals,
                       paymentMethod: lastReceipt.paymentMethod,
+                      tenders: lastReceipt.tenders,
                       discountInput: lastReceipt.discountInput,
                       companyName: lastReceipt.companyName,
                       customerName: lastReceipt.customerName,
