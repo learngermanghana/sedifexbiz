@@ -33,7 +33,7 @@ export default function ReceiptView() {
           return
         }
 
-        setReceipt(snap.data() as any)
+        setReceipt(snap.data() as ReceiptPayload)
       } catch (e) {
         if (!active) return
         setError('Could not load this receipt.')
