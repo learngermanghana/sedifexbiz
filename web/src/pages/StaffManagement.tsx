@@ -192,14 +192,14 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
     event.preventDefault()
     if (!storeId || inviting) return
     if (!isOwner) {
-      publish({ message: 'Only owners can send invites.', tone: 'error' })
+      publish({ message: 'Only owners can save staff.', tone: 'error' })
       return
     }
 
     const normalizedEmail = inviteEmail.trim().toLowerCase()
     if (!normalizedEmail) {
-      setError('Enter an email to invite a staff member.')
-      publish({ message: 'Enter an email to invite a staff member.', tone: 'error' })
+      setError('Enter an email to save a staff member.')
+      publish({ message: 'Enter an email to save a staff member.', tone: 'error' })
       return
     }
 
@@ -213,14 +213,14 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
         action: 'invite',
         password: invitePassword.trim() || undefined,
       })
-      publish({ message: 'Staff invite sent.', tone: 'success' })
+      publish({ message: 'Staff member saved.', tone: 'success' })
       setInviteEmail('')
       setInvitePassword('')
       setInviteRole('staff')
       setRefreshToken(token => token + 1)
     } catch (err) {
-      console.warn('[staff] Failed to invite staff', err)
-      const message = err instanceof Error ? err.message : 'We could not send the invite.'
+      console.warn('[staff] Failed to save staff member', err)
+      const message = err instanceof Error ? err.message : 'We could not save the staff member.'
       setError(message)
       publish({ message, tone: 'error' })
     } finally {
@@ -319,7 +319,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
           <p className="page__eyebrow">Workspace</p>
           <Heading className="page__title">Staff management</Heading>
           <p className="page__subtitle">
-            Invite new teammates, reset passwords, or deactivate access.
+            Add new teammates, reset passwords, or deactivate access.
           </p>
         </div>
       </header>
@@ -334,7 +334,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
         <div className="staff-card__header">
           <div>
             <p className="staff-card__eyebrow">Team actions</p>
-            <h2 id="staff-actions">Invite staff</h2>
+            <h2 id="staff-actions">Save staff</h2>
             <p className="staff-card__hint">
               New staff will get an account and team member record automatically.
             </p>
@@ -385,13 +385,13 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
             disabled={!isOwner || inviting}
             data-testid="invite-staff-button"
           >
-            {inviting ? 'Sending…' : 'Invite staff'}
+            {inviting ? 'Saving…' : 'Save staff'}
           </button>
         </form>
 
         {!isOwner && (
           <p className="staff-card__hint" role="note">
-            Only workspace owners can send staff invites.
+            Only workspace owners can save staff members.
           </p>
         )}
       </section>
@@ -484,7 +484,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
             <p className="staff-card__eyebrow">Audit trail</p>
             <h2 id="staff-audit">Recent staff changes</h2>
             <p className="staff-card__hint">
-              Read-only log of recent invites, resets, and deactivations for this workspace.
+              Read-only log of recent additions, resets, and deactivations for this workspace.
             </p>
           </div>
           <button
