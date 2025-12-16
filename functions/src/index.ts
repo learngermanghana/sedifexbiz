@@ -671,6 +671,7 @@ export const resolveStoreAccess = functions.https.onCall(
         : 'trial'
 
     const trialDaysRemaining = calculateDaysRemaining(trialEndsAt, nowTs)
+    const graceDaysRemaining = calculateDaysRemaining(graceEndsAt, nowTs)
     const trialExpired =
       (normalizedContractStatus === 'trial' || billingStatus === 'trial') &&
       paymentStatusRaw !== 'active' &&
@@ -688,6 +689,11 @@ export const resolveStoreAccess = functions.https.onCall(
         : paymentStatusRaw === 'past_due'
           ? 'past_due'
           : billingStatus
+
+    const graceExpired =
+      normalizedPaymentStatus === 'past_due' &&
+      graceDaysRemaining !== null &&
+      graceDaysRemaining <= 0
 
     const billingData: admin.firestore.DocumentData = {
       planKey: previousBilling.planKey || 'standard',
@@ -779,6 +785,17 @@ export const resolveStoreAccess = functions.https.onCall(
       throw new functions.https.HttpsError(
         'permission-denied',
         `Your free trial ended on ${endDate}. Please upgrade to continue.`,
+      )
+    }
+
+    if (graceExpired) {
+      const graceEndDate =
+        graceEndsAt && typeof graceEndsAt.toDate === 'function'
+          ? graceEndsAt.toDate().toISOString().slice(0, 10)
+          : 'the end of your billing grace period'
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        `Your Sedifex subscription is past due and access was suspended on ${graceEndDate}. Update your payment method to regain access.`,
       )
     }
 
