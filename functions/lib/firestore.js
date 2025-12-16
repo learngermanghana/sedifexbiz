@@ -39,10 +39,18 @@ const admin = __importStar(require("firebase-admin"));
 exports.admin = admin;
 /**
  * Single Admin app for all functions.
- * No network calls at import-time, just init.
+ * Explicitly use application default credentials to avoid long
+ * initialization timeouts when Firebase tries to auto-detect
+ * credentials during function discovery.
  */
 if (!admin.apps.length) {
-    admin.initializeApp();
+    const firebaseConfig = process.env.FIREBASE_CONFIG
+        ? undefined
+        : { projectId: process.env.GCLOUD_PROJECT };
+    admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        ...firebaseConfig,
+    });
 }
 // Use one Firestore instance for everything
 const defaultDb = admin.firestore();

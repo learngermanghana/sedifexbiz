@@ -1,8 +1,8 @@
 // functions/src/index.ts
 import * as functions from 'firebase-functions/v1'
-import * as admin from 'firebase-admin'
 import * as crypto from 'crypto'
 import { defineString } from 'firebase-functions/params'
+import { admin, defaultDb as db } from './firestore'
 export { generateAiAdvice } from './aiAdvisor'
 export { exportDailyStoreReports } from './reports'
 export { checkSignupUnlock } from './paystack'
@@ -10,10 +10,8 @@ export { checkSignupUnlock } from './paystack'
 /**
  * SINGLE FIRESTORE INSTANCE
  */
-if (!admin.apps.length) {
-  admin.initializeApp()
-}
-const db = admin.firestore()
+// Firestore instance is provided by the shared firestore module to avoid
+// repeated admin initialization during function discovery.
 
 /** ============================================================================
  *  TYPES
