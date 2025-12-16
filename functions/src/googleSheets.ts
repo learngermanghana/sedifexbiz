@@ -1,6 +1,6 @@
 import * as functions from 'firebase-functions/v1'
 import { defineString } from 'firebase-functions/params'
-import { google, sheets_v4 } from 'googleapis'
+import type { sheets_v4 } from 'googleapis'
 
 const DEFAULT_SPREADSHEET_ID = '1_oqRHePaZnpULD9zRUtxBIHQUaHccGAxSP3SPCJ0o7g'
 const DEFAULT_RANGE = 'Clients!A:ZZ'
@@ -25,6 +25,12 @@ type SheetConfig = {
 }
 
 let sheetsClientPromise: Promise<SheetsClient> | null = null
+
+async function loadSheetsClientFactory() {
+  // googleapis is large; load it lazily to keep function module import fast.
+  const { google } = await import('googleapis')
+  return google
+}
 
 export function normalizeHeader(header: unknown) {
   if (typeof header !== 'string') return ''
@@ -83,6 +89,8 @@ async function getSheetsClient() {
   if (!sheetsClientPromise) {
     const config = readConfig()
     const credentials = decodeServiceAccount(config.serviceAccount)
+
+    const google = await loadSheetsClientFactory()
 
     const auth = new google.auth.GoogleAuth({
       credentials,
