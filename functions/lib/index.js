@@ -59,6 +59,17 @@ const MILLIS_PER_DAY = 1000 * 60 * 60 * 24;
 /** ============================================================================
  *  HELPERS
  * ==========================================================================*/
+async function verifyOwnerEmail(uid) {
+    try {
+        const user = await admin.auth().getUser(uid);
+        if (!user.emailVerified) {
+            await admin.auth().updateUser(uid, { emailVerified: true });
+        }
+    }
+    catch (error) {
+        console.warn('[auth] Unable to auto-verify owner email', error);
+    }
+}
 function normalizeContactPayload(contact) {
     let hasPhone = false;
     let hasFirstSignupEmail = false;
@@ -445,6 +456,7 @@ exports.initializeStore = functions.https.onCall(async (data, context) => {
             updatedAt: timestamp,
         };
         await wsRef.set(workspaceData, { merge: true });
+        await verifyOwnerEmail(uid);
     }
     // --- Update custom claims with role ---
     const claims = await updateUserClaims(uid, role);
@@ -585,6 +597,9 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
         updatedAt: timestamp,
     };
     await wsRef.set(workspaceData, { merge: true });
+    if (role === 'owner') {
+        await verifyOwnerEmail(uid);
+    }
     const billingSummary = {
         status: normalizedBillingStatus,
         paymentStatus: normalizedPaymentStatus,
