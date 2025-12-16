@@ -477,8 +477,7 @@ export default function AuthPage() {
 
         // 5) Send email verification
         try {
-          // Hash router, so we keep the hash in the continue URL
-          const continueUrl = `${window.location.origin}/#/verify-email`
+          const continueUrl = `${window.location.origin}/verify-email`
           await sendEmailVerification(nextUser, {
             url: continueUrl,
             handleCodeInApp: true,
