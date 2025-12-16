@@ -34,6 +34,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
       },
       app: () => apps[0] || null,
       apps,
+      credential: { applicationDefault: () => ({}) },
       firestore,
       auth: () => ({
         getUser: async () => null,
@@ -309,9 +310,56 @@ async function runExpiredTrialWithPastDueStatusTest() {
   assert.match(error.message, /free trial ended/i)
 }
 
+async function runPastDueGraceExpiredTest() {
+  currentDefaultDb = new MockFirestore({
+    'teamMembers/user-6': {
+      storeId: 'store-004',
+      role: 'owner',
+      email: 'owner@example.com',
+    },
+    'stores/store-004': {
+      contractStatus: 'active',
+      paymentStatus: 'past_due',
+      billing: {
+        status: 'past_due',
+        trialEndsAt: MockTimestamp.fromMillis(Date.now() - 10 * 24 * 60 * 60 * 1000),
+        graceEndsAt: MockTimestamp.fromMillis(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      },
+    },
+  })
+  currentRosterDb = new MockFirestore()
+  sheetRowMock = {
+    spreadsheetId: 'sheet-123',
+    headers: [],
+    normalizedHeaders: [],
+    values: [],
+    record: {},
+  }
+
+  const { resolveStoreAccess } = loadFunctionsModule()
+  const context = {
+    auth: {
+      uid: 'user-6',
+      token: { email: 'owner@example.com' },
+    },
+  }
+
+  let error
+  try {
+    await resolveStoreAccess.run({ storeId: 'store-004' }, context)
+  } catch (err) {
+    error = err
+  }
+
+  assert.ok(error, 'Expected past-due account to throw after grace period')
+  assert.strictEqual(error.code, 'permission-denied')
+  assert.match(error.message, /subscription is past due/i)
+}
+
 async function run() {
   await runActiveStatusTest()
   await runExpiredTrialWithPastDueStatusTest()
+  await runPastDueGraceExpiredTest()
   console.log('resolveStoreAccess tests passed')
 }
 
