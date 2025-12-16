@@ -1,4 +1,16 @@
-const clone = value => (value === undefined ? value : JSON.parse(JSON.stringify(value)))
+const clone = value => {
+  if (value === undefined || value === null) return value
+  if (value instanceof MockTimestamp) return new MockTimestamp(value._millis)
+  if (Array.isArray(value)) return value.map(clone)
+  if (typeof value === 'object') {
+    const next = {}
+    for (const [key, val] of Object.entries(value)) {
+      next[key] = clone(val)
+    }
+    return next
+  }
+  return value
+}
 
 class MockTimestamp {
   constructor(millis = Date.now()) {
@@ -11,6 +23,10 @@ class MockTimestamp {
 
   static fromMillis(millis) {
     return new MockTimestamp(millis)
+  }
+
+  static fromDate(date) {
+    return new MockTimestamp(date.getTime())
   }
 
   toMillis() {

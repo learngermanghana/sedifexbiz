@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.handlePaystackWebhook = exports.createCheckout = exports.createPaystackCheckout = exports.receiveStock = exports.logReceiptShare = exports.commitSale = exports.manageStaffAccount = exports.resolveStoreAccess = exports.initializeStore = exports.handleUserCreate = exports.exportDailyStoreReports = exports.generateAiAdvice = void 0;
+exports.handlePaystackWebhook = exports.createCheckout = exports.createPaystackCheckout = exports.receiveStock = exports.logPaymentReminder = exports.logReceiptShare = exports.commitSale = exports.manageStaffAccount = exports.resolveStoreAccess = exports.initializeStore = exports.handleUserCreate = exports.checkSignupUnlock = exports.exportDailyStoreReports = exports.generateAiAdvice = void 0;
 // functions/src/index.ts
 const functions = __importStar(require("firebase-functions/v1"));
 const admin = __importStar(require("firebase-admin"));
@@ -43,6 +43,8 @@ var aiAdvisor_1 = require("./aiAdvisor");
 Object.defineProperty(exports, "generateAiAdvice", { enumerable: true, get: function () { return aiAdvisor_1.generateAiAdvice; } });
 var reports_1 = require("./reports");
 Object.defineProperty(exports, "exportDailyStoreReports", { enumerable: true, get: function () { return reports_1.exportDailyStoreReports; } });
+var paystack_1 = require("./paystack");
+Object.defineProperty(exports, "checkSignupUnlock", { enumerable: true, get: function () { return paystack_1.checkSignupUnlock; } });
 /**
  * SINGLE FIRESTORE INSTANCE
  */
@@ -506,11 +508,17 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
     const graceEndsAt = previousBilling.graceEndsAt ||
         previousBilling.graceEnd ||
         timestampDaysFromNow(TRIAL_DAYS + GRACE_DAYS);
+    const contractStatusRaw = typeof baseStore.contractStatus === 'string'
+        ? baseStore.contractStatus.trim()
+        : null;
+    const normalizedContractStatus = contractStatusRaw && contractStatusRaw !== ''
+        ? contractStatusRaw.toLowerCase()
+        : null;
     const billingStatus = previousBilling.status === 'active' || previousBilling.status === 'past_due'
         ? previousBilling.status
         : 'trial';
     const trialDaysRemaining = calculateDaysRemaining(trialEndsAt, nowTs);
-    const trialExpired = billingStatus === 'trial' &&
+    const trialExpired = (normalizedContractStatus === 'trial' || billingStatus === 'trial') &&
         paymentStatusRaw !== 'active' &&
         trialDaysRemaining !== null &&
         trialDaysRemaining <= 0;
@@ -552,7 +560,7 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
         ownerEmail: baseStore.ownerEmail || email || null,
         status: baseStore.status || 'active',
         workspaceSlug: baseStore.workspaceSlug || workspaceSlug,
-        contractStatus: baseStore.contractStatus || 'trial',
+        contractStatus: contractStatusRaw || baseStore.contractStatus || 'trial',
         productCount: typeof baseStore.productCount === 'number' ? baseStore.productCount : 0,
         totalStockCount: typeof baseStore.totalStockCount === 'number'
             ? baseStore.totalStockCount
@@ -754,9 +762,18 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
             const typeRaw = typeof it?.type === 'string'
                 ? it.type.trim().toLowerCase()
                 : null;
-            const type = typeRaw === 'service' ? 'service' : typeRaw === 'product' ? 'product' : null;
+            const type = typeRaw === 'service'
+                ? 'service'
+                : typeRaw === 'made_to_order'
+                    ? 'made_to_order'
+                    : typeRaw === 'product'
+                        ? 'product'
+                        : null;
             const isService = it?.isService === true || type === 'service';
-            return { productId, name, qty, price, taxRate, type, isService };
+            const prepDate = typeof it?.prepDate === 'string' && it.prepDate.trim()
+                ? it.prepDate
+                : null;
+            return { productId, name, qty, price, taxRate, type, isService, prepDate };
         })
         : [];
     // Validate products before we even touch Firestore
@@ -813,25 +830,27 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
                 taxRate: it.taxRate,
                 type: it.type,
                 isService: it.isService === true,
+                prepDate: it.prepDate ?? null,
                 storeId: normalizedBranchId,
                 createdAt: timestamp,
             });
-            // product stock update
-            const pRef = productRefs[productId];
-            const pSnap = productSnaps[productId];
-            const curr = Number(pSnap.get('stockCount') || 0);
-            const next = curr - Math.abs(it.qty || 0);
-            tx.update(pRef, { stockCount: next, updatedAt: timestamp });
-            // ledger entry
-            const ledgerId = db.collection('_').doc().id;
-            tx.set(db.collection('ledger').doc(ledgerId), {
-                productId,
-                qtyChange: -Math.abs(it.qty || 0),
-                type: 'sale',
-                refId: saleId,
-                storeId: normalizedBranchId,
-                createdAt: timestamp,
-            });
+            const isInventoryTracked = it.type !== 'service' && it.type !== 'made_to_order';
+            if (isInventoryTracked) {
+                const pRef = productRefs[productId];
+                const pSnap = productSnaps[productId];
+                const curr = Number(pSnap.get('stockCount') || 0);
+                const next = curr - Math.abs(it.qty || 0);
+                tx.update(pRef, { stockCount: next, updatedAt: timestamp });
+                const ledgerId = db.collection('_').doc().id;
+                tx.set(db.collection('ledger').doc(ledgerId), {
+                    productId,
+                    qtyChange: -Math.abs(it.qty || 0),
+                    type: 'sale',
+                    refId: saleId,
+                    storeId: normalizedBranchId,
+                    createdAt: timestamp,
+                });
+            }
         }
     });
     return { ok: true, saleId };
@@ -841,6 +860,8 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
  * ==========================================================================*/
 const RECEIPT_CHANNELS = new Set(['email', 'sms', 'whatsapp']);
 const RECEIPT_STATUSES = new Set(['attempt', 'failed', 'sent']);
+const REMINDER_CHANNELS = new Set(['email', 'telegram', 'whatsapp']);
+const REMINDER_STATUSES = new Set(['attempt', 'failed', 'sent']);
 exports.logReceiptShare = functions.https.onCall(async (data, context) => {
     assertStaffAccess(context);
     const storeId = typeof data?.storeId === 'string' ? data.storeId.trim() : '';
@@ -903,6 +924,77 @@ exports.logReceiptShare = functions.https.onCall(async (data, context) => {
     };
     const ref = await db.collection('receiptShareLogs').add(payload);
     return { ok: true, shareId: ref.id };
+});
+/** ============================================================================
+ *  CALLABLE: logPaymentReminder (staff)
+ * ==========================================================================*/
+exports.logPaymentReminder = functions.https.onCall(async (data, context) => {
+    assertStaffAccess(context);
+    const storeId = typeof data?.storeId === 'string' ? data.storeId.trim() : '';
+    const customerId = typeof data?.customerId === 'string' ? data.customerId.trim() : '';
+    const channel = typeof data?.channel === 'string' ? data.channel.trim() : '';
+    const status = typeof data?.status === 'string' ? data.status.trim() : '';
+    if (!storeId || !customerId) {
+        throw new functions.https.HttpsError('invalid-argument', 'storeId and customerId are required');
+    }
+    if (!REMINDER_CHANNELS.has(channel)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid channel');
+    }
+    if (!REMINDER_STATUSES.has(status)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid status');
+    }
+    const customerNameRaw = data?.customerName;
+    const customerName = customerNameRaw === null || customerNameRaw === undefined
+        ? null
+        : typeof customerNameRaw === 'string'
+            ? customerNameRaw.trim() || null
+            : (() => {
+                throw new functions.https.HttpsError('invalid-argument', 'customerName must be a string when provided');
+            })();
+    const templateIdRaw = data?.templateId;
+    const templateId = templateIdRaw === null || templateIdRaw === undefined
+        ? null
+        : typeof templateIdRaw === 'string'
+            ? templateIdRaw.trim() || null
+            : (() => {
+                throw new functions.https.HttpsError('invalid-argument', 'templateId must be a string when provided');
+            })();
+    const amountCentsRaw = data?.amountCents;
+    const amountCents = amountCentsRaw === null || amountCentsRaw === undefined
+        ? null
+        : Number.isFinite(Number(amountCentsRaw))
+            ? Number(amountCentsRaw)
+            : (() => {
+                throw new functions.https.HttpsError('invalid-argument', 'amountCents must be a number when provided');
+            })();
+    const dueDateRaw = data?.dueDate;
+    const dueDate = (() => {
+        if (dueDateRaw === null || dueDateRaw === undefined)
+            return null;
+        if (typeof dueDateRaw === 'string' || typeof dueDateRaw === 'number') {
+            const parsed = new Date(dueDateRaw);
+            if (Number.isNaN(parsed.getTime())) {
+                throw new functions.https.HttpsError('invalid-argument', 'dueDate must be a valid date');
+            }
+            return admin.firestore.Timestamp.fromDate(parsed);
+        }
+        throw new functions.https.HttpsError('invalid-argument', 'dueDate must be a string or number when provided');
+    })();
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const payload = {
+        storeId,
+        customerId,
+        customerName,
+        templateId,
+        channel,
+        status,
+        amountCents,
+        dueDate,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+    };
+    const ref = await db.collection('paymentReminderLogs').add(payload);
+    return { ok: true, reminderId: ref.id };
 });
 /** ============================================================================
  *  CALLABLE: receiveStock (staff)
