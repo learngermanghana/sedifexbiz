@@ -36,22 +36,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.handlePaystackWebhook = exports.createCheckout = exports.createPaystackCheckout = exports.receiveStock = exports.logPaymentReminder = exports.logReceiptShare = exports.commitSale = exports.manageStaffAccount = exports.resolveStoreAccess = exports.initializeStore = exports.handleUserCreate = exports.checkSignupUnlock = exports.exportDailyStoreReports = exports.generateAiAdvice = void 0;
 // functions/src/index.ts
 const functions = __importStar(require("firebase-functions/v1"));
-const admin = __importStar(require("firebase-admin"));
 const crypto = __importStar(require("crypto"));
 const params_1 = require("firebase-functions/params");
+const firestore_1 = require("./firestore");
 var aiAdvisor_1 = require("./aiAdvisor");
 Object.defineProperty(exports, "generateAiAdvice", { enumerable: true, get: function () { return aiAdvisor_1.generateAiAdvice; } });
 var reports_1 = require("./reports");
 Object.defineProperty(exports, "exportDailyStoreReports", { enumerable: true, get: function () { return reports_1.exportDailyStoreReports; } });
 var paystack_1 = require("./paystack");
 Object.defineProperty(exports, "checkSignupUnlock", { enumerable: true, get: function () { return paystack_1.checkSignupUnlock; } });
-/**
- * SINGLE FIRESTORE INSTANCE
- */
-if (!admin.apps.length) {
-    admin.initializeApp();
-}
-const db = admin.firestore();
 const VALID_ROLES = new Set(['owner', 'staff']);
 const TRIAL_DAYS = 14;
 const GRACE_DAYS = 7;
@@ -61,9 +54,9 @@ const MILLIS_PER_DAY = 1000 * 60 * 60 * 24;
  * ==========================================================================*/
 async function verifyOwnerEmail(uid) {
     try {
-        const user = await admin.auth().getUser(uid);
+        const user = await firestore_1.admin.auth().getUser(uid);
         if (!user.emailVerified) {
-            await admin.auth().updateUser(uid, { emailVerified: true });
+            await firestore_1.admin.auth().updateUser(uid, { emailVerified: true });
         }
     }
     catch (error) {
@@ -192,7 +185,7 @@ function assertOwnerAccess(context) {
     }
 }
 async function verifyOwnerForStore(uid, storeId) {
-    const memberRef = db.collection('teamMembers').doc(uid);
+    const memberRef = firestore_1.defaultDb.collection('teamMembers').doc(uid);
     const memberSnap = await memberRef.get();
     const memberData = (memberSnap.data() ?? {});
     const memberRole = typeof memberData.role === 'string' ? memberData.role : '';
@@ -209,7 +202,7 @@ function assertStaffAccess(context) {
     }
 }
 async function updateUserClaims(uid, role) {
-    const userRecord = await admin.auth().getUser(uid).catch(() => null);
+    const userRecord = await firestore_1.admin.auth().getUser(uid).catch(() => null);
     const existingClaims = (userRecord?.customClaims ?? {});
     const nextClaims = {
         ...existingClaims,
@@ -219,7 +212,7 @@ async function updateUserClaims(uid, role) {
     delete nextClaims.activeStoreId;
     delete nextClaims.storeId;
     delete nextClaims.roleByStore;
-    await admin.auth().setCustomUserClaims(uid, nextClaims);
+    await firestore_1.admin.auth().setCustomUserClaims(uid, nextClaims);
     return nextClaims;
 }
 function normalizeManageStaffPayload(data) {
@@ -259,7 +252,7 @@ function normalizeManageStaffPayload(data) {
 function timestampDaysFromNow(days) {
     const now = new Date();
     now.setDate(now.getDate() + days);
-    return admin.firestore.Timestamp.fromDate(now);
+    return firestore_1.admin.firestore.Timestamp.fromDate(now);
 }
 function normalizeStoreProfilePayload(profile) {
     let phone;
@@ -304,8 +297,8 @@ function normalizeStoreProfilePayload(profile) {
  * ==========================================================================*/
 exports.handleUserCreate = functions.auth.user().onCreate(async (user) => {
     const uid = user.uid;
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
-    await db.collection('teamMembers').doc(uid).set({
+    const timestamp = firestore_1.admin.firestore.FieldValue.serverTimestamp();
+    await firestore_1.defaultDb.collection('teamMembers').doc(uid).set({
         uid,
         email: user.email ?? null,
         phone: user.phoneNumber ?? null,
@@ -327,10 +320,10 @@ exports.initializeStore = functions.https.onCall(async (data, context) => {
     const profile = normalizeStoreProfilePayload(payload.profile);
     const requestedStoreIdRaw = payload.storeId;
     const requestedStoreId = typeof requestedStoreIdRaw === 'string' ? requestedStoreIdRaw.trim() : '';
-    const memberRef = db.collection('teamMembers').doc(uid);
+    const memberRef = firestore_1.defaultDb.collection('teamMembers').doc(uid);
     const memberSnap = await memberRef.get();
     const existingData = (memberSnap.data() ?? {});
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = firestore_1.admin.firestore.FieldValue.serverTimestamp();
     let existingStoreId = null;
     if (typeof existingData.storeId === 'string' &&
         existingData.storeId.trim() !== '') {
@@ -344,7 +337,7 @@ exports.initializeStore = functions.https.onCall(async (data, context) => {
     const role = requestedStoreId ? 'staff' : 'owner';
     const workspaceSlug = storeId;
     // --- Validate store existence when joining as team-member ---
-    const storeRef = db.collection('stores').doc(storeId);
+    const storeRef = firestore_1.defaultDb.collection('stores').doc(storeId);
     const storeSnap = await storeRef.get();
     if (requestedStoreId && !storeSnap.exists) {
         throw new functions.https.HttpsError('not-found', 'No company was found with that Store ID. Please check with your admin.');
@@ -378,7 +371,7 @@ exports.initializeStore = functions.https.onCall(async (data, context) => {
     if (role === 'owner') {
         const baseStoreData = storeSnap.data() ?? {};
         const previousBilling = (baseStoreData.billing || {});
-        const nowTs = admin.firestore.Timestamp.now();
+        const nowTs = firestore_1.admin.firestore.Timestamp.now();
         const trialEndsAt = previousBilling.trialEndsAt ||
             previousBilling.trialEnd ||
             timestampDaysFromNow(TRIAL_DAYS);
@@ -442,7 +435,7 @@ exports.initializeStore = functions.https.onCall(async (data, context) => {
             billing: billingData,
         };
         await storeRef.set(storeData, { merge: true });
-        const wsRef = db.collection('workspaces').doc(storeId);
+        const wsRef = firestore_1.defaultDb.collection('workspaces').doc(storeId);
         const wsSnap = await wsRef.get();
         const wsBase = wsSnap.data() ?? {};
         const workspaceData = {
@@ -476,11 +469,11 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
     const uid = context.auth.uid;
     const token = context.auth.token;
     const email = typeof token.email === 'string' ? token.email : null;
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = firestore_1.admin.firestore.FieldValue.serverTimestamp();
     const payload = (data ?? {});
     const requestedStoreIdRaw = payload.storeId;
     const requestedStoreId = typeof requestedStoreIdRaw === 'string' ? requestedStoreIdRaw.trim() : '';
-    const memberRef = db.collection('teamMembers').doc(uid);
+    const memberRef = firestore_1.defaultDb.collection('teamMembers').doc(uid);
     const memberSnap = await memberRef.get();
     const memberData = (memberSnap.data() ?? {});
     let existingStoreId = null;
@@ -508,11 +501,11 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
         nextMemberData.createdAt = timestamp;
     }
     await memberRef.set(nextMemberData, { merge: true });
-    const storeRef = db.collection('stores').doc(storeId);
+    const storeRef = firestore_1.defaultDb.collection('stores').doc(storeId);
     const storeSnap = await storeRef.get();
     const baseStore = storeSnap.data() ?? {};
     const previousBilling = (baseStore.billing || {});
-    const nowTs = admin.firestore.Timestamp.now();
+    const nowTs = firestore_1.admin.firestore.Timestamp.now();
     const paymentStatusRaw = typeof baseStore.paymentStatus === 'string' ? baseStore.paymentStatus : null;
     const trialEndsAt = previousBilling.trialEndsAt ||
         previousBilling.trialEnd ||
@@ -583,7 +576,7 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
         billing: billingData,
     };
     await storeRef.set(storeData, { merge: true });
-    const wsRef = db.collection('workspaces').doc(storeId);
+    const wsRef = firestore_1.defaultDb.collection('workspaces').doc(storeId);
     const wsSnap = await wsRef.get();
     const wsBase = wsSnap.data() ?? {};
     const workspaceData = {
@@ -628,10 +621,10 @@ exports.resolveStoreAccess = functions.https.onCall(async (data, context) => {
  *  CALLABLE: manageStaffAccount (owner only)
  * ==========================================================================*/
 async function logStaffAudit(entry) {
-    const auditRef = db.collection('staffAudit').doc();
+    const auditRef = firestore_1.defaultDb.collection('staffAudit').doc();
     const payload = {
         ...entry,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: firestore_1.admin.firestore.FieldValue.serverTimestamp(),
     };
     try {
         await auditRef.set(payload);
@@ -642,9 +635,9 @@ async function logStaffAudit(entry) {
 }
 async function ensureAuthUser(email, password) {
     try {
-        const record = await admin.auth().getUserByEmail(email);
+        const record = await firestore_1.admin.auth().getUserByEmail(email);
         if (password) {
-            await admin.auth().updateUser(record.uid, { password });
+            await firestore_1.admin.auth().updateUser(record.uid, { password });
         }
         return { record, created: false };
     }
@@ -653,7 +646,7 @@ async function ensureAuthUser(email, password) {
             if (!password) {
                 throw new functions.https.HttpsError('invalid-argument', 'A password is required when creating a new staff account');
             }
-            const record = await admin.auth().createUser({
+            const record = await firestore_1.admin.auth().createUser({
                 email,
                 password,
                 emailVerified: false,
@@ -670,10 +663,10 @@ exports.manageStaffAccount = functions.https.onCall(async (data, context) => {
     const actorEmail = typeof context.auth?.token?.email === 'string'
         ? context.auth.token.email
         : null;
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = firestore_1.admin.firestore.FieldValue.serverTimestamp();
     const getUserOrThrow = async () => {
         try {
-            return await admin.auth().getUserByEmail(email);
+            return await firestore_1.admin.auth().getUserByEmail(email);
         }
         catch (error) {
             if (error?.code === 'auth/user-not-found') {
@@ -698,8 +691,8 @@ exports.manageStaffAccount = functions.https.onCall(async (data, context) => {
             const ensured = await ensureAuthUser(email, password);
             record = ensured.record;
             created = ensured.created;
-            await admin.auth().updateUser(record.uid, { disabled: false });
-            const memberRef = db.collection('teamMembers').doc(record.uid);
+            await firestore_1.admin.auth().updateUser(record.uid, { disabled: false });
+            const memberRef = firestore_1.defaultDb.collection('teamMembers').doc(record.uid);
             const memberSnap = await memberRef.get();
             const memberData = {
                 uid: record.uid,
@@ -721,15 +714,15 @@ exports.manageStaffAccount = functions.https.onCall(async (data, context) => {
                 throw new functions.https.HttpsError('invalid-argument', 'A new password is required to reset staff credentials');
             }
             record = await getUserOrThrow();
-            await admin.auth().updateUser(record.uid, { password, disabled: false });
-            const memberRef = db.collection('teamMembers').doc(record.uid);
+            await firestore_1.admin.auth().updateUser(record.uid, { password, disabled: false });
+            const memberRef = firestore_1.defaultDb.collection('teamMembers').doc(record.uid);
             await memberRef.set({ uid: record.uid, email, storeId, role, status: 'active', updatedAt: timestamp }, { merge: true });
             claims = await updateUserClaims(record.uid, role);
         }
         else {
             record = await getUserOrThrow();
-            await admin.auth().updateUser(record.uid, { disabled: true });
-            const memberRef = db.collection('teamMembers').doc(record.uid);
+            await firestore_1.admin.auth().updateUser(record.uid, { disabled: true });
+            const memberRef = firestore_1.defaultDb.collection('teamMembers').doc(record.uid);
             await memberRef.set({ uid: record.uid, email, storeId, role, status: 'inactive', updatedAt: timestamp }, { merge: true });
             created = false;
         }
@@ -797,9 +790,9 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
             throw new functions.https.HttpsError('failed-precondition', 'Bad product');
         }
     }
-    const saleRef = db.collection('sales').doc(saleId);
-    const saleItemsRef = db.collection('saleItems');
-    await db.runTransaction(async (tx) => {
+    const saleRef = firestore_1.defaultDb.collection('sales').doc(saleId);
+    const saleItemsRef = firestore_1.defaultDb.collection('saleItems');
+    await firestore_1.defaultDb.runTransaction(async (tx) => {
         // 1️⃣ ALL READS FIRST
         // sale doc (prevent duplicates)
         const existingSale = await tx.get(saleRef);
@@ -811,7 +804,7 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
         const productRefs = {};
         for (const it of normalizedItems) {
             const productId = it.productId;
-            const pRef = db.collection('products').doc(productId);
+            const pRef = firestore_1.defaultDb.collection('products').doc(productId);
             productRefs[productId] = pRef;
             const pSnap = await tx.get(pRef);
             if (!pSnap.exists) {
@@ -820,7 +813,7 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
             productSnaps[productId] = pSnap;
         }
         // 2️⃣ THEN ALL WRITES
-        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        const timestamp = firestore_1.admin.firestore.FieldValue.serverTimestamp();
         tx.set(saleRef, {
             branchId: normalizedBranchId,
             storeId: normalizedBranchId,
@@ -836,7 +829,7 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
         for (const it of normalizedItems) {
             const productId = it.productId;
             // saleItems row
-            const itemId = db.collection('_').doc().id;
+            const itemId = firestore_1.defaultDb.collection('_').doc().id;
             tx.set(saleItemsRef.doc(itemId), {
                 saleId,
                 productId,
@@ -856,8 +849,8 @@ exports.commitSale = functions.https.onCall(async (data, context) => {
                 const curr = Number(pSnap.get('stockCount') || 0);
                 const next = curr - Math.abs(it.qty || 0);
                 tx.update(pRef, { stockCount: next, updatedAt: timestamp });
-                const ledgerId = db.collection('_').doc().id;
-                tx.set(db.collection('ledger').doc(ledgerId), {
+                const ledgerId = firestore_1.defaultDb.collection('_').doc().id;
+                tx.set(firestore_1.defaultDb.collection('ledger').doc(ledgerId), {
                     productId,
                     qtyChange: -Math.abs(it.qty || 0),
                     type: 'sale',
@@ -924,7 +917,7 @@ exports.logReceiptShare = functions.https.onCall(async (data, context) => {
             : (() => {
                 throw new functions.https.HttpsError('invalid-argument', 'errorMessage must be a string when provided');
             })();
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = firestore_1.admin.firestore.FieldValue.serverTimestamp();
     const payload = {
         storeId,
         saleId,
@@ -937,7 +930,7 @@ exports.logReceiptShare = functions.https.onCall(async (data, context) => {
         createdAt: timestamp,
         updatedAt: timestamp,
     };
-    const ref = await db.collection('receiptShareLogs').add(payload);
+    const ref = await firestore_1.defaultDb.collection('receiptShareLogs').add(payload);
     return { ok: true, shareId: ref.id };
 });
 /** ============================================================================
@@ -991,11 +984,11 @@ exports.logPaymentReminder = functions.https.onCall(async (data, context) => {
             if (Number.isNaN(parsed.getTime())) {
                 throw new functions.https.HttpsError('invalid-argument', 'dueDate must be a valid date');
             }
-            return admin.firestore.Timestamp.fromDate(parsed);
+            return firestore_1.admin.firestore.Timestamp.fromDate(parsed);
         }
         throw new functions.https.HttpsError('invalid-argument', 'dueDate must be a string or number when provided');
     })();
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = firestore_1.admin.firestore.FieldValue.serverTimestamp();
     const payload = {
         storeId,
         customerId,
@@ -1008,7 +1001,7 @@ exports.logPaymentReminder = functions.https.onCall(async (data, context) => {
         createdAt: timestamp,
         updatedAt: timestamp,
     };
-    const ref = await db.collection('paymentReminderLogs').add(payload);
+    const ref = await firestore_1.defaultDb.collection('paymentReminderLogs').add(payload);
     return { ok: true, reminderId: ref.id };
 });
 /** ============================================================================
@@ -1041,10 +1034,10 @@ exports.receiveStock = functions.https.onCall(async (data, context) => {
         }
         normalizedUnitCost = parsedCost;
     }
-    const productRef = db.collection('products').doc(productIdStr);
-    const receiptRef = db.collection('receipts').doc();
-    const ledgerRef = db.collection('ledger').doc();
-    await db.runTransaction(async (tx) => {
+    const productRef = firestore_1.defaultDb.collection('products').doc(productIdStr);
+    const receiptRef = firestore_1.defaultDb.collection('receipts').doc();
+    const ledgerRef = firestore_1.defaultDb.collection('ledger').doc();
+    await firestore_1.defaultDb.runTransaction(async (tx) => {
         const pSnap = await tx.get(productRef);
         if (!pSnap.exists) {
             throw new functions.https.HttpsError('failed-precondition', 'Bad product');
@@ -1053,7 +1046,7 @@ exports.receiveStock = functions.https.onCall(async (data, context) => {
         const productStoreId = typeof productStoreIdRaw === 'string' ? productStoreIdRaw.trim() : null;
         const currentStock = Number(pSnap.get('stockCount') || 0);
         const nextStock = currentStock + amount;
-        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        const timestamp = firestore_1.admin.firestore.FieldValue.serverTimestamp();
         tx.update(productRef, {
             stockCount: nextStock,
             updatedAt: timestamp,
@@ -1131,7 +1124,7 @@ exports.createPaystackCheckout = functions.https.onCall(async (data, context) =>
     const email = typeof token.email === 'string' ? token.email : null;
     const payload = (data ?? {});
     const requestedStoreId = typeof payload.storeId === 'string' ? payload.storeId.trim() : '';
-    const memberRef = db.collection('teamMembers').doc(uid);
+    const memberRef = firestore_1.defaultDb.collection('teamMembers').doc(uid);
     const memberSnap = await memberRef.get();
     const memberData = (memberSnap.data() ?? {});
     let resolvedStoreId = '';
@@ -1146,7 +1139,7 @@ exports.createPaystackCheckout = functions.https.onCall(async (data, context) =>
         resolvedStoreId = uid;
     }
     const storeId = resolvedStoreId;
-    const storeRef = db.collection('stores').doc(storeId);
+    const storeRef = firestore_1.defaultDb.collection('stores').doc(storeId);
     const storeSnap = await storeRef.get();
     const storeData = (storeSnap.data() ?? {});
     const billing = (storeData.billing || {});
@@ -1195,7 +1188,7 @@ exports.createPaystackCheckout = functions.https.onCall(async (data, context) =>
     if (!authUrl) {
         throw new functions.https.HttpsError('unknown', 'Paystack did not return a valid authorization URL.');
     }
-    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const timestamp = firestore_1.admin.firestore.FieldValue.serverTimestamp();
     await storeRef.set({
         billing: {
             ...(billing || {}),
@@ -1252,8 +1245,8 @@ exports.handlePaystackWebhook = functions.https.onRequest(async (req, res) => {
                 console.warn('[paystack] charge.success missing storeId in metadata');
             }
             else {
-                const storeRef = db.collection('stores').doc(storeId);
-                const timestamp = admin.firestore.FieldValue.serverTimestamp();
+                const storeRef = firestore_1.defaultDb.collection('stores').doc(storeId);
+                const timestamp = firestore_1.admin.firestore.FieldValue.serverTimestamp();
                 const customer = data.customer || {};
                 const subscription = data.subscription || {};
                 const plan = data.plan || {};
