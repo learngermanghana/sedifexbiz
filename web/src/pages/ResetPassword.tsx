@@ -79,7 +79,7 @@ export default function ResetPassword() {
 
     try {
       await sendPasswordResetEmail(auth, trimmedEmail, {
-        url: `${window.location.origin}/#/reset-password`,
+        url: `${window.location.origin}/reset-password`,
         handleCodeInApp: true,
       })
       setStatus({
