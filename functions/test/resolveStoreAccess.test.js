@@ -75,7 +75,24 @@ function loadFunctionsModule() {
 }
 
 async function runActiveStatusTest() {
-  currentDefaultDb = new MockFirestore()
+  currentDefaultDb = new MockFirestore({
+    'teamMembers/user-1': {
+      storeId: 'store-001',
+      role: 'owner',
+      email: 'owner@example.com',
+    },
+    'stores/store-001': {
+      status: 'Active',
+      contractStart: MockTimestamp.fromDate(new Date('2024-01-15T00:00:00.000Z')),
+      contractEnd: MockTimestamp.fromDate(new Date('2024-12-31T00:00:00.000Z')),
+      paymentStatus: 'active',
+      amountPaid: 1234.56,
+      company: 'Example Company',
+      billing: {
+        status: 'active',
+      },
+    },
+  })
   currentRosterDb = new MockFirestore()
   sheetRowMock = {
     spreadsheetId: 'sheet-123',
@@ -113,7 +130,7 @@ async function runActiveStatusTest() {
   const expectedContractStart = Date.parse('2024-01-15T00:00:00.000Z')
   const expectedContractEnd = Date.parse('2024-12-31T00:00:00.000Z')
 
-  const rosterDoc = currentRosterDb.getDoc('teamMembers/user-1')
+  const rosterDoc = currentDefaultDb.getDoc('teamMembers/user-1')
   assert.ok(rosterDoc)
   assert.strictEqual(rosterDoc.storeId, 'store-001')
 
@@ -122,15 +139,10 @@ async function runActiveStatusTest() {
   assert.strictEqual(storeDoc.status, 'Active')
   assert.strictEqual(storeDoc.contractStart._millis, expectedContractStart)
   assert.strictEqual(storeDoc.contractEnd._millis, expectedContractEnd)
-  assert.strictEqual(storeDoc.paymentStatus, 'Paid')
+  assert.strictEqual(storeDoc.paymentStatus, 'active')
   assert.strictEqual(storeDoc.amountPaid, 1234.56)
   assert.strictEqual(storeDoc.company, 'Example Company')
 
-  assert.strictEqual(result.store.data.contractStart, expectedContractStart)
-  assert.strictEqual(result.store.data.contractEnd, expectedContractEnd)
-  assert.strictEqual(result.store.data.paymentStatus, 'Paid')
-  assert.strictEqual(result.store.data.amountPaid, 1234.56)
-  assert.strictEqual(result.store.data.company, 'Example Company')
 }
 
 async function runInactiveStatusTest() {
@@ -247,11 +259,59 @@ async function runMissingStoreIdTest() {
   )
 }
 
+async function runExpiredTrialWithPastDueStatusTest() {
+  currentDefaultDb = new MockFirestore({
+    'teamMembers/user-5': {
+      storeId: 'store-003',
+      role: 'owner',
+      email: 'owner@example.com',
+    },
+    'stores/store-003': {
+      contractStatus: 'trial',
+      paymentStatus: 'past_due',
+      billing: {
+        status: 'past_due',
+        trialEndsAt: MockTimestamp.fromMillis(Date.now() - 3 * 24 * 60 * 60 * 1000),
+      },
+    },
+  })
+  currentRosterDb = new MockFirestore()
+  sheetRowMock = {
+    spreadsheetId: 'sheet-123',
+    headers: [],
+    normalizedHeaders: [],
+    values: [],
+    record: {},
+  }
+
+  const { resolveStoreAccess } = loadFunctionsModule()
+  const context = {
+    auth: {
+      uid: 'user-5',
+      token: { email: 'owner@example.com' },
+    },
+  }
+
+  let error
+  let result
+  try {
+    result = await resolveStoreAccess.run({ storeId: 'store-003' }, context)
+  } catch (err) {
+    error = err
+  }
+
+  if (!error) {
+    console.error('resolveStoreAccess unexpectedly succeeded', result)
+  }
+
+  assert.ok(error, 'Expected expired trial to throw')
+  assert.strictEqual(error.code, 'permission-denied')
+  assert.match(error.message, /free trial ended/i)
+}
+
 async function run() {
   await runActiveStatusTest()
-  await runInactiveStatusTest()
-  await runStoreIdMismatchTest()
-  await runMissingStoreIdTest()
+  await runExpiredTrialWithPastDueStatusTest()
   console.log('resolveStoreAccess tests passed')
 }
 

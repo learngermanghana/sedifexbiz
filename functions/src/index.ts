@@ -645,6 +645,15 @@ export const resolveStoreAccess = functions.https.onCall(
       previousBilling.graceEnd ||
       timestampDaysFromNow(TRIAL_DAYS + GRACE_DAYS)
 
+    const contractStatusRaw =
+      typeof baseStore.contractStatus === 'string'
+        ? baseStore.contractStatus.trim()
+        : null
+    const normalizedContractStatus =
+      contractStatusRaw && contractStatusRaw !== ''
+        ? contractStatusRaw.toLowerCase()
+        : null
+
     const billingStatus: BillingStatus =
       previousBilling.status === 'active' || previousBilling.status === 'past_due'
         ? previousBilling.status
@@ -652,7 +661,7 @@ export const resolveStoreAccess = functions.https.onCall(
 
     const trialDaysRemaining = calculateDaysRemaining(trialEndsAt, nowTs)
     const trialExpired =
-      billingStatus === 'trial' &&
+      (normalizedContractStatus === 'trial' || billingStatus === 'trial') &&
       paymentStatusRaw !== 'active' &&
       trialDaysRemaining !== null &&
       trialDaysRemaining <= 0
@@ -704,7 +713,7 @@ export const resolveStoreAccess = functions.https.onCall(
       ownerEmail: baseStore.ownerEmail || email || null,
       status: baseStore.status || 'active',
       workspaceSlug: baseStore.workspaceSlug || workspaceSlug,
-      contractStatus: baseStore.contractStatus || 'trial',
+      contractStatus: contractStatusRaw || baseStore.contractStatus || 'trial',
       productCount:
         typeof baseStore.productCount === 'number' ? baseStore.productCount : 0,
       totalStockCount:
