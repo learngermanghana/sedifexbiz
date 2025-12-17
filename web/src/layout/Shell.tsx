@@ -92,6 +92,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const [dismissedOn, setDismissedOn] = useState<string | null>(null)
 
+  const trialEndsAt = billing?.trialEndsAt?.toDate?.() ?? null
+  const hasTrialEnded = Boolean(
+    billing?.paymentStatus === 'trial' &&
+      trialEndsAt &&
+      trialEndsAt.getTime() <= Date.now(),
+  )
+
   const activeMembership = useMemo(
     () =>
       storeId
@@ -102,13 +109,32 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const isStaff = activeMembership?.role === 'staff'
   const role: NavRole = isStaff ? 'staff' : 'owner'
-  const navItems = useMemo(
-    () => NAV_ITEMS.filter(item => item.roles.includes(role)),
-    [role],
-  )
+  const navItems = useMemo(() => {
+    if (hasTrialEnded) {
+      return [
+        {
+          to: '/account',
+          label: 'Account',
+          end: true,
+          roles: [role],
+        },
+      ]
+    }
+
+    return NAV_ITEMS.filter(item => item.roles.includes(role))
+  }, [hasTrialEnded, role])
 
   const billingNotice = useMemo<BillingNotice | null>(() => {
     if (!billing) return null
+
+    if (hasTrialEnded) {
+      return {
+        tone: 'critical',
+        title: 'Trial ended',
+        message:
+          'Your Sedifex trial has ended. Update payment to continue using the app.',
+      }
+    }
 
     if (billing.paymentStatus === 'past_due') {
       return {
@@ -187,6 +213,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       navigate('/sell', { replace: true })
     }
   }, [isStaff, location.pathname, membershipsLoading, navigate, navItems])
+
+  useEffect(() => {
+    if (!hasTrialEnded) return
+
+    const isAccountRoute = location.pathname.startsWith('/account')
+
+    if (!isAccountRoute) {
+      navigate('/account', { replace: true })
+    }
+  }, [hasTrialEnded, location.pathname, navigate])
 
   function handleDismissBillingNotice() {
     setDismissedOn(todayStamp)
