@@ -983,10 +983,6 @@ export default function Products() {
                   can watch low-stock alerts.
                 </p>
                 <p className="field__hint">
-                  Tracking office-only items? Keep the selling price at GHS 0.00 so they stay off
-                  sales totals while you still count the stock.
-                </p>
-                <p className="field__hint">
                   <strong>Made-to-order:</strong> For cooked or prepared-to-order items. Sales are
                   recorded without deducting shelf stock, and you can still add production details.
                 </p>
