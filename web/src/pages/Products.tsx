@@ -977,17 +977,24 @@ export default function Products() {
                 <option value="made_to_order">Made-to-order (no stock counts)</option>
                 <option value="service">Service</option>
               </select>
-              {isService && (
+              <div>
                 <p className="field__hint">
-                  Services don&apos;t track stock. You can still set a selling price.
+                  <strong>Physical product:</strong> Tracks on-hand stock for items you store so you
+                  can watch low-stock alerts.
                 </p>
-              )}
-              {itemType === 'made_to_order' && (
                 <p className="field__hint">
-                  Use for cooked-to-order items. Sales are recorded without deducting stock, but
-                  you can still capture production details.
+                  Tracking office-only items? Keep the selling price at GHS 0.00 so they stay off
+                  sales totals while you still count the stock.
                 </p>
-              )}
+                <p className="field__hint">
+                  <strong>Made-to-order:</strong> For cooked or prepared-to-order items. Sales are
+                  recorded without deducting shelf stock, and you can still add production details.
+                </p>
+                <p className="field__hint">
+                  <strong>Service:</strong> No stock counts—best for labour or time-based work while
+                  still setting a selling price.
+                </p>
+              </div>
             </div>
 
             {!isService && (
