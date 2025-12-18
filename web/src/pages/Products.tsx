@@ -132,6 +132,9 @@ function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product
   const manufacturerName = typeof data.manufacturerName === 'string' ? data.manufacturerName.trim() : ''
   const batchNumber = typeof data.batchNumber === 'string' ? data.batchNumber.trim() : ''
   const showOnReceipt = data.showOnReceipt === true
+  const reorderPoint = sanitizeNumber(
+    data.reorderPoint ?? data.reorderLevel ?? (data as any).reorderThreshold ?? null,
+  )
 
   return {
     id,
@@ -140,7 +143,7 @@ function mapFirestoreProduct(id: string, data: Record<string, unknown>): Product
     barcode: normalizedBarcode || null,
     price: sanitizeNumber(data.price) ?? null,
     stockCount: sanitizeNumber(data.stockCount),
-    reorderPoint: sanitizeNumber(data.reorderPoint),
+    reorderPoint,
     itemType,
     taxRate: sanitizeTaxRate(data.taxRate),
     expiryDate,
@@ -1259,6 +1262,7 @@ export default function Products() {
             data={visibleProducts}
             pageSize={12}
             density="compact"
+            onRowClick={startEditing}
             enableColumnToggles
             virtualizeThreshold={80}
             emptyState={

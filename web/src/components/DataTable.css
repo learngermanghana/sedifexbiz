@@ -50,6 +50,14 @@
   border-bottom: none;
 }
 
+.data-table__row--clickable {
+  cursor: pointer;
+}
+
+.data-table__row--clickable:hover {
+  background: #f8fafc;
+}
+
 .data-table__cell--align-right {
   text-align: right;
 }

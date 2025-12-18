@@ -22,6 +22,7 @@ type DataTableProps<T> = {
   enableColumnToggles?: boolean
   initialHiddenColumnIds?: string[]
   rowKey?: (row: T, index: number) => string | number
+  onRowClick?: (row: T, index: number) => void
   emptyState?: React.ReactNode
   virtualizeThreshold?: number
   estimatedRowHeight?: number
@@ -31,6 +32,7 @@ type VirtualizedItemData<T> = {
   rows: T[]
   columns: DataTableColumn<T>[]
   rowKey: (row: T, index: number) => string | number
+  onRowClick?: (row: T, index: number) => void
 }
 
 const DEFAULT_ROW_HEIGHT = 64
@@ -39,9 +41,16 @@ const COMPACT_ROW_HEIGHT = 52
 function VirtualizedRow<T>({ index, style, data }: ListChildComponentProps<VirtualizedItemData<T>>) {
   const row = data.rows[index]
   const key = data.rowKey(row, index)
+  const clickable = typeof data.onRowClick === 'function'
+  const handleClick = clickable ? () => data.onRowClick?.(row, index) : undefined
 
   return (
-    <tr style={style as React.CSSProperties} className="data-table__row" key={key}>
+    <tr
+      style={style as React.CSSProperties}
+      className={`data-table__row ${clickable ? 'data-table__row--clickable' : ''}`}
+      key={key}
+      onClick={handleClick}
+    >
       {data.columns.map(column => {
         const hideClass = column.hideBelow ? `data-table__cell--hide-${column.hideBelow}` : ''
         const alignClass = column.align === 'right' ? 'data-table__cell--align-right' : ''
@@ -64,6 +73,7 @@ export function DataTable<T>({
   enableColumnToggles = false,
   initialHiddenColumnIds = [],
   rowKey = (row, index) => (typeof (row as any).id !== 'undefined' ? (row as any).id : index),
+  onRowClick,
   emptyState = null,
   virtualizeThreshold = 120,
   estimatedRowHeight,
@@ -108,8 +118,8 @@ export function DataTable<T>({
     .join(' ')
 
   const itemData: VirtualizedItemData<T> = useMemo(
-    () => ({ rows: paginatedRows, columns: visibleColumns, rowKey }),
-    [paginatedRows, visibleColumns, rowKey],
+    () => ({ rows: paginatedRows, columns: visibleColumns, rowKey, onRowClick }),
+    [paginatedRows, visibleColumns, rowKey, onRowClick],
   )
 
   const virtualizedHeight = useMemo(() => {
@@ -183,7 +193,11 @@ export function DataTable<T>({
           <table className={tableClasses}>
             <tbody>
               {paginatedRows.map((row, index) => (
-                <tr key={rowKey(row, index)} className="data-table__row">
+                <tr
+                  key={rowKey(row, index)}
+                  className={`data-table__row ${onRowClick ? 'data-table__row--clickable' : ''}`}
+                  onClick={onRowClick ? () => onRowClick(row, index + page * pageSize) : undefined}
+                >
                   {visibleColumns.map(column => {
                     const hideClass = column.hideBelow ? `data-table__cell--hide-${column.hideBelow}` : ''
                     const alignClass = column.align === 'right' ? 'data-table__cell--align-right' : ''
