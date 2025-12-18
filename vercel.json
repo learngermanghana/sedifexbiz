@@ -1,6 +1,17 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "builds": [
+    {
+      "src": "web/package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "build" }
+    }
+  ],
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://api-haqjyxn5wa-ew.a.run.app/$1"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"
