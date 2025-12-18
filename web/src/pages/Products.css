@@ -2,6 +2,17 @@
   gap: 24px;
 }
 
+.products-page__grid {
+  display: grid;
+  gap: 24px;
+}
+
+@media (min-width: 1080px) {
+  .products-page__grid {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  }
+}
+
 .products-page__card {
   margin-bottom: 24px;
 }
@@ -132,6 +143,16 @@
   gap: 12px;
   align-items: center;
   margin: 16px 0;
+}
+
+.products-page__list-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.products-page__list-header .field {
+  width: 100%;
 }
 
 .products-page__warning {
