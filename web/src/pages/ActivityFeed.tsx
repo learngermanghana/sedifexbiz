@@ -1,8 +1,8 @@
-// web/src/pages/ActivityFeed.tsx (or wherever it lives)
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc,
   collection,
+  type QueryDocumentSnapshot,
   onSnapshot,
   orderBy,
   query,
@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { useMemberships } from '../hooks/useMemberships'
 import './ActivityFeed.css'
 import { FixedSizeList, ListChildComponentProps } from '../utils/VirtualizedList'
 import { buildReceiptPdf, type PaymentMethod, type ReceiptPayload } from '../utils/receipt'
@@ -31,6 +32,12 @@ type Activity = {
   timestamp: Date
   receipt: ReceiptPayload | null
 }
+
+const BASE_URL = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`
+const NOTIFICATION_ICON = `${BASE_URL}icons/icon-192x192.png`
+const NOTIFICATION_BADGE = `${BASE_URL}icons/icon-96x96.png`
 
 const TYPE_LABELS: Record<ActivityType, string> = {
   sale: 'Sale',
@@ -134,8 +141,58 @@ function buildCsvValue(value: string) {
   return `"${value.replace(/"/g, '""')}"`
 }
 
+function mapActivitySnapshot(
+  docSnap: QueryDocumentSnapshot<DocumentData>,
+  fallbackStoreId: string | null,
+): Activity {
+  const data = docSnap.data() || {}
+  return {
+    id: docSnap.id,
+    storeId: data.storeId ?? fallbackStoreId ?? '',
+    type: (data.type as ActivityType) ?? 'task',
+    summary: data.summary ?? '',
+    detail: data.detail ?? '',
+    actor: data.actor ?? 'Team member',
+    timestamp: toDate(data.createdAt) ?? new Date(),
+    receipt: toReceiptPayload(data.receipt),
+  }
+}
+
+async function notifyActivityOwner(activity: Activity) {
+  if (typeof window === 'undefined' || typeof Notification === 'undefined') return
+
+  const title = `New ${TYPE_LABELS[activity.type]} activity`
+  const body = `${activity.summary}${activity.detail ? ` • ${activity.detail}` : ''}`
+
+  const options: NotificationOptions = {
+    body,
+    icon: NOTIFICATION_ICON,
+    badge: NOTIFICATION_BADGE,
+    tag: `activity-${activity.id}`,
+    timestamp: activity.timestamp.getTime(),
+    data: { activityId: activity.id, storeId: activity.storeId },
+  }
+
+  if (navigator.serviceWorker?.ready) {
+    try {
+      const registration = await navigator.serviceWorker.ready
+      await registration.showNotification(title, options)
+      return
+    } catch (error) {
+      console.warn('[activity] Unable to show notification via service worker', error)
+    }
+  }
+
+  try {
+    new Notification(title, options)
+  } catch (error) {
+    console.warn('[activity] Unable to show notification', error)
+  }
+}
+
 export default function ActivityFeed() {
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
+  const { memberships } = useMemberships()
 
   const [activities, setActivities] = useState<Activity[]>([])
   const [filter, setFilter] = useState<ActivityType | 'all'>('all')
@@ -149,16 +206,60 @@ export default function ActivityFeed() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [receiptError, setReceiptError] = useState<string | null>(null)
+  const [canNotify, setCanNotify] = useState(false)
+
+  const hasLoadedRef = useRef(false)
+  const canNotifyRef = useRef(false)
+  const isOwnerRef = useRef(false)
+
+  const isOwner = useMemo(
+    () => memberships.some(member => member.storeId === storeId && member.role === 'owner'),
+    [memberships, storeId],
+  )
+
+  useEffect(() => {
+    canNotifyRef.current = canNotify
+  }, [canNotify])
+
+  useEffect(() => {
+    isOwnerRef.current = isOwner
+  }, [isOwner])
+
+  useEffect(() => {
+    if (!isOwner) {
+      setCanNotify(false)
+      return
+    }
+
+    if (typeof window === 'undefined' || typeof Notification === 'undefined') {
+      return
+    }
+
+    if (Notification.permission === 'granted') {
+      setCanNotify(true)
+      return
+    }
+
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then(result => {
+        if (result === 'granted') {
+          setCanNotify(true)
+        }
+      })
+    }
+  }, [isOwner])
 
   // 🔴 LIVE SUBSCRIPTION TO FIRESTORE
   useEffect(() => {
     if (!storeId) {
       setActivities([])
+      hasLoadedRef.current = false
       return
     }
 
     setLoading(true)
     setLoadError(null)
+    hasLoadedRef.current = false
 
     const activityRef = collection(db, 'activity')
     const q = query(
@@ -171,21 +272,24 @@ export default function ActivityFeed() {
     const unsubscribe = onSnapshot(
       q,
       (snapshot: QuerySnapshot<DocumentData>) => {
-        const rows: Activity[] = snapshot.docs.map(docSnap => {
-          const data = docSnap.data() || {}
-          return {
-            id: docSnap.id,
-            storeId: data.storeId ?? storeId,
-            type: (data.type as ActivityType) ?? 'task',
-            summary: data.summary ?? '',
-            detail: data.detail ?? '',
-            actor: data.actor ?? 'Team member',
-            timestamp: toDate(data.createdAt) ?? new Date(),
-            receipt: toReceiptPayload(data.receipt),
-          }
-        })
+        const rows: Activity[] = snapshot.docs.map(docSnap =>
+          mapActivitySnapshot(docSnap, storeId),
+        )
         setActivities(rows)
         setLoading(false)
+
+        if (hasLoadedRef.current && canNotifyRef.current && isOwnerRef.current) {
+          const newActivities = snapshot
+            .docChanges()
+            .filter(change => change.type === 'added')
+            .map(change => mapActivitySnapshot(change.doc, storeId))
+
+          newActivities.forEach(activity => {
+            notifyActivityOwner(activity)
+          })
+        }
+
+        hasLoadedRef.current = true
       },
       error => {
         console.error('[activity] Failed to subscribe', error)

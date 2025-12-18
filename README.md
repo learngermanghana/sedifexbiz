@@ -39,6 +39,11 @@ This repo is a drop-in starter for **Sedifex** (inventory & POS). It ships as a 
    npm run deploy
    ```
 
+### Activity feed notifications (frontend + backend)
+- **Frontend (web/):** Notifications rely on the PWA service worker. Run the app over a secure origin (HTTPS in prod, `localhost` is allowed in dev) so the Notification API is available, and make sure `web/public/sw.js`, `manifest.webmanifest`, and the icons directory are deployed by your host. No extra env vars are required beyond the Firebase config above.
+- **Backend (Firestore):** Notifications are driven by the `activity` collection. Ensure documents include `storeId`, `type`, `summary`, `detail`, `actor`, and a timestamp at `createdAt` so sorting works. Keep your Firestore rules aligned so store owners can read their activity feed; the client only requests notification permission for members with the `owner` role.
+- **Browser permission:** The first time an owner opens the Activity page, they will be prompted for notification permission. Approving it enables alerts for new activity; declining will skip notification attempts until permission is manually changed in the browser.
+
 ## Deploy the PWA (Vercel/Netlify/Firebase Hosting)
 - Point your host to build from `web/` with build command `npm run build` and output dir `dist`.
 - Add the env vars above to your hosting provider.
