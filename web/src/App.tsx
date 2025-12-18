@@ -1,7 +1,7 @@
 // web/src/App.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
 import { Outlet, useLocation } from 'react-router-dom'
 import './App.css'
 import './pwa'
@@ -18,6 +18,10 @@ import { PwaProvider } from './context/PwaContext'
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
+  const [storeAccessStatus, setStoreAccessStatus] = useState<
+    'idle' | 'pending' | 'ready' | 'failed'
+  >('idle')
+  const [storeAccessError, setStoreAccessError] = useState<string | null>(null)
   const location = useLocation()
 
   const isPwaApp = useMemo(() => {
@@ -47,9 +51,38 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, nextUser => {
       setUser(nextUser)
       setIsAuthReady(true)
-      if (nextUser) {
-        void bootstrapStoreContext()
+
+      if (!nextUser) {
+        setStoreAccessStatus(previous => (previous === 'failed' ? 'failed' : 'idle'))
+        return
       }
+
+      setStoreAccessError(null)
+      setStoreAccessStatus('pending')
+
+      const bootstrap = async () => {
+        try {
+          await bootstrapStoreContext()
+          setStoreAccessStatus('ready')
+        } catch (error) {
+          console.error('Store access resolution failed:', error)
+          setStoreAccessStatus('failed')
+          const message =
+            error instanceof Error && error.message
+              ? error.message
+              : 'Your Sedifex workspace is unavailable.'
+          setStoreAccessError(message)
+          localStorage.removeItem('storeId')
+          localStorage.removeItem('workspaceSlug')
+          try {
+            await signOut(auth)
+          } catch (signOutError) {
+            console.error('Failed to sign out after store access failure:', signOutError)
+          }
+        }
+      }
+
+      void bootstrap()
     })
     return unsubscribe
   }, [])
@@ -67,6 +100,27 @@ export default function App() {
       <main className="app" style={appStyle}>
         <div className="app__card">
           <p className="form__hint">Checking your session…</p>
+        </div>
+      </main>
+    )
+  } else if (storeAccessStatus === 'pending' && user && !isPublicRoute) {
+    content = (
+      <main className="app" style={appStyle}>
+        <div className="app__card">
+          <p className="form__hint">Preparing your workspace…</p>
+        </div>
+      </main>
+    )
+  } else if (storeAccessStatus === 'failed' && !isPublicRoute) {
+    content = (
+      <main className="app" style={appStyle}>
+        <div className="app__card">
+          <h1 className="app__heading">Workspace access blocked</h1>
+          <p className="form__hint">
+            {storeAccessError ??
+              'Your Sedifex workspace is unavailable. Please upgrade your plan or contact support to restore access.'}
+          </p>
+          <p className="form__hint">You have been signed out for security.</p>
         </div>
       </main>
     )
