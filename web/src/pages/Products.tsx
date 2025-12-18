@@ -14,7 +14,6 @@ import {
 } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import './Products.css'
-import DataTable, { DataTableColumn } from '../components/DataTable'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useAuthUser } from '../hooks/useAuthUser'
@@ -393,209 +392,6 @@ export default function Products() {
         return p.stockCount <= p.reorderPoint
       }).length,
     [products],
-  )
-
-  const productColumns = useMemo<DataTableColumn<Product>[]>(
-    () => [
-      {
-        id: 'name',
-        header: 'Item',
-        render: product =>
-          editingId === product.id ? (
-            <input value={editName} onChange={e => setEditName(e.target.value)} />
-          ) : (
-            product.name
-          ),
-      },
-      {
-        id: 'type',
-        header: 'Type',
-        render: product =>
-          product.itemType === 'service'
-            ? 'Service'
-            : product.itemType === 'made_to_order'
-              ? 'Made-to-order'
-              : 'Product',
-        hideBelow: 'md',
-        hideable: true,
-      },
-      {
-        id: 'sku',
-        header: 'SKU',
-        render: product =>
-          editingId === product.id && product.itemType !== 'service' ? (
-            <input value={editSku} onChange={e => setEditSku(e.target.value)} />
-          ) : (
-            product.sku || '—'
-          ),
-        hideBelow: 'md',
-        hideable: true,
-      },
-      {
-        id: 'vat',
-        header: 'VAT',
-        render: product =>
-          editingId === product.id ? (
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={editTaxRateInput}
-              onChange={e => setEditTaxRateInput(e.target.value)}
-              placeholder="e.g. 15"
-            />
-          ) : (
-            formatVat(product.taxRate)
-          ),
-        hideBelow: 'md',
-        hideable: true,
-      },
-      {
-        id: 'price',
-        header: 'Price',
-        render: product =>
-          editingId === product.id ? (
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={editPriceInput}
-              onChange={e => setEditPriceInput(e.target.value)}
-            />
-          ) : (
-            formatCurrency(product.price)
-          ),
-        align: 'right',
-      },
-      {
-        id: 'stock',
-        header: 'On hand',
-        render: product => {
-          const isStockTracked = product.itemType === 'product'
-          if (editingId === product.id && isStockTracked) {
-            return (
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={editStockInput}
-                onChange={e => setEditStockInput(e.target.value)}
-              />
-            )
-          }
-          if (!isStockTracked) return '—'
-          return product.stockCount ?? 0
-        },
-        align: 'right',
-      },
-      {
-        id: 'reorder',
-        header: 'Reorder point',
-        render: product => {
-          const isStockTracked = product.itemType === 'product'
-          if (editingId === product.id && isStockTracked) {
-            return (
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={editReorderPointInput}
-                onChange={e => setEditReorderPointInput(e.target.value)}
-              />
-            )
-          }
-          if (!isStockTracked) return '—'
-          return product.reorderPoint ?? '—'
-        },
-        align: 'right',
-        hideBelow: 'sm',
-        hideable: true,
-      },
-      {
-        id: 'expiry',
-        header: 'Expiry date',
-        render: product => {
-          if (product.itemType !== 'product') return '—'
-          if (editingId === product.id) {
-            return (
-              <input
-                type="date"
-                value={editExpiryDateInput}
-                onChange={e => setEditExpiryDateInput(e.target.value)}
-              />
-            )
-          }
-          return formatExpiry(product.expiryDate)
-        },
-        hideBelow: 'sm',
-        hideable: true,
-      },
-      {
-        id: 'lastReceipt',
-        header: 'Last receipt',
-        render: product => formatLastReceipt(product.lastReceiptAt),
-        hideBelow: 'md',
-        hideable: true,
-      },
-      {
-        id: 'actions',
-        header: 'Actions',
-        render: product =>
-          !canManageProducts ? (
-            <span>View only</span>
-          ) : editingId === product.id ? (
-            <>
-              <button
-                type="button"
-                className="button button--primary button--small"
-                onClick={() => handleSaveEdit(product)}
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                className="button button--ghost button--small"
-                onClick={cancelEditing}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="button button--ghost button--small"
-                onClick={() => startEditing(product)}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className="button button--ghost button--small button--danger"
-                onClick={() => handleDelete(product)}
-              >
-                Delete
-              </button>
-            </>
-          ),
-        align: 'right',
-      },
-    ],
-    [
-      cancelEditing,
-      editName,
-      editPriceInput,
-      editReorderPointInput,
-      editSku,
-      editStockInput,
-      editExpiryDateInput,
-      editTaxRateInput,
-      editingId,
-      canManageProducts,
-      handleDelete,
-      handleSaveEdit,
-      startEditing,
-    ],
   )
 
   /**
@@ -1257,23 +1053,261 @@ export default function Products() {
             )
           ) : null}
 
-          <DataTable
-            columns={productColumns}
-            data={visibleProducts}
-            pageSize={12}
-            density="compact"
-            onRowClick={startEditing}
-            enableColumnToggles
-            virtualizeThreshold={80}
-            emptyState={
-              <div className="empty-state">
-                <h3 className="empty-state__title">No items found</h3>
-                <p>
-                  Try a different search term, or add new products and services using the form on the left.
-                </p>
-              </div>
-            }
-          />
+          {visibleProducts.length === 0 ? (
+            <div className="empty-state">
+              <h3 className="empty-state__title">No items found</h3>
+              <p>
+                Try a different search term, or add new products and services using the form on the left.
+              </p>
+            </div>
+          ) : (
+            <div className="products-page__list" aria-live="polite">
+              {visibleProducts.map(product => {
+                const isEditing = editingId === product.id
+                const isStockTracked = product.itemType === 'product'
+
+                return (
+                  <article
+                    key={product.id}
+                    className={`products-page__list-card ${isEditing ? 'is-editing' : ''}`}
+                  >
+                    <header className="products-page__list-card__header">
+                      <div className="products-page__list-title">
+                        <h4>{product.name}</h4>
+                        <span className="products-page__badge products-page__badge--muted">
+                          {product.itemType === 'service'
+                            ? 'Service'
+                            : product.itemType === 'made_to_order'
+                              ? 'Made-to-order'
+                              : 'Product'}
+                        </span>
+                        {isStockTracked && typeof product.reorderPoint === 'number' &&
+                          typeof product.stockCount === 'number' &&
+                          product.stockCount <= product.reorderPoint && (
+                            <span className="products-page__pill">Low stock</span>
+                          )}
+                      </div>
+                      <div className="products-page__list-meta">
+                        <span className="products-page__meta-label">Last receipt:</span>
+                        <span>{formatLastReceipt(product.lastReceiptAt)}</span>
+                      </div>
+                    </header>
+
+                    <div className="products-page__list-grid">
+                      <div className="products-page__list-field">
+                        <label className="field__label">Name</label>
+                        {isEditing ? (
+                          <input
+                            value={editName}
+                            onChange={event => setEditName(event.target.value)}
+                          />
+                        ) : (
+                          <p className="products-page__list-value">{product.name}</p>
+                        )}
+                      </div>
+
+                      {product.itemType !== 'service' && (
+                        <div className="products-page__list-field">
+                          <label className="field__label">SKU / Barcode</label>
+                          {isEditing ? (
+                            <input
+                              value={editSku}
+                              onChange={event => setEditSku(event.target.value)}
+                              placeholder="Scan or type"
+                            />
+                          ) : (
+                            <p className="products-page__list-value">{product.sku || '—'}</p>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="products-page__list-field">
+                        <label className="field__label">VAT</label>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={editTaxRateInput}
+                            onChange={event => setEditTaxRateInput(event.target.value)}
+                            placeholder="e.g. 15"
+                          />
+                        ) : (
+                          <p className="products-page__list-value">{formatVat(product.taxRate)}</p>
+                        )}
+                      </div>
+
+                      <div className="products-page__list-field">
+                        <label className="field__label">Price</label>
+                        {isEditing ? (
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={editPriceInput}
+                            onChange={event => setEditPriceInput(event.target.value)}
+                          />
+                        ) : (
+                          <p className="products-page__list-value">{formatCurrency(product.price)}</p>
+                        )}
+                      </div>
+
+                      <div className="products-page__list-field">
+                        <label className="field__label">On hand</label>
+                        {isStockTracked ? (
+                          isEditing ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={editStockInput}
+                              onChange={event => setEditStockInput(event.target.value)}
+                            />
+                          ) : (
+                            <p className="products-page__list-value">{product.stockCount ?? 0}</p>
+                          )
+                        ) : (
+                          <p className="products-page__list-value">—</p>
+                        )}
+                      </div>
+
+                      <div className="products-page__list-field">
+                        <label className="field__label">Reorder point</label>
+                        {isStockTracked ? (
+                          isEditing ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={editReorderPointInput}
+                              onChange={event => setEditReorderPointInput(event.target.value)}
+                            />
+                          ) : (
+                            <p className="products-page__list-value">{product.reorderPoint ?? '—'}</p>
+                          )
+                        ) : (
+                          <p className="products-page__list-value">—</p>
+                        )}
+                      </div>
+
+                      <div className="products-page__list-field">
+                        <label className="field__label">Expiry date</label>
+                        {isStockTracked ? (
+                          isEditing ? (
+                            <input
+                              type="date"
+                              value={editExpiryDateInput}
+                              onChange={event => setEditExpiryDateInput(event.target.value)}
+                            />
+                          ) : (
+                            <p className="products-page__list-value">{formatExpiry(product.expiryDate)}</p>
+                          )
+                        ) : (
+                          <p className="products-page__list-value">—</p>
+                        )}
+                      </div>
+
+                      {isStockTracked && (
+                        <>
+                          <div className="products-page__list-field">
+                            <label className="field__label">Production date</label>
+                            {isEditing ? (
+                              <input
+                                type="date"
+                                value={editProductionDateInput}
+                                onChange={event =>
+                                  setEditProductionDateInput(event.target.value)
+                                }
+                              />
+                            ) : (
+                              <p className="products-page__list-value">
+                                {formatExpiry(product.productionDate)}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="products-page__list-field">
+                            <label className="field__label">Manufacturer</label>
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={editManufacturerInput}
+                                onChange={event => setEditManufacturerInput(event.target.value)}
+                              />
+                            ) : (
+                              <p className="products-page__list-value">
+                                {product.manufacturerName || '—'}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="products-page__list-field">
+                            <label className="field__label">Batch number</label>
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={editBatchNumberInput}
+                                onChange={event => setEditBatchNumberInput(event.target.value)}
+                              />
+                            ) : (
+                              <p className="products-page__list-value">{product.batchNumber || '—'}</p>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="products-page__list-actions">
+                      {!canManageProducts ? (
+                        <span className="products-page__list-value">View only</span>
+                      ) : isEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            className="button button--primary"
+                            onClick={() => handleSaveEdit(product)}
+                          >
+                            Save changes
+                          </button>
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            onClick={cancelEditing}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="button button--danger"
+                            onClick={() => handleDelete(product)}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="button button--ghost"
+                            onClick={() => startEditing(product)}
+                          >
+                            Edit details
+                          </button>
+                          <button
+                            type="button"
+                            className="button button--danger"
+                            onClick={() => handleDelete(product)}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          )}
         </section>
       </div>
     </div>
