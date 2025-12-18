@@ -143,6 +143,28 @@ export default function Receive() {
     }
   }, [activeStoreId])
 
+  const updateLocalInventory = (productId: string, qtyChange: number) => {
+    if (!activeStoreId) return
+
+    setProducts(prev => {
+      const next = prev.map(product =>
+        product.id === productId
+          ? {
+              ...product,
+              stockCount: (product.stockCount ?? 0) + qtyChange,
+              updatedAt: new Date(),
+            }
+          : product,
+      )
+
+      saveCachedProducts(next, { storeId: activeStoreId }).catch(error => {
+        console.warn('[receive] Failed to cache products after receipt', error)
+      })
+
+      return next
+    })
+  }
+
   async function receive() {
     if (!selected || qty === '') return
     if (!activeStoreId) {
@@ -207,6 +229,7 @@ export default function Receive() {
       } catch (err) {
         console.warn('[activity] Failed to log receipt activity', err)
       }
+      updateLocalInventory(selected, amount)
       setQty('')
       setSupplier('')
       setReference('')
@@ -217,6 +240,7 @@ export default function Receive() {
       if (isOfflineError(error)) {
         const queued = await queueCallableRequest('receiveStock', payload, 'receipt')
         if (queued) {
+          updateLocalInventory(selected, amount)
           setQty('')
           setSupplier('')
           setReference('')
