@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { User } from 'firebase/auth'
-import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -21,8 +21,13 @@ const mocks = vi.hoisted(() => {
     refreshSessionHeartbeat: vi.fn(async () => {}),
     publish: vi.fn(),
     initializeStore: vi.fn(),
-    bootstrapStoreContext: vi.fn(async () => {}),
-    resolveStoreAccess: vi.fn(),
+    bootstrapStoreContext: vi.fn(async () => state.resolveStoreAccess()),
+    resolveStoreAccess: vi.fn(async () => ({
+      ok: true,
+      storeId: 'store-123',
+      workspaceSlug: 'workspace-123',
+      role: 'owner',
+    })),
   }
   return state
 })
@@ -74,6 +79,7 @@ vi.mock('firebase/auth', () => ({
     mocks.createUserWithEmailAndPassword(...args),
   signInWithEmailAndPassword: (...args: unknown[]) =>
     mocks.signInWithEmailAndPassword(...args),
+  signOut: (...args: unknown[]) => mocks.auth.signOut(...args),
   onAuthStateChanged: (_auth: unknown, callback: (user: User | null) => void) => {
     mocks.listeners.push(callback)
     callback(mocks.auth.currentUser)
@@ -97,6 +103,10 @@ vi.mock('firebase/firestore', () => ({
     opStr,
     value,
   }),
+  onSnapshot: (_ref: unknown, callback: (snapshot: unknown) => void) => {
+    callback({ docs: [], exists: () => false, data: () => ({}) })
+    return () => {}
+  },
   limit: (count: number) => ({ __type: 'limit', count }),
   getDocs: async (_query: unknown) => ({ docs: [] }),
   getDoc: async (_ref: unknown) => ({ exists: () => false, id: 'mock-doc', data: () => ({}) }),

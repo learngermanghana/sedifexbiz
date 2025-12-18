@@ -85,6 +85,7 @@ export async function bootstrapStoreContext(): Promise<void> {
     console.log('Store restored:', result.storeId)
   } catch (err) {
     console.error('Failed to resolve store access:', err)
+    throw err
   }
 }
 
