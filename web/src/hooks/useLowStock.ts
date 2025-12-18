@@ -62,7 +62,7 @@ export function useLowStock(topCount = 5): UseLowStockResult {
             const data = docSnap.data() as Record<string, unknown>
             const stockCount = sanitizeNumber(data.stockCount)
             const reorderLevel = sanitizeNumber(
-              data.reorderLevel ?? data.reorderThreshold ?? null,
+              data.reorderPoint ?? data.reorderLevel ?? data.reorderThreshold ?? null,
             )
 
             return {
