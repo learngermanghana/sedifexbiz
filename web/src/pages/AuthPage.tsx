@@ -83,18 +83,25 @@ function getErrorMessage(error: unknown): string {
   if (error instanceof FirebaseError) {
     const code = error.code || ''
     switch (code) {
+      case 'auth/invalid-login-credentials':
       case 'auth/invalid-credential':
       case 'auth/wrong-password':
       case 'auth/user-not-found':
         return 'Incorrect email or password.'
+      case 'auth/user-disabled':
+        return 'This account has been disabled. Please contact support to restore access.'
       case 'auth/invalid-email':
         return 'Enter a valid email address.'
+      case 'auth/missing-email':
+        return 'Enter your email to continue.'
       case 'auth/too-many-requests':
         return 'Too many attempts. Please wait a moment and try again.'
       case 'auth/network-request-failed':
         return 'Network error. Please check your connection and try again.'
       case 'auth/email-already-in-use':
         return 'An account already exists with this email.'
+      case 'auth/operation-not-allowed':
+        return 'Email and password sign-in is currently unavailable. Please contact support.'
       case 'auth/missing-password':
         return 'Enter your password to continue.'
       case 'auth/weak-password':
@@ -122,14 +129,33 @@ function getErrorMessage(error: unknown): string {
 
 function getAuthErrorMessage(error: unknown, mode: AuthMode): string {
   const baseMessage = getErrorMessage(error)
+  const firebaseCode = error instanceof FirebaseError ? error.code : undefined
 
-  if (baseMessage && baseMessage !== 'Something went wrong. Please try again.') {
+  const contextualMessage = (() => {
+    if (mode === 'signup' && baseMessage === 'An account already exists with this email.') {
+      return 'An account already exists with this email. Try logging in instead or use another email to sign up.'
+    }
+
+    if (
+      mode === 'login' &&
+      (firebaseCode === 'auth/invalid-credential' ||
+        firebaseCode === 'auth/invalid-login-credentials' ||
+        firebaseCode === 'auth/wrong-password' ||
+        firebaseCode === 'auth/user-not-found')
+    ) {
+      return 'Incorrect email or password. If you have forgotten your password, please reset it and try again.'
+    }
+
     return baseMessage
+  })()
+
+  if (contextualMessage && contextualMessage !== 'Something went wrong. Please try again.') {
+    return contextualMessage
   }
 
   return mode === 'login'
-    ? 'We couldn’t sign you in. Please double-check your email and password and try again.'
-    : 'We couldn’t create your account. Please review your details and try again.'
+    ? 'We couldn’t sign you in. Confirm your email and password, check your internet connection, or reset your password if you cannot remember it.'
+    : 'We couldn’t create your account. Ensure all details are filled in, your network is stable, and try again. If the issue persists, please contact support.'
 }
 
 function formatTrialReminder(
