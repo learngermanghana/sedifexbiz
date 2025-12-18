@@ -505,6 +505,7 @@ export default function Products() {
           return product.reorderPoint ?? '—'
         },
         align: 'right',
+        hideBelow: 'sm',
         hideable: true,
       },
       {
@@ -523,6 +524,7 @@ export default function Products() {
           }
           return formatExpiry(product.expiryDate)
         },
+        hideBelow: 'sm',
         hideable: true,
       },
       {
