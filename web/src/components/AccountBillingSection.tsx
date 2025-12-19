@@ -19,8 +19,8 @@ type PlanOption = {
 }
 
 const PLANS: PlanOption[] = [
-  { id: 'starter-monthly', label: 'Starter – Monthly', amountGhs: 60 },
-  { id: 'starter-yearly', label: 'Starter – Yearly', amountGhs: 600 },
+  { id: 'starter-monthly', label: 'Starter – Monthly', amountGhs: 100 },
+  { id: 'starter-yearly', label: 'Starter – Yearly', amountGhs: 1100 },
 ]
 
 export const AccountBillingSection: React.FC<Props> = ({

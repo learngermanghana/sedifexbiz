@@ -73,7 +73,7 @@ vi.mock('../../lib/paystackClient', () => ({
       expect(mockStartPaystackCheckout).toHaveBeenCalledWith({
         email: 'owner@example.com',
         storeId: 'store-123',
-        amount: 600,
+        amount: 1100,
         plan: 'starter-yearly',
         redirectUrl: expect.stringContaining('/billing/verify'),
         metadata: { source: 'account-contract-billing' },
@@ -143,7 +143,7 @@ vi.mock('../../lib/paystackClient', () => ({
       expect(mockStartPaystackCheckout).toHaveBeenCalledWith({
         email: 'owner@example.com',
         storeId: 'store-123',
-        amount: 600,
+        amount: 1100,
         plan: 'starter-yearly',
         redirectUrl: expect.stringContaining('/billing/verify'),
         metadata: { source: 'account-contract-billing' },
