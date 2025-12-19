@@ -1,8 +1,8 @@
 // web/src/App.tsx
 import React, { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { Outlet, useLocation } from 'react-router-dom'
+import { onAuthStateChanged } from 'firebase/auth'
+import { Link, Outlet, useLocation } from 'react-router-dom'
 import './App.css'
 import './pwa'
 import { auth } from './firebase'
@@ -42,6 +42,7 @@ export default function App() {
   ]
 
   const isPublicRoute = publicPaths.some(path => location.pathname.startsWith(path))
+  const isAccountRoute = location.pathname.startsWith('/account')
 
   useEffect(() => {
     configureAuthPersistence(auth).catch(error => {
@@ -74,11 +75,6 @@ export default function App() {
           setStoreAccessError(message)
           localStorage.removeItem('storeId')
           localStorage.removeItem('workspaceSlug')
-          try {
-            await signOut(auth)
-          } catch (signOutError) {
-            console.error('Failed to sign out after store access failure:', signOutError)
-          }
         }
       }
 
@@ -111,7 +107,7 @@ export default function App() {
         </div>
       </main>
     )
-  } else if (storeAccessStatus === 'failed' && !isPublicRoute) {
+  } else if (storeAccessStatus === 'failed' && !isPublicRoute && !isAccountRoute) {
     content = (
       <main className="app" style={appStyle}>
         <div className="app__card">
@@ -120,7 +116,22 @@ export default function App() {
             {storeAccessError ??
               'Your Sedifex workspace is unavailable. Please upgrade your plan or contact support to restore access.'}
           </p>
-          <p className="form__hint">You have been signed out for security.</p>
+          <p className="form__hint">
+            Billing issues can block workspace access. Update your subscription to restore it.
+          </p>
+          <div className="flex gap-3 mt-4">
+            <Link className="button button--primary" to="/account">
+              Go to billing
+            </Link>
+            <a
+              className="button button--ghost"
+              href="https://paystack.com/pay/sedifex"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Pay on Paystack
+            </a>
+          </div>
         </div>
       </main>
     )
