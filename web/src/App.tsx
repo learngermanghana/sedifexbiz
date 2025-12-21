@@ -14,6 +14,7 @@ import { useOnboardingRedirect } from './hooks/useOnboardingRedirect'
 import { useSessionHeartbeat } from './hooks/useSessionHeartbeat'
 import { useQueueMessageToasts } from './hooks/useQueueMessageToasts'
 import { PwaProvider } from './context/PwaContext'
+import { CanonicalLink } from './components/CanonicalLink'
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -145,5 +146,10 @@ export default function App() {
     )
   }
 
-  return <PwaProvider isPwaApp={isPwaApp}>{content}</PwaProvider>
+  return (
+    <PwaProvider isPwaApp={isPwaApp}>
+      <CanonicalLink />
+      {content}
+    </PwaProvider>
+  )
 }

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { buildReceiptPdf, type ReceiptPayload } from '../utils/receipt'
+import { CanonicalLink } from '../components/CanonicalLink'
 
 function formatCurrency(amount: number | null | undefined): string {
   if (typeof amount !== 'number' || !Number.isFinite(amount)) return 'GHS 0.00'
@@ -67,6 +68,7 @@ export default function ReceiptView() {
 
   return (
     <div className="page">
+      <CanonicalLink />
       <h2>Receipt</h2>
       <p><strong>Sale ID:</strong> {receipt.saleId}</p>
       {receipt.companyName ? <p><strong>Company:</strong> {receipt.companyName}</p> : null}
