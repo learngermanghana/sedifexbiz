@@ -31,6 +31,7 @@ type StoreProfile = {
   name: string | null
   displayName: string | null
   email: string | null
+  ownerEmail: string | null // ✅ NEW: owner email (source of truth for billing)
   phone: string | null
   status: string | null
   contractStatus: string | null
@@ -126,10 +127,15 @@ function mapStoreSnapshot(
     (billingRaw.trialEndsAt as unknown) ?? (billingRaw.trialEnd as unknown)
   const trialEndsAt = isTimestamp(trialEndsRaw) ? trialEndsRaw : null
 
+  // ✅ Prefer stores.ownerEmail for billing; fallback to stores.email
+  const ownerEmail =
+    toNullableString((data as any).ownerEmail) ?? toNullableString(data.email)
+
   return {
     name: toNullableString(data.name),
     displayName: toNullableString(data.displayName),
     email: toNullableString(data.email),
+    ownerEmail,
     phone: toNullableString(data.phone),
     status: toNullableString(data.status),
     contractStatus,
@@ -168,9 +174,7 @@ function mapSubscriptionSnapshot(
     currentPeriodEnd: isTimestamp(data.currentPeriodEnd)
       ? data.currentPeriodEnd
       : null,
-    lastPaymentAt: isTimestamp(data.lastPaymentAt)
-      ? data.lastPaymentAt
-      : null,
+    lastPaymentAt: isTimestamp(data.lastPaymentAt) ? data.lastPaymentAt : null,
     receiptUrl: toNullableString(data.receiptUrl),
   }
 }
@@ -307,20 +311,10 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           return
         }
 
-        const storesRef = collection(db, 'stores')
-        const fallbackQuery = query(storesRef, where('ownerId', '==', storeId))
-        const fallbackSnapshot = await getDocs(fallbackQuery)
-        if (cancelled) return
-
-        const firstMatch = fallbackSnapshot.docs[0] ?? null
-        if (firstMatch) {
-          const mapped = mapStoreSnapshot(firstMatch)
-          setProfile(mapped)
-          setProfileError(null)
-        } else {
-          setProfile(null)
-          setProfileError('We could not find this workspace profile.')
-        }
+        // ✅ FIX: the old fallback query used ownerId==storeId (wrong)
+        // If stores/{storeId} doesn't exist, just show a clean error.
+        setProfile(null)
+        setProfileError('We could not find this workspace profile.')
       } catch (error) {
         if (cancelled) return
         console.error('Failed to load store profile', error)
@@ -442,10 +436,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     })
   }, [profile])
 
-  function updateProfileDraft(
-    key: keyof typeof profileDraft,
-    value: string,
-  ): void {
+  function updateProfileDraft(key: keyof typeof profileDraft, value: string): void {
     setProfileDraft(current => ({ ...current, [key]: value }))
   }
 
@@ -475,6 +466,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         displayName: normalizeInput(profileDraft.displayName),
         name: normalizeInput(profileDraft.displayName),
         email: normalizeInput(profileDraft.email),
+        // ✅ keep ownerEmail in sync so billing can always use it
+        ownerEmail: normalizeInput(profileDraft.email),
         phone: normalizeInput(profileDraft.phone),
         addressLine1: normalizeInput(profileDraft.addressLine1),
         addressLine2: normalizeInput(profileDraft.addressLine2),
@@ -492,12 +485,9 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           ? {
               ...current,
               displayName: payload.displayName,
-              name:
-                payload.name ??
-                current.displayName ??
-                current.name ??
-                null,
+              name: payload.name ?? current.displayName ?? current.name ?? null,
               email: payload.email,
+              ownerEmail: payload.ownerEmail ?? current.ownerEmail ?? payload.email ?? null,
               phone: payload.phone,
               addressLine1: payload.addressLine1,
               addressLine2: payload.addressLine2,
@@ -549,39 +539,26 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   }
 
   const isBusy =
-    membershipsLoading ||
-    profileLoading ||
-    subscriptionLoading ||
-    rosterLoading
+    membershipsLoading || profileLoading || subscriptionLoading || rosterLoading
 
   const contractStatus =
-    subscriptionProfile?.status ??
-    profile?.contractStatus ??
-    profile?.status ??
-    null
+    subscriptionProfile?.status ?? profile?.contractStatus ?? profile?.status ?? null
 
-  const billingPlan =
-    subscriptionProfile?.plan ?? profile?.billingPlan ?? null
+  const billingPlan = subscriptionProfile?.plan ?? profile?.billingPlan ?? null
 
   const isTrial = contractStatus === 'trial' || billingPlan === 'trial'
 
   const lastPaymentDisplay = formatTimestamp(
-    subscriptionProfile?.lastPaymentAt ??
-      subscriptionProfile?.currentPeriodStart ??
-      null,
+    subscriptionProfile?.lastPaymentAt ?? subscriptionProfile?.currentPeriodStart ?? null,
   )
 
-  const expiryDisplay = formatTimestamp(
-    subscriptionProfile?.currentPeriodEnd ?? null,
-  )
+  const expiryDisplay = formatTimestamp(subscriptionProfile?.currentPeriodEnd ?? null)
 
   // 🔹 Trial end (from store billing)
   const trialEndDisplay = formatTimestamp(profile?.trialEndsAt ?? null)
 
   // 🔹 Period start (from subscription)
-  const periodStartDisplay = formatTimestamp(
-    subscriptionProfile?.currentPeriodStart ?? null,
-  )
+  const periodStartDisplay = formatTimestamp(subscriptionProfile?.currentPeriodStart ?? null)
 
   async function handleSavePublicProfile() {
     if (!storeId) return
@@ -608,6 +585,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           country: profile?.country ?? null,
           phone: profile?.phone ?? null,
           email: profile?.email ?? null,
+          // ✅ keep ownerEmail aligned (optional but helpful)
+          ownerEmail: profile?.ownerEmail ?? profile?.email ?? null,
           updatedAt: Timestamp.now(),
         },
         { merge: true },
@@ -781,12 +760,10 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
 
       {profile && (
         <p className="account-overview__subtitle">
-          Workspace{' '}
-          <strong>{profile.displayName ?? profile.name ?? '—'}</strong>
+          Workspace <strong>{profile.displayName ?? profile.name ?? '—'}</strong>
           {activeMembership && (
             <>
-              {' · '}Your role{' '}
-              <strong>{isOwner ? 'Owner' : 'Staff'}</strong>
+              {' · '}Your role <strong>{isOwner ? 'Owner' : 'Staff'}</strong>
             </>
           )}
         </p>
@@ -802,8 +779,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
             You’re currently on a <strong>trial</strong> plan.
             {profile?.trialEndsAt && (
               <>
-                {' '}Your trial ends on{' '}
-                <strong>{trialEndDisplay}</strong>.
+                {' '}
+                Your trial ends on <strong>{trialEndDisplay}</strong>.
               </>
             )}
             {isOwner
@@ -829,10 +806,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       )}
 
       {profile && (
-        <section
-          aria-labelledby="account-overview-profile"
-          id="store-profile"
-        >
+        <section aria-labelledby="account-overview-profile" id="store-profile">
           <div className="account-overview__section-header">
             <h2 id="account-overview-profile">Store profile</h2>
 
@@ -909,9 +883,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.displayName}
-                    onChange={event =>
-                      updateProfileDraft('displayName', event.target.value)
-                    }
+                    onChange={event => updateProfileDraft('displayName', event.target.value)}
                     placeholder="e.g. Sedifex Coffee"
                     data-testid="account-profile-name"
                   />
@@ -922,9 +894,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="email"
                     value={profileDraft.email}
-                    onChange={event =>
-                      updateProfileDraft('email', event.target.value)
-                    }
+                    onChange={event => updateProfileDraft('email', event.target.value)}
                     placeholder="you@example.com"
                     data-testid="account-profile-email"
                   />
@@ -935,9 +905,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="tel"
                     value={profileDraft.phone}
-                    onChange={event =>
-                      updateProfileDraft('phone', event.target.value)
-                    }
+                    onChange={event => updateProfileDraft('phone', event.target.value)}
                     placeholder="+233 20 123 4567"
                     data-testid="account-profile-phone"
                   />
@@ -974,9 +942,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.city}
-                    onChange={event =>
-                      updateProfileDraft('city', event.target.value)
-                    }
+                    onChange={event => updateProfileDraft('city', event.target.value)}
                     placeholder="Nairobi"
                     data-testid="account-profile-city"
                   />
@@ -987,9 +953,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.region}
-                    onChange={event =>
-                      updateProfileDraft('region', event.target.value)
-                    }
+                    onChange={event => updateProfileDraft('region', event.target.value)}
                     placeholder="Nairobi County"
                     data-testid="account-profile-region"
                   />
@@ -1013,9 +977,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.country}
-                    onChange={event =>
-                      updateProfileDraft('country', event.target.value)
-                    }
+                    onChange={event => updateProfileDraft('country', event.target.value)}
                     placeholder="Kenya or Ghana"
                     data-testid="account-profile-country"
                   />
@@ -1024,14 +986,9 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
 
               <div className="account-overview__actions">
                 <p className="account-overview__hint">
-                  Update your workspace name and contact details for invoices and
-                  public listings.
+                  Update your workspace name and contact details for invoices and public listings.
                 </p>
-                <button
-                  type="submit"
-                  className="button button--primary"
-                  disabled={isSavingProfile}
-                >
+                <button type="submit" className="button button--primary" disabled={isSavingProfile}>
                   {isSavingProfile ? 'Saving…' : 'Save workspace details'}
                 </button>
               </div>
@@ -1053,9 +1010,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           {isOwner ? (
             <div className="account-overview__grid">
               <div>
-                <label
-                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-                >
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input
                     type="checkbox"
                     checked={isPublicDirectoryDraft}
@@ -1064,17 +1019,15 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <span>Show this store in the public Sedifex directory</span>
                 </label>
                 <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
-                  When enabled, your store will appear on stores.sedifex.com with your
-                  name, city, country, address and contact details.
+                  When enabled, your store will appear on stores.sedifex.com with your name, city,
+                  country, address and contact details.
                 </p>
 
                 {isPublicDirectoryDraft && (
                   <p style={{ fontSize: 12, color: '#374151', marginTop: 8 }}>
                     Preview your listing:{' '}
                     <a
-                      href={`https://stores.sedifex.com/${encodeURIComponent(
-                        storeId,
-                      )}`}
+                      href={`https://stores.sedifex.com/${encodeURIComponent(storeId)}`}
                       target="_blank"
                       rel="noreferrer noopener"
                     >
@@ -1085,13 +1038,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
               </div>
 
               <div>
-                <label
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 4,
-                  }}
-                >
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span>What your store does (short description)</span>
                   <textarea
                     rows={3}
@@ -1115,25 +1062,19 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
               </div>
             </div>
           ) : (
-            <p role="note">
-              Only the workspace owner can change the public directory settings.
-            </p>
+            <p role="note">Only the workspace owner can change the public directory settings.</p>
           )}
         </section>
       )}
 
-      {/* Billing summary */}
+      {/* ✅ Billing summary: prefer profile.ownerEmail, fallback to auth email */}
       <AccountBillingSection
         storeId={storeId}
-        ownerEmail={user?.email ?? null}
+        ownerEmail={profile?.ownerEmail ?? user?.email ?? null}
         isOwner={isOwner}
         contractStatus={contractStatus}
         billingPlan={billingPlan}
-        paymentProvider={
-          subscriptionProfile?.provider ??
-          profile?.paymentProvider ??
-          'Paystack'
-        }
+        paymentProvider={subscriptionProfile?.provider ?? profile?.paymentProvider ?? 'Paystack'}
         contractEndDate={expiryDisplay}
       />
 
@@ -1182,8 +1123,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         <div className="account-overview__section-header">
           <h2 id="account-overview-deletion">Data controls</h2>
           <p className="account-overview__subtitle">
-            Delete your workspace data instantly when you no longer want to keep
-            it.
+            Delete your workspace data instantly when you no longer want to keep it.
           </p>
         </div>
 
@@ -1191,9 +1131,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           <article className="account-overview__card">
             <h3>Delete workspace data</h3>
             <p className="account-overview__hint">
-              Remove products, customers, sales, expenses, team members, the
-              activity log, and your workspace profile from Sedifex. This
-              action cannot be undone.
+              Remove products, customers, sales, expenses, team members, the activity log, and your
+              workspace profile from Sedifex. This action cannot be undone.
             </p>
             <div className="account-overview__danger-actions">
               <button
@@ -1203,9 +1142,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                 disabled={!isOwner || isDeletingWorkspace}
                 data-testid="account-delete-data"
               >
-                {isDeletingWorkspace
-                  ? 'Deleting workspace data…'
-                  : 'Delete all workspace data'}
+                {isDeletingWorkspace ? 'Deleting workspace data…' : 'Delete all workspace data'}
               </button>
               {!isOwner && (
                 <p className="account-overview__hint" role="note">
@@ -1218,8 +1155,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           <article className="account-overview__card">
             <h3>Delete your account</h3>
             <p className="account-overview__hint">
-              Remove your Sedifex account and leave all workspaces. You may need
-              to sign in again before deleting. This action cannot be undone.
+              Remove your Sedifex account and leave all workspaces. You may need to sign in again
+              before deleting. This action cannot be undone.
             </p>
             <div className="account-overview__danger-actions">
               <button
@@ -1238,7 +1175,6 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
               )}
             </div>
           </article>
-
         </div>
       </section>
 
@@ -1254,8 +1190,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           >
             <p className="account-overview__eyebrow">Action needed</p>
             <p className="account-overview__subtitle">
-              These people signed up with your Store ID. Approve to grant access or
-              reject to block it.
+              These people signed up with your Store ID. Approve to grant access or reject to block
+              it.
             </p>
             <div className="account-overview__approvals">
               {pendingMembers.map(member => (
@@ -1300,30 +1236,20 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           !rosterLoading && roster.length > 0 ? (
             <div className="account-overview__actions">
               <p className="account-overview__subtitle">
-                Team members are saved in Firebase. Edit existing teammates
-                directly.
+                Team members are saved in Firebase. Edit existing teammates directly.
               </p>
-              <Link
-                to="/staff"
-                className="button button--secondary"
-                data-testid="account-edit-team"
-              >
+              <Link to="/staff" className="button button--secondary" data-testid="account-edit-team">
                 Edit team members
               </Link>
             </div>
           ) : (
-            <p role="note">
-              Team members will appear here once they are available.
-            </p>
+            <p role="note">Team members will appear here once they are available.</p>
           )
         ) : (
           <p role="note">You have read-only access to the team roster.</p>
         )}
 
-        <table
-          className="account-overview__roster"
-          aria-label="Team roster"
-        >
+        <table className="account-overview__roster" aria-label="Team roster">
           <thead>
             <tr>
               <th scope="col">Email</th>
@@ -1352,10 +1278,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <td>{formatValue(member.email)}</td>
                   <td>{member.role === 'owner' ? 'Owner' : 'Staff'}</td>
                   <td>
-                    <span
-                      className="account-overview__status"
-                      data-variant={member.status ?? 'active'}
-                    >
+                    <span className="account-overview__status" data-variant={member.status ?? 'active'}>
                       {formatStatus(member.status)}
                     </span>
                   </td>
