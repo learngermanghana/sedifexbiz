@@ -1,9 +1,7 @@
 // web/src/api/paystack.ts
-import { getFunctions, httpsCallable } from 'firebase/functions'
-import { app } from '../firebase'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
-
-const functions = getFunctions(app)
 
 type CreateCheckoutResponse = {
   ok: boolean
