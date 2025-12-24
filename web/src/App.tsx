@@ -126,11 +126,19 @@ export default function App() {
             </Link>
             <a
               className="button button--ghost"
-              href="https://paystack.com/pay/sedifex"
+              href="https://paystack.shop/pay/pa5tmww0ml"
               target="_blank"
               rel="noreferrer"
             >
-              Pay on Paystack
+              Pay yearly
+            </a>
+            <a
+              className="button button--ghost"
+              href="https://paystack.shop/pay/opd2z7tow6"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Pay monthly
             </a>
           </div>
         </div>
