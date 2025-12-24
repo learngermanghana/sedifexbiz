@@ -1588,17 +1588,21 @@ function resolvePaystackPlanCode(
 
 export const createPaystackCheckout = functions.https.onCall(
   async (data: unknown, context: functions.https.CallableContext) => {
-    assertOwnerAccess(context)
+    // ✅ Don’t rely on custom claims here (tokens may be stale after signup)
+    assertAuthenticated(context)
+
     const paystackConfig = ensurePaystackConfig()
 
     const uid = context.auth!.uid
     const token = context.auth!.token as Record<string, unknown>
-    const tokenEmail = typeof token.email === 'string' ? (token.email as string) : null
+    const tokenEmail =
+      typeof token.email === 'string' ? (token.email as string).trim().toLowerCase() : null
 
     const payload = (data ?? {}) as CreateCheckoutPayload
     const requestedStoreId =
       typeof payload.storeId === 'string' ? (payload.storeId as string).trim() : ''
 
+    // Resolve storeId (same logic you had)
     const memberRef = db.collection('teamMembers').doc(uid)
     const memberSnap = await memberRef.get()
     const memberData = (memberSnap.data() ?? {}) as Record<string, unknown>
@@ -1606,29 +1610,47 @@ export const createPaystackCheckout = functions.https.onCall(
     let resolvedStoreId = ''
     if (requestedStoreId) {
       resolvedStoreId = requestedStoreId
-    } else if (
-      typeof memberData.storeId === 'string' &&
-      (memberData.storeId as string).trim() !== ''
-    ) {
-      resolvedStoreId = memberData.storeId as string
+    } else if (typeof memberData.storeId === 'string' && memberData.storeId.trim() !== '') {
+      resolvedStoreId = memberData.storeId.trim()
     } else {
       resolvedStoreId = uid
     }
 
     const storeId = resolvedStoreId
+
+    // ✅ Strong ownership check (Firestore truth)
+    await verifyOwnerForStore(uid, storeId)
+
     const storeRef = db.collection('stores').doc(storeId)
     const storeSnap = await storeRef.get()
     const storeData = (storeSnap.data() ?? {}) as any
     const billing = (storeData.billing || {}) as any
 
+    // ✅ Better email resolution:
+    // 1) payload.email (if provided)
+    // 2) token email
+    // 3) store ownerEmail/email
+    // 4) teamMembers.firstSignupEmail
     const emailInput =
-      typeof payload.email === 'string' ? (payload.email as string).trim().toLowerCase() : ''
-    const email = emailInput || tokenEmail || storeData.ownerEmail || null
+      typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : ''
+
+    const memberFirstSignupEmail =
+      typeof memberData.firstSignupEmail === 'string'
+        ? (memberData.firstSignupEmail as string).trim().toLowerCase()
+        : null
+
+    const email =
+      emailInput ||
+      tokenEmail ||
+      (typeof storeData.ownerEmail === 'string' ? storeData.ownerEmail.trim().toLowerCase() : '') ||
+      (typeof storeData.email === 'string' ? storeData.email.trim().toLowerCase() : '') ||
+      memberFirstSignupEmail ||
+      null
 
     if (!email) {
       throw new functions.https.HttpsError(
         'invalid-argument',
-        'Missing owner email. Please sign in again.',
+        'Missing email. Please add your email in Account → Workspace details, then try again.',
       )
     }
 
@@ -1647,14 +1669,13 @@ export const createPaystackCheckout = functions.https.onCall(
           : 100
 
     const amountMinorUnits = toMinorUnits(amountGhs)
-
     const reference = `${storeId}_${Date.now()}`
 
     const callbackUrl =
       typeof payload.redirectUrl === 'string'
-        ? (payload.redirectUrl as string)
+        ? payload.redirectUrl
         : typeof payload.returnUrl === 'string'
-          ? (payload.returnUrl as string)
+          ? payload.returnUrl
           : undefined
 
     const metadataIn =
@@ -1683,61 +1704,46 @@ export const createPaystackCheckout = functions.https.onCall(
 
     let responseJson: any
     try {
-      const response = await fetch(
-        `${PAYSTACK_BASE_URL}/transaction/initialize`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${paystackConfig.secret}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
+      const response = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${paystackConfig.secret}`,
+          'Content-Type': 'application/json',
         },
-      )
+        body: JSON.stringify(body),
+      })
 
       responseJson = await response.json()
 
       if (!response.ok || !responseJson.status) {
         console.error('[paystack] initialize failed', responseJson)
-        throw new functions.https.HttpsError(
-          'unknown',
-          'Unable to start checkout with Paystack.',
-        )
+        throw new functions.https.HttpsError('unknown', 'Unable to start checkout with Paystack.')
       }
     } catch (error) {
       console.error('[paystack] initialize error', error)
-      throw new functions.https.HttpsError(
-        'unknown',
-        'Unable to start checkout with Paystack.',
-      )
+      throw new functions.https.HttpsError('unknown', 'Unable to start checkout with Paystack.')
     }
 
     const authUrl =
-      responseJson.data &&
-      typeof responseJson.data.authorization_url === 'string'
+      responseJson?.data && typeof responseJson.data.authorization_url === 'string'
         ? responseJson.data.authorization_url
         : null
 
     if (!authUrl) {
-      throw new functions.https.HttpsError(
-        'unknown',
-        'Paystack did not return a valid authorization URL.',
-      )
+      throw new functions.https.HttpsError('unknown', 'Paystack did not return a valid authorization URL.')
     }
 
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
-    // Keep store billing up to date (used by the PWA + access checks).
     await storeRef.set(
       {
         billing: {
           ...(billing || {}),
           provider: 'paystack',
           planKey,
-          status:
-            typeof billing.status === 'string' && billing.status === 'active'
-              ? billing.status
-              : 'pending',
+          status: typeof billing.status === 'string' && billing.status === 'active'
+            ? billing.status
+            : 'pending',
           currency: paystackConfig.currency,
           lastCheckoutUrl: authUrl,
           lastCheckoutAt: timestamp,
@@ -1750,26 +1756,22 @@ export const createPaystackCheckout = functions.https.onCall(
       { merge: true },
     )
 
-    // Also write the subscriptions doc used by the billing UI + unlock check.
-    await db
-      .collection('subscriptions')
-      .doc(storeId)
-      .set(
-        {
-          provider: 'paystack',
-          status: 'pending',
-          plan: planKey,
-          reference,
-          amount: amountGhs,
-          currency: paystackConfig.currency,
-          email,
-          lastCheckoutUrl: authUrl,
-          lastCheckoutAt: timestamp,
-          createdAt: timestamp,
-          createdBy: uid,
-        },
-        { merge: true },
-      )
+    await db.collection('subscriptions').doc(storeId).set(
+      {
+        provider: 'paystack',
+        status: 'pending',
+        plan: planKey,
+        reference,
+        amount: amountGhs,
+        currency: paystackConfig.currency,
+        email,
+        lastCheckoutUrl: authUrl,
+        lastCheckoutAt: timestamp,
+        createdAt: timestamp,
+        createdBy: uid,
+      },
+      { merge: true },
+    )
 
     return {
       ok: true,
@@ -1780,8 +1782,9 @@ export const createPaystackCheckout = functions.https.onCall(
   },
 )
 
-// 🔹 Alias so the frontend name still works
+// Alias remains valid
 export const createCheckout = createPaystackCheckout
+
 
 /** ============================================================================
  *  HTTP: handlePaystackWebhook
