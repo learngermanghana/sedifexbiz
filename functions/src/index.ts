@@ -39,8 +39,6 @@ type InitializeStorePayload = {
   storeId?: unknown
 }
 
-
-
 type ManageStaffPayload = {
   storeId?: unknown
   email?: unknown
@@ -354,7 +352,6 @@ function normalizeStoreProfilePayload(profile: StoreProfilePayload | undefined) 
   return { phone, ownerName, businessName, country, city, addressLine1 }
 }
 
-
 /** ============================================================================
  *  AUTH TRIGGER: seed teamMembers on first user creation
  * ==========================================================================*/
@@ -585,7 +582,6 @@ export const initializeStore = functions.https.onCall(
     }
   },
 )
-
 
 /** ============================================================================
  *  CALLABLE: resolveStoreAccess
@@ -983,7 +979,6 @@ export const manageStaffAccount = functions.https.onCall(
     }
   },
 )
-
 
 /** ============================================================================
  *  CALLABLE: commitSale (staff)
@@ -1968,5 +1963,3 @@ export const handlePaystackWebhook = functions.https.onRequest(
     }
   }
 )
-
-
