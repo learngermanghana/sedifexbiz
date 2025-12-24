@@ -52,7 +52,12 @@ type ManageStaffPayload = {
 type BillingStatus = 'trial' | 'active' | 'past_due'
 
 type CreateCheckoutPayload = {
+  email?: unknown
   storeId?: unknown
+  amount?: unknown
+  plan?: unknown
+  planId?: unknown
+  metadata?: unknown
   returnUrl?: unknown
   redirectUrl?: unknown
 }
@@ -1480,25 +1485,50 @@ export const receiveStock = functions.https.onCall(
 
 const PAYSTACK_BASE_URL = 'https://api.paystack.co'
 const PAYSTACK_SECRET_KEY = defineString('PAYSTACK_SECRET_KEY')
+const PAYSTACK_PUBLIC_KEY = defineString('PAYSTACK_PUBLIC_KEY')
+
+// Legacy: was a single plan code for all checkouts. Kept for backwards compatibility.
 const PAYSTACK_STANDARD_PLAN_CODE = defineString('PAYSTACK_STANDARD_PLAN_CODE')
+
+// New: map frontend plan keys -> Paystack plan codes (optional).
+const PAYSTACK_STARTER_MONTHLY_PLAN_CODE = defineString('PAYSTACK_STARTER_MONTHLY_PLAN_CODE')
+const PAYSTACK_STARTER_YEARLY_PLAN_CODE = defineString('PAYSTACK_STARTER_YEARLY_PLAN_CODE')
+
 const PAYSTACK_CURRENCY = defineString('PAYSTACK_CURRENCY')
+
+type PaystackPlanKey = 'starter-monthly' | 'starter-yearly' | string
 
 let paystackConfigLogged = false
 function getPaystackConfig() {
   const secret = PAYSTACK_SECRET_KEY.value()
-  const plan = PAYSTACK_STANDARD_PLAN_CODE.value()
+  const publicKey = PAYSTACK_PUBLIC_KEY.value()
   const currency = PAYSTACK_CURRENCY.value() || 'GHS'
+
+  // Plan codes are OPTIONAL: if missing we fall back to one-off payments using `amount`.
+  const starterMonthly =
+    PAYSTACK_STARTER_MONTHLY_PLAN_CODE.value() || PAYSTACK_STANDARD_PLAN_CODE.value()
+  const starterYearly = PAYSTACK_STARTER_YEARLY_PLAN_CODE.value()
 
   if (!paystackConfigLogged) {
     console.log('[paystack] startup config', {
       hasSecret: !!secret,
-      hasPlan: !!plan,
+      hasPublicKey: !!publicKey,
       currency,
+      hasStarterMonthlyPlan: !!starterMonthly,
+      hasStarterYearlyPlan: !!starterYearly,
     })
     paystackConfigLogged = true
   }
 
-  return { secret, plan, currency }
+  return {
+    secret,
+    publicKey,
+    currency,
+    plans: {
+      'starter-monthly': starterMonthly,
+      'starter-yearly': starterYearly,
+    } as Record<string, string | undefined>,
+  }
 }
 
 function ensurePaystackConfig() {
@@ -1512,15 +1542,49 @@ function ensurePaystackConfig() {
     )
   }
 
-  if (!config.plan) {
-    console.error('[paystack] Missing PAYSTACK_STANDARD_PLAN_CODE env')
-    throw new functions.https.HttpsError(
-      'failed-precondition',
-      'Subscription plan is not configured. Please contact support.',
-    )
+  return config
+}
+
+function toMinorUnits(amount: number) {
+  // Paystack expects amounts in minor units (pesewas for GHS).
+  return Math.round(Math.abs(amount) * 100)
+}
+
+function resolvePlanKey(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  return trimmed ? trimmed : null
+}
+
+function resolvePlanMonths(planKey: string | null): number {
+  if (!planKey) return 1
+  const lower = planKey.toLowerCase()
+  if (lower.includes('year')) return 12
+  if (lower.includes('annual')) return 12
+  if (lower.includes('month')) return 1
+  return 1
+}
+
+function addMonths(base: Date, months: number) {
+  const d = new Date(base.getTime())
+  const day = d.getDate()
+  d.setMonth(d.getMonth() + months)
+
+  // Handle month rollover (e.g. Jan 31 + 1 month).
+  if (d.getDate() < day) {
+    d.setDate(0)
   }
 
-  return config
+  return d
+}
+
+function resolvePaystackPlanCode(
+  planKey: PaystackPlanKey | null,
+  config: ReturnType<typeof getPaystackConfig>,
+) {
+  if (!planKey) return undefined
+  const key = String(planKey).toLowerCase()
+  return config.plans[key]
 }
 
 /** ============================================================================
@@ -1534,12 +1598,11 @@ export const createPaystackCheckout = functions.https.onCall(
 
     const uid = context.auth!.uid
     const token = context.auth!.token as Record<string, unknown>
-    const email =
-      typeof token.email === 'string' ? (token.email as string) : null
+    const tokenEmail = typeof token.email === 'string' ? (token.email as string) : null
 
     const payload = (data ?? {}) as CreateCheckoutPayload
     const requestedStoreId =
-      typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
+      typeof payload.storeId === 'string' ? (payload.storeId as string).trim() : ''
 
     const memberRef = db.collection('teamMembers').doc(uid)
     const memberSnap = await memberRef.get()
@@ -1550,7 +1613,7 @@ export const createPaystackCheckout = functions.https.onCall(
       resolvedStoreId = requestedStoreId
     } else if (
       typeof memberData.storeId === 'string' &&
-      memberData.storeId.trim() !== ''
+      (memberData.storeId as string).trim() !== ''
     ) {
       resolvedStoreId = memberData.storeId as string
     } else {
@@ -1563,25 +1626,64 @@ export const createPaystackCheckout = functions.https.onCall(
     const storeData = (storeSnap.data() ?? {}) as any
     const billing = (storeData.billing || {}) as any
 
-    // Amount is in minor units (pesewas). 1000 = GHS 10.00
-    const amountMinorUnits = 1000
+    const emailInput =
+      typeof payload.email === 'string' ? (payload.email as string).trim().toLowerCase() : ''
+    const email = emailInput || tokenEmail || storeData.ownerEmail || null
+
+    if (!email) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Missing owner email. Please sign in again.',
+      )
+    }
+
+    const planKey =
+      resolvePlanKey(payload.plan) ||
+      resolvePlanKey(payload.planId) ||
+      resolvePlanKey((payload as any).planKey) ||
+      'starter-monthly'
+
+    const amountInput = Number((payload as any).amount)
+    const amountGhs =
+      Number.isFinite(amountInput) && amountInput > 0
+        ? amountInput
+        : planKey.toLowerCase().includes('year')
+          ? 1100
+          : 100
+
+    const amountMinorUnits = toMinorUnits(amountGhs)
+
+    const reference = `${storeId}_${Date.now()}`
+
+    const callbackUrl =
+      typeof payload.redirectUrl === 'string'
+        ? (payload.redirectUrl as string)
+        : typeof payload.returnUrl === 'string'
+          ? (payload.returnUrl as string)
+          : undefined
+
+    const metadataIn =
+      payload.metadata && typeof payload.metadata === 'object'
+        ? (payload.metadata as Record<string, any>)
+        : {}
 
     const body: any = {
-      email: email || storeData.ownerEmail || undefined,
+      email,
       amount: amountMinorUnits,
       currency: paystackConfig.currency,
-      callback_url:
-        typeof payload.redirectUrl === 'string'
-          ? payload.redirectUrl
-          : typeof payload.returnUrl === 'string'
-            ? payload.returnUrl
-            : undefined,
+      reference,
+      callback_url: callbackUrl,
       metadata: {
         storeId,
         userId: uid,
-        planKey: 'standard',
+        planKey,
+        ...metadataIn,
       },
-      plan: paystackConfig.plan,
+    }
+
+    const planCode = resolvePaystackPlanCode(planKey, paystackConfig)
+    if (planCode) {
+      body.plan = planCode
     }
 
     let responseJson: any
@@ -1630,24 +1732,57 @@ export const createPaystackCheckout = functions.https.onCall(
 
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
+    // Keep store billing up to date (used by the PWA + access checks).
     await storeRef.set(
       {
         billing: {
           ...(billing || {}),
-          planKey: billing.planKey || 'standard',
-          status: billing.status || 'trial',
+          provider: 'paystack',
+          planKey,
+          status:
+            typeof billing.status === 'string' && billing.status === 'active'
+              ? billing.status
+              : 'pending',
+          currency: paystackConfig.currency,
           lastCheckoutUrl: authUrl,
           lastCheckoutAt: timestamp,
+          lastChargeReference: reference,
         },
+        paymentProvider: 'paystack',
+        paymentStatus: 'pending',
+        contractStatus: 'pending',
       },
       { merge: true },
     )
 
+    // Also write the subscriptions doc used by the billing UI + unlock check.
+    await db
+      .collection('subscriptions')
+      .doc(storeId)
+      .set(
+        {
+          provider: 'paystack',
+          status: 'pending',
+          plan: planKey,
+          reference,
+          amount: amountGhs,
+          currency: paystackConfig.currency,
+          email,
+          lastCheckoutUrl: authUrl,
+          lastCheckoutAt: timestamp,
+          createdAt: timestamp,
+          createdBy: uid,
+        },
+        { merge: true },
+      )
+
     return {
       ok: true,
       authorizationUrl: authUrl,
+      reference,
+      publicKey: paystackConfig.publicKey || null,
     }
-  }
+  },
 )
 
 // 🔹 Alias so the frontend name still works
@@ -1664,7 +1799,9 @@ export const handlePaystackWebhook = functions.https.onRequest(
       return
     }
 
-    const { secret: paystackSecret, plan: paystackPlanCode } = getPaystackConfig()
+    const paystackConfig = getPaystackConfig()
+
+    const paystackSecret = paystackConfig.secret
 
     if (!paystackSecret) {
       console.error('[paystack] Missing PAYSTACK_SECRET_KEY for webhook')
@@ -1717,18 +1854,107 @@ export const handlePaystackWebhook = functions.https.onRequest(
           await storeRef.set(
             {
               billing: {
-                planKey: 'standard',
+                provider: 'paystack',
+                planKey:
+                  resolvePlanKey(metadata.planKey) ||
+                  resolvePlanKey(metadata.plan) ||
+                  resolvePlanKey(metadata.planId) ||
+                  'starter-monthly',
                 status: 'active',
+                currency: paystackConfig.currency,
                 paystackCustomerCode: customer.customer_code || null,
                 paystackSubscriptionCode:
                   subscription.subscription_code || null,
-                paystackPlanCode: plan.plan_code || paystackPlanCode,
-                currentPeriodEnd: data.paid_at || null,
+                paystackPlanCode:
+                  (plan && typeof plan.plan_code === 'string' && plan.plan_code) ||
+                  resolvePaystackPlanCode(
+                    resolvePlanKey(metadata.planKey) ||
+                      resolvePlanKey(metadata.plan) ||
+                      resolvePlanKey(metadata.planId),
+                    paystackConfig,
+                  ) ||
+                  null,
+                currentPeriodStart: admin.firestore.Timestamp.fromDate(
+                  new Date(
+                    typeof data.paid_at === 'string' ? data.paid_at : Date.now(),
+                  ),
+                ),
+                currentPeriodEnd: admin.firestore.Timestamp.fromDate(
+                  addMonths(
+                    new Date(
+                      typeof data.paid_at === 'string' ? data.paid_at : Date.now(),
+                    ),
+                    resolvePlanMonths(
+                      resolvePlanKey(metadata.planKey) ||
+                        resolvePlanKey(metadata.plan) ||
+                        resolvePlanKey(metadata.planId),
+                    ),
+                  ),
+                ),
+                lastPaymentAt: admin.firestore.Timestamp.fromDate(
+                  new Date(
+                    typeof data.paid_at === 'string' ? data.paid_at : Date.now(),
+                  ),
+                ),
                 lastEventAt: timestamp,
                 lastChargeReference: data.reference || null,
+                amountPaid:
+                  typeof data.amount === 'number' ? data.amount / 100 : null,
               },
               paymentStatus: 'active',
               contractStatus: 'active',
+              contractEnd: admin.firestore.Timestamp.fromDate(
+                addMonths(
+                  new Date(
+                    typeof data.paid_at === 'string' ? data.paid_at : Date.now(),
+                  ),
+                  resolvePlanMonths(
+                    resolvePlanKey(metadata.planKey) ||
+                      resolvePlanKey(metadata.plan) ||
+                      resolvePlanKey(metadata.planId),
+                  ),
+                ),
+              ),
+            },
+            { merge: true },
+          )
+
+          await db.collection('subscriptions').doc(storeId).set(
+            {
+              provider: 'paystack',
+              status: 'active',
+              plan:
+                resolvePlanKey(metadata.planKey) ||
+                resolvePlanKey(metadata.plan) ||
+                resolvePlanKey(metadata.planId) ||
+                'starter-monthly',
+              reference: data.reference || null,
+              amount: typeof data.amount === 'number' ? data.amount / 100 : null,
+              currency: paystackConfig.currency,
+              currentPeriodStart: admin.firestore.Timestamp.fromDate(
+                new Date(
+                  typeof data.paid_at === 'string' ? data.paid_at : Date.now(),
+                ),
+              ),
+              currentPeriodEnd: admin.firestore.Timestamp.fromDate(
+                addMonths(
+                  new Date(
+                    typeof data.paid_at === 'string' ? data.paid_at : Date.now(),
+                  ),
+                  resolvePlanMonths(
+                    resolvePlanKey(metadata.planKey) ||
+                      resolvePlanKey(metadata.plan) ||
+                      resolvePlanKey(metadata.planId),
+                  ),
+                ),
+              ),
+              lastPaymentAt: admin.firestore.Timestamp.fromDate(
+                new Date(
+                  typeof data.paid_at === 'string' ? data.paid_at : Date.now(),
+                ),
+              ),
+              updatedAt: timestamp,
+              lastEvent: eventName,
             },
             { merge: true },
           )
