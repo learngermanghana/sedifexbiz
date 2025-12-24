@@ -632,6 +632,12 @@ body {
   font-size: 15px;
 }
 
+.app__trial-note {
+  margin: 10px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
 .app__highlight {
   color: var(--color-accent-start);
   font-weight: 600;

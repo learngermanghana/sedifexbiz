@@ -550,6 +550,9 @@ export default function AuthPage() {
               <p className="app__tagline">
                 Sell faster. <span className="app__highlight">Count smarter.</span>
               </p>
+              <p className="app__trial-note">
+                Start with a free 14-day trial—no payment required until you’re ready.
+              </p>
             </div>
           </div>
 
