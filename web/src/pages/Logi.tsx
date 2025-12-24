@@ -88,7 +88,8 @@ export default function Logi() {
           <p className="logi__subtitle">
             We pull non-sensitive details from your store profile so partners can see where you operate
             without exposing internal contact or billing data. Updates happen automatically after
-            sign-up or whenever your store profile changes.
+            sign-up or whenever your store profile changes. Start with a free 14-day trial before
+            adding payment details.
           </p>
         </div>
         <div className="logi__hero-figure">
