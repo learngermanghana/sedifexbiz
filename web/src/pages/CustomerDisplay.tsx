@@ -19,11 +19,13 @@ type DisplayTotals = {
 }
 
 type DisplaySession = {
-  items: DisplayItem[]
-  totals: DisplayTotals
+  items?: DisplayItem[]
+  totals?: DisplayTotals
   updatedAt?: any
   cashierName?: string | null
   storeName?: string | null
+  pairCode?: string | null
+  status?: 'active' | 'inactive'
 }
 
 function formatCurrency(amount: number | null | undefined): string {
@@ -50,6 +52,7 @@ export default function CustomerDisplay() {
   const [searchParams] = useSearchParams()
   const storeId = searchParams.get('storeId')?.trim() || ''
   const sessionId = searchParams.get('sessionId')?.trim() || ''
+  const pairCode = searchParams.get('code')?.trim() || ''
 
   const [session, setSession] = useState<DisplaySession | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -73,14 +76,27 @@ export default function CustomerDisplay() {
           setError('Session not found. Ask the cashier to start a new customer display.')
           return
         }
+        const data = snap.data() as DisplaySession
+        if (data.pairCode) {
+          if (!pairCode) {
+            setSession(null)
+            setError('Missing pairing code. Scan the cashier’s QR code again.')
+            return
+          }
+          if (pairCode !== data.pairCode) {
+            setSession(null)
+            setError('Pairing code does not match. Ask the cashier to restart the display.')
+            return
+          }
+        }
         setError(null)
-        setSession(snap.data() as DisplaySession)
+        setSession(data)
       },
       () => {
         setError('Unable to connect to the session. Check your connection and try again.')
       },
     )
-  }, [sessionId, storeId])
+  }, [pairCode, sessionId, storeId])
 
   if (error) {
     return (
@@ -104,6 +120,9 @@ export default function CustomerDisplay() {
     )
   }
 
+  const items = session.items ?? []
+  const totals = session.totals ?? { subTotal: 0, taxTotal: 0, discount: 0, total: 0 }
+
   return (
     <main className="customer-display">
       <div className="customer-display__card">
@@ -114,18 +133,19 @@ export default function CustomerDisplay() {
           </div>
           <div className="customer-display__meta">
             {session.cashierName ? <p>Cashier: {session.cashierName}</p> : null}
+            {session.pairCode ? <p>Pairing code: {session.pairCode}</p> : null}
             {updatedAtLabel ? <p>Updated: {updatedAtLabel}</p> : null}
           </div>
         </div>
 
-        {session.items.length ? (
+        {items.length ? (
           <div className="customer-display__table">
             <div className="customer-display__row customer-display__row--head">
               <span>Item</span>
               <span>Qty</span>
               <span>Amount</span>
             </div>
-            {session.items.map((item, index) => (
+            {items.map((item, index) => (
               <div className="customer-display__row" key={`${item.name}-${index}`}>
                 <div className="customer-display__item">
                   <span className="customer-display__item-name">{item.name}</span>
@@ -143,19 +163,19 @@ export default function CustomerDisplay() {
         <div className="customer-display__totals">
           <div className="customer-display__total-row">
             <span>Subtotal</span>
-            <span>{formatCurrency(session.totals.subTotal)}</span>
+            <span>{formatCurrency(totals.subTotal)}</span>
           </div>
           <div className="customer-display__total-row">
             <span>VAT / Tax</span>
-            <span>{formatCurrency(session.totals.taxTotal)}</span>
+            <span>{formatCurrency(totals.taxTotal)}</span>
           </div>
           <div className="customer-display__total-row">
             <span>Discount</span>
-            <span>{formatCurrency(session.totals.discount)}</span>
+            <span>{formatCurrency(totals.discount)}</span>
           </div>
           <div className="customer-display__total-row customer-display__total-row--grand">
             <strong>Total</strong>
-            <strong>{formatCurrency(session.totals.total)}</strong>
+            <strong>{formatCurrency(totals.total)}</strong>
           </div>
         </div>
       </div>
