@@ -26,6 +26,7 @@ import AiAdvisor from './pages/AiAdvisor'
 
 // ✅ NEW: public receipt page used by QR/share
 import ReceiptView from './pages/ReceiptView'
+import CustomerDisplay from './pages/CustomerDisplay'
 
 import PrivacyPage from './pages/legal/PrivacyPage'
 import CookiesPage from './pages/legal/CookiesPage'
@@ -36,6 +37,8 @@ import { ToastProvider } from './components/ToastProvider'
 const router = createBrowserRouter([
   // Public receipt route bypasses App-level redirects
   { path: '/receipt/:saleId', element: <ReceiptView /> },
+  { path: '/customer-display', element: <CustomerDisplay /> },
+  { path: '/display', element: <CustomerDisplay /> },
 
   {
     path: '/',

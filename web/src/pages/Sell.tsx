@@ -81,6 +81,28 @@ type Customer = {
 
 type CustomerMode = 'walk_in' | 'named'
 
+type DisplayItem = {
+  name: string
+  qty: number
+  price: number
+  lineTotal: number
+}
+
+type DisplayTotals = {
+  subTotal: number
+  taxTotal: number
+  discount: number
+  total: number
+}
+
+type DisplaySessionPayload = {
+  items: DisplayItem[]
+  totals: DisplayTotals
+  updatedAt: ReturnType<typeof serverTimestamp>
+  cashierName: string | null
+  storeName: string | null
+}
+
 function toDate(value: unknown): Date | null {
   if (!value) return null
   try {
@@ -155,6 +177,19 @@ function buildProductMetadata(product: Product): string[] {
 
 function createTenderId() {
   return Math.random().toString(36).slice(2, 10)
+}
+
+function createDisplaySessionId() {
+  return Math.random().toString(36).slice(2, 12)
+}
+
+function createPairCode(length = 6) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let result = ''
+  for (let i = 0; i < length; i += 1) {
+    result += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return result
 }
 
 /** ✅ iOS/iPadOS detection (for Share Sheet button label + behavior) */
@@ -244,6 +279,10 @@ export default function Sell() {
   const [receiptSize, setReceiptSize] = useState<EscPosReceiptSize>('80mm')
   const [escposMode, setEscposMode] = useState<'usb' | 'bluetooth' | 'network'>('usb')
   const [escposStatus, setEscposStatus] = useState<string | null>(null)
+  const [displaySessionId, setDisplaySessionId] = useState<string | null>(null)
+  const [displayPairCode, setDisplayPairCode] = useState<string | null>(null)
+  const [displayQrSvg, setDisplayQrSvg] = useState<string | null>(null)
+  const [displayStatus, setDisplayStatus] = useState<string | null>(null)
   const [escposUsb, setEscposUsb] = useState<{
     device: USBDevice
     interfaceNumber: number
@@ -562,6 +601,17 @@ export default function Sell() {
     return { discountAmount: amount, discountError: error, totalAfterDiscount: finalTotal }
   }, [discountInput, grossTotal])
 
+  const displayLink = useMemo(() => {
+    if (!displaySessionId || !activeStoreId) return null
+    const base = `${window.location.origin}/display`
+    const params = new URLSearchParams({
+      storeId: activeStoreId,
+      sessionId: displaySessionId,
+    })
+    if (displayPairCode) params.set('code', displayPairCode)
+    return `${base}?${params.toString()}`
+  }, [activeStoreId, displayPairCode, displaySessionId])
+
   const primaryAmountPaid = useMemo(() => {
     const raw = Number(amountPaidInput)
     if (!Number.isFinite(raw) || raw < 0) return 0
@@ -591,6 +641,69 @@ export default function Sell() {
     return totalAmountPaid < totalAfterDiscount
   }, [totalAfterDiscount, totalAmountPaid])
 
+  useEffect(() => {
+    if (!displayLink) {
+      setDisplayQrSvg(null)
+      return
+    }
+
+    try {
+      const writer = new BrowserQRCodeSvgWriter()
+      const encodeHints = new Map<EncodeHintType, unknown>()
+      encodeHints.set(EncodeHintType.MARGIN, 2)
+      encodeHints.set(EncodeHintType.ERROR_CORRECTION, QRCodeDecoderErrorCorrectionLevel.H)
+
+      const svg = writer.write(displayLink, 200, 200, encodeHints)
+      svg.setAttribute('role', 'img')
+      svg.setAttribute('aria-label', 'Customer display QR code')
+      svg.setAttribute('width', '200')
+      svg.setAttribute('height', '200')
+      svg.setAttribute('viewBox', '0 0 200 200')
+      setDisplayQrSvg(svg.outerHTML)
+    } catch (error) {
+      console.warn('[sell] Failed to build display QR code', error)
+      setDisplayQrSvg(null)
+    }
+  }, [displayLink])
+
+  useEffect(() => {
+    if (!displaySessionId || !activeStoreId) return
+
+    const payload: DisplaySessionPayload = {
+      items: cart.map(line => ({
+        name: line.name,
+        qty: line.qty,
+        price: line.price,
+        lineTotal: line.price * line.qty,
+      })),
+      totals: {
+        subTotal,
+        taxTotal: effectiveTaxTotal,
+        discount: discountAmount,
+        total: totalAfterDiscount,
+      },
+      updatedAt: serverTimestamp(),
+      cashierName: activityActor ?? null,
+      storeName,
+    }
+
+    setDoc(doc(db, 'stores', activeStoreId, 'displaySessions', displaySessionId), payload, {
+      merge: true,
+    }).catch(err => {
+      console.warn('[sell] Unable to update customer display session', err)
+    })
+  }, [
+    activityActor,
+    activeStoreId,
+    cart,
+    discountAmount,
+    displaySessionId,
+    effectiveTaxTotal,
+    storeName,
+    subTotal,
+    totalAfterDiscount,
+  ])
+
   function handleAddTender() {
     setAdditionalTenders(current => [...current, { id: createTenderId(), method: 'cash', amount: '' }])
   }
@@ -601,6 +714,36 @@ export default function Sell() {
 
   function handleTenderRemove(id: string) {
     setAdditionalTenders(current => current.filter(t => t.id !== id))
+  }
+
+  function handleStartCustomerDisplay() {
+    if (!activeStoreId) {
+      setDisplayStatus('Select a workspace before starting the customer display.')
+      return
+    }
+    const sessionId = createDisplaySessionId()
+    const code = createPairCode()
+    setDisplaySessionId(sessionId)
+    setDisplayPairCode(code)
+    setDisplayStatus('Customer display ready. Ask the customer to scan the QR code.')
+  }
+
+  function handleStopCustomerDisplay() {
+    setDisplaySessionId(null)
+    setDisplayPairCode(null)
+    setDisplayQrSvg(null)
+    setDisplayStatus('Customer display stopped.')
+  }
+
+  async function handleCopyCustomerDisplay() {
+    if (!displayLink) return
+    try {
+      await navigator.clipboard.writeText(displayLink)
+      setDisplayStatus('Customer display link copied.')
+    } catch (error) {
+      console.warn('[sell] Unable to copy display link', error)
+      setDisplayStatus('Copy failed. Select and copy the link manually.')
+    }
   }
 
   function handleScanFromDecodedText(rawText: string, source: 'manual' | 'camera' | 'keyboard' = 'manual') {
@@ -1545,6 +1688,55 @@ export default function Sell() {
                 <input placeholder="Add a phone number for the receipt" value={customerPhoneInput} onChange={e => setCustomerPhoneInput(e.target.value)} />
               </label>
             </div>
+          </div>
+
+          <div className="sell-page__display">
+            <div className="sell-page__display-header">
+              <div>
+                <p className="sell-page__display-title">Customer display</p>
+                <p className="sell-page__display-subtitle">Show live cart totals on a second device.</p>
+              </div>
+              {!displaySessionId ? (
+                <button type="button" className="button button--ghost" onClick={handleStartCustomerDisplay}>
+                  Start customer display
+                </button>
+              ) : (
+                <button type="button" className="button button--ghost" onClick={handleStopCustomerDisplay}>
+                  Stop display
+                </button>
+              )}
+            </div>
+
+            {displaySessionId && displayLink ? (
+              <div className="sell-page__display-body">
+                <div className="sell-page__display-info">
+                  <div>
+                    <p className="sell-page__display-label">Pairing code</p>
+                    <p className="sell-page__display-code">{displayPairCode ?? '—'}</p>
+                  </div>
+                  <div>
+                    <p className="sell-page__display-label">Display link</p>
+                    <button type="button" className="sell-page__display-link" onClick={handleCopyCustomerDisplay}>
+                      {displayLink}
+                    </button>
+                  </div>
+                </div>
+
+                {displayQrSvg ? (
+                  <div className="sell-page__display-qr" dangerouslySetInnerHTML={{ __html: displayQrSvg }} aria-hidden={!displayQrSvg} />
+                ) : (
+                  <div className="sell-page__display-qr sell-page__display-qr--empty">
+                    QR unavailable
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="sell-page__display-hint">
+                Open <strong>sedifex.app/display</strong> on a phone or tablet and scan the QR code to pair.
+              </p>
+            )}
+
+            {displayStatus && <p className="sell-page__display-status">{displayStatus}</p>}
           </div>
 
           <div className="sell-page__payment" style={{ marginTop: 20 }}>
