@@ -442,6 +442,63 @@
   flex-wrap: wrap;
 }
 
+.sell-page__receipt-settings {
+  margin-top: 16px;
+}
+
+.sell-page__escpos {
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 12px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sell-page__escpos-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sell-page__escpos-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.sell-page__escpos-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: #475569;
+}
+
+.sell-page__escpos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.sell-page__escpos-bluetooth {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.sell-page__escpos-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sell-page__escpos-status {
+  margin: 0;
+  font-size: 12px;
+  color: #475569;
+}
+
 .sell-page__share-row {
   display: flex;
   align-items: center;
