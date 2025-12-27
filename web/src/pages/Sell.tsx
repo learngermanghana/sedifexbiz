@@ -37,13 +37,8 @@ import {
 } from '@zxing/library'
 import { useKeyboardScanner } from '../components/BarcodeScanner'
 
-import {
-  PaymentMethod,
-  buildReceiptPdf,
-  type ReceiptLine,
-  type ReceiptPayload,
-  type ReceiptTender,
-} from '../utils/receipt'
+import { buildEscPosCashDrawerKick, buildEscPosReceipt, chunkEscPosBytes, type EscPosReceiptSize } from '../utils/escpos'
+import { PaymentMethod, buildReceiptPdf, type ReceiptLine, type ReceiptPayload, type ReceiptTender } from '../utils/receipt'
 
 type ItemType = 'product' | 'service'
 
@@ -246,6 +241,21 @@ export default function Sell() {
   } | null>(null)
 
   const [receiptQrSvg, setReceiptQrSvg] = useState<string | null>(null)
+  const [receiptSize, setReceiptSize] = useState<EscPosReceiptSize>('80mm')
+  const [escposMode, setEscposMode] = useState<'usb' | 'bluetooth' | 'network'>('usb')
+  const [escposStatus, setEscposStatus] = useState<string | null>(null)
+  const [escposUsb, setEscposUsb] = useState<{
+    device: USBDevice
+    interfaceNumber: number
+    endpointNumber: number
+  } | null>(null)
+  const [escposBluetooth, setEscposBluetooth] = useState<{
+    device: BluetoothDevice
+    characteristic: BluetoothRemoteGATTCharacteristic
+  } | null>(null)
+  const [escposBluetoothService, setEscposBluetoothService] = useState('0000ffe0-0000-1000-8000-00805f9b34fb')
+  const [escposBluetoothCharacteristic, setEscposBluetoothCharacteristic] = useState('0000ffe1-0000-1000-8000-00805f9b34fb')
+  const [escposNetworkUrl, setEscposNetworkUrl] = useState('')
 
   function extractStoreName(data: any): string | null {
     const candidates = [data?.company, data?.name, data?.companyName, data?.storeName, data?.businessName]
@@ -813,6 +823,7 @@ export default function Sell() {
     companyName?: string | null
     customerName?: string | null
     customerPhone?: string | null
+    receiptSize: EscPosReceiptSize
   }) {
     const receiptDate = new Date().toLocaleString()
     const paymentLabel =
@@ -844,23 +855,23 @@ export default function Sell() {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    @page { size: 80mm auto; margin: 8mm; }
+    @page { size: ${options.receiptSize} auto; margin: 6mm; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0;
-      padding: 8px;
+      padding: 6px;
       color: #0f172a;
-      width: 64mm;
+      width: ${options.receiptSize === '58mm' ? '48mm' : '64mm'};
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    h1 { font-size: 18px; margin: 0 0 12px; }
+    h1 { font-size: ${options.receiptSize === '58mm' ? '16px' : '18px'}; margin: 0 0 12px; }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th, td { padding: 6px 4px; font-size: 13px; }
+    th, td { padding: 6px 4px; font-size: ${options.receiptSize === '58mm' ? '12px' : '13px'}; }
     th { text-align: left; border-bottom: 1px solid #e2e8f0; }
     tfoot td { font-weight: 700; border-top: 1px solid #e2e8f0; }
-    .meta { font-size: 12px; color: #475569; margin: 0; }
-    .meta-row td { font-size: 12px; color: #475569; padding-top: 0; }
+    .meta { font-size: ${options.receiptSize === '58mm' ? '11px' : '12px'}; color: #475569; margin: 0; }
+    .meta-row td { font-size: ${options.receiptSize === '58mm' ? '11px' : '12px'}; color: #475569; padding-top: 0; }
   </style>
 </head>
 <body>
@@ -921,6 +932,171 @@ export default function Sell() {
         } catch {}
         setTimeout(cleanup, 2000)
       }, 150)
+    }
+  }
+
+  async function connectUsbPrinter() {
+    if (!('usb' in navigator)) {
+      setEscposStatus('WebUSB is not available in this browser.')
+      return
+    }
+    try {
+      const device = await (navigator as Navigator & { usb: USB }).usb.requestDevice({
+        filters: [{ classCode: 7 }],
+      })
+      await device.open()
+      if (!device.configuration) {
+        await device.selectConfiguration(1)
+      }
+      const config = device.configuration
+      if (!config) {
+        setEscposStatus('USB printer configuration unavailable.')
+        return
+      }
+      let found: { interfaceNumber: number; endpointNumber: number } | null = null
+      for (const iface of config.interfaces) {
+        for (const alternate of iface.alternates) {
+          const endpoint = alternate.endpoints.find(entry => entry.direction === 'out')
+          if (endpoint) {
+            found = { interfaceNumber: iface.interfaceNumber, endpointNumber: endpoint.endpointNumber }
+            break
+          }
+        }
+        if (found) break
+      }
+      if (!found) {
+        setEscposStatus('No compatible USB printer endpoint found.')
+        return
+      }
+      await device.claimInterface(found.interfaceNumber)
+      setEscposUsb({ device, interfaceNumber: found.interfaceNumber, endpointNumber: found.endpointNumber })
+      setEscposStatus(`Connected to ${device.productName ?? 'USB printer'}.`)
+    } catch (error) {
+      console.warn('[escpos] USB connection failed', error)
+      setEscposStatus('USB printer connection was cancelled or failed.')
+    }
+  }
+
+  async function connectBluetoothPrinter() {
+    if (!navigator.bluetooth) {
+      setEscposStatus('Web Bluetooth is not available in this browser.')
+      return
+    }
+    const serviceUuid = escposBluetoothService.trim()
+    const characteristicUuid = escposBluetoothCharacteristic.trim()
+    if (!serviceUuid || !characteristicUuid) {
+      setEscposStatus('Enter the Bluetooth service + characteristic UUIDs for your printer.')
+      return
+    }
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [serviceUuid],
+      })
+      const gatt = await device.gatt?.connect()
+      if (!gatt) {
+        setEscposStatus('Bluetooth connection failed.')
+        return
+      }
+      const service = await gatt.getPrimaryService(serviceUuid)
+      const characteristic = await service.getCharacteristic(characteristicUuid)
+      setEscposBluetooth({ device, characteristic })
+      setEscposStatus(`Connected to ${device.name ?? 'Bluetooth printer'}.`)
+    } catch (error) {
+      console.warn('[escpos] Bluetooth connection failed', error)
+      setEscposStatus('Bluetooth printer connection was cancelled or failed.')
+    }
+  }
+
+  async function sendEscPosBytes(payload: Uint8Array) {
+    if (escposMode === 'usb') {
+      if (!escposUsb) {
+        setEscposStatus('Connect a USB printer first.')
+        return
+      }
+      try {
+        if (!escposUsb.device.opened) {
+          await escposUsb.device.open()
+          if (!escposUsb.device.configuration) {
+            await escposUsb.device.selectConfiguration(1)
+          }
+          await escposUsb.device.claimInterface(escposUsb.interfaceNumber)
+        }
+        await escposUsb.device.transferOut(escposUsb.endpointNumber, payload)
+        setEscposStatus('Sent receipt to USB printer.')
+      } catch (error) {
+        console.warn('[escpos] USB print failed', error)
+        setEscposStatus('Unable to send to USB printer.')
+      }
+      return
+    }
+
+    if (escposMode === 'bluetooth') {
+      if (!escposBluetooth) {
+        setEscposStatus('Connect a Bluetooth printer first.')
+        return
+      }
+      try {
+        const chunks = chunkEscPosBytes(payload)
+        for (const chunk of chunks) {
+          await escposBluetooth.characteristic.writeValue(chunk)
+        }
+        setEscposStatus('Sent receipt to Bluetooth printer.')
+      } catch (error) {
+        console.warn('[escpos] Bluetooth print failed', error)
+        setEscposStatus('Unable to send to Bluetooth printer.')
+      }
+      return
+    }
+
+    const targetUrl = escposNetworkUrl.trim()
+    if (!targetUrl) {
+      setEscposStatus('Enter a WiFi/HTTP bridge URL for your printer.')
+      return
+    }
+    try {
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: payload,
+      })
+      if (!response.ok) {
+        setEscposStatus('Printer gateway rejected the request.')
+        return
+      }
+      setEscposStatus('Sent receipt to WiFi printer gateway.')
+    } catch (error) {
+      console.warn('[escpos] Network print failed', error)
+      setEscposStatus('Unable to reach the WiFi printer gateway.')
+    }
+  }
+
+  async function handleEscPosPrint() {
+    if (!lastReceipt) return
+    const payload = buildEscPosReceipt({
+      ...lastReceipt,
+      receiptSize,
+    })
+    await sendEscPosBytes(payload)
+  }
+
+  async function handleEscPosDrawerKick() {
+    await sendEscPosBytes(buildEscPosCashDrawerKick())
+  }
+
+  async function handleEscPosCopy() {
+    if (!lastReceipt) return
+    const payload = buildEscPosReceipt({
+      ...lastReceipt,
+      receiptSize,
+    })
+    const base64 = btoa(String.fromCharCode(...payload))
+    try {
+      await navigator.clipboard.writeText(base64)
+      setEscposStatus('Copied ESC/POS payload to clipboard.')
+    } catch (error) {
+      console.warn('[escpos] Copy failed', error)
+      setEscposStatus('Unable to copy ESC/POS payload.')
     }
   }
 
@@ -1036,6 +1212,7 @@ export default function Sell() {
         companyName: storeName,
         customerName,
         customerPhone,
+        receiptSize,
       })
 
       setLastReceipt(receiptPayload)
@@ -1422,6 +1599,17 @@ export default function Sell() {
                 </ul>
               )}
             </div>
+
+            <div className="sell-page__receipt-settings">
+              <label className="field">
+                <span className="field__label">Receipt size preset</span>
+                <select value={receiptSize} onChange={event => setReceiptSize(event.target.value as EscPosReceiptSize)}>
+                  <option value="58mm">58mm</option>
+                  <option value="80mm">80mm</option>
+                </select>
+                <span className="field__hint">Match the width of your thermal paper roll for printing.</span>
+              </label>
+            </div>
           </div>
 
           {errorMessage && <p className="sell-page__message sell-page__message--error">{errorMessage}</p>}
@@ -1466,11 +1654,99 @@ export default function Sell() {
                       companyName: lastReceipt.companyName,
                       customerName: lastReceipt.customerName,
                       customerPhone: (lastReceipt as any).customerPhone ?? null,
+                      receiptSize,
                     })
                   }
                 >
                   Print again
                 </button>
+              </div>
+
+              <div className="sell-page__escpos">
+                <div className="sell-page__escpos-header">
+                  <p className="sell-page__escpos-title">Thermal printer (ESC/POS)</p>
+                  <p className="sell-page__escpos-subtitle">
+                    Connect a USB, Bluetooth, or WiFi thermal printer to print a receipt and open the cash drawer.
+                  </p>
+                </div>
+
+                <div className="sell-page__escpos-grid">
+                  <label className="field">
+                    <span className="field__label">Connection type</span>
+                    <select value={escposMode} onChange={event => setEscposMode(event.target.value as 'usb' | 'bluetooth' | 'network')}>
+                      <option value="usb">USB (WebUSB)</option>
+                      <option value="bluetooth">Bluetooth (Web Bluetooth)</option>
+                      <option value="network">WiFi (HTTP bridge)</option>
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span className="field__label">Receipt size preset</span>
+                    <select value={receiptSize} onChange={event => setReceiptSize(event.target.value as EscPosReceiptSize)}>
+                      <option value="58mm">58mm</option>
+                      <option value="80mm">80mm</option>
+                    </select>
+                  </label>
+                </div>
+
+                {escposMode === 'network' && (
+                  <label className="field">
+                    <span className="field__label">WiFi/HTTP bridge URL</span>
+                    <input
+                      placeholder="http://192.168.0.25:8080/print"
+                      value={escposNetworkUrl}
+                      onChange={event => setEscposNetworkUrl(event.target.value)}
+                    />
+                    <span className="field__hint">Use a local ESC/POS bridge that accepts raw bytes over HTTP.</span>
+                  </label>
+                )}
+
+                {escposMode === 'bluetooth' && (
+                  <div className="sell-page__escpos-bluetooth">
+                    <label className="field">
+                      <span className="field__label">Service UUID</span>
+                      <input value={escposBluetoothService} onChange={event => setEscposBluetoothService(event.target.value)} />
+                    </label>
+                    <label className="field">
+                      <span className="field__label">Characteristic UUID</span>
+                      <input value={escposBluetoothCharacteristic} onChange={event => setEscposBluetoothCharacteristic(event.target.value)} />
+                    </label>
+                  </div>
+                )}
+
+                <div className="sell-page__escpos-actions">
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    onClick={() => {
+                      if (escposMode === 'usb') {
+                        connectUsbPrinter()
+                        return
+                      }
+                      if (escposMode === 'bluetooth') {
+                        connectBluetoothPrinter()
+                        return
+                      }
+                      setEscposStatus(escposNetworkUrl.trim() ? 'WiFi printer gateway ready.' : 'Enter a printer gateway URL.')
+                    }}
+                  >
+                    {escposMode === 'network' ? 'Save WiFi settings' : 'Connect printer'}
+                  </button>
+
+                  <button type="button" className="button button--ghost" onClick={handleEscPosPrint}>
+                    Print to thermal
+                  </button>
+
+                  <button type="button" className="button button--ghost" onClick={handleEscPosDrawerKick}>
+                    Open cash drawer
+                  </button>
+
+                  <button type="button" className="button button--ghost" onClick={handleEscPosCopy}>
+                    Copy ESC/POS
+                  </button>
+                </div>
+
+                {escposStatus && <p className="sell-page__escpos-status">{escposStatus}</p>}
               </div>
 
               <div className="sell-page__share-row">
