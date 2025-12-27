@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   limit,
   onSnapshot,
@@ -10,6 +11,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   where,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
@@ -95,12 +97,15 @@ type DisplayTotals = {
   total: number
 }
 
-type DisplaySessionPayload = {
+type DisplaySessionBase = {
   items: DisplayItem[]
   totals: DisplayTotals
-  updatedAt: ReturnType<typeof serverTimestamp>
   cashierName: string | null
   storeName: string | null
+}
+
+type DisplaySessionPayload = DisplaySessionBase & {
+  updatedAt: ReturnType<typeof serverTimestamp>
 }
 
 function toDate(value: unknown): Date | null {
@@ -283,6 +288,8 @@ export default function Sell() {
   const [displayPairCode, setDisplayPairCode] = useState<string | null>(null)
   const [displayQrSvg, setDisplayQrSvg] = useState<string | null>(null)
   const [displayStatus, setDisplayStatus] = useState<string | null>(null)
+  const displayUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastDisplayPayloadRef = useRef<string | null>(null)
   const [escposUsb, setEscposUsb] = useState<{
     device: USBDevice
     interfaceNumber: number
@@ -612,6 +619,10 @@ export default function Sell() {
     return `${base}?${params.toString()}`
   }, [activeStoreId, displayPairCode, displaySessionId])
 
+  useEffect(() => {
+    lastDisplayPayloadRef.current = null
+  }, [displaySessionId])
+
   const primaryAmountPaid = useMemo(() => {
     const raw = Number(amountPaidInput)
     if (!Number.isFinite(raw) || raw < 0) return 0
@@ -669,7 +680,7 @@ export default function Sell() {
   useEffect(() => {
     if (!displaySessionId || !activeStoreId) return
 
-    const payload: DisplaySessionPayload = {
+    const basePayload: DisplaySessionBase = {
       items: cart.map(line => ({
         name: line.name,
         qty: line.qty,
@@ -682,16 +693,37 @@ export default function Sell() {
         discount: discountAmount,
         total: totalAfterDiscount,
       },
-      updatedAt: serverTimestamp(),
       cashierName: activityActor ?? null,
       storeName,
     }
 
-    setDoc(doc(db, 'stores', activeStoreId, 'displaySessions', displaySessionId), payload, {
-      merge: true,
-    }).catch(err => {
-      console.warn('[sell] Unable to update customer display session', err)
-    })
+    const payloadSignature = JSON.stringify(basePayload)
+    if (lastDisplayPayloadRef.current === payloadSignature) return
+
+    if (displayUpdateTimeoutRef.current) {
+      window.clearTimeout(displayUpdateTimeoutRef.current)
+    }
+
+    displayUpdateTimeoutRef.current = window.setTimeout(() => {
+      lastDisplayPayloadRef.current = payloadSignature
+      const payload: DisplaySessionPayload = {
+        ...basePayload,
+        updatedAt: serverTimestamp(),
+      }
+
+      setDoc(doc(db, 'stores', activeStoreId, 'displaySessions', displaySessionId), payload, {
+        merge: true,
+      }).catch(err => {
+        console.warn('[sell] Unable to update customer display session', err)
+      })
+    }, 350)
+
+    return () => {
+      if (displayUpdateTimeoutRef.current) {
+        window.clearTimeout(displayUpdateTimeoutRef.current)
+        displayUpdateTimeoutRef.current = null
+      }
+    }
   }, [
     activityActor,
     activeStoreId,
@@ -723,12 +755,45 @@ export default function Sell() {
     }
     const sessionId = createDisplaySessionId()
     const code = createPairCode()
+    const expiresAt = Timestamp.fromDate(new Date(Date.now() + 2 * 60 * 60 * 1000))
     setDisplaySessionId(sessionId)
     setDisplayPairCode(code)
     setDisplayStatus('Customer display ready. Ask the customer to scan the QR code.')
+    setDoc(
+      doc(db, 'stores', activeStoreId, 'displaySessions', sessionId),
+      {
+        items: [],
+        totals: {
+          subTotal: 0,
+          taxTotal: 0,
+          discount: 0,
+          total: 0,
+        },
+        updatedAt: serverTimestamp(),
+        cashierName: activityActor ?? null,
+        storeName,
+        pairCode: code,
+        status: 'active',
+        createdAt: serverTimestamp(),
+        expiresAt,
+      },
+      { merge: true },
+    ).catch(err => {
+      console.warn('[sell] Unable to start customer display session', err)
+      setDisplayStatus('Unable to start the customer display. Check your connection and try again.')
+    })
   }
 
-  function handleStopCustomerDisplay() {
+  async function handleStopCustomerDisplay() {
+    if (activeStoreId && displaySessionId) {
+      try {
+        await deleteDoc(doc(db, 'stores', activeStoreId, 'displaySessions', displaySessionId))
+      } catch (error) {
+        console.warn('[sell] Unable to stop customer display session', error)
+        setDisplayStatus('Unable to stop the display. Check your connection and try again.')
+        return
+      }
+    }
     setDisplaySessionId(null)
     setDisplayPairCode(null)
     setDisplayQrSvg(null)
