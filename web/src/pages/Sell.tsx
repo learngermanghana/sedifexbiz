@@ -290,6 +290,7 @@ export default function Sell() {
   const [displayStatus, setDisplayStatus] = useState<string | null>(null)
   const displayUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastDisplayPayloadRef = useRef<string | null>(null)
+  const lastCartHasItemsRef = useRef<boolean>(cart.length > 0)
   const [escposUsb, setEscposUsb] = useState<{
     device: USBDevice
     interfaceNumber: number
@@ -735,6 +736,31 @@ export default function Sell() {
     subTotal,
     totalAfterDiscount,
   ])
+
+  useEffect(() => {
+    const hasItems = cart.length > 0
+    if (!displaySessionId || !activeStoreId) {
+      lastCartHasItemsRef.current = hasItems
+      return
+    }
+
+    if (hasItems && !lastCartHasItemsRef.current) {
+      setDoc(
+        doc(db, 'stores', activeStoreId, 'displaySessions', displaySessionId),
+        {
+          saleId: null,
+          receiptUrl: null,
+          status: 'active',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ).catch(err => {
+        console.warn('[sell] Unable to clear customer display receipt', err)
+      })
+    }
+
+    lastCartHasItemsRef.current = hasItems
+  }, [activeStoreId, cart.length, displaySessionId])
 
   function handleAddTender() {
     setAdditionalTenders(current => [...current, { id: createTenderId(), method: 'cash', amount: '' }])
@@ -1432,6 +1458,7 @@ export default function Sell() {
           {
             saleId,
             receiptUrl,
+            status: 'inactive',
             updatedAt: serverTimestamp(),
           },
           { merge: true },
