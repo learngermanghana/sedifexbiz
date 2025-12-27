@@ -130,10 +130,57 @@
   color: #f8fafc;
 }
 
+.customer-display__receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  align-items: center;
+  text-align: center;
+}
+
+.customer-display__receipt-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.customer-display__receipt-subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.customer-display__receipt-qr {
+  width: 200px;
+  height: 200px;
+  border-radius: 18px;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.customer-display__receipt-qr--empty {
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.8);
+}
+
 @media (min-width: 768px) {
   .customer-display__header {
     flex-direction: row;
     justify-content: space-between;
     align-items: flex-start;
+  }
+
+  .customer-display__receipt {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    text-align: left;
   }
 }

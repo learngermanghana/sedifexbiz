@@ -1425,6 +1425,21 @@ export default function Sell() {
 
       setLastReceipt(receiptPayload)
 
+      if (displaySessionId) {
+        const receiptUrl = `${window.location.origin}/receipt/${encodeURIComponent(saleId)}`
+        setDoc(
+          doc(db, 'stores', activeStoreId, 'displaySessions', displaySessionId),
+          {
+            saleId,
+            receiptUrl,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        ).catch(err => {
+          console.warn('[sell] Unable to update customer display receipt', err)
+        })
+      }
+
       await logSaleActivity({
         saleId,
         total: totalAfterDiscount,

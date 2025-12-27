@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { doc, onSnapshot } from 'firebase/firestore'
+import { BrowserQRCodeSvgWriter } from '@zxing/browser'
+import { EncodeHintType, QRCodeDecoderErrorCorrectionLevel } from '@zxing/library'
 import { db } from '../firebase'
 import './CustomerDisplay.css'
 
@@ -25,6 +27,8 @@ type DisplaySession = {
   cashierName?: string | null
   storeName?: string | null
   pairCode?: string | null
+  saleId?: string | null
+  receiptUrl?: string | null
   status?: 'active' | 'inactive'
 }
 
@@ -56,8 +60,14 @@ export default function CustomerDisplay() {
 
   const [session, setSession] = useState<DisplaySession | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [receiptQrSvg, setReceiptQrSvg] = useState<string | null>(null)
 
   const updatedAtLabel = useMemo(() => formatUpdatedAt(session?.updatedAt), [session?.updatedAt])
+  const receiptUrl = useMemo(() => {
+    if (session?.receiptUrl) return session.receiptUrl
+    if (session?.saleId) return `${window.location.origin}/receipt/${encodeURIComponent(session.saleId)}`
+    return null
+  }, [session?.receiptUrl, session?.saleId])
 
   useEffect(() => {
     if (!storeId || !sessionId) {
@@ -97,6 +107,31 @@ export default function CustomerDisplay() {
       },
     )
   }, [pairCode, sessionId, storeId])
+
+  useEffect(() => {
+    if (!receiptUrl) {
+      setReceiptQrSvg(null)
+      return
+    }
+
+    try {
+      const writer = new BrowserQRCodeSvgWriter()
+      const encodeHints = new Map<EncodeHintType, unknown>()
+      encodeHints.set(EncodeHintType.MARGIN, 2)
+      encodeHints.set(EncodeHintType.ERROR_CORRECTION, QRCodeDecoderErrorCorrectionLevel.H)
+
+      const svg = writer.write(receiptUrl, 200, 200, encodeHints)
+      svg.setAttribute('role', 'img')
+      svg.setAttribute('aria-label', 'Receipt QR code')
+      svg.setAttribute('width', '200')
+      svg.setAttribute('height', '200')
+      svg.setAttribute('viewBox', '0 0 200 200')
+      setReceiptQrSvg(svg.outerHTML)
+    } catch (error) {
+      console.warn('[customer-display] Failed to build receipt QR code', error)
+      setReceiptQrSvg(null)
+    }
+  }, [receiptUrl])
 
   if (error) {
     return (
@@ -178,6 +213,20 @@ export default function CustomerDisplay() {
             <strong>{formatCurrency(totals.total)}</strong>
           </div>
         </div>
+
+        {receiptUrl ? (
+          <div className="customer-display__receipt">
+            <div>
+              <p className="customer-display__receipt-title">Scan to get your receipt</p>
+              <p className="customer-display__receipt-subtitle">Open the receipt on your phone and download a PDF copy.</p>
+            </div>
+            {receiptQrSvg ? (
+              <div className="customer-display__receipt-qr" dangerouslySetInnerHTML={{ __html: receiptQrSvg }} aria-hidden={!receiptQrSvg} />
+            ) : (
+              <div className="customer-display__receipt-qr customer-display__receipt-qr--empty">QR unavailable</div>
+            )}
+          </div>
+        ) : null}
       </div>
     </main>
   )
