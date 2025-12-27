@@ -1797,7 +1797,7 @@ export default function Sell() {
               </div>
             ) : (
               <p className="sell-page__display-hint">
-                Open <strong>sedifex.app/display</strong> on a phone or tablet and scan the QR code to pair.
+                Open <strong>sedifex.com/display</strong> on a phone or tablet and scan the QR code to pair.
               </p>
             )}
 
