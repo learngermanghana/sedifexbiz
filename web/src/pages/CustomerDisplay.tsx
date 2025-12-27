@@ -157,6 +157,9 @@ export default function CustomerDisplay() {
 
   const items = session.items ?? []
   const totals = session.totals ?? { subTotal: 0, taxTotal: 0, discount: 0, total: 0 }
+  const isInactive = session.status === 'inactive'
+  const shouldShowCart = !isInactive
+  const shouldShowReceipt = isInactive && !!receiptUrl
 
   return (
     <main className="customer-display">
@@ -173,48 +176,54 @@ export default function CustomerDisplay() {
           </div>
         </div>
 
-        {items.length ? (
-          <div className="customer-display__table">
-            <div className="customer-display__row customer-display__row--head">
-              <span>Item</span>
-              <span>Qty</span>
-              <span>Amount</span>
-            </div>
-            {items.map((item, index) => (
-              <div className="customer-display__row" key={`${item.name}-${index}`}>
-                <div className="customer-display__item">
-                  <span className="customer-display__item-name">{item.name}</span>
-                  <span className="customer-display__item-price">{formatCurrency(item.price)} each</span>
+        {shouldShowCart ? (
+          <>
+            {items.length ? (
+              <div className="customer-display__table">
+                <div className="customer-display__row customer-display__row--head">
+                  <span>Item</span>
+                  <span>Qty</span>
+                  <span>Amount</span>
                 </div>
-                <span className="customer-display__qty">{item.qty}</span>
-                <span className="customer-display__amount">{formatCurrency(item.lineTotal)}</span>
+                {items.map((item, index) => (
+                  <div className="customer-display__row" key={`${item.name}-${index}`}>
+                    <div className="customer-display__item">
+                      <span className="customer-display__item-name">{item.name}</span>
+                      <span className="customer-display__item-price">{formatCurrency(item.price)} each</span>
+                    </div>
+                    <span className="customer-display__qty">{item.qty}</span>
+                    <span className="customer-display__amount">{formatCurrency(item.lineTotal)}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            ) : (
+              <p className="customer-display__status">No items yet. The cart will appear here.</p>
+            )}
+
+            <div className="customer-display__totals">
+              <div className="customer-display__total-row">
+                <span>Subtotal</span>
+                <span>{formatCurrency(totals.subTotal)}</span>
+              </div>
+              <div className="customer-display__total-row">
+                <span>VAT / Tax</span>
+                <span>{formatCurrency(totals.taxTotal)}</span>
+              </div>
+              <div className="customer-display__total-row">
+                <span>Discount</span>
+                <span>{formatCurrency(totals.discount)}</span>
+              </div>
+              <div className="customer-display__total-row customer-display__total-row--grand">
+                <strong>Total</strong>
+                <strong>{formatCurrency(totals.total)}</strong>
+              </div>
+            </div>
+          </>
         ) : (
-          <p className="customer-display__status">No items yet. The cart will appear here.</p>
+          <p className="customer-display__status">Sale complete — scan receipt.</p>
         )}
 
-        <div className="customer-display__totals">
-          <div className="customer-display__total-row">
-            <span>Subtotal</span>
-            <span>{formatCurrency(totals.subTotal)}</span>
-          </div>
-          <div className="customer-display__total-row">
-            <span>VAT / Tax</span>
-            <span>{formatCurrency(totals.taxTotal)}</span>
-          </div>
-          <div className="customer-display__total-row">
-            <span>Discount</span>
-            <span>{formatCurrency(totals.discount)}</span>
-          </div>
-          <div className="customer-display__total-row customer-display__total-row--grand">
-            <strong>Total</strong>
-            <strong>{formatCurrency(totals.total)}</strong>
-          </div>
-        </div>
-
-        {receiptUrl ? (
+        {shouldShowReceipt ? (
           <div className="customer-display__receipt">
             <div>
               <p className="customer-display__receipt-title">Scan to get your receipt</p>
