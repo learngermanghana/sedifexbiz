@@ -291,6 +291,7 @@ export default function Sell() {
   const displayUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastDisplayPayloadRef = useRef<string | null>(null)
   const lastCartHasItemsRef = useRef<boolean>(cart.length > 0)
+  const displaySaleCompleteRef = useRef(false)
   const [escposUsb, setEscposUsb] = useState<{
     device: USBDevice
     interfaceNumber: number
@@ -745,6 +746,22 @@ export default function Sell() {
     }
 
     if (hasItems && !lastCartHasItemsRef.current) {
+      displaySaleCompleteRef.current = false
+      setDoc(
+        doc(db, 'stores', activeStoreId, 'displaySessions', displaySessionId),
+        {
+          saleId: null,
+          receiptUrl: null,
+          status: 'active',
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      ).catch(err => {
+        console.warn('[sell] Unable to clear customer display receipt', err)
+      })
+    }
+
+    if (!hasItems && lastCartHasItemsRef.current && !displaySaleCompleteRef.current) {
       setDoc(
         doc(db, 'stores', activeStoreId, 'displaySessions', displaySessionId),
         {
@@ -779,6 +796,7 @@ export default function Sell() {
       setDisplayStatus('Select a workspace before starting the customer display.')
       return
     }
+    displaySaleCompleteRef.current = false
     const sessionId = createDisplaySessionId()
     const code = createPairCode()
     const expiresAt = Timestamp.fromDate(new Date(Date.now() + 2 * 60 * 60 * 1000))
@@ -823,6 +841,7 @@ export default function Sell() {
     setDisplaySessionId(null)
     setDisplayPairCode(null)
     setDisplayQrSvg(null)
+    displaySaleCompleteRef.current = false
     setDisplayStatus('Customer display stopped.')
   }
 
@@ -1452,6 +1471,7 @@ export default function Sell() {
       setLastReceipt(receiptPayload)
 
       if (displaySessionId) {
+        displaySaleCompleteRef.current = true
         const receiptUrl = `${window.location.origin}/receipt/${encodeURIComponent(saleId)}`
         setDoc(
           doc(db, 'stores', activeStoreId, 'displaySessions', displaySessionId),
