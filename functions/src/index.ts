@@ -248,6 +248,24 @@ function assertStaffAccess(context: functions.https.CallableContext) {
   }
 }
 
+async function resolveStaffStoreId(uid: string) {
+  const memberRef = db.collection('teamMembers').doc(uid)
+  const memberSnap = await memberRef.get()
+  const memberData = (memberSnap.data() ?? {}) as Record<string, unknown>
+
+  const storeIdRaw =
+    typeof memberData.storeId === 'string' ? (memberData.storeId as string).trim() : ''
+
+  if (!storeIdRaw) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'No store associated with this account',
+    )
+  }
+
+  return storeIdRaw
+}
+
 async function updateUserClaims(uid: string, role: string) {
   const userRecord = await admin.auth().getUser(uid).catch(() => null)
   const existingClaims = (userRecord?.customClaims ?? {}) as Record<string, unknown>
@@ -1161,6 +1179,9 @@ export const commitSale = functions.https.onCall(
 const RECEIPT_CHANNELS = new Set(['email', 'sms', 'whatsapp'])
 const RECEIPT_STATUSES = new Set(['attempt', 'failed', 'sent'])
 
+const RECEIPT_SHARE_CHANNELS = new Set(['email', 'sms', 'whatsapp'])
+const RECEIPT_SHARE_STATUSES = new Set(['success', 'failure'])
+
 const REMINDER_CHANNELS = new Set(['email', 'telegram', 'whatsapp'])
 const REMINDER_STATUSES = new Set(['attempt', 'failed', 'sent'])
 
@@ -1257,6 +1278,106 @@ export const logReceiptShare = functions.https.onCall(
     const ref = await db.collection('receiptShareLogs').add(payload)
 
     return { ok: true, shareId: ref.id }
+  },
+)
+
+/** ============================================================================
+ *  CALLABLE: logReceiptShareAttempt (staff)
+ * ==========================================================================*/
+
+function maskDestination(destination: string) {
+  const trimmed = destination.trim()
+  if (!trimmed) return null
+  const last4 = trimmed.slice(-4)
+  if (trimmed.length <= 4) {
+    return { masked: `****${last4}`, last4 }
+  }
+  const mask = '*'.repeat(Math.max(0, trimmed.length - 4))
+  return { masked: `${mask}${last4}`, last4 }
+}
+
+export const logReceiptShareAttempt = functions.https.onCall(
+  async (data: any, context: functions.https.CallableContext) => {
+    assertStaffAccess(context)
+
+    const uid = context.auth!.uid
+    const storeId = await resolveStaffStoreId(uid)
+
+    const saleId = typeof data?.saleId === 'string' ? data.saleId.trim() : ''
+    const receiptId =
+      typeof data?.receiptId === 'string' ? data.receiptId.trim() : ''
+    const channel = typeof data?.channel === 'string' ? data.channel.trim() : ''
+    const status = typeof data?.status === 'string' ? data.status.trim() : ''
+    const destination =
+      typeof data?.destination === 'string' ? data.destination.trim() : ''
+
+    if (!saleId && !receiptId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'saleId or receiptId is required',
+      )
+    }
+
+    if (!RECEIPT_SHARE_CHANNELS.has(channel)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid channel')
+    }
+
+    if (!RECEIPT_SHARE_STATUSES.has(status)) {
+      throw new functions.https.HttpsError('invalid-argument', 'Invalid status')
+    }
+
+    if (!destination) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'destination is required',
+      )
+    }
+
+    const errorMessageRaw = data?.errorMessage
+    const errorMessage =
+      errorMessageRaw === null || errorMessageRaw === undefined
+        ? null
+        : typeof errorMessageRaw === 'string'
+          ? errorMessageRaw.trim() || null
+          : (() => {
+              throw new functions.https.HttpsError(
+                'invalid-argument',
+                'errorMessage must be a string when provided',
+              )
+            })()
+
+    const masked = maskDestination(destination)
+    if (!masked) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'destination is required',
+      )
+    }
+
+    const timestamp = admin.firestore.FieldValue.serverTimestamp()
+    const payload: admin.firestore.DocumentData = {
+      storeId,
+      saleId: saleId || null,
+      receiptId: receiptId || null,
+      channel,
+      status,
+      destinationMasked: masked.masked,
+      destinationLast4: masked.last4,
+      errorMessage,
+      actorUid: uid,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    const ref = db
+      .collection('stores')
+      .doc(storeId)
+      .collection('receiptShareAttempts')
+      .doc()
+
+    await ref.set(payload)
+
+    return { ok: true, attemptId: ref.id }
   },
 )
 
@@ -1365,7 +1486,11 @@ export const receiveStock = functions.https.onCall(
   async (data: any, context: functions.https.CallableContext) => {
     assertStaffAccess(context)
 
-    const { productId, qty, supplier, reference, unitCost } = data || {}
+    const uid = context.auth!.uid
+    const storeId = await resolveStaffStoreId(uid)
+
+    const { productId, qty, supplier, reference, unitCost, receiptId } =
+      data || {}
     const productIdStr = typeof productId === 'string' ? productId : null
     if (!productIdStr) {
       throw new functions.https.HttpsError(
@@ -1374,11 +1499,26 @@ export const receiveStock = functions.https.onCall(
       )
     }
 
+    const receiptIdStr = typeof receiptId === 'string' ? receiptId.trim() : ''
+    if (!receiptIdStr) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'receiptId is required for idempotency',
+      )
+    }
+
     const amount = Number(qty)
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new functions.https.HttpsError(
         'invalid-argument',
         'Quantity must be greater than zero',
+      )
+    }
+
+    if (amount > 10000) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Quantity is too large',
       )
     }
 
@@ -1413,10 +1553,19 @@ export const receiveStock = functions.https.onCall(
     }
 
     const productRef = db.collection('products').doc(productIdStr)
-    const receiptRef = db.collection('receipts').doc()
+    const receiptRef = db.collection('receipts').doc(receiptIdStr)
     const ledgerRef = db.collection('ledger').doc()
+    const storeRef = db.collection('stores').doc(storeId)
+
+    let alreadyProcessed = false
 
     await db.runTransaction(async (tx) => {
+      const receiptSnap = await tx.get(receiptRef)
+      if (receiptSnap.exists) {
+        alreadyProcessed = true
+        return
+      }
+
       const pSnap = await tx.get(productRef)
       if (!pSnap.exists) {
         throw new functions.https.HttpsError(
@@ -1429,12 +1578,17 @@ export const receiveStock = functions.https.onCall(
       const productStoreId =
         typeof productStoreIdRaw === 'string' ? productStoreIdRaw.trim() : null
 
-      const currentStock = Number(pSnap.get('stockCount') || 0)
-      const nextStock = currentStock + amount
+      if (!productStoreId || productStoreId !== storeId) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Product does not belong to your store',
+        )
+      }
+
       const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
       tx.update(productRef, {
-        stockCount: nextStock,
+        stockCount: admin.firestore.FieldValue.increment(amount),
         updatedAt: timestamp,
         lastReceivedAt: timestamp,
         lastReceivedQty: amount,
@@ -1455,22 +1609,31 @@ export const receiveStock = functions.https.onCall(
         reference: normalizedReference,
         unitCost: normalizedUnitCost,
         totalCost,
-        receivedBy: context.auth?.uid ?? null,
+        actorUid: uid,
         createdAt: timestamp,
-        storeId: productStoreId,
+        storeId,
       })
 
       tx.set(ledgerRef, {
         productId: productIdStr,
         qtyChange: amount,
-        type: 'receipt',
+        type: 'stock_in',
         refId: receiptRef.id,
-        storeId: productStoreId,
+        storeId,
         createdAt: timestamp,
       })
+
+      tx.set(
+        storeRef,
+        {
+          totalStockCount: admin.firestore.FieldValue.increment(amount),
+          updatedAt: timestamp,
+        },
+        { merge: true },
+      )
     })
 
-    return { ok: true, receiptId: receiptRef.id }
+    return { ok: true, receiptId: receiptRef.id, alreadyProcessed }
   },
 )
 

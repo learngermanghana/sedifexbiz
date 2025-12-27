@@ -44,6 +44,13 @@ function isOfflineError(error: unknown) {
   return false
 }
 
+function generateReceiptId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+}
+
 export default function Receive() {
   const user = useAuthUser()
   const { storeId: activeStoreId } = useActiveStore()
@@ -203,12 +210,14 @@ export default function Receive() {
       return
     }
     setBusy(true)
+    const receiptId = generateReceiptId()
     const payload = {
       productId: selected,
       qty: amount,
       supplier: supplierName,
       reference: referenceNumber,
       unitCost: parsedCost,
+      receiptId,
     }
 
     try {
