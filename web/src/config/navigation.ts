@@ -14,9 +14,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/receive', label: 'Receive', roles: ['owner'] },
   { to: '/customers', label: 'Customers', roles: ['owner', 'staff'] },
   { to: '/activity', label: 'Activity', roles: ['owner'] },
-  // 🔁 Replaced Close Day with Finance
   { to: '/finance', label: 'Finance', roles: ['owner'] },
-  { to: '/advisor', label: 'AI advisor', roles: ['owner'] },
+  { to: '/close-day', label: 'Close day', roles: ['owner', 'staff'] },
   { to: '/account', label: 'Account', roles: ['owner'] },
-  { to: '/close-day', label: 'Close day', roles: ['staff'] },
 ]
