@@ -50,6 +50,12 @@ export default function Expenses() {
 
   const [expenses, setExpenses] = useState<Expense[]>([])
 
+  function currentMonthKey(dateValue: Date) {
+    const year = dateValue.getFullYear()
+    const month = String(dateValue.getMonth() + 1).padStart(2, '0')
+    return `${year}-${month}`
+  }
+
   // Load expenses for this store
   useEffect(() => {
     if (!storeId) {
@@ -85,7 +91,7 @@ export default function Expenses() {
 
   const totalMonthly = useMemo(() => {
     if (!expenses.length) return 0
-    const currentMonth = new Date().toISOString().slice(0, 7) // yyyy-mm
+    const currentMonth = currentMonthKey(new Date())
     return expenses
       .filter(exp => exp.date?.startsWith(currentMonth))
       .reduce((sum, exp) => sum + exp.amount, 0)

@@ -268,7 +268,7 @@ export default function Finance() {
   )
   const totalMonthlyExpenses = useMemo(() => {
     if (!expenses.length) return 0
-    const currentMonth = new Date().toISOString().slice(0, 7)
+    const currentMonth = currentMonthKey(new Date())
     return expenses
       .filter(exp => exp.date?.startsWith(currentMonth))
       .reduce((sum, exp) => sum + exp.amount, 0)
@@ -307,6 +307,12 @@ export default function Finance() {
 
   function toIsoString(date: Date | null): string {
     return date ? date.toISOString() : ''
+  }
+
+  function currentMonthKey(dateValue: Date): string {
+    const year = dateValue.getFullYear()
+    const month = String(dateValue.getMonth() + 1).padStart(2, '0')
+    return `${year}-${month}`
   }
 
   function downloadCsv(
