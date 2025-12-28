@@ -1,11 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 
 import App from './App'
 import ShellLayout from './layout/ShellLayout'
 
 import Dashboard from './pages/Dashboard'
+import DashboardHub from './pages/DashboardHub'
 import Products from './pages/Products'
 import Sell from './pages/Sell'
 import Receive from './pages/Receive'
@@ -46,13 +47,20 @@ const router = createBrowserRouter([
       {
         element: <ShellLayout />,
         children: [
-          { index: true, element: <Dashboard /> },
-          { path: 'dashboard', element: <Dashboard /> },
+          { index: true, element: <Navigate to="/dashboard" replace /> },
+          {
+            path: 'dashboard',
+            element: <DashboardHub />,
+            children: [
+              { index: true, element: <Dashboard /> },
+              { path: 'activity', element: <ActivityFeed /> },
+            ],
+          },
           { path: 'products', element: <Products /> },
           { path: 'sell', element: <Sell /> },
           { path: 'receive', element: <Receive /> },
           { path: 'customers', element: <Customers /> },
-          { path: 'activity', element: <ActivityFeed /> },
+          { path: 'activity', element: <Navigate to="/dashboard/activity" replace /> },
           { path: 'logi', element: <Logi /> },
 
           // Finance

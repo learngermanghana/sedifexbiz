@@ -691,7 +691,7 @@ export default function Customers() {
 
   function handleViewActivities() {
     if (!selectedCustomerId) return
-    navigate('/activity')
+    navigate('/dashboard/activity')
   }
 
   function openMessageComposer(channel: MessageChannel) {
