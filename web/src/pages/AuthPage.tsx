@@ -1010,7 +1010,7 @@ export default function AuthPage() {
 const PAGE_FEATURES = [
   {
     path: '/products',
-    name: 'Products',
+    name: 'Items',
     description:
       'Spot low inventory, sync counts, and keep every SKU accurate across locations.',
   },
