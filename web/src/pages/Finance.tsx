@@ -27,6 +27,8 @@ type SaleRow = {
 type ExpenseRow = {
   id: string
   amount: number
+  category: string
+  description: string
   date: string // yyyy-mm-dd
   createdAt: Date | null
 }
@@ -171,6 +173,8 @@ export default function Finance() {
         return {
           id: docSnap.id,
           amount,
+          category: typeof data.category === 'string' && data.category.trim() ? data.category : 'Uncategorized',
+          description: typeof data.description === 'string' ? data.description : '',
           date,
           createdAt,
         }
@@ -261,6 +265,17 @@ export default function Finance() {
   const totalExpenses = filteredExpenses.reduce(
     (sum, row) => sum + row.amount,
     0,
+  )
+  const totalMonthlyExpenses = useMemo(() => {
+    if (!expenses.length) return 0
+    const currentMonth = new Date().toISOString().slice(0, 7)
+    return expenses
+      .filter(exp => exp.date?.startsWith(currentMonth))
+      .reduce((sum, exp) => sum + exp.amount, 0)
+  }, [expenses])
+  const totalAllExpenses = useMemo(
+    () => expenses.reduce((sum, exp) => sum + exp.amount, 0),
+    [expenses],
   )
   const netProfit = grossSales - totalExpenses
 
@@ -518,6 +533,64 @@ export default function Finance() {
               store costs on the <Link to="/expenses">Expenses</Link> page to see
               profit here.
             </p>
+          </div>
+        )}
+      </section>
+
+      <section className="card" style={{ marginTop: 24 }} aria-label="Expense history">
+        <div className="page__header" style={{ padding: 0, marginBottom: 12 }}>
+          <div>
+            <h3 className="card__title">Expense history</h3>
+            <p className="card__subtitle">
+              Review recorded expenses without leaving the Finance page.
+            </p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <p className="card__subtitle">
+              This month: <strong>GHS {totalMonthlyExpenses.toFixed(2)}</strong>
+            </p>
+            <p className="card__subtitle">
+              All time: <strong>GHS {totalAllExpenses.toFixed(2)}</strong>
+            </p>
+          </div>
+        </div>
+
+        {!storeId ? (
+          <p className="status status--error" role="alert">
+            Select or create a workspace to see expenses here.
+          </p>
+        ) : expenses.length === 0 ? (
+          <div className="empty-state">
+            <h4 className="empty-state__title">No expenses yet</h4>
+            <p>
+              Add your first expense on the <Link to="/expenses">Expenses</Link> page to
+              start tracking costs here.
+            </p>
+          </div>
+        ) : (
+          <div className="table-wrapper">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th className="sell-page__numeric">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map(expense => (
+                  <tr key={expense.id}>
+                    <td>{expense.date}</td>
+                    <td>{expense.category}</td>
+                    <td>{expense.description || '—'}</td>
+                    <td className="sell-page__numeric">
+                      GHS {expense.amount.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </section>

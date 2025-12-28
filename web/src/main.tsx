@@ -22,7 +22,6 @@ import Finance from './pages/Finance'
 import Expenses from './pages/Expenses'
 import ResetPassword from './pages/ResetPassword'
 import VerifyEmail from './pages/VerifyEmail'
-import AiAdvisor from './pages/AiAdvisor'
 
 // ✅ NEW: public receipt page used by QR/share
 import ReceiptView from './pages/ReceiptView'
@@ -68,7 +67,6 @@ const router = createBrowserRouter([
           { path: 'staff', element: <StaffManagement /> },
           { path: 'account', element: <AccountOverview /> },
           { path: 'support', element: <Support /> },
-          { path: 'advisor', element: <AiAdvisor /> },
         ],
       },
 
