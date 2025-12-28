@@ -9,7 +9,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Dashboard', end: true, roles: ['owner'] },
-  { to: '/products', label: 'Products & Services', roles: ['owner'] },
+  { to: '/products', label: 'Items', roles: ['owner'] },
   { to: '/sell', label: 'Sell', roles: ['owner', 'staff'] },
   { to: '/receive', label: 'Receive', roles: ['owner'] },
   { to: '/customers', label: 'Customers', roles: ['owner', 'staff'] },

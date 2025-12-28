@@ -871,7 +871,7 @@ export default function Sell() {
     if (!found) {
       setScanStatus({
         type: 'error',
-        message: `No product found for code ${normalized}. Check the SKU/barcode on the Products page.`,
+        message: `No product found for code ${normalized}. Check the SKU/barcode on the Items page.`,
       })
       return
     }
@@ -982,7 +982,7 @@ export default function Sell() {
 
   function addProductToCart(product: Product, qty: number = 1) {
     if (!product.price || product.price < 0) {
-      setScanStatus({ type: 'error', message: `This item has no price. Set a price on the Products page first.` })
+      setScanStatus({ type: 'error', message: `This item has no price. Set a price on the Items page first.` })
       return
     }
 

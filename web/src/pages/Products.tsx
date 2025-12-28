@@ -718,7 +718,7 @@ export default function Products() {
     <div className="page products-page">
       <header className="page__header products-page__header">
         <div>
-          <h2 className="page__title">Products &amp; services</h2>
+          <h2 className="page__title">Items</h2>
           <p className="page__subtitle">
             Review inventory, monitor low stock alerts, and keep your catalogue of items
             and services tidy.
@@ -1057,7 +1057,7 @@ export default function Products() {
             <div className="empty-state">
               <h3 className="empty-state__title">No items found</h3>
               <p>
-                Try a different search term, or add new products and services using the form on the left.
+                Try a different search term, or add new items using the form on the left.
               </p>
             </div>
           ) : (

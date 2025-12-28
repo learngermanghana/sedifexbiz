@@ -1913,7 +1913,7 @@ export default function Dashboard() {
               </p>
             </div>
             <Link to="/products" style={{ fontSize: 13, fontWeight: 600 }}>
-              Manage in Products
+              Manage in Items
             </Link>
           </div>
 

@@ -83,7 +83,7 @@ vi.mock('firebase/firestore', () => ({
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
 }))
 
-describe('Products page', () => {
+describe('Items page', () => {
   beforeEach(() => {
     mockLoadCachedProducts.mockReset()
     mockSaveCachedProducts.mockReset()
@@ -461,4 +461,3 @@ describe('Products page', () => {
     )
   })
 })
-
