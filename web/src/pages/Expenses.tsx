@@ -34,7 +34,11 @@ const CATEGORIES = [
   'Miscellaneous',
 ] as const
 
-export default function Expenses() {
+type ExpensesProps = {
+  embedded?: boolean
+}
+
+export default function Expenses({ embedded = false }: ExpensesProps) {
   const { storeId } = useActiveStore()
   const user = useAuthUser()
 
@@ -173,17 +177,8 @@ export default function Expenses() {
     }
   }
 
-  return (
-    <div className="page">
-      <header className="page__header">
-        <div>
-          <h2 className="page__title">Expenses</h2>
-          <p className="page__subtitle">
-            Record rent, salaries, utilities, and other store costs so you can see real profit.
-          </p>
-        </div>
-      </header>
-
+  const content = (
+    <>
       {/* Entry form */}
       <section className="card" aria-label="Add expense">
         <h3 className="card__title">Add expense</h3>
@@ -327,6 +322,36 @@ export default function Expenses() {
           </div>
         )}
       </section>
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <section className="card" style={{ marginTop: 24 }} aria-label="Expenses">
+        <div className="page__header" style={{ padding: 0, marginBottom: 12 }}>
+          <div>
+            <h3 className="card__title">Expenses</h3>
+            <p className="card__subtitle">
+              Add and review expenses here without leaving Finance.
+            </p>
+          </div>
+        </div>
+        {content}
+      </section>
+    )
+  }
+
+  return (
+    <div className="page">
+      <header className="page__header">
+        <div>
+          <h2 className="page__title">Expenses</h2>
+          <p className="page__subtitle">
+            Record rent, salaries, utilities, and other store costs so you can see real profit.
+          </p>
+        </div>
+      </header>
+      {content}
     </div>
   )
 }

@@ -13,6 +13,7 @@ import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { CUSTOMER_CACHE_LIMIT } from '../utils/offlineCache'
 import { DebtSummary, formatGhsFromCents, summarizeCustomerDebt } from '../utils/debt'
+import Expenses from './Expenses'
 
 type RangeKey = 'month' | '30d' | '7d' | 'all'
 type DownloadTab = 'sales' | 'products' | 'expenses'
@@ -405,6 +406,14 @@ export default function Finance() {
             Track cash and expenses for your Sedifex workspace.
           </p>
         </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Link className="button button--primary button--small" to="/close-day">
+            Close day
+          </Link>
+          <Link className="button button--ghost button--small" to="/expenses">
+            Open expenses
+          </Link>
+        </div>
       </header>
 
       {/* Overview card */}
@@ -511,7 +520,8 @@ export default function Finance() {
                 GHS {totalExpenses.toFixed(2)}
               </p>
               <p className="card__subtitle">
-                All expenses from your Expenses page in this period.
+                This month: <strong>GHS {totalMonthlyExpenses.toFixed(2)}</strong> · All time:{' '}
+                <strong>GHS {totalAllExpenses.toFixed(2)}</strong>
               </p>
             </div>
 
@@ -543,63 +553,7 @@ export default function Finance() {
         )}
       </section>
 
-      <section className="card" style={{ marginTop: 24 }} aria-label="Expense history">
-        <div className="page__header" style={{ padding: 0, marginBottom: 12 }}>
-          <div>
-            <h3 className="card__title">Expense history</h3>
-            <p className="card__subtitle">
-              Review recorded expenses without leaving the Finance page.
-            </p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <p className="card__subtitle">
-              This month: <strong>GHS {totalMonthlyExpenses.toFixed(2)}</strong>
-            </p>
-            <p className="card__subtitle">
-              All time: <strong>GHS {totalAllExpenses.toFixed(2)}</strong>
-            </p>
-          </div>
-        </div>
-
-        {!storeId ? (
-          <p className="status status--error" role="alert">
-            Select or create a workspace to see expenses here.
-          </p>
-        ) : expenses.length === 0 ? (
-          <div className="empty-state">
-            <h4 className="empty-state__title">No expenses yet</h4>
-            <p>
-              Add your first expense on the <Link to="/expenses">Expenses</Link> page to
-              start tracking costs here.
-            </p>
-          </div>
-        ) : (
-          <div className="table-wrapper">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Category</th>
-                  <th>Description</th>
-                  <th className="sell-page__numeric">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {expenses.map(expense => (
-                  <tr key={expense.id}>
-                    <td>{expense.date}</td>
-                    <td>{expense.category}</td>
-                    <td>{expense.description || '—'}</td>
-                    <td className="sell-page__numeric">
-                      GHS {expense.amount.toFixed(2)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <Expenses embedded />
 
       {/* Downloads */}
       <section className="card" style={{ marginTop: 24 }} aria-label="Download finance data">
@@ -665,21 +619,6 @@ export default function Finance() {
         )}
       </section>
 
-      {/* Quick links (same idea as before) */}
-      <section className="card" style={{ marginTop: 24 }}>
-        <h3 className="card__title">Quick links</h3>
-        <p className="card__subtitle">
-          Jump straight to the main money pages for your business.
-        </p>
-        <ul className="link-list">
-          <li>
-            <Link to="/close-day">Close Day &amp; cash counts</Link>
-          </li>
-          <li>
-            <Link to="/expenses">Expenses &amp; payouts</Link>
-          </li>
-        </ul>
-      </section>
     </div>
   )
 }
