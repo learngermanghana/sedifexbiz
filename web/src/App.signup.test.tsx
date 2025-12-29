@@ -235,7 +235,7 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/Confirm password/i), 'weak')
     })
 
-    const submitButton = screen.getByRole('button', { name: /Create account/i })
+    const submitButton = screen.getByRole('button', { name: /Start free trial/i })
     expect(submitButton).toBeDisabled()
 
     await act(async () => {
@@ -285,7 +285,7 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
 
-      await user.click(screen.getByRole('button', { name: /Create account/i }))
+      await user.click(screen.getByRole('button', { name: /Start free trial/i }))
     })
 
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalled())
@@ -336,7 +336,7 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
 
-      await user.click(screen.getByRole('button', { name: /Create account/i }))
+      await user.click(screen.getByRole('button', { name: /Start free trial/i }))
     })
 
     await waitFor(() => expect(mocks.persistSession).toHaveBeenCalledTimes(2))
@@ -448,7 +448,7 @@ describe('App signup cleanup', () => {
       await user.type(screen.getByLabelText(/^Password$/i), 'Password1!')
       await user.type(screen.getByLabelText(/Confirm password/i), 'Password1!')
 
-      await user.click(screen.getByRole('button', { name: /Create account/i }))
+      await user.click(screen.getByRole('button', { name: /Start free trial/i }))
     })
 
     await waitFor(() =>
