@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { FirebaseError } from 'firebase/app'
 import {
   collection,
+  doc,
   limit,
   onSnapshot,
   orderBy,
@@ -8,6 +10,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
+import { bulkMessagingCreditsPaystackUrl } from '../config/env'
 import { db, functions } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { CUSTOMER_CACHE_LIMIT, loadCachedCustomers, saveCachedCustomers } from '../utils/offlineCache'
@@ -93,6 +96,8 @@ export default function BulkMessaging() {
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [status, setStatus] = useState<StatusMessage | null>(null)
   const [isSending, setIsSending] = useState(false)
+  const [creditBalance, setCreditBalance] = useState<number>(0)
+  const [creditLoading, setCreditLoading] = useState(true)
 
   const sendBulkMessage = useMemo(
     () => httpsCallable<BulkMessagePayload, BulkMessageResult>(functions, 'sendBulkMessage'),
@@ -105,6 +110,8 @@ export default function BulkMessaging() {
     if (!storeId) {
       setCustomers([])
       setSelectedIds(new Set())
+      setCreditBalance(0)
+      setCreditLoading(false)
       return () => {
         cancelled = true
       }
@@ -159,6 +166,31 @@ export default function BulkMessaging() {
     }
   }, [storeId])
 
+  useEffect(() => {
+    if (!storeId) return undefined
+
+    setCreditLoading(true)
+
+    const unsubscribe = onSnapshot(
+      doc(db, 'stores', storeId),
+      snapshot => {
+        const data = snapshot.data() ?? {}
+        const rawCredits = data.bulkMessagingCredits
+        const nextCredits =
+          typeof rawCredits === 'number' && Number.isFinite(rawCredits) ? rawCredits : 0
+        setCreditBalance(nextCredits)
+        setCreditLoading(false)
+      },
+      error => {
+        console.error('[bulk-messaging] Failed to load bulk messaging credits', error)
+        setCreditBalance(0)
+        setCreditLoading(false)
+      },
+    )
+
+    return () => unsubscribe()
+  }, [storeId])
+
   const tagOptions = useMemo(() => {
     const tags = new Set<string>()
     customers.forEach(customer => {
@@ -197,6 +229,8 @@ export default function BulkMessaging() {
 
   const messageLength = message.length
   const messageSegments = Math.max(1, Math.ceil(messageLength / SMS_SEGMENT_SIZE))
+  const creditsNeeded = selectableCustomers.length
+  const hasEnoughCredits = creditBalance >= creditsNeeded
 
   const allVisibleSelected =
     filteredCustomers.length > 0 && filteredCustomers.every(customer => selectedIds.has(customer.id))
@@ -206,6 +240,7 @@ export default function BulkMessaging() {
     message.trim().length > 0 &&
     message.trim().length <= MESSAGE_LIMIT &&
     selectableCustomers.length > 0 &&
+    hasEnoughCredits &&
     !isSending
 
   const statusToneClass = status ? `bulk-messaging-page__status--${status.tone}` : ''
@@ -261,6 +296,22 @@ export default function BulkMessaging() {
       return
     }
 
+    if (creditLoading) {
+      setStatus({
+        tone: 'info',
+        message: 'Checking bulk messaging credits. Please wait a moment and try again.',
+      })
+      return
+    }
+
+    if (!hasEnoughCredits) {
+      setStatus({
+        tone: 'error',
+        message: 'You are out of bulk messaging credits. Please buy more to continue.',
+      })
+      return
+    }
+
     setIsSending(true)
 
     try {
@@ -295,6 +346,13 @@ export default function BulkMessaging() {
       }
     } catch (error) {
       console.error('[bulk-messaging] Failed to send bulk message', error)
+      if (error instanceof FirebaseError && error.code === 'failed-precondition') {
+        setStatus({
+          tone: 'error',
+          message: error.message || 'You do not have enough bulk messaging credits to send.',
+        })
+        return
+      }
       setStatus({
         tone: 'error',
         message: 'We could not send the messages. Check Twilio configuration and try again.',
@@ -337,6 +395,31 @@ export default function BulkMessaging() {
           <p className="bulk-messaging-page__summary-meta">
             {channel === 'sms' ? `${messageSegments} SMS segment(s)` : 'WhatsApp message count'}
           </p>
+        </div>
+        <div className="card bulk-messaging-page__summary-card bulk-messaging-page__summary-card--credits">
+          <p className="bulk-messaging-page__summary-label">Bulk message credits</p>
+          <p className="bulk-messaging-page__summary-value">
+            {creditLoading ? 'Loading…' : creditBalance}
+          </p>
+          <div className="bulk-messaging-page__summary-meta bulk-messaging-page__credits-meta">
+            <span>
+              {creditLoading
+                ? 'Checking available credits'
+                : creditsNeeded > 0
+                ? `${creditsNeeded} credit(s) required to send`
+                : 'Select recipients to see required credits'}
+            </span>
+            {bulkMessagingCreditsPaystackUrl ? (
+              <a
+                className="button button--ghost button--small"
+                href={bulkMessagingCreditsPaystackUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Buy credits
+              </a>
+            ) : null}
+          </div>
         </div>
       </section>
 
@@ -398,7 +481,9 @@ export default function BulkMessaging() {
                 {isSending ? 'Sending...' : `Send ${channel === 'sms' ? 'SMS' : 'WhatsApp'}`}
               </button>
               <div className="bulk-messaging-page__actions-meta">
-                Only customers with phone numbers will receive this broadcast.
+                {hasEnoughCredits
+                  ? 'Only customers with phone numbers will receive this broadcast.'
+                  : 'Purchase bulk messaging credits to unlock sending.'}
               </div>
             </div>
           </form>

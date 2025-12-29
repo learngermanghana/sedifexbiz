@@ -30,6 +30,13 @@
   font-size: 13px;
 }
 
+.bulk-messaging-page__credits-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .bulk-messaging-page__grid {
   display: grid;
   gap: 24px;
