@@ -1,8 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import { db } from '../firebase'
-import { useActiveStore } from '../hooks/useActiveStore'
-import { useAuthUser } from '../hooks/useAuthUser'
 import { buildReceiptPdf, type PaymentMethod, type ReceiptLine } from '../utils/receipt'
 import { buildInvoicePdf, type InvoiceLine } from '../utils/invoice'
 import './DocumentsGenerator.css'
@@ -58,17 +54,12 @@ export default function DocumentsGenerator() {
   const [issuedDate, setIssuedDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
-  const [includeInSales, setIncludeInSales] = useState(false)
   const [taxRate, setTaxRate] = useState('0')
   const [discount, setDiscount] = useState('0')
   const [notes, setNotes] = useState('')
   const [lineItems, setLineItems] = useState<LineItemState[]>([createLineItem()])
   const [error, setError] = useState<string | null>(null)
   const [generated, setGenerated] = useState<GeneratedDocument | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
-
-  const { storeId } = useActiveStore()
-  const user = useAuthUser()
 
   const parsedItems = useMemo(() => {
     return lineItems
@@ -116,7 +107,7 @@ export default function DocumentsGenerator() {
     setLineItems(prev => prev.filter(item => item.id !== id))
   }
 
-  async function handleGenerate() {
+  function handleGenerate() {
     if (!parsedItems.length) {
       setError('Add at least one line item to generate a document.')
       return
@@ -140,126 +131,64 @@ export default function DocumentsGenerator() {
     const customerLabel = customerName.trim() || null
     const phoneLabel = customerPhone.trim() || null
 
-    if (includeInSales && !storeId) {
-      setError('Select a workspace before adding this document to total sales.')
-      return
-    }
-
     if (generated?.url) {
       URL.revokeObjectURL(generated.url)
     }
 
-    setIsSaving(true)
+    if (docType === 'receipt') {
+      const saleId = invoiceNumber.trim() || `receipt-${Date.now()}`
+      const discountInput = discountValue > 0 ? formatCurrency(discountValue) : 'None'
 
-    try {
-      if (docType === 'receipt') {
-        const saleId = invoiceNumber.trim() || `receipt-${Date.now()}`
-        const discountInput = discountValue > 0 ? formatCurrency(discountValue) : 'None'
-
-        const receipt = buildReceiptPdf({
-          saleId,
-          items: normalizedItems as ReceiptLine[],
-          totals: commonTotals,
-          paymentMethod,
-          discountInput,
-          companyName: companyLabel,
-          customerName: customerLabel,
-          customerPhone: phoneLabel,
-        })
-
-        if (!receipt) {
-          setError('Unable to generate a receipt right now. Try again.')
-          setGenerated(null)
-          return
-        }
-
-        if (includeInSales && storeId) {
-          await addDoc(collection(db, 'sales'), {
-            branchId: storeId,
-            storeId,
-            cashierId: user?.uid ?? null,
-            total: total,
-            taxTotal,
-            totals: commonTotals,
-            items: normalizedItems.map(item => ({
-              name: item.name,
-              qty: item.qty,
-              price: item.price,
-              type: 'service',
-              isService: true,
-            })),
-            payment: {
-              method: paymentMethod,
-              tenders: [{ method: paymentMethod, amount: total }],
-            },
-            source: 'manual-receipt',
-            createdAt: serverTimestamp(),
-          })
-        }
-
-        setGenerated({
-          url: receipt.url,
-          fileName: receipt.fileName,
-          shareText: receipt.shareText,
-        })
-        setError(null)
-        return
-      }
-
-      const invoiceId = invoiceNumber.trim() || `inv-${Date.now()}`
-      const invoice = buildInvoicePdf({
-        invoiceNumber: invoiceId,
-        issuedDate,
-        dueDate,
-        items: normalizedItems as InvoiceLine[],
+      const receipt = buildReceiptPdf({
+        saleId,
+        items: normalizedItems as ReceiptLine[],
         totals: commonTotals,
+        paymentMethod,
+        discountInput,
         companyName: companyLabel,
         customerName: customerLabel,
         customerPhone: phoneLabel,
-        notes: notes.trim() || null,
       })
 
-      if (!invoice) {
-        setError('Unable to generate an invoice right now. Try again.')
+      if (!receipt) {
+        setError('Unable to generate a receipt right now. Try again.')
         setGenerated(null)
         return
       }
 
-      if (includeInSales && storeId) {
-        await addDoc(collection(db, 'sales'), {
-          branchId: storeId,
-          storeId,
-          cashierId: user?.uid ?? null,
-          total: total,
-          taxTotal,
-          totals: commonTotals,
-          items: normalizedItems.map(item => ({
-            name: item.name,
-            qty: item.qty,
-            price: item.price,
-            type: 'service',
-            isService: true,
-          })),
-          payment: {
-            method: paymentMethod,
-            tenders: [{ method: paymentMethod, amount: total }],
-          },
-          source: 'manual-invoice',
-          createdAt: serverTimestamp(),
-        })
-      }
-
       setGenerated({
-        url: invoice.url,
-        fileName: invoice.fileName,
+        url: receipt.url,
+        fileName: receipt.fileName,
+        shareText: receipt.shareText,
       })
       setError(null)
-    } catch (saveError) {
-      console.error('[documents-generator] Unable to generate document', saveError)
-      setError('Unable to generate this document right now. Please try again.')
-    } finally {
-      setIsSaving(false)
+      return
     }
+
+    const invoiceId = invoiceNumber.trim() || `inv-${Date.now()}`
+    const invoice = buildInvoicePdf({
+      invoiceNumber: invoiceId,
+      issuedDate,
+      dueDate,
+      items: normalizedItems as InvoiceLine[],
+      totals: commonTotals,
+      companyName: companyLabel,
+      customerName: customerLabel,
+      customerPhone: phoneLabel,
+      notes: notes.trim() || null,
+    })
+
+    if (!invoice) {
+      setError('Unable to generate an invoice right now. Try again.')
+      setGenerated(null)
+      return
+    }
+
+    setGenerated({
+      url: invoice.url,
+      fileName: invoice.fileName,
+    })
+    setError(null)
   }
 
   return (
@@ -356,9 +285,7 @@ export default function DocumentsGenerator() {
                     />
                   </label>
                 </>
-              ) : null}
-
-              {docType === 'receipt' || includeInSales ? (
+              ) : (
                 <label className="form__field">
                   <span className="form__hint">Payment method</span>
                   <select
@@ -373,35 +300,7 @@ export default function DocumentsGenerator() {
                     ))}
                   </select>
                 </label>
-              ) : null}
-
-              <fieldset className="form__field form__field--choices">
-                <legend>Add to total sales?</legend>
-                <div className="form__choice-group">
-                  <label className="form__choice" data-selected={includeInSales}>
-                    <input
-                      type="radio"
-                      name="include-in-sales"
-                      checked={includeInSales}
-                      onChange={() => setIncludeInSales(true)}
-                    />
-                    Yes, include it
-                  </label>
-                  <label className="form__choice" data-selected={!includeInSales}>
-                    <input
-                      type="radio"
-                      name="include-in-sales"
-                      checked={!includeInSales}
-                      onChange={() => setIncludeInSales(false)}
-                    />
-                    No, keep it separate
-                  </label>
-                </div>
-                <p className="form__hint">
-                  When enabled, a manual sale entry is stored so finance totals include this
-                  document.
-                </p>
-              </fieldset>
+              )}
 
               <div className="documents-generator__row">
                 <label className="form__field">
@@ -538,15 +437,8 @@ export default function DocumentsGenerator() {
         ) : null}
 
         <div className="documents-generator__actions">
-          <button
-            type="button"
-            className="button button--primary"
-            onClick={handleGenerate}
-            disabled={isSaving}
-          >
-            {isSaving
-              ? 'Saving…'
-              : `Generate ${docType === 'invoice' ? 'invoice' : 'receipt'} PDF`}
+          <button type="button" className="button button--primary" onClick={handleGenerate}>
+            Generate {docType === 'invoice' ? 'invoice' : 'receipt'} PDF
           </button>
           {generated ? (
             <div className="documents-generator__download">
