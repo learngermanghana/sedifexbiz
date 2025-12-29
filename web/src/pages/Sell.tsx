@@ -1843,9 +1843,14 @@ export default function Sell() {
                   </div>
                   <div>
                     <p className="sell-page__display-label">Display link</p>
-                    <button type="button" className="sell-page__display-link" onClick={handleCopyCustomerDisplay}>
-                      {displayLink}
-                    </button>
+                    <div className="sell-page__display-link-row">
+                      <a className="sell-page__display-link" href={displayLink} target="_blank" rel="noreferrer">
+                        {displayLink}
+                      </a>
+                      <button type="button" className="sell-page__display-link-copy" onClick={handleCopyCustomerDisplay}>
+                        Copy link
+                      </button>
+                    </div>
                   </div>
                 </div>
 
