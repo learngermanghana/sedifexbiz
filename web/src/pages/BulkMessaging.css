@@ -199,6 +199,50 @@
   gap: 16px;
 }
 
+.bulk-messaging-page__buy-credits-actions {
+  display: grid;
+  gap: 12px;
+  flex: 1;
+}
+
+.bulk-messaging-page__buy-credits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.bulk-messaging-page__buy-credits-option {
+  text-align: left;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+}
+
+.bulk-messaging-page__buy-credits-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+
+.bulk-messaging-page__buy-credits-amount {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.bulk-messaging-page__buy-credits-price {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.bulk-messaging-page__buy-credits-cta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #4f46e5;
+}
+
 .bulk-messaging-page__buy-credits-note {
   margin: 0;
   font-size: 13px;
