@@ -10,7 +10,6 @@ import {
   where,
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
-import { bulkMessagingCreditsPaystackUrl } from '../config/env'
 import { db, functions } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { CUSTOMER_CACHE_LIMIT, loadCachedCustomers, saveCachedCustomers } from '../utils/offlineCache'
@@ -49,6 +48,17 @@ type BulkMessageResult = {
   failures: { phone: string; error: string }[]
 }
 
+type BulkCreditsCheckoutPayload = {
+  storeId: string
+  package: string
+}
+
+type BulkCreditsCheckoutResult = {
+  ok: boolean
+  authorizationUrl?: string | null
+  reference?: string | null
+}
+
 type StatusTone = 'success' | 'error' | 'info'
 
 type StatusMessage = {
@@ -56,8 +66,20 @@ type StatusMessage = {
   message: string
 }
 
+type CreditsPackage = {
+  id: string
+  credits: number
+  price: number
+  label: string
+}
+
 const MESSAGE_LIMIT = 1000
 const SMS_SEGMENT_SIZE = 160
+const BULK_CREDITS_PACKAGES: CreditsPackage[] = [
+  { id: '100', credits: 100, price: 50, label: 'Starter' },
+  { id: '500', credits: 500, price: 230, label: 'Growth' },
+  { id: '1000', credits: 1000, price: 430, label: 'Scale' },
+]
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
   const displayName = customer.displayName?.trim()
@@ -98,9 +120,20 @@ export default function BulkMessaging() {
   const [isSending, setIsSending] = useState(false)
   const [creditBalance, setCreditBalance] = useState<number>(0)
   const [creditLoading, setCreditLoading] = useState(true)
+  const [buyingPackageId, setBuyingPackageId] = useState<string | null>(null)
+  const [buyStatus, setBuyStatus] = useState<StatusMessage | null>(null)
 
   const sendBulkMessage = useMemo(
     () => httpsCallable<BulkMessagePayload, BulkMessageResult>(functions, 'sendBulkMessage'),
+    [],
+  )
+
+  const createBulkCreditsCheckout = useMemo(
+    () =>
+      httpsCallable<BulkCreditsCheckoutPayload, BulkCreditsCheckoutResult>(
+        functions,
+        'createBulkCreditsCheckout',
+      ),
     [],
   )
 
@@ -244,6 +277,9 @@ export default function BulkMessaging() {
     !isSending
 
   const statusToneClass = status ? `bulk-messaging-page__status--${status.tone}` : ''
+  const buyStatusToneClass = buyStatus
+    ? `bulk-messaging-page__status--${buyStatus.tone}`
+    : ''
 
   function handleToggleSelect(id: string) {
     setSelectedIds(prev => {
@@ -362,6 +398,43 @@ export default function BulkMessaging() {
     }
   }
 
+  async function handleBuyCredits(packageId: string) {
+    setBuyStatus(null)
+
+    if (!storeId) {
+      setBuyStatus({ tone: 'error', message: 'Select a workspace before buying credits.' })
+      return
+    }
+
+    if (buyingPackageId) return
+
+    setBuyingPackageId(packageId)
+
+    try {
+      const response = await createBulkCreditsCheckout({
+        storeId,
+        package: packageId,
+      })
+      const data = response.data
+      const authorizationUrl =
+        typeof data?.authorizationUrl === 'string' ? data.authorizationUrl : null
+
+      if (!authorizationUrl) {
+        throw new Error('Paystack did not return a checkout URL.')
+      }
+
+      window.location.assign(authorizationUrl)
+    } catch (error) {
+      console.error('[bulk-messaging] Failed to start bulk credits checkout', error)
+      setBuyStatus({
+        tone: 'error',
+        message: 'We could not start the Paystack checkout. Please try again.',
+      })
+    } finally {
+      setBuyingPackageId(null)
+    }
+  }
+
   return (
     <div className="page bulk-messaging-page">
       <header className="page__header">
@@ -409,16 +482,9 @@ export default function BulkMessaging() {
                 ? `${creditsNeeded} credit(s) required to send`
                 : 'Select recipients to see required credits'}
             </span>
-            {bulkMessagingCreditsPaystackUrl ? (
-              <a
-                className="button button--ghost button--small"
-                href={bulkMessagingCreditsPaystackUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Buy credits
-              </a>
-            ) : null}
+            <a className="button button--ghost button--small" href="#buy-credits">
+              Buy credits
+            </a>
           </div>
         </div>
       </section>
@@ -566,27 +632,51 @@ export default function BulkMessaging() {
         </section>
       </div>
 
-      <section className="card bulk-messaging-page__buy-credits">
+      <section className="card bulk-messaging-page__buy-credits" id="buy-credits">
         <div>
           <h3 className="card__title">Buy bulk messaging credits</h3>
           <p className="card__subtitle">
             Top up your balance to keep broadcasting SMS and WhatsApp campaigns.
           </p>
         </div>
-        {bulkMessagingCreditsPaystackUrl ? (
-          <a
-            className="button button--primary"
-            href={bulkMessagingCreditsPaystackUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Buy credits
-          </a>
-        ) : (
-          <p className="bulk-messaging-page__buy-credits-note">
-            Contact support to enable payments for bulk messaging credits.
-          </p>
-        )}
+        <div className="bulk-messaging-page__buy-credits-actions">
+          <div className="bulk-messaging-page__buy-credits-grid">
+            {BULK_CREDITS_PACKAGES.map(creditPackage => {
+              const isBusy = buyingPackageId === creditPackage.id
+              return (
+                <button
+                  key={creditPackage.id}
+                  type="button"
+                  className="button button--outline bulk-messaging-page__buy-credits-option"
+                  onClick={() => handleBuyCredits(creditPackage.id)}
+                  disabled={!storeId || Boolean(buyingPackageId)}
+                >
+                  <span className="bulk-messaging-page__buy-credits-label">
+                    {creditPackage.label}
+                  </span>
+                  <span className="bulk-messaging-page__buy-credits-amount">
+                    {creditPackage.credits} credits
+                  </span>
+                  <span className="bulk-messaging-page__buy-credits-price">
+                    GHS {creditPackage.price}
+                  </span>
+                  <span className="bulk-messaging-page__buy-credits-cta">
+                    {isBusy ? 'Starting checkout…' : 'Buy now'}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {buyStatus ? (
+            <div className={`bulk-messaging-page__status ${buyStatusToneClass}`} role="status">
+              {buyStatus.message}
+            </div>
+          ) : (
+            <p className="bulk-messaging-page__buy-credits-note">
+              Choose a package to continue to Paystack checkout.
+            </p>
+          )}
+        </div>
       </section>
     </div>
   )

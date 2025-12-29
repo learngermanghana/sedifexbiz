@@ -82,6 +82,11 @@ type CreateCheckoutPayload = {
   redirectUrl?: unknown
 }
 
+type BulkCreditsCheckoutPayload = {
+  storeId?: unknown
+  package?: unknown
+}
+
 const VALID_ROLES = new Set(['owner', 'staff'])
 const TRIAL_DAYS = 14
 const GRACE_DAYS = 7
@@ -2084,6 +2089,18 @@ const PAYSTACK_CURRENCY = defineString('PAYSTACK_CURRENCY')
 
 type PaystackPlanKey = 'starter-monthly' | 'starter-yearly' | string
 
+const BULK_CREDITS_PACKAGES: Record<
+  string,
+  {
+    credits: number
+    amount: number
+  }
+> = {
+  '100': { credits: 100, amount: 50 },
+  '500': { credits: 500, amount: 230 },
+  '1000': { credits: 1000, amount: 430 },
+}
+
 let paystackConfigLogged = false
 function getPaystackConfig() {
   const secret = PAYSTACK_SECRET_KEY.value()
@@ -2140,6 +2157,17 @@ function resolvePlanKey(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const trimmed = raw.trim()
   return trimmed ? trimmed : null
+}
+
+function resolveBulkCreditsPackage(raw: unknown): string | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const key = String(raw)
+    return BULK_CREDITS_PACKAGES[key] ? key : null
+  }
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  return BULK_CREDITS_PACKAGES[trimmed] ? trimmed : null
 }
 
 function resolvePlanMonths(planKey: string | null): number {
@@ -2371,6 +2399,121 @@ export const createPaystackCheckout = functions.https.onCall(
   },
 )
 
+/** ============================================================================
+ *  CALLABLE: createBulkCreditsCheckout
+ * ==========================================================================*/
+
+export const createBulkCreditsCheckout = functions.https.onCall(
+  async (data: unknown, context: functions.https.CallableContext) => {
+    assertOwnerAccess(context)
+    const paystackConfig = ensurePaystackConfig()
+
+    const payload = (data ?? {}) as BulkCreditsCheckoutPayload
+    const storeId =
+      typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
+
+    if (!storeId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'storeId is required.',
+      )
+    }
+
+    await verifyOwnerForStore(context.auth!.uid, storeId)
+
+    const packageKey = resolveBulkCreditsPackage(payload.package)
+    if (!packageKey) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Invalid bulk credits package.',
+      )
+    }
+
+    const packageInfo = BULK_CREDITS_PACKAGES[packageKey]
+    const storeSnap = await db.collection('stores').doc(storeId).get()
+    const storeData = (storeSnap.data() ?? {}) as Record<string, unknown>
+
+    const token = context.auth!.token as Record<string, unknown>
+    const tokenEmail =
+      typeof token.email === 'string' ? (token.email as string) : null
+    const email =
+      tokenEmail ||
+      (typeof storeData.ownerEmail === 'string' ? storeData.ownerEmail : null)
+
+    if (!email) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Missing owner email. Please sign in again.',
+      )
+    }
+
+    const reference = `${storeId}_bulk_credits_${Date.now()}`
+    const body = {
+      email,
+      amount: toMinorUnits(packageInfo.amount),
+      currency: paystackConfig.currency,
+      reference,
+      metadata: {
+        storeId,
+        userId: context.auth!.uid,
+        bulkCreditsPackage: packageKey,
+        creditsPackage: packageKey,
+        credits: packageInfo.credits,
+      },
+    }
+
+    let responseJson: any
+    try {
+      const response = await fetch(
+        `${PAYSTACK_BASE_URL}/transaction/initialize`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${paystackConfig.secret}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        },
+      )
+
+      responseJson = await response.json()
+
+      if (!response.ok || !responseJson.status) {
+        console.error('[paystack] bulk credits initialize failed', responseJson)
+        throw new functions.https.HttpsError(
+          'unknown',
+          'Unable to start checkout with Paystack.',
+        )
+      }
+    } catch (error) {
+      console.error('[paystack] bulk credits initialize error', error)
+      throw new functions.https.HttpsError(
+        'unknown',
+        'Unable to start checkout with Paystack.',
+      )
+    }
+
+    const authUrl =
+      responseJson.data &&
+      typeof responseJson.data.authorization_url === 'string'
+        ? responseJson.data.authorization_url
+        : null
+
+    if (!authUrl) {
+      throw new functions.https.HttpsError(
+        'unknown',
+        'Paystack did not return a valid authorization URL.',
+      )
+    }
+
+    return {
+      ok: true,
+      authorizationUrl: authUrl,
+      reference,
+    }
+  },
+)
+
 // 🔹 Alias so the frontend name still works
 export const createCheckout = createPaystackCheckout
 
@@ -2424,6 +2567,34 @@ export const handlePaystackWebhook = functions.https.onRequest(
         const metadata = data.metadata || {}
         const storeId =
           typeof metadata.storeId === 'string' ? metadata.storeId.trim() : ''
+        const bulkCreditsPackage = resolveBulkCreditsPackage(
+          metadata.bulkCreditsPackage ?? metadata.creditsPackage ?? metadata.package,
+        )
+
+        if (bulkCreditsPackage) {
+          if (!storeId) {
+            console.warn(
+              '[paystack] charge.success missing storeId for bulk credits',
+            )
+          } else {
+            const storeRef = db.collection('stores').doc(storeId)
+            const timestamp = admin.firestore.FieldValue.serverTimestamp()
+            const packageInfo = BULK_CREDITS_PACKAGES[bulkCreditsPackage]
+
+            await storeRef.set(
+              {
+                bulkMessagingCredits: admin.firestore.FieldValue.increment(
+                  packageInfo.credits,
+                ),
+                updatedAt: timestamp,
+              },
+              { merge: true },
+            )
+          }
+
+          res.status(200).send('ok')
+          return
+        }
 
         if (!storeId) {
           console.warn(
