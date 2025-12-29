@@ -845,13 +845,49 @@ export default function Sell() {
     setDisplayStatus('Customer display stopped.')
   }
 
-  async function handleCopyCustomerDisplay() {
+  async function handleShareCustomerDisplay() {
     if (!displayLink) return
+
+    const navAny = navigator as any
+
+    if (typeof navAny?.share === 'function') {
+      try {
+        await navAny.share({
+          title: 'Customer display',
+          text: 'Open this link to view your cart',
+          url: displayLink,
+        })
+        setDisplayStatus('Customer display link shared.')
+        return
+      } catch {
+        // user cancelled or share failed — fall through
+      }
+    }
+
     try {
-      await navigator.clipboard.writeText(displayLink)
-      setDisplayStatus('Customer display link copied.')
-    } catch (error) {
-      console.warn('[sell] Unable to copy display link', error)
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(displayLink)
+        setDisplayStatus('Customer display link copied.')
+        return
+      }
+    } catch {
+      // fall through
+    }
+
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = displayLink
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      ta.style.top = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+
+      setDisplayStatus(ok ? 'Customer display link copied.' : 'Copy failed. Select and copy the link manually.')
+    } catch {
       setDisplayStatus('Copy failed. Select and copy the link manually.')
     }
   }
@@ -1847,7 +1883,7 @@ export default function Sell() {
                       <a className="sell-page__display-link" href={displayLink} target="_blank" rel="noreferrer">
                         {displayLink}
                       </a>
-                      <button type="button" className="sell-page__display-link-copy" onClick={handleCopyCustomerDisplay}>
+                      <button type="button" className="sell-page__display-link-copy" onClick={handleShareCustomerDisplay}>
                         Copy link
                       </button>
                     </div>
