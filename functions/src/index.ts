@@ -1890,21 +1890,25 @@ export const sendBulkMessage = functions.https.onCall(
       0,
     )
 
-    if (refundCredits > 0) {
-      await storeRef.update({
-        bulkMessagingCredits: admin.firestore.FieldValue.increment(refundCredits),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      })
-    }
+if (refundCredits > 0) {
+  try {
+    await storeRef.update({
+      bulkMessagingCredits: admin.firestore.FieldValue.increment(refundCredits),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    })
+  } catch (error) {
+    console.error('[bulk-message] refund failed', error)
+    // don't throw — messages already went out, so we just log and continue
+  }
+}
 
-    return {
-      ok: true,
-      attempted,
-      sent,
-      failures: failures.map(({ phone, error }) => ({ phone, error })),
-    }
-  },
-)
+return {
+  ok: true,
+  attempted,
+  sent,
+  failures: failures.map(({ phone, error }) => ({ phone, error })),
+}
+
 
 /** ============================================================================
  *  CALLABLE: receiveStock (staff)
