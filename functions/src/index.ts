@@ -1803,18 +1803,27 @@ export const sendBulkMessage = functions.https.onCall(
     const segments =
       channel === 'sms' ? Math.ceil(message.length / SMS_SEGMENT_SIZE) : 0
 
-    const creditsRequired = recipients.reduce((total, recipient) => {
+    const getRecipientCost = (recipient: BulkMessageRecipient) => {
       const group = resolveGroupFromPhone(
         recipient.phone,
         rateTable.dialCodeToGroup,
         rateTable.defaultGroup,
       )
       if (channel === 'sms') {
-        return total + segments * getSmsRate(group)
+        return segments * getSmsRate(group)
       }
-      return total + getWhatsappRate(group)
-    }, 0)
+      return getWhatsappRate(group)
+    }
+
+    const creditCosts = recipients.map(recipient => getRecipientCost(recipient))
+    const creditsRequired = creditCosts.reduce((total, cost) => total + cost, 0)
     const storeRef = db.collection('stores').doc(storeId)
+
+    const config = ensureTwilioConfig(channel)
+    const from =
+      channel === 'sms'
+        ? config.smsFrom!
+        : formatTwilioAddress('whatsapp', config.whatsappFrom!)
 
     await db.runTransaction(async transaction => {
       const storeSnap = await transaction.get(storeRef)
@@ -1842,12 +1851,6 @@ export const sendBulkMessage = functions.https.onCall(
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       })
     })
-
-    const config = ensureTwilioConfig(channel)
-    const from =
-      channel === 'sms'
-        ? config.smsFrom!
-        : formatTwilioAddress('whatsapp', config.whatsappFrom!)
 
     const attempted = recipients.length
     const results = await Promise.allSettled(
@@ -1877,17 +1880,28 @@ export const sendBulkMessage = functions.https.onCall(
             : typeof result.reason === 'string'
               ? result.reason
               : 'Unknown error'
-        return { phone, error: errorMessage }
+        return { phone, error: errorMessage, index }
       })
-      .filter(Boolean) as { phone: string; error: string }[]
+      .filter(Boolean) as { phone: string; error: string; index: number }[]
 
     const sent = attempted - failures.length
+    const refundCredits = failures.reduce(
+      (total, failure) => total + (creditCosts[failure.index] ?? 0),
+      0,
+    )
+
+    if (refundCredits > 0) {
+      await storeRef.update({
+        bulkMessagingCredits: admin.firestore.FieldValue.increment(refundCredits),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    }
 
     return {
       ok: true,
       attempted,
       sent,
-      failures,
+      failures: failures.map(({ phone, error }) => ({ phone, error })),
     }
   },
 )
