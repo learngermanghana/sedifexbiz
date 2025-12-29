@@ -1843,7 +1843,6 @@ export const sendBulkMessage = functions.https.onCall(
       })
     })
 
-    const config = ensureTwilioConfig(channel)
     const from =
       channel === 'sms'
         ? config.smsFrom!
