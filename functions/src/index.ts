@@ -39,6 +39,21 @@ type InitializeStorePayload = {
   storeId?: unknown
 }
 
+type BulkMessageChannel = 'sms' | 'whatsapp'
+
+type BulkMessageRecipient = {
+  id?: string
+  name?: string
+  phone?: string
+}
+
+type BulkMessagePayload = {
+  storeId?: unknown
+  channel?: unknown
+  message?: unknown
+  recipients?: unknown
+}
+
 type ManageStaffPayload = {
   storeId?: unknown
   email?: unknown
@@ -64,6 +79,8 @@ const VALID_ROLES = new Set(['owner', 'staff'])
 const TRIAL_DAYS = 14
 const GRACE_DAYS = 7
 const MILLIS_PER_DAY = 1000 * 60 * 60 * 24
+const BULK_MESSAGE_LIMIT = 1000
+const BULK_MESSAGE_BATCH_LIMIT = 200
 
 /** ============================================================================
  *  HELPERS
@@ -193,6 +210,79 @@ function normalizeStoreProfile(profile: StoreProfilePayload | undefined) {
   }
 
   return { businessName, country, city, phone }
+}
+
+function normalizeBulkMessageChannel(value: unknown): BulkMessageChannel {
+  if (value === 'sms' || value === 'whatsapp') return value
+  throw new functions.https.HttpsError('invalid-argument', 'Channel must be sms or whatsapp')
+}
+
+function normalizeBulkMessageRecipients(value: unknown): BulkMessageRecipient[] {
+  if (!Array.isArray(value)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Recipients must be an array')
+  }
+
+  return value.map((recipient, index) => {
+    if (!recipient || typeof recipient !== 'object') {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        `Recipient at index ${index} must be an object`,
+      )
+    }
+
+    const raw = recipient as BulkMessageRecipient
+    const phone = typeof raw.phone === 'string' ? raw.phone.trim() : ''
+    const name = typeof raw.name === 'string' ? raw.name.trim() : undefined
+
+    if (!phone) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        `Recipient at index ${index} is missing a phone number`,
+      )
+    }
+
+    return {
+      id: typeof raw.id === 'string' ? raw.id : undefined,
+      name,
+      phone,
+    }
+  })
+}
+
+function normalizeBulkMessagePayload(payload: BulkMessagePayload) {
+  if (!payload || typeof payload !== 'object') {
+    throw new functions.https.HttpsError('invalid-argument', 'Payload is required')
+  }
+
+  const storeId =
+    typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
+  if (!storeId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Store id is required')
+  }
+
+  const message = typeof payload.message === 'string' ? payload.message.trim() : ''
+  if (!message) {
+    throw new functions.https.HttpsError('invalid-argument', 'Message is required')
+  }
+
+  if (message.length > BULK_MESSAGE_LIMIT) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      `Message must be ${BULK_MESSAGE_LIMIT} characters or less`,
+    )
+  }
+
+  const channel = normalizeBulkMessageChannel(payload.channel)
+  const recipients = normalizeBulkMessageRecipients(payload.recipients)
+
+  if (recipients.length > BULK_MESSAGE_BATCH_LIMIT) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      `Recipient list is limited to ${BULK_MESSAGE_BATCH_LIMIT} contacts per send`,
+    )
+  }
+
+  return { storeId, channel, message, recipients }
 }
 
 function calculateDaysRemaining(
@@ -1475,6 +1565,163 @@ export const logPaymentReminder = functions.https.onCall(
     const ref = await db.collection('paymentReminderLogs').add(payload)
 
     return { ok: true, reminderId: ref.id }
+  },
+)
+
+/** ============================================================================
+ *  TWILIO BULK MESSAGING
+ * ==========================================================================*/
+
+const TWILIO_ACCOUNT_SID = defineString('TWILIO_ACCOUNT_SID')
+const TWILIO_AUTH_TOKEN = defineString('TWILIO_AUTH_TOKEN')
+const TWILIO_SMS_FROM = defineString('TWILIO_SMS_FROM')
+const TWILIO_WHATSAPP_FROM = defineString('TWILIO_WHATSAPP_FROM')
+
+let twilioConfigLogged = false
+function getTwilioConfig() {
+  const accountSid = TWILIO_ACCOUNT_SID.value()
+  const authToken = TWILIO_AUTH_TOKEN.value()
+  const smsFrom = TWILIO_SMS_FROM.value()
+  const whatsappFrom = TWILIO_WHATSAPP_FROM.value()
+
+  if (!twilioConfigLogged) {
+    console.log('[twilio] startup config', {
+      hasAccountSid: !!accountSid,
+      hasAuthToken: !!authToken,
+      hasSmsFrom: !!smsFrom,
+      hasWhatsappFrom: !!whatsappFrom,
+    })
+    twilioConfigLogged = true
+  }
+
+  return { accountSid, authToken, smsFrom, whatsappFrom }
+}
+
+function ensureTwilioConfig(channel: BulkMessageChannel) {
+  const config = getTwilioConfig()
+
+  if (!config.accountSid || !config.authToken) {
+    console.error('[twilio] Missing account SID or auth token')
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Twilio is not configured. Please contact support.',
+    )
+  }
+
+  if (channel === 'sms' && !config.smsFrom) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Twilio SMS sender is not configured.',
+    )
+  }
+
+  if (channel === 'whatsapp' && !config.whatsappFrom) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Twilio WhatsApp sender is not configured.',
+    )
+  }
+
+  return config
+}
+
+function formatTwilioAddress(channel: BulkMessageChannel, phone: string) {
+  const trimmed = phone.trim()
+  if (!trimmed) return trimmed
+  if (channel === 'whatsapp') {
+    return trimmed.startsWith('whatsapp:') ? trimmed : `whatsapp:${trimmed}`
+  }
+  return trimmed
+}
+
+async function sendTwilioMessage(options: {
+  accountSid: string
+  authToken: string
+  to: string
+  from: string
+  body: string
+}) {
+  const { accountSid, authToken, to, from, body } = options
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`
+  const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64')
+  const payload = new URLSearchParams()
+  payload.set('To', to)
+  payload.set('From', from)
+  payload.set('Body', body)
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${auth}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: payload.toString(),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Twilio error ${response.status}: ${errorText}`)
+  }
+
+  return response.json()
+}
+
+export const sendBulkMessage = functions.https.onCall(
+  async (data: unknown, context: functions.https.CallableContext) => {
+    assertOwnerAccess(context)
+
+    const { storeId, channel, message, recipients } = normalizeBulkMessagePayload(
+      data as BulkMessagePayload,
+    )
+
+    await verifyOwnerForStore(context.auth!.uid, storeId)
+
+    const config = ensureTwilioConfig(channel)
+    const from =
+      channel === 'sms'
+        ? config.smsFrom!
+        : formatTwilioAddress('whatsapp', config.whatsappFrom!)
+
+    const attempted = recipients.length
+    const results = await Promise.allSettled(
+      recipients.map(async recipient => {
+        const to = formatTwilioAddress(channel, recipient.phone ?? '')
+        if (!to) {
+          throw new Error('Missing recipient phone')
+        }
+        await sendTwilioMessage({
+          accountSid: config.accountSid,
+          authToken: config.authToken,
+          to,
+          from,
+          body: message,
+        })
+        return { phone: recipient.phone ?? '' }
+      }),
+    )
+
+    const failures = results
+      .map((result, index) => {
+        if (result.status === 'fulfilled') return null
+        const phone = recipients[index]?.phone ?? ''
+        const errorMessage =
+          result.reason instanceof Error
+            ? result.reason.message
+            : typeof result.reason === 'string'
+              ? result.reason
+              : 'Unknown error'
+        return { phone, error: errorMessage }
+      })
+      .filter(Boolean) as { phone: string; error: string }[]
+
+    const sent = attempted - failures.length
+
+    return {
+      ok: true,
+      attempted,
+      sent,
+      failures,
+    }
   },
 )
 
