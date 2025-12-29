@@ -54,6 +54,13 @@ type BulkMessagePayload = {
   recipients?: unknown
 }
 
+type TwilioRateTable = {
+  defaultGroup: string
+  dialCodeToGroup: Record<string, string>
+  sms: Record<string, { perSegment: number }>
+  whatsapp: Record<string, { perRecipient: number }>
+}
+
 type ManageStaffPayload = {
   storeId?: unknown
   email?: unknown
@@ -81,6 +88,7 @@ const GRACE_DAYS = 7
 const MILLIS_PER_DAY = 1000 * 60 * 60 * 24
 const BULK_MESSAGE_LIMIT = 1000
 const BULK_MESSAGE_BATCH_LIMIT = 200
+const SMS_SEGMENT_SIZE = 160
 
 /** ============================================================================
  *  HELPERS
@@ -247,6 +255,97 @@ function normalizeBulkMessageRecipients(value: unknown): BulkMessageRecipient[] 
       phone,
     }
   })
+}
+
+function normalizeDialCode(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed ? trimmed : null
+  }
+  return null
+}
+
+function normalizeTwilioRateTable(
+  data: FirebaseFirestore.DocumentData | undefined,
+): TwilioRateTable {
+  if (!data || typeof data !== 'object') {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Twilio rate table is not configured.',
+    )
+  }
+
+  const defaultGroup =
+    typeof data.defaultGroup === 'string' && data.defaultGroup.trim()
+      ? data.defaultGroup.trim()
+      : 'ROW'
+
+  const dialCodeToGroup: Record<string, string> = {}
+  if (data.dialCodeToGroup && typeof data.dialCodeToGroup === 'object') {
+    Object.entries(data.dialCodeToGroup as Record<string, unknown>).forEach(
+      ([dialCode, group]) => {
+        const normalizedDial = normalizeDialCode(dialCode)
+        if (!normalizedDial || typeof group !== 'string' || !group.trim()) return
+        dialCodeToGroup[normalizedDial] = group.trim()
+      },
+    )
+  }
+
+  const sms: Record<string, { perSegment: number }> = {}
+  if (data.sms && typeof data.sms === 'object') {
+    Object.entries(data.sms as Record<string, unknown>).forEach(([group, rate]) => {
+      if (!rate || typeof rate !== 'object') return
+      const perSegment = (rate as { perSegment?: unknown }).perSegment
+      if (typeof perSegment !== 'number' || !Number.isFinite(perSegment)) return
+      if (typeof group === 'string' && group.trim()) {
+        sms[group.trim()] = { perSegment }
+      }
+    })
+  }
+
+  const whatsapp: Record<string, { perRecipient: number }> = {}
+  if (data.whatsapp && typeof data.whatsapp === 'object') {
+    Object.entries(data.whatsapp as Record<string, unknown>).forEach(([group, rate]) => {
+      if (!rate || typeof rate !== 'object') return
+      const perRecipient = (rate as { perRecipient?: unknown }).perRecipient
+      if (typeof perRecipient !== 'number' || !Number.isFinite(perRecipient)) return
+      if (typeof group === 'string' && group.trim()) {
+        whatsapp[group.trim()] = { perRecipient }
+      }
+    })
+  }
+
+  return {
+    defaultGroup,
+    dialCodeToGroup,
+    sms,
+    whatsapp,
+  }
+}
+
+function resolveGroupFromPhone(
+  phone: string | undefined,
+  dialCodeToGroup: Record<string, string>,
+  defaultGroup: string,
+) {
+  if (!phone) return defaultGroup
+  const digits = phone.replace(/\D/g, '')
+  if (!digits) return defaultGroup
+
+  let matchedGroup: string | null = null
+  let matchedLength = 0
+
+  Object.entries(dialCodeToGroup).forEach(([dialCode, group]) => {
+    const normalizedDial = dialCode.replace(/\D/g, '')
+    if (!normalizedDial) return
+    if (digits.startsWith(normalizedDial) && normalizedDial.length > matchedLength) {
+      matchedGroup = group
+      matchedLength = normalizedDial.length
+    }
+  })
+
+  return matchedGroup ?? defaultGroup
 }
 
 function normalizeBulkMessagePayload(payload: BulkMessagePayload) {
@@ -1676,7 +1775,46 @@ export const sendBulkMessage = functions.https.onCall(
 
     await verifyOwnerForStore(context.auth!.uid, storeId)
 
-    const creditsRequired = recipients.length
+    const rateSnap = await db.collection('config').doc('twilioRates').get()
+    const rateTable = normalizeTwilioRateTable(rateSnap.data())
+
+    const getSmsRate = (group: string) => {
+      const rate = rateTable.sms[group]?.perSegment
+      if (typeof rate !== 'number' || !Number.isFinite(rate)) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          `SMS rate missing for group ${group}.`,
+        )
+      }
+      return rate
+    }
+
+    const getWhatsappRate = (group: string) => {
+      const rate = rateTable.whatsapp[group]?.perRecipient
+      if (typeof rate !== 'number' || !Number.isFinite(rate)) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          `WhatsApp rate missing for group ${group}.`,
+        )
+      }
+      return rate
+    }
+
+    const segments =
+      channel === 'sms' ? Math.ceil(message.length / SMS_SEGMENT_SIZE) : 0
+
+    const creditsRequired = recipients.reduce((total, recipient) => {
+      const group = resolveGroupFromPhone(
+        recipient.phone,
+        rateTable.dialCodeToGroup,
+        rateTable.defaultGroup,
+      )
+      if (channel === 'sms') {
+        return total + segments * getSmsRate(group)
+      }
+      return total + getWhatsappRate(group)
+    }, 0)
+    const config = ensureTwilioConfig(channel)
     const storeRef = db.collection('stores').doc(storeId)
 
     await db.runTransaction(async transaction => {
@@ -1706,7 +1844,6 @@ export const sendBulkMessage = functions.https.onCall(
       })
     })
 
-    const config = ensureTwilioConfig(channel)
     const from =
       channel === 'sms'
         ? config.smsFrom!
