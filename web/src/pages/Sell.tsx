@@ -110,8 +110,17 @@ type DisplaySessionPayload = DisplaySessionBase & {
 
 const PUBLIC_ORIGIN = (() => {
   const raw = (import.meta as any).env?.VITE_PUBLIC_ORIGIN
-  const normalized = typeof raw === 'string' ? raw.trim().replace(/\/$/, '') : ''
-  return normalized || window.location.origin
+  if (typeof raw !== 'string') return window.location.origin
+
+  const normalized = raw.trim()
+  if (!normalized) return window.location.origin
+
+  try {
+    const withScheme = normalized.includes('://') ? normalized : `https://${normalized}`
+    return new URL(withScheme).origin
+  } catch {
+    return normalized.replace(/\/$/, '') || window.location.origin
+  }
 })()
 
 function toDate(value: unknown): Date | null {
