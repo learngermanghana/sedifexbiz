@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { BrowserQRCodeSvgWriter } from '@zxing/browser'
 import { EncodeHintType, QRCodeDecoderErrorCorrectionLevel } from '@zxing/library'
-import { db } from '../firebase'
+import { displayDb, ensureDisplayAuth } from '../firebaseDisplay'
 import './CustomerDisplay.css'
 
 type DisplayItem = {
@@ -76,36 +76,60 @@ export default function CustomerDisplay() {
       return
     }
 
-    setError(null)
-    const ref = doc(db, 'stores', storeId, 'displaySessions', sessionId)
-    return onSnapshot(
-      ref,
-      snap => {
-        if (!snap.exists()) {
-          setSession(null)
-          setError('Session not found. Ask the cashier to start a new customer display.')
-          return
-        }
-        const data = snap.data() as DisplaySession
-        if (data.pairCode) {
-          if (!pairCode) {
-            setSession(null)
-            setError('Missing pairing code. Scan the cashier’s QR code again.')
-            return
-          }
-          if (pairCode !== data.pairCode) {
-            setSession(null)
-            setError('Pairing code does not match. Ask the cashier to restart the display.')
-            return
-          }
-        }
-        setError(null)
-        setSession(data)
-      },
-      () => {
+    let isMounted = true
+    let unsubscribe: (() => void) | null = null
+
+    const subscribe = async () => {
+      try {
+        await ensureDisplayAuth()
+      } catch (error) {
+        if (!isMounted) return
+        console.warn('[customer-display] Unable to authenticate display session', error)
+        setSession(null)
         setError('Unable to connect to the session. Check your connection and try again.')
-      },
-    )
+        return
+      }
+
+      if (!isMounted) return
+
+      setError(null)
+      const ref = doc(displayDb, 'stores', storeId, 'displaySessions', sessionId)
+      unsubscribe = onSnapshot(
+        ref,
+        snap => {
+          if (!snap.exists()) {
+            setSession(null)
+            setError('Session not found. Ask the cashier to start a new customer display.')
+            return
+          }
+          const data = snap.data() as DisplaySession
+          if (data.pairCode) {
+            if (!pairCode) {
+              setSession(null)
+              setError('Missing pairing code. Scan the cashier’s QR code again.')
+              return
+            }
+            if (pairCode !== data.pairCode) {
+              setSession(null)
+              setError('Pairing code does not match. Ask the cashier to restart the display.')
+              return
+            }
+          }
+          setError(null)
+          setSession(data)
+        },
+        () => {
+          setError('Unable to connect to the session. Check your connection and try again.')
+        },
+      )
+    }
+
+    void subscribe()
+
+    return () => {
+      isMounted = false
+      if (unsubscribe) unsubscribe()
+    }
   }, [pairCode, sessionId, storeId])
 
   useEffect(() => {
