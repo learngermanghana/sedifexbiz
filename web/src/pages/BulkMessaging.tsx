@@ -566,13 +566,27 @@ export default function BulkMessaging() {
         </section>
       </div>
 
-      <section className="card bulk-messaging-page__footnote">
-        <h3 className="card__title">Twilio delivery controls</h3>
-        <p className="card__subtitle">
-          Configure your Twilio account SID, auth token, and sender IDs in your Firebase functions
-          environment to activate SMS and WhatsApp deliveries. This page will automatically route
-          requests to the Twilio backend once credentials are set.
-        </p>
+      <section className="card bulk-messaging-page__buy-credits">
+        <div>
+          <h3 className="card__title">Buy bulk messaging credits</h3>
+          <p className="card__subtitle">
+            Top up your balance to keep broadcasting SMS and WhatsApp campaigns.
+          </p>
+        </div>
+        {bulkMessagingCreditsPaystackUrl ? (
+          <a
+            className="button button--primary"
+            href={bulkMessagingCreditsPaystackUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Buy credits
+          </a>
+        ) : (
+          <p className="bulk-messaging-page__buy-credits-note">
+            Contact support to enable payments for bulk messaging credits.
+          </p>
+        )}
       </section>
     </div>
   )
