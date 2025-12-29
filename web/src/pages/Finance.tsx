@@ -410,6 +410,9 @@ export default function Finance() {
           <Link className="button button--primary button--small" to="/close-day">
             Close day
           </Link>
+          <Link className="button button--ghost button--small" to="/finance/documents">
+            Invoice & receipt generator
+          </Link>
           <Link className="button button--ghost button--small" to="/expenses">
             Open expenses
           </Link>

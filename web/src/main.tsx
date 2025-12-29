@@ -22,6 +22,7 @@ import { BillingVerifyPage } from './pages/BillingVerifyPage'
 import Support from './pages/Support'
 import Finance from './pages/Finance'
 import Expenses from './pages/Expenses'
+import DocumentsGenerator from './pages/DocumentsGenerator'
 import ResetPassword from './pages/ResetPassword'
 import VerifyEmail from './pages/VerifyEmail'
 
@@ -67,6 +68,7 @@ const router = createBrowserRouter([
 
           // Finance
           { path: 'finance', element: <Finance /> },
+          { path: 'finance/documents', element: <DocumentsGenerator /> },
           { path: 'expenses', element: <Expenses /> },
 
           // Close day
