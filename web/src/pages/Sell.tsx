@@ -108,6 +108,12 @@ type DisplaySessionPayload = DisplaySessionBase & {
   updatedAt: ReturnType<typeof serverTimestamp>
 }
 
+const PUBLIC_ORIGIN = (() => {
+  const raw = (import.meta as any).env?.VITE_PUBLIC_ORIGIN
+  const normalized = typeof raw === 'string' ? raw.trim().replace(/\/$/, '') : ''
+  return normalized || window.location.origin
+})()
+
 function toDate(value: unknown): Date | null {
   if (!value) return null
   try {
@@ -395,7 +401,7 @@ export default function Sell() {
     if (receiptDownload?.url) URL.revokeObjectURL(receiptDownload.url)
 
     const built = buildReceiptPdf(lastReceipt)
-    const shareUrl = `${window.location.origin}/receipt/${encodeURIComponent(lastReceipt.saleId)}`
+    const shareUrl = `${PUBLIC_ORIGIN}/receipt/${encodeURIComponent(lastReceipt.saleId)}`
     const shareText = `Sale receipt${lastReceipt.companyName ? ` - ${lastReceipt.companyName}` : ''}\nView receipt: ${shareUrl}`
 
     setReceiptDownload({
@@ -612,7 +618,7 @@ export default function Sell() {
 
   const displayLink = useMemo(() => {
     if (!displaySessionId || !activeStoreId) return null
-    const base = `${window.location.origin}/display`
+    const base = `${PUBLIC_ORIGIN}/display`
     const params = new URLSearchParams({
       storeId: activeStoreId,
       sessionId: displaySessionId,
@@ -1508,7 +1514,7 @@ export default function Sell() {
 
       if (displaySessionId) {
         displaySaleCompleteRef.current = true
-        const receiptUrl = `${window.location.origin}/receipt/${encodeURIComponent(saleId)}`
+        const receiptUrl = `${PUBLIC_ORIGIN}/receipt/${encodeURIComponent(saleId)}`
         setDoc(
           doc(db, 'stores', activeStoreId, 'displaySessions', displaySessionId),
           {
