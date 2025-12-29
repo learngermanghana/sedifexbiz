@@ -579,7 +579,7 @@ export default function AuthPage() {
               type="button"
               disabled={isLoading}
             >
-              Create account
+              Start free trial
             </button>
           </div>
 
@@ -823,10 +823,10 @@ export default function AuthPage() {
               {isLoading
                 ? mode === 'login'
                   ? 'Signing in…'
-                  : 'Creating account…'
+                  : 'Starting free trial…'
                 : mode === 'login'
                   ? 'Log in'
-                  : 'Create account'}
+                  : 'Start free trial'}
             </button>
           </form>
 
