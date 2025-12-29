@@ -262,6 +262,7 @@
 }
 
 .sell-page__display-link {
+  flex: 1;
   width: 100%;
   text-align: left;
   font-size: 12px;
@@ -271,6 +272,24 @@
   padding: 0;
   cursor: pointer;
   word-break: break-all;
+  text-decoration: underline;
+}
+
+.sell-page__display-link-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sell-page__display-link-copy {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #1e293b;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .sell-page__display-qr {
