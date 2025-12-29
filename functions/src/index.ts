@@ -1676,6 +1676,36 @@ export const sendBulkMessage = functions.https.onCall(
 
     await verifyOwnerForStore(context.auth!.uid, storeId)
 
+    const creditsRequired = recipients.length
+    const storeRef = db.collection('stores').doc(storeId)
+
+    await db.runTransaction(async transaction => {
+      const storeSnap = await transaction.get(storeRef)
+      if (!storeSnap.exists) {
+        throw new functions.https.HttpsError(
+          'not-found',
+          'Store not found for this bulk messaging request.',
+        )
+      }
+
+      const storeData = storeSnap.data() ?? {}
+      const rawCredits = storeData.bulkMessagingCredits
+      const currentCredits =
+        typeof rawCredits === 'number' && Number.isFinite(rawCredits) ? rawCredits : 0
+
+      if (currentCredits < creditsRequired) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'You do not have enough bulk messaging credits. Please buy more to continue.',
+        )
+      }
+
+      transaction.update(storeRef, {
+        bulkMessagingCredits: currentCredits - creditsRequired,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+    })
+
     const config = ensureTwilioConfig(channel)
     const from =
       channel === 'sms'
