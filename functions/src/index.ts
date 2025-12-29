@@ -1814,7 +1814,6 @@ export const sendBulkMessage = functions.https.onCall(
       }
       return total + getWhatsappRate(group)
     }, 0)
-    const config = ensureTwilioConfig(channel)
     const storeRef = db.collection('stores').doc(storeId)
 
     await db.runTransaction(async transaction => {
