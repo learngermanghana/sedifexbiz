@@ -21,8 +21,11 @@ type ReceiptPayload = {
   tenders?: ReceiptTender[]
   discountInput: string
   companyName?: string | null
+  companyEmail?: string | null
+  companyAddress?: string | null
   customerName?: string | null
   customerPhone?: string | null
+  customerEmail?: string | null
 }
 
 function formatCurrency(amount: number | null | undefined): string {
@@ -54,6 +57,22 @@ function normalizeTotals(totals: ReceiptTotals): ReceiptTotals {
   }
 }
 
+function appendMultiline(lines: string[], value?: string | null) {
+  if (!value) return
+  value
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .forEach(line => lines.push(line))
+}
+
+function formatCustomerLine(options: Pick<ReceiptPayload, 'customerName' | 'customerPhone' | 'customerEmail'>) {
+  const name = options.customerName ?? 'Walk-in'
+  const phone = options.customerPhone ? ` (${options.customerPhone})` : ''
+  const email = options.customerEmail ? ` • ${options.customerEmail}` : ''
+  return `Customer: ${name}${phone}${email}`
+}
+
 export function buildReceiptPdf(options: ReceiptPayload) {
   try {
     const receiptDate = new Date().toLocaleString()
@@ -70,20 +89,25 @@ export function buildReceiptPdf(options: ReceiptPayload) {
         : options.paymentMethod.replace('_', ' ')
 
     const customerLine =
-      options.customerName || options.customerPhone
-        ? `Customer: ${options.customerName ?? 'Walk-in'}${
-            options.customerPhone ? ` (${options.customerPhone})` : ''
-          }`
+      options.customerName || options.customerPhone || options.customerEmail
+        ? formatCustomerLine(options)
         : ''
 
     const lines: string[] = [
       options.companyName ? options.companyName : 'Sale receipt',
+    ]
+    appendMultiline(lines, options.companyAddress)
+    if (options.companyEmail) {
+      lines.push(options.companyEmail)
+    }
+
+    lines.push(
       `Sale ID: ${options.saleId}`,
       `Date: ${receiptDate}`,
       `Payment: ${paymentLabel}`,
       customerLine,
       'Items:',
-    ]
+    )
 
     const filteredLines = lines.filter(Boolean)
 

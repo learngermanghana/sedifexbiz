@@ -556,6 +556,26 @@ export default function Finance() {
         )}
       </section>
 
+      <section className="card" style={{ marginTop: 24 }} aria-label="Document tools">
+        <div className="page__header" style={{ padding: 0 }}>
+          <div>
+            <h3 className="card__title">Documents</h3>
+            <p className="card__subtitle">
+              Create invoices or receipts without adding another navigation tab.
+            </p>
+          </div>
+          <Link className="button button--primary button--small" to="/finance/documents">
+            Open generator
+          </Link>
+        </div>
+        <div className="info-card" style={{ marginTop: 12 }}>
+          <h4 style={{ marginBottom: 8 }}>Invoice & receipt generator</h4>
+          <p className="card__subtitle" style={{ marginBottom: 0 }}>
+            Add company details, customer contacts, line items, and totals to build a print-ready PDF.
+          </p>
+        </div>
+      </section>
+
       <Expenses embedded />
 
       {/* Downloads */}
