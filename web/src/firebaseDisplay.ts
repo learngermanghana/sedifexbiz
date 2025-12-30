@@ -48,13 +48,7 @@ async function configureDisplayPersistence(auth: Auth) {
   }
 }
 
-type DisplayAuthOptions = { forceRefresh?: boolean }
-
-export function ensureDisplayAuth(options?: DisplayAuthOptions) {
-  if (options?.forceRefresh) {
-    authReadyPromise = null
-  }
-
+export function ensureDisplayAuth() {
   if (!authReadyPromise) {
     authReadyPromise = (async () => {
       await configureDisplayPersistence(displayAuth)
