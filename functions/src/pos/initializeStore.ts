@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions/v1'
 import { admin, defaultDb } from '../firestore'
+import { normalizePhoneE164 } from '../phone'
 
 function normalizeString(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -37,7 +38,7 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   const signupRole = normalizeSignupRole(contact.signupRole)
 
   const signupContact = {
-    phone: normalizeString(contact.phone),
+    phone: typeof contact.phone === 'string' ? normalizePhoneE164(contact.phone) : null,
     firstSignupEmail: normalizeString(contact.firstSignupEmail),
     ownerName: normalizeString(contact.ownerName),
     businessName: normalizeString(contact.businessName),
@@ -69,7 +70,7 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
       storeId,
       role: signupRole === 'team-member' ? 'staff' : 'owner',
       email: normalizeString(contact.firstSignupEmail),
-      phone: normalizeString(contact.phone),
+      phone: typeof contact.phone === 'string' ? normalizePhoneE164(contact.phone) : null,
       updatedAt: now,
     }
 

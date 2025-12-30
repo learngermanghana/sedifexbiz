@@ -246,6 +246,26 @@ function buildCsvValue(value: string): string {
   return value
 }
 
+const AFRICAN_COUNTRY_CODES = [
+  '233',
+  '234',
+  '225',
+  '221',
+  '237',
+  '254',
+  '255',
+  '256',
+  '250',
+  '251',
+  '260',
+  '263',
+  '27',
+  '20',
+  '212',
+  '213',
+  '216',
+]
+
 export function normalizePhoneNumber(input: string): string {
   const trimmed = input.trim()
   if (!trimmed) return ''
@@ -255,7 +275,24 @@ export function normalizePhoneNumber(input: string): string {
 
   if (!digits) return ''
 
-  return hasPlusPrefix ? `+${digits}` : digits
+  if (hasPlusPrefix) return `+${digits}`
+
+  if (trimmed.startsWith('00')) {
+    return `+${digits.replace(/^00/, '')}`
+  }
+
+  if (trimmed.startsWith('0')) {
+    return `+233${digits.replace(/^0/, '')}`
+  }
+
+  const matchesAfricanCode = AFRICAN_COUNTRY_CODES.some(code =>
+    digits.startsWith(code),
+  )
+  if (matchesAfricanCode) {
+    return `+${digits}`
+  }
+
+  return `+${digits}`
 }
 
 function buildPhoneKey(value: string | null | undefined): string {
