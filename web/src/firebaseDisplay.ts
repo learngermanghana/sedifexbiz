@@ -55,6 +55,7 @@ export function ensureDisplayAuth() {
       if (!displayAuth.currentUser) {
         await signInAnonymously(displayAuth)
       }
+      await displayAuth.currentUser?.getIdToken(true)
     })()
   }
 
