@@ -1,0 +1,92 @@
+.support-launcher__toggle {
+  white-space: nowrap;
+}
+
+.support-launcher__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 10;
+}
+
+.support-launcher__dialog {
+  width: min(520px, 100%);
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 28px 68px -32px rgba(15, 23, 42, 0.6);
+  padding: 20px clamp(18px, 4vw, 24px);
+  display: grid;
+  gap: 14px;
+}
+
+.support-launcher__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.support-launcher__eyebrow {
+  margin: 0 0 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #6366f1;
+  font-weight: 700;
+}
+
+.support-launcher__header h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.support-launcher__context {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 14px;
+}
+
+.support-launcher__form {
+  display: grid;
+  gap: 14px;
+}
+
+.support-launcher__form textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 120px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.support-launcher__form textarea:focus-visible {
+  outline: 2px solid #cbd5f5;
+  border-color: #818cf8;
+}
+
+.support-launcher__hint {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.support-launcher__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.support-launcher__error {
+  color: #b91c1c;
+  margin: 0;
+  font-size: 14px;
+}
