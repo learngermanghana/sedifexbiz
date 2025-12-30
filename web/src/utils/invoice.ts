@@ -16,8 +16,11 @@ type InvoicePayload = {
   items: InvoiceLine[]
   totals: InvoiceTotals
   companyName?: string | null
+  companyEmail?: string | null
+  companyAddress?: string | null
   customerName?: string | null
   customerPhone?: string | null
+  customerEmail?: string | null
   notes?: string | null
 }
 
@@ -50,6 +53,22 @@ function normalizeTotals(totals: InvoiceTotals): InvoiceTotals {
   }
 }
 
+function appendMultiline(lines: string[], value?: string | null) {
+  if (!value) return
+  value
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .forEach(line => lines.push(line))
+}
+
+function formatCustomerLine(options: Pick<InvoicePayload, 'customerName' | 'customerPhone' | 'customerEmail'>) {
+  const name = options.customerName ?? 'Customer'
+  const phone = options.customerPhone ? ` (${options.customerPhone})` : ''
+  const email = options.customerEmail ? ` • ${options.customerEmail}` : ''
+  return `Bill to: ${name}${phone}${email}`
+}
+
 export function buildInvoicePdf(options: InvoicePayload) {
   try {
     const items = normalizeLines(options.items)
@@ -58,16 +77,22 @@ export function buildInvoicePdf(options: InvoicePayload) {
 
     const lines: string[] = [
       options.companyName ? options.companyName : 'Invoice',
+    ]
+
+    appendMultiline(lines, options.companyAddress)
+    if (options.companyEmail) {
+      lines.push(options.companyEmail)
+    }
+
+    lines.push(
       `Invoice #: ${options.invoiceNumber}`,
       `Issued: ${issuedDate}`,
       options.dueDate ? `Due: ${options.dueDate}` : '',
-      options.customerName || options.customerPhone
-        ? `Bill to: ${options.customerName ?? 'Customer'}${
-            options.customerPhone ? ` (${options.customerPhone})` : ''
-          }`
+      options.customerName || options.customerPhone || options.customerEmail
+        ? formatCustomerLine(options)
         : '',
       'Items:',
-    ]
+    )
 
     const filteredLines = lines.filter(Boolean)
 

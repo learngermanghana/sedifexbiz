@@ -48,8 +48,11 @@ function formatCurrency(amount: number): string {
 export default function DocumentsGenerator() {
   const [docType, setDocType] = useState<DocumentType>('invoice')
   const [companyName, setCompanyName] = useState('')
+  const [companyEmail, setCompanyEmail] = useState('')
+  const [companyAddress, setCompanyAddress] = useState('')
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
+  const [customerEmail, setCustomerEmail] = useState('')
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [issuedDate, setIssuedDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState('')
@@ -128,8 +131,11 @@ export default function DocumentsGenerator() {
     }
 
     const companyLabel = companyName.trim() || null
+    const companyEmailLabel = companyEmail.trim() || null
+    const companyAddressLabel = companyAddress.trim() || null
     const customerLabel = customerName.trim() || null
     const phoneLabel = customerPhone.trim() || null
+    const emailLabel = customerEmail.trim() || null
 
     if (generated?.url) {
       URL.revokeObjectURL(generated.url)
@@ -146,8 +152,11 @@ export default function DocumentsGenerator() {
         paymentMethod,
         discountInput,
         companyName: companyLabel,
+        companyEmail: companyEmailLabel,
+        companyAddress: companyAddressLabel,
         customerName: customerLabel,
         customerPhone: phoneLabel,
+        customerEmail: emailLabel,
       })
 
       if (!receipt) {
@@ -173,8 +182,11 @@ export default function DocumentsGenerator() {
       items: normalizedItems as InvoiceLine[],
       totals: commonTotals,
       companyName: companyLabel,
+      companyEmail: companyEmailLabel,
+      companyAddress: companyAddressLabel,
       customerName: customerLabel,
       customerPhone: phoneLabel,
+      customerEmail: emailLabel,
       notes: notes.trim() || null,
     })
 
@@ -189,6 +201,16 @@ export default function DocumentsGenerator() {
       fileName: invoice.fileName,
     })
     setError(null)
+  }
+
+  function handlePrint() {
+    if (!generated?.url) return
+    const printWindow = window.open(generated.url, '_blank', 'noopener')
+    if (!printWindow) return
+    printWindow.addEventListener('load', () => {
+      printWindow.focus()
+      printWindow.print()
+    })
   }
 
   return (
@@ -236,6 +258,24 @@ export default function DocumentsGenerator() {
                 />
               </label>
               <label className="form__field">
+                <span className="form__hint">Company email</span>
+                <input
+                  className="input"
+                  value={companyEmail}
+                  onChange={event => setCompanyEmail(event.target.value)}
+                  placeholder="hello@sedifex.com"
+                />
+              </label>
+              <label className="form__field">
+                <span className="form__hint">Company address</span>
+                <textarea
+                  className="input documents-generator__notes"
+                  value={companyAddress}
+                  onChange={event => setCompanyAddress(event.target.value)}
+                  placeholder="Street, city, and region"
+                />
+              </label>
+              <label className="form__field">
                 <span className="form__hint">Customer name</span>
                 <input
                   className="input"
@@ -251,6 +291,15 @@ export default function DocumentsGenerator() {
                   value={customerPhone}
                   onChange={event => setCustomerPhone(event.target.value)}
                   placeholder="+233..."
+                />
+              </label>
+              <label className="form__field">
+                <span className="form__hint">Customer email</span>
+                <input
+                  className="input"
+                  value={customerEmail}
+                  onChange={event => setCustomerEmail(event.target.value)}
+                  placeholder="customer@email.com"
                 />
               </label>
 
@@ -445,6 +494,9 @@ export default function DocumentsGenerator() {
               <a className="button button--ghost" href={generated.url} download={generated.fileName}>
                 Download PDF
               </a>
+              <button type="button" className="button button--ghost" onClick={handlePrint}>
+                Print PDF
+              </button>
               {generated.shareText ? (
                 <p className="form__hint">Share text ready for WhatsApp or email.</p>
               ) : null}
