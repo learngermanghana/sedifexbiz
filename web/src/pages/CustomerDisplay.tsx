@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { BrowserQRCodeSvgWriter } from '@zxing/browser'
 import { EncodeHintType, QRCodeDecoderErrorCorrectionLevel } from '@zxing/library'
-import { displayDb, ensureDisplayAuth } from '../firebaseDisplay'
+import { displayDb } from '../firebaseDisplay'
 import './CustomerDisplay.css'
 
 type DisplayItem = {
@@ -80,19 +80,7 @@ export default function CustomerDisplay() {
     let unsubscribe: (() => void) | null = null
     let didRetry = false
 
-    const subscribe = async () => {
-      try {
-        await ensureDisplayAuth()
-      } catch (error) {
-        if (!isMounted) return
-        console.warn('[customer-display] Unable to authenticate display session', error)
-        setSession(null)
-        setError('Unable to connect to the session. Check your connection and try again.')
-        return
-      }
-
-      if (!isMounted) return
-
+    const subscribe = () => {
       setError(null)
       const ref = doc(displayDb, 'stores', storeId, 'displaySessions', sessionId)
       unsubscribe = onSnapshot(
@@ -123,15 +111,9 @@ export default function CustomerDisplay() {
           if (!didRetry) {
             didRetry = true
             unsubscribe?.()
-            void ensureDisplayAuth({ forceRefresh: true })
-              .then(() => {
-                if (isMounted) {
-                  void subscribe()
-                }
-              })
-              .catch(retryError => {
-                console.warn('[customer-display] Retry auth failed', retryError)
-              })
+            if (isMounted) {
+              subscribe()
+            }
             return
           }
           setError('Unable to connect to the session. Check your connection and try again.')
@@ -139,7 +121,7 @@ export default function CustomerDisplay() {
       )
     }
 
-    void subscribe()
+    subscribe()
 
     return () => {
       isMounted = false
