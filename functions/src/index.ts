@@ -3,6 +3,7 @@ import * as functions from 'firebase-functions/v1'
 import * as crypto from 'crypto'
 import { defineString } from 'firebase-functions/params'
 import { admin, defaultDb as db } from './firestore'
+import { normalizePhoneE164 } from './phone'
 export { generateAiAdvice } from './aiAdvisor'
 export { exportDailyStoreReports } from './reports'
 export { checkSignupUnlock } from './paystack'
@@ -125,8 +126,8 @@ function normalizeContactPayload(contact: ContactPayload | undefined) {
       if (raw === null || raw === undefined || raw === '') {
         phone = null
       } else if (typeof raw === 'string') {
-        const trimmed = raw.trim()
-        phone = trimmed ? trimmed : null
+        const normalized = normalizePhoneE164(raw)
+        phone = normalized ? normalized : null
       } else {
         throw new functions.https.HttpsError(
           'invalid-argument',
@@ -202,7 +203,7 @@ function normalizeStoreProfile(profile: StoreProfilePayload | undefined) {
     if ('phone' in profile) {
       const raw = profile.phone
       if (raw === null || raw === undefined || raw === '') phone = null
-      else if (typeof raw === 'string') phone = raw.trim() || null
+      else if (typeof raw === 'string') phone = normalizePhoneE164(raw) || null
       else {
         throw new functions.https.HttpsError(
           'invalid-argument',
@@ -234,7 +235,7 @@ function normalizeBulkMessageRecipients(value: unknown): BulkMessageRecipient[] 
     }
 
     const raw = recipient as BulkMessageRecipient
-    const phone = typeof raw.phone === 'string' ? raw.phone.trim() : ''
+    const phone = typeof raw.phone === 'string' ? normalizePhoneE164(raw.phone) : ''
     const name = typeof raw.name === 'string' ? raw.name.trim() : undefined
 
     if (!phone) {
@@ -494,7 +495,10 @@ function normalizeStoreProfilePayload(profile: StoreProfilePayload | undefined) 
       throw new functions.https.HttpsError('invalid-argument', 'Profile fields must be strings when provided')
     }
 
-    if ('phone' in profile) phone = normalize(profile.phone)
+    if ('phone' in profile) {
+      const normalized = normalize(profile.phone)
+      phone = normalized ? normalizePhoneE164(normalized) || null : null
+    }
     if ('ownerName' in profile) ownerName = normalize(profile.ownerName)
     if ('businessName' in profile) businessName = normalize(profile.businessName)
     if ('country' in profile) country = normalize(profile.country)
@@ -1637,10 +1641,14 @@ function resolveTwilioMinBalance() {
 function formatTwilioAddress(channel: BulkMessageChannel, phone: string) {
   const trimmed = phone.trim()
   if (!trimmed) return trimmed
+  const normalized = normalizePhoneE164(trimmed)
+  if (!normalized) return ''
   if (channel === 'whatsapp') {
-    return trimmed.startsWith('whatsapp:') ? trimmed : `whatsapp:${trimmed}`
+    return normalized.startsWith('whatsapp:')
+      ? normalized
+      : `whatsapp:${normalized}`
   }
-  return trimmed
+  return normalized
 }
 
 async function fetchTwilioBalance(config: { accountSid: string; authToken: string }) {

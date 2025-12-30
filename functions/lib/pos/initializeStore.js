@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.initializeStore = void 0;
 const functions = __importStar(require("firebase-functions/v1"));
 const firestore_1 = require("../firestore");
+const phone_1 = require("../phone");
 function normalizeString(value) {
     if (typeof value !== 'string')
         return null;
@@ -58,7 +59,7 @@ exports.initializeStore = functions.https.onCall(async (data, context) => {
     const contact = (data?.contact || {});
     const signupRole = normalizeSignupRole(contact.signupRole);
     const signupContact = {
-        phone: normalizeString(contact.phone),
+        phone: typeof contact.phone === 'string' ? (0, phone_1.normalizePhoneE164)(contact.phone) : null,
         firstSignupEmail: normalizeString(contact.firstSignupEmail),
         ownerName: normalizeString(contact.ownerName),
         businessName: normalizeString(contact.businessName),
@@ -83,7 +84,7 @@ exports.initializeStore = functions.https.onCall(async (data, context) => {
             storeId,
             role: signupRole === 'team-member' ? 'staff' : 'owner',
             email: normalizeString(contact.firstSignupEmail),
-            phone: normalizeString(contact.phone),
+            phone: typeof contact.phone === 'string' ? (0, phone_1.normalizePhoneE164)(contact.phone) : null,
             updatedAt: now,
         };
         tx.set(teamRef, baseTeamData, { merge: true });

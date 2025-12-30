@@ -39,6 +39,7 @@ const functions = __importStar(require("firebase-functions/v1"));
 const crypto = __importStar(require("crypto"));
 const params_1 = require("firebase-functions/params");
 const firestore_1 = require("./firestore");
+const phone_1 = require("./phone");
 var aiAdvisor_1 = require("./aiAdvisor");
 Object.defineProperty(exports, "generateAiAdvice", { enumerable: true, get: function () { return aiAdvisor_1.generateAiAdvice; } });
 var reports_1 = require("./reports");
@@ -76,8 +77,8 @@ function normalizeContactPayload(contact) {
                 phone = null;
             }
             else if (typeof raw === 'string') {
-                const trimmed = raw.trim();
-                phone = trimmed ? trimmed : null;
+                const normalized = (0, phone_1.normalizePhoneE164)(raw);
+                phone = normalized ? normalized : null;
             }
             else {
                 throw new functions.https.HttpsError('invalid-argument', 'Phone must be a string when provided');
@@ -152,8 +153,7 @@ function normalizeStoreProfile(profile) {
                 phone = null;
             }
             else if (typeof raw === 'string') {
-                const trimmed = raw.trim();
-                phone = trimmed ? trimmed : null;
+                phone = (0, phone_1.normalizePhoneE164)(raw) || null;
             }
             else {
                 throw new functions.https.HttpsError('invalid-argument', 'Store phone must be a string when provided');
@@ -271,8 +271,10 @@ function normalizeStoreProfilePayload(profile) {
             }
             throw new functions.https.HttpsError('invalid-argument', 'Profile fields must be strings when provided');
         };
-        if ('phone' in profile)
-            phone = normalize(profile.phone);
+        if ('phone' in profile) {
+            const normalized = normalize(profile.phone);
+            phone = normalized ? (0, phone_1.normalizePhoneE164)(normalized) || null : null;
+        }
         if ('ownerName' in profile)
             ownerName = normalize(profile.ownerName);
         if ('businessName' in profile)
