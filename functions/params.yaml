@@ -1,0 +1,29 @@
+# functions/params.yaml
+params:
+  - name: PAYSTACK_SECRET_KEY
+    type: string
+    required: true
+  - name: PAYSTACK_STANDARD_PLAN_CODE
+    type: string
+    required: true
+  - name: PAYSTACK_CURRENCY
+    type: string
+    default: GHS
+  - name: PAYSTACK_PUBLIC_KEY
+    type: string
+    default: ""
+  - name: APP_BASE_URL
+    type: string
+    default: ""
+  - name: SHEETS_SERVICE_ACCOUNT
+    type: string
+    default: ""
+  - name: SHEETS_SPREADSHEET_ID
+    type: string
+    default: ""
+  - name: SHEETS_RANGE
+    type: string
+    default: ""
+  - name: REPORTS_SHEET_ID
+    type: string
+    default: ""
