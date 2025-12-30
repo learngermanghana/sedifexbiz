@@ -40,7 +40,7 @@ type InitializeStorePayload = {
   storeId?: unknown
 }
 
-type BulkMessageChannel = 'sms' | 'whatsapp'
+type BulkMessageChannel = 'sms'
 
 type BulkMessageRecipient = {
   id?: string
@@ -55,11 +55,10 @@ type BulkMessagePayload = {
   recipients?: unknown
 }
 
-type TwilioRateTable = {
+type SmsRateTable = {
   defaultGroup: string
   dialCodeToGroup: Record<string, string>
   sms: Record<string, { perSegment: number }>
-  whatsapp: Record<string, { perRecipient: number }>
 }
 
 type ManageStaffPayload = {
@@ -217,8 +216,8 @@ function normalizeStoreProfile(profile: StoreProfilePayload | undefined) {
 }
 
 function normalizeBulkMessageChannel(value: unknown): BulkMessageChannel {
-  if (value === 'sms' || value === 'whatsapp') return value
-  throw new functions.https.HttpsError('invalid-argument', 'Channel must be sms or whatsapp')
+  if (value === 'sms') return value
+  throw new functions.https.HttpsError('invalid-argument', 'Channel must be sms')
 }
 
 function normalizeBulkMessageRecipients(value: unknown): BulkMessageRecipient[] {
@@ -262,13 +261,11 @@ function normalizeDialCode(value: unknown) {
   return null
 }
 
-function normalizeTwilioRateTable(
-  data: FirebaseFirestore.DocumentData | undefined,
-): TwilioRateTable {
+function normalizeSmsRateTable(data: FirebaseFirestore.DocumentData | undefined): SmsRateTable {
   if (!data || typeof data !== 'object') {
     throw new functions.https.HttpsError(
       'failed-precondition',
-      'Twilio rate table is not configured.',
+      'Bulk SMS rate table is not configured.',
     )
   }
 
@@ -300,19 +297,7 @@ function normalizeTwilioRateTable(
     })
   }
 
-  const whatsapp: Record<string, { perRecipient: number }> = {}
-  if (data.whatsapp && typeof data.whatsapp === 'object') {
-    Object.entries(data.whatsapp as Record<string, unknown>).forEach(([group, rate]) => {
-      if (!rate || typeof rate !== 'object') return
-      const perRecipient = (rate as { perRecipient?: unknown }).perRecipient
-      if (typeof perRecipient !== 'number' || !Number.isFinite(perRecipient)) return
-      if (typeof group === 'string' && group.trim()) {
-        whatsapp[group.trim()] = { perRecipient }
-      }
-    })
-  }
-
-  return { defaultGroup, dialCodeToGroup, sms, whatsapp }
+  return { defaultGroup, dialCodeToGroup, sms }
 }
 
 function resolveGroupFromPhone(
@@ -1574,178 +1559,87 @@ export const logPaymentReminder = functions.https.onCall(
   },
 )
 /** ============================================================================
- *  TWILIO BULK MESSAGING
+ *  HUBTEL BULK MESSAGING
  * ==========================================================================*/
 
-const TWILIO_ACCOUNT_SID = defineString('TWILIO_ACCOUNT_SID')
-const TWILIO_AUTH_TOKEN = defineString('TWILIO_AUTH_TOKEN')
-const TWILIO_SMS_FROM = defineString('TWILIO_SMS_FROM')
-const TWILIO_WHATSAPP_FROM = defineString('TWILIO_WHATSAPP_FROM')
-const TWILIO_MIN_BALANCE = defineString('TWILIO_MIN_BALANCE')
+const HUBTEL_CLIENT_ID = defineString('HUBTEL_CLIENT_ID')
+const HUBTEL_CLIENT_SECRET = defineString('HUBTEL_CLIENT_SECRET')
+const HUBTEL_SENDER_ID = defineString('HUBTEL_SENDER_ID')
 
-let twilioConfigLogged = false
-function getTwilioConfig() {
-  const accountSid = TWILIO_ACCOUNT_SID.value()
-  const authToken = TWILIO_AUTH_TOKEN.value()
-  const smsFrom = TWILIO_SMS_FROM.value()
-  const whatsappFrom = TWILIO_WHATSAPP_FROM.value()
+let hubtelConfigLogged = false
+function getHubtelConfig() {
+  const clientId = HUBTEL_CLIENT_ID.value()
+  const clientSecret = HUBTEL_CLIENT_SECRET.value()
+  const senderId = HUBTEL_SENDER_ID.value()
 
-  if (!twilioConfigLogged) {
-    console.log('[twilio] startup config', {
-      hasAccountSid: !!accountSid,
-      hasAuthToken: !!authToken,
-      hasSmsFrom: !!smsFrom,
-      hasWhatsappFrom: !!whatsappFrom,
+  if (!hubtelConfigLogged) {
+    console.log('[hubtel] startup config', {
+      hasClientId: !!clientId,
+      hasClientSecret: !!clientSecret,
+      hasSenderId: !!senderId,
     })
-    twilioConfigLogged = true
+    hubtelConfigLogged = true
   }
 
-  return { accountSid, authToken, smsFrom, whatsappFrom }
+  return { clientId, clientSecret, senderId }
 }
 
-function ensureTwilioConfig(channel: BulkMessageChannel) {
-  const config = getTwilioConfig()
+function ensureHubtelConfig() {
+  const config = getHubtelConfig()
 
-  if (!config.accountSid || !config.authToken) {
-    console.error('[twilio] Missing account SID or auth token')
+  if (!config.clientId || !config.clientSecret) {
+    console.error('[hubtel] Missing client id or client secret')
     throw new functions.https.HttpsError(
       'failed-precondition',
-      'Twilio is not configured. Please contact support.',
+      'Hubtel is not configured. Please contact support.',
     )
   }
 
-  if (channel === 'sms' && !config.smsFrom) {
+  if (!config.senderId) {
     throw new functions.https.HttpsError(
       'failed-precondition',
-      'Twilio SMS sender is not configured.',
-    )
-  }
-
-  if (channel === 'whatsapp' && !config.whatsappFrom) {
-    throw new functions.https.HttpsError(
-      'failed-precondition',
-      'Twilio WhatsApp sender is not configured.',
+      'Hubtel sender ID is not configured.',
     )
   }
 
   return config
 }
 
-function resolveTwilioMinBalance() {
-  const raw = TWILIO_MIN_BALANCE.value()
-  if (!raw) return null
-  const parsed = Number(raw)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function formatTwilioAddress(channel: BulkMessageChannel, phone: string) {
+function formatSmsAddress(phone: string) {
   const trimmed = phone.trim()
   if (!trimmed) return trimmed
   const normalized = normalizePhoneE164(trimmed)
-  if (!normalized) return ''
-  if (channel === 'whatsapp') {
-    return normalized.startsWith('whatsapp:')
-      ? normalized
-      : `whatsapp:${normalized}`
-  }
-  return normalized
+  return normalized ?? ''
 }
 
-async function fetchTwilioBalance(config: { accountSid: string; authToken: string }) {
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Balance.json`
-  const auth = Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64')
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Basic ${auth}`,
-    },
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Twilio balance error ${response.status}: ${errorText}`)
-  }
-
-  const data = (await response.json()) as { balance?: string | number; currency?: string }
-  const rawBalance =
-    typeof data.balance === 'number' ? data.balance : data.balance ? Number(data.balance) : NaN
-  return {
-    balance: Number.isFinite(rawBalance) ? rawBalance : null,
-    currency: typeof data.currency === 'string' ? data.currency : null,
-  }
-}
-
-async function recordTwilioBalance(options: {
-  source: 'bulk_credits'
-  storeId: string
-  reference: string | null
-}) {
-  const config = getTwilioConfig()
-  if (!config.accountSid || !config.authToken) {
-    console.warn('[twilio] Skipping balance check; missing account SID or auth token')
-    return
-  }
-
-  const minBalance = resolveTwilioMinBalance()
-
-  try {
-    const { balance, currency } = await fetchTwilioBalance({
-      accountSid: config.accountSid,
-      authToken: config.authToken,
-    })
-    const isLow =
-      typeof balance === 'number' && Number.isFinite(balance) && minBalance !== null
-        ? balance < minBalance
-        : null
-
-    await db
-      .collection('config')
-      .doc('twilioBalance')
-      .set(
-        {
-          balance,
-          currency,
-          isLow,
-          minBalance,
-          lastCheckedAt: admin.firestore.FieldValue.serverTimestamp(),
-          lastSource: options.source,
-          lastStoreId: options.storeId,
-          lastReference: options.reference,
-        },
-        { merge: true },
-      )
-  } catch (error) {
-    console.error('[twilio] Failed to fetch balance', error)
-  }
-}
-
-async function sendTwilioMessage(options: {
-  accountSid: string
-  authToken: string
+async function sendHubtelMessage(options: {
+  clientId: string
+  clientSecret: string
   to: string
   from: string
   body: string
 }) {
-  const { accountSid, authToken, to, from, body } = options
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`
-  const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64')
-  const payload = new URLSearchParams()
-  payload.set('To', to)
-  payload.set('From', from)
-  payload.set('Body', body)
+  const { clientId, clientSecret, to, from, body } = options
+  const url = 'https://sms.hubtel.com/v1/messages/send'
+  const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  const payload = {
+    From: from,
+    To: to,
+    Content: body,
+  }
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${auth}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Type': 'application/json',
     },
-    body: payload.toString(),
+    body: JSON.stringify(payload),
   })
 
   if (!response.ok) {
     const errorText = await response.text()
-    throw new Error(`Twilio error ${response.status}: ${errorText}`)
+    throw new Error(`Hubtel error ${response.status}: ${errorText}`)
   }
 
   return response.json()
@@ -1755,14 +1649,15 @@ export const sendBulkMessage = functions.https.onCall(
   async (data: unknown, context: functions.https.CallableContext) => {
     assertOwnerAccess(context)
 
-    const { storeId, channel, message, recipients } = normalizeBulkMessagePayload(
-      data as BulkMessagePayload,
-    )
+    const { storeId, message, recipients } = normalizeBulkMessagePayload(data as BulkMessagePayload)
 
     await verifyOwnerForStore(context.auth!.uid, storeId)
 
-    const rateSnap = await db.collection('config').doc('twilioRates').get()
-    const rateTable = normalizeTwilioRateTable(rateSnap.data())
+    const rateSnap = await db.collection('config').doc('hubtelRates').get()
+    const legacyRateSnap = rateSnap.exists
+      ? null
+      : await db.collection('config').doc('twilioRates').get()
+    const rateTable = normalizeSmsRateTable(rateSnap.data() ?? legacyRateSnap?.data())
 
     const getSmsRate = (group: string) => {
       const rate = rateTable.sms[group]?.perSegment
@@ -1775,19 +1670,7 @@ export const sendBulkMessage = functions.https.onCall(
       return rate
     }
 
-    const getWhatsappRate = (group: string) => {
-      const rate = rateTable.whatsapp[group]?.perRecipient
-      if (typeof rate !== 'number' || !Number.isFinite(rate)) {
-        throw new functions.https.HttpsError(
-          'failed-precondition',
-          `WhatsApp rate missing for group ${group}.`,
-        )
-      }
-      return rate
-    }
-
-    const segments =
-      channel === 'sms' ? Math.ceil(message.length / SMS_SEGMENT_SIZE) : 0
+    const segments = Math.ceil(message.length / SMS_SEGMENT_SIZE)
 
     const getRecipientCost = (recipient: BulkMessageRecipient) => {
       const group = resolveGroupFromPhone(
@@ -1795,21 +1678,15 @@ export const sendBulkMessage = functions.https.onCall(
         rateTable.dialCodeToGroup,
         rateTable.defaultGroup,
       )
-      if (channel === 'sms') {
-        return segments * getSmsRate(group)
-      }
-      return getWhatsappRate(group)
+      return segments * getSmsRate(group)
     }
 
     const creditCosts = recipients.map(recipient => getRecipientCost(recipient))
     const creditsRequired = creditCosts.reduce((total, cost) => total + cost, 0)
     const storeRef = db.collection('stores').doc(storeId)
 
-    const config = ensureTwilioConfig(channel)
-    const from =
-      channel === 'sms'
-        ? config.smsFrom!
-        : formatTwilioAddress('whatsapp', config.whatsappFrom!)
+    const config = ensureHubtelConfig()
+    const from = config.senderId!
 
     // debit credits first
     await db.runTransaction(async transaction => {
@@ -1842,12 +1719,12 @@ export const sendBulkMessage = functions.https.onCall(
     const attempted = recipients.length
     const results = await Promise.allSettled(
       recipients.map(async recipient => {
-        const to = formatTwilioAddress(channel, recipient.phone ?? '')
+        const to = formatSmsAddress(recipient.phone ?? '')
         if (!to) throw new Error('Missing recipient phone')
 
-        await sendTwilioMessage({
-          accountSid: config.accountSid,
-          authToken: config.authToken,
+        await sendHubtelMessage({
+          clientId: config.clientId,
+          clientSecret: config.clientSecret,
           to,
           from,
           body: message,
@@ -2450,7 +2327,6 @@ export const handlePaystackWebhook = functions.https.onRequest(async (req, res) 
           )
         })
 
-        await recordTwilioBalance({ source: 'bulk_credits', storeId, reference })
 
         res.status(200).send('ok')
         return
