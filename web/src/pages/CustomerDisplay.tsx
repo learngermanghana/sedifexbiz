@@ -78,16 +78,21 @@ export default function CustomerDisplay() {
 
     let isMounted = true
     let unsubscribe: (() => void) | null = null
+    let didRetry = false
 
     const subscribe = async () => {
       try {
         await ensureDisplayAuth()
       } catch (error) {
+        if ((error as { code?: string } | null)?.code === 'auth/admin-restricted-operation') {
+          console.warn('[customer-display] Anonymous auth disabled; continuing without auth.')
+        } else {
         if (!isMounted) return
         console.warn('[customer-display] Unable to authenticate display session', error)
         setSession(null)
         setError('Unable to connect to the session. Check your connection and try again.')
         return
+        }
       }
 
       if (!isMounted) return
@@ -119,6 +124,20 @@ export default function CustomerDisplay() {
           setSession(data)
         },
         () => {
+          if (!didRetry) {
+            didRetry = true
+            unsubscribe?.()
+            void ensureDisplayAuth({ forceRefresh: true })
+              .then(() => {
+                if (isMounted) {
+                  void subscribe()
+                }
+              })
+              .catch(retryError => {
+                console.warn('[customer-display] Retry auth failed', retryError)
+              })
+            return
+          }
           setError('Unable to connect to the session. Check your connection and try again.')
         },
       )
