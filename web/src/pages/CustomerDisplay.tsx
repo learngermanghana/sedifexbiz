@@ -162,7 +162,10 @@ export default function CustomerDisplay() {
       <main className="customer-display">
         <div className="customer-display__card">
           <p className="customer-display__status">{error}</p>
-          <p className="customer-display__hint">Open <strong>sedifex.com/display</strong> on your phone and scan the cashier’s QR code.</p>
+          <p className="customer-display__hint">
+            Open <strong>{window.location.origin.replace(/https?:\/\//, '')}/display</strong> on your phone and scan the
+            cashier’s QR code.
+          </p>
         </div>
       </main>
     )

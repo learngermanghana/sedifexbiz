@@ -1,5 +1,11 @@
 import { getApps, initializeApp } from 'firebase/app'
-import { getAuth, inMemoryPersistence, initializeAuth, signInAnonymously } from 'firebase/auth'
+import {
+  getAuth,
+  inMemoryPersistence,
+  initializeAuth,
+  setPersistence,
+  signInAnonymously,
+} from 'firebase/auth'
 import { initializeFirestore } from 'firebase/firestore'
 import { firebaseConfig } from './firebase'
 
@@ -13,7 +19,9 @@ const displayAuth = (() => {
   try {
     return initializeAuth(displayApp, { persistence: inMemoryPersistence })
   } catch {
-    return getAuth(displayApp)
+    const auth = getAuth(displayApp)
+    void setPersistence(auth, inMemoryPersistence)
+    return auth
   }
 })()
 
