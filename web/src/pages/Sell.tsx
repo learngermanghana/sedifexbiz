@@ -123,6 +123,8 @@ const PUBLIC_ORIGIN = (() => {
   }
 })()
 
+const DISPLAY_ORIGIN = typeof window !== 'undefined' ? window.location.origin : PUBLIC_ORIGIN
+
 function toDate(value: unknown): Date | null {
   if (!value) return null
   try {
@@ -627,7 +629,7 @@ export default function Sell() {
 
   const displayLink = useMemo(() => {
     if (!displaySessionId || !activeStoreId) return null
-    const base = `${PUBLIC_ORIGIN}/display`
+    const base = `${DISPLAY_ORIGIN}/display`
     const params = new URLSearchParams({
       storeId: activeStoreId,
       sessionId: displaySessionId,
@@ -1915,7 +1917,8 @@ export default function Sell() {
               </div>
             ) : (
               <p className="sell-page__display-hint">
-                Open <strong>sedifex.com/display</strong> on a phone or tablet and scan the QR code to pair.
+                Open <strong>{DISPLAY_ORIGIN.replace(/https?:\/\//, '')}/display</strong> on a phone or tablet and scan
+                the QR code to pair.
               </p>
             )}
 
