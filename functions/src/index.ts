@@ -1577,6 +1577,7 @@ const TWILIO_ACCOUNT_SID = defineString('TWILIO_ACCOUNT_SID')
 const TWILIO_AUTH_TOKEN = defineString('TWILIO_AUTH_TOKEN')
 const TWILIO_SMS_FROM = defineString('TWILIO_SMS_FROM')
 const TWILIO_WHATSAPP_FROM = defineString('TWILIO_WHATSAPP_FROM')
+const TWILIO_MIN_BALANCE = defineString('TWILIO_MIN_BALANCE')
 
 let twilioConfigLogged = false
 function getTwilioConfig() {
@@ -1626,6 +1627,13 @@ function ensureTwilioConfig(channel: BulkMessageChannel) {
   return config
 }
 
+function resolveTwilioMinBalance() {
+  const raw = TWILIO_MIN_BALANCE.value()
+  if (!raw) return null
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function formatTwilioAddress(channel: BulkMessageChannel, phone: string) {
   const trimmed = phone.trim()
   if (!trimmed) return trimmed
@@ -1633,6 +1641,74 @@ function formatTwilioAddress(channel: BulkMessageChannel, phone: string) {
     return trimmed.startsWith('whatsapp:') ? trimmed : `whatsapp:${trimmed}`
   }
   return trimmed
+}
+
+async function fetchTwilioBalance(config: { accountSid: string; authToken: string }) {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Balance.json`
+  const auth = Buffer.from(`${config.accountSid}:${config.authToken}`).toString('base64')
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Basic ${auth}`,
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Twilio balance error ${response.status}: ${errorText}`)
+  }
+
+  const data = (await response.json()) as { balance?: string | number; currency?: string }
+  const rawBalance =
+    typeof data.balance === 'number' ? data.balance : data.balance ? Number(data.balance) : NaN
+  return {
+    balance: Number.isFinite(rawBalance) ? rawBalance : null,
+    currency: typeof data.currency === 'string' ? data.currency : null,
+  }
+}
+
+async function recordTwilioBalance(options: {
+  source: 'bulk_credits'
+  storeId: string
+  reference: string | null
+}) {
+  const config = getTwilioConfig()
+  if (!config.accountSid || !config.authToken) {
+    console.warn('[twilio] Skipping balance check; missing account SID or auth token')
+    return
+  }
+
+  const minBalance = resolveTwilioMinBalance()
+
+  try {
+    const { balance, currency } = await fetchTwilioBalance({
+      accountSid: config.accountSid,
+      authToken: config.authToken,
+    })
+    const isLow =
+      typeof balance === 'number' && Number.isFinite(balance) && minBalance !== null
+        ? balance < minBalance
+        : null
+
+    await db
+      .collection('config')
+      .doc('twilioBalance')
+      .set(
+        {
+          balance,
+          currency,
+          isLow,
+          minBalance,
+          lastCheckedAt: admin.firestore.FieldValue.serverTimestamp(),
+          lastSource: options.source,
+          lastStoreId: options.storeId,
+          lastReference: options.reference,
+        },
+        { merge: true },
+      )
+  } catch (error) {
+    console.error('[twilio] Failed to fetch balance', error)
+  }
 }
 
 async function sendTwilioMessage(options: {
@@ -2365,6 +2441,8 @@ export const handlePaystackWebhook = functions.https.onRequest(async (req, res) 
             { merge: true },
           )
         })
+
+        await recordTwilioBalance({ source: 'bulk_credits', storeId, reference })
 
         res.status(200).send('ok')
         return
