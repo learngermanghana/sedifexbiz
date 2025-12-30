@@ -23,7 +23,7 @@ function requireEnv(key: FirebaseEnvKey): string {
   throw new Error(`[firebase] Missing ${key}. Add it to your env (local and Vercel).`)
 }
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: requireEnv('VITE_FB_API_KEY'),
   authDomain: requireEnv('VITE_FB_AUTH_DOMAIN'),
   projectId: requireEnv('VITE_FB_PROJECT_ID'),
