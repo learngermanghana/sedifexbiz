@@ -123,8 +123,6 @@ const PUBLIC_ORIGIN = (() => {
   }
 })()
 
-const DISPLAY_ORIGIN = PUBLIC_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')
-
 function toDate(value: unknown): Date | null {
   if (!value) return null
   try {
@@ -1918,7 +1916,7 @@ export default function Sell() {
               </div>
             ) : (
               <p className="sell-page__display-hint">
-                Open <strong>{DISPLAY_ORIGIN.replace(/https?:\/\//, '')}/display</strong> on a phone or tablet and scan
+                Open <strong>{PUBLIC_ORIGIN.replace(/https?:\/\//, '')}/display</strong> on a phone or tablet and scan
                 the QR code to pair.
               </p>
             )}
