@@ -26,7 +26,7 @@ type Customer = {
   createdAt?: unknown
 }
 
-type BulkMessageChannel = 'sms' | 'whatsapp'
+type BulkMessageChannel = 'sms'
 
 type BulkMessageRecipient = {
   id?: string
@@ -112,7 +112,7 @@ export default function BulkMessaging() {
   const { storeId } = useActiveStore()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [channel, setChannel] = useState<BulkMessageChannel>('sms')
+  const channel: BulkMessageChannel = 'sms'
   const [message, setMessage] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
@@ -366,7 +366,7 @@ export default function BulkMessaging() {
       const data = response.data
 
       if (!data.ok) {
-        throw new Error('Twilio could not process the request.')
+        throw new Error('Hubtel could not process the request.')
       }
 
       if (data.failures.length) {
@@ -377,7 +377,7 @@ export default function BulkMessaging() {
       } else {
         setStatus({
           tone: 'success',
-          message: `Sent ${data.sent} ${channel.toUpperCase()} messages successfully.`,
+          message: `Sent ${data.sent} SMS messages successfully.`,
         })
       }
     } catch (error) {
@@ -391,7 +391,7 @@ export default function BulkMessaging() {
       }
       setStatus({
         tone: 'error',
-        message: 'We could not send the messages. Check Twilio configuration and try again.',
+        message: 'We could not send the messages. Check Hubtel configuration and try again.',
       })
     } finally {
       setIsSending(false)
@@ -439,9 +439,9 @@ export default function BulkMessaging() {
     <div className="page bulk-messaging-page">
       <header className="page__header">
         <div>
-          <h2 className="page__title">Bulk SMS & WhatsApp</h2>
+          <h2 className="page__title">Bulk SMS</h2>
           <p className="page__subtitle">
-            Broadcast promotions, reminders, or updates to your customers using a Twilio-powered
+            Broadcast promotions, reminders, or updates to your customers using a Hubtel-powered
             messaging hub.
           </p>
         </div>
@@ -457,17 +457,15 @@ export default function BulkMessaging() {
         </div>
         <div className="card bulk-messaging-page__summary-card">
           <p className="bulk-messaging-page__summary-label">Channel</p>
-          <p className="bulk-messaging-page__summary-value">{channel === 'sms' ? 'SMS' : 'WhatsApp'}</p>
+          <p className="bulk-messaging-page__summary-value">SMS</p>
           <p className="bulk-messaging-page__summary-meta">
-            Messages will send via Twilio from your verified sender
+            Messages will send via Hubtel from your verified sender
           </p>
         </div>
         <div className="card bulk-messaging-page__summary-card">
           <p className="bulk-messaging-page__summary-label">Message length</p>
           <p className="bulk-messaging-page__summary-value">{messageLength}</p>
-          <p className="bulk-messaging-page__summary-meta">
-            {channel === 'sms' ? `${messageSegments} SMS segment(s)` : 'WhatsApp message count'}
-          </p>
+          <p className="bulk-messaging-page__summary-meta">{`${messageSegments} SMS segment(s)`}</p>
         </div>
         <div className="card bulk-messaging-page__summary-card bulk-messaging-page__summary-card--credits">
           <p className="bulk-messaging-page__summary-label">Bulk message credits</p>
@@ -495,30 +493,9 @@ export default function BulkMessaging() {
             <div>
               <h3 className="card__title">Compose message</h3>
               <p className="card__subtitle">
-                Choose the channel, craft your message, and send to the selected customers.
+                Craft your message and send to the selected customers.
               </p>
             </div>
-          </div>
-
-          <div className="bulk-messaging-page__channel">
-            <button
-              type="button"
-              className={`button button--outline bulk-messaging-page__channel-button${
-                channel === 'sms' ? ' is-active' : ''
-              }`}
-              onClick={() => setChannel('sms')}
-            >
-              SMS
-            </button>
-            <button
-              type="button"
-              className={`button button--outline bulk-messaging-page__channel-button${
-                channel === 'whatsapp' ? ' is-active' : ''
-              }`}
-              onClick={() => setChannel('whatsapp')}
-            >
-              WhatsApp
-            </button>
           </div>
 
           <form className="bulk-messaging-page__form" onSubmit={handleSend}>
@@ -544,7 +521,7 @@ export default function BulkMessaging() {
 
             <div className="bulk-messaging-page__actions">
               <button type="submit" className="button button--primary" disabled={!canSend}>
-                {isSending ? 'Sending...' : `Send ${channel === 'sms' ? 'SMS' : 'WhatsApp'}`}
+                {isSending ? 'Sending...' : 'Send SMS'}
               </button>
               <div className="bulk-messaging-page__actions-meta">
                 {hasEnoughCredits
@@ -636,7 +613,7 @@ export default function BulkMessaging() {
         <div>
           <h3 className="card__title">Buy bulk messaging credits</h3>
           <p className="card__subtitle">
-            Top up your balance to keep broadcasting SMS and WhatsApp campaigns.
+            Top up your balance to keep broadcasting SMS campaigns.
           </p>
         </div>
         <div className="bulk-messaging-page__buy-credits-actions">
