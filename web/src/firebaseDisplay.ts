@@ -1,5 +1,8 @@
 import { getApps, initializeApp } from 'firebase/app'
 import {
+  Auth,
+  browserLocalPersistence,
+  browserSessionPersistence,
   getAuth,
   inMemoryPersistence,
   initializeAuth,
@@ -17,11 +20,9 @@ const displayApp =
 
 const displayAuth = (() => {
   try {
-    return initializeAuth(displayApp, { persistence: inMemoryPersistence })
+    return initializeAuth(displayApp, { persistence: browserLocalPersistence })
   } catch {
-    const auth = getAuth(displayApp)
-    void setPersistence(auth, inMemoryPersistence)
-    return auth
+    return getAuth(displayApp)
   }
 })()
 
@@ -31,12 +32,36 @@ export const displayDb = initializeFirestore(displayApp, {
 
 let authReadyPromise: Promise<void> | null = null
 
-export function ensureDisplayAuth() {
+async function configureDisplayPersistence(auth: Auth) {
+  try {
+    await setPersistence(auth, browserLocalPersistence)
+    return
+  } catch (error) {
+    console.warn('[display-auth] Falling back from local persistence', error)
+  }
+
+  try {
+    await setPersistence(auth, browserSessionPersistence)
+  } catch (error) {
+    console.warn('[display-auth] Falling back to in-memory persistence', error)
+    await setPersistence(auth, inMemoryPersistence)
+  }
+}
+
+type DisplayAuthOptions = { forceRefresh?: boolean }
+
+export function ensureDisplayAuth(options?: DisplayAuthOptions) {
+  if (options?.forceRefresh) {
+    authReadyPromise = null
+  }
+
   if (!authReadyPromise) {
     authReadyPromise = (async () => {
+      await configureDisplayPersistence(displayAuth)
       if (!displayAuth.currentUser) {
         await signInAnonymously(displayAuth)
       }
+      await displayAuth.currentUser?.getIdToken(true)
     })()
   }
 
