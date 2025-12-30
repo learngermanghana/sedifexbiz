@@ -123,7 +123,7 @@ const PUBLIC_ORIGIN = (() => {
   }
 })()
 
-const DISPLAY_ORIGIN = typeof window !== 'undefined' ? window.location.origin : PUBLIC_ORIGIN
+const DISPLAY_ORIGIN = PUBLIC_ORIGIN || (typeof window !== 'undefined' ? window.location.origin : '')
 
 function toDate(value: unknown): Date | null {
   if (!value) return null
@@ -629,7 +629,8 @@ export default function Sell() {
 
   const displayLink = useMemo(() => {
     if (!displaySessionId || !activeStoreId) return null
-    const base = `${DISPLAY_ORIGIN}/display`
+    const origin = PUBLIC_ORIGIN || window.location.origin
+    const base = `${origin}/display`
     const params = new URLSearchParams({
       storeId: activeStoreId,
       sessionId: displaySessionId,
