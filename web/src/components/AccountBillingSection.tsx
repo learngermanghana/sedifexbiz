@@ -282,9 +282,6 @@ export const AccountBillingSection: React.FC<Props> = ({
                 <p className="text-xs text-gray-600">
                   Pay once to add another workspace to your account.
                 </p>
-                <p className="text-xs text-gray-600">
-                  For 2 stores, stay on Starter and add 1 extra workspace instead of Business.
-                </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <label className="text-xs text-gray-600">
