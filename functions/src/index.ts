@@ -2496,6 +2496,74 @@ export const handlePaystackWebhook = functions.https.onRequest(async (req, res) 
 
       const storeId = typeof metadata.storeId === 'string' ? metadata.storeId.trim() : ''
       const kind = typeof metadata.kind === 'string' ? metadata.kind.trim() : null
+      const metadataType = typeof metadata.type === 'string' ? metadata.type.trim() : null
+
+      // ✅ EXTRA WORKSPACE ADD-ON
+      if (kind === 'workspace_addon' || metadataType === 'workspace_addon') {
+        if (!storeId) {
+          console.warn('[paystack] workspace_addon missing storeId in metadata')
+          res.status(200).send('ok')
+          return
+        }
+
+        const addRaw = metadata.workspaceDelta ?? metadata.add
+        const add =
+          typeof addRaw === 'number' && Number.isFinite(addRaw)
+            ? Math.floor(addRaw)
+            : Number(addRaw)
+
+        if (!Number.isFinite(add) || add <= 0) {
+          console.warn('[paystack] workspace_addon missing/invalid add in metadata', metadata)
+          res.status(200).send('ok')
+          return
+        }
+
+        const eventId = reference || `${storeId}_workspace_addon_${Date.now()}`
+        const eventRef = db.collection('billingEvents').doc(eventId)
+        const storeRef = db.collection('stores').doc(storeId)
+        const timestamp = admin.firestore.FieldValue.serverTimestamp()
+
+        await db.runTransaction(async tx => {
+          const existing = await tx.get(eventRef)
+          if (existing.exists) return
+
+          const storeSnap = await tx.get(storeRef)
+          const storeData = (storeSnap.data() ?? {}) as Record<string, any>
+          const billing = (storeData.billing ?? {}) as Record<string, any>
+          const planKey = typeof billing.planKey === 'string' ? billing.planKey : null
+          const workspaceLimitRaw = billing.workspaceLimit
+          const currentLimit =
+            typeof workspaceLimitRaw === 'number' && Number.isFinite(workspaceLimitRaw)
+              ? workspaceLimitRaw
+              : resolveWorkspaceLimit(planKey)
+
+          tx.set(eventRef, {
+            type: 'workspace_addon',
+            storeId,
+            workspaceDelta: add,
+            reference: reference || null,
+            amount: typeof data.amount === 'number' ? data.amount / 100 : null,
+            currency: typeof data.currency === 'string' ? data.currency : paystackConfig.currency,
+            interval: typeof metadata.interval === 'string' ? metadata.interval : null,
+            createdAt: timestamp,
+          })
+
+          tx.set(
+            storeRef,
+            {
+              'billing.workspaceLimit': currentLimit + add,
+              'billing.addons.extraWorkspaces': admin.firestore.FieldValue.increment(add),
+              'billing.lastAddonRef': reference || null,
+              'billing.updatedAt': timestamp,
+              updatedAt: timestamp,
+            },
+            { merge: true },
+          )
+        })
+
+        res.status(200).send('ok')
+        return
+      }
 
       // ✅ EXTRA WORKSPACE ADD-ON
       if (kind === 'workspace_addon') {
