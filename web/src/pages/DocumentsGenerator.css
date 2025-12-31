@@ -88,3 +88,14 @@
 .documents-generator__notes {
   min-height: 120px;
 }
+
+.documents-generator__section .input {
+  color: #0f172a;
+  background-color: #ffffff;
+  border: 1px solid #cbd5f5;
+}
+
+.documents-generator__section .input::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
