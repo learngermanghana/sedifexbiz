@@ -179,6 +179,7 @@ function formatTrialReminder(
 
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login')
+  const [selectedPackageId, setSelectedPackageId] = useState(PACKAGE_OPTIONS[0].id)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -207,6 +208,10 @@ export default function AuthPage() {
   const normalizedAddress = address.trim()
 
   const passwordStrength = evaluatePasswordStrength(normalizedPassword)
+  const selectedPackage = useMemo(
+    () => PACKAGE_OPTIONS.find(option => option.id === selectedPackageId) ?? PACKAGE_OPTIONS[0],
+    [selectedPackageId],
+  )
   const passwordChecklist = useMemo(
     () => [
       {
@@ -815,7 +820,7 @@ export default function AuthPage() {
             {mode === 'signup' && (
               <p className="form__hint" style={{ marginTop: 8 }}>
                 Summary: You are creating a new store and will be the owner of this
-                workspace.
+                workspace. Selected package: {selectedPackage.label}.
               </p>
             )}
 
@@ -915,6 +920,62 @@ export default function AuthPage() {
           />
           <div className="app__partners-glow" />
         </div>
+      </section>
+
+      <section className="app__packages" aria-label="Sedifex packages">
+        <header className="app__packages-header">
+          <span className="app__pill">Packages</span>
+          <h2>Pick the Sedifex package that matches your store today</h2>
+          <p>
+            Choose a plan, start your free 14-day trial, and we will keep your inventory
+            workspace active when you are ready to pay.
+          </p>
+        </header>
+
+        <div className="app__packages-grid" role="list">
+          {PACKAGE_OPTIONS.map(option => {
+            const isSelected = option.id === selectedPackageId
+            return (
+              <article
+                key={option.id}
+                className={`package-card${isSelected ? ' is-selected' : ''}`}
+                role="listitem"
+              >
+                <div className="package-card__header">
+                  <div>
+                    <p className="package-card__eyebrow">{option.name}</p>
+                    <h3>{option.label}</h3>
+                  </div>
+                  {option.badge && <span className="package-card__badge">{option.badge}</span>}
+                </div>
+                <p className="package-card__price">
+                  GHS {option.amountGhs.toLocaleString('en-GH')}{' '}
+                  <span>{option.billingNote}</span>
+                </p>
+                <p className="package-card__description">{option.description}</p>
+                <ul className="package-card__list">
+                  {option.highlights.map(item => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+                <button
+                  className="package-card__action"
+                  type="button"
+                  onClick={() => {
+                    setSelectedPackageId(option.id)
+                    handleModeChange('signup')
+                  }}
+                >
+                  {isSelected ? 'Selected package' : 'Select this package'}
+                </button>
+              </article>
+            )
+          })}
+        </div>
+        <p className="app__packages-note">
+          Not sure? Start with the recommended package and upgrade anytime from your billing
+          dashboard.
+        </p>
       </section>
 
       <section className="app__features" aria-label="Sedifex workspace pages">
@@ -1043,6 +1104,37 @@ const PAGE_FEATURES = [
     name: 'Logi partners',
     description:
       'Share a live public snapshot of your store name, location, and overview with partners.',
+  },
+] as const
+
+const PACKAGE_OPTIONS = [
+  {
+    id: 'starter-monthly',
+    name: 'Starter',
+    label: 'Starter (Monthly)',
+    amountGhs: 100,
+    billingNote: '/ month',
+    badge: 'Popular',
+    description: 'Best for solo stores that need daily sales and inventory visibility.',
+    highlights: ['1 workspace', 'POS + Inventory + Reports', 'Add extra workspace anytime'],
+  },
+  {
+    id: 'starter-yearly',
+    name: 'Starter',
+    label: 'Starter (Yearly)',
+    amountGhs: 1100,
+    billingNote: '/ year',
+    description: 'Pay once and save two months of subscription costs.',
+    highlights: ['1 workspace', '12 months of coverage', 'Priority onboarding support'],
+  },
+  {
+    id: 'business-yearly',
+    name: 'Business',
+    label: 'Business (Multi-store)',
+    amountGhs: 2500,
+    billingNote: '/ year',
+    description: 'Built for multi-branch retailers with shared inventory oversight.',
+    highlights: ['Up to 5 workspaces', 'Multi-branch reporting', 'Dedicated success check-ins'],
   },
 ] as const
 
