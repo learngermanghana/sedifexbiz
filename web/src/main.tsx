@@ -25,6 +25,7 @@ import Expenses from './pages/Expenses'
 import DocumentsGenerator from './pages/DocumentsGenerator'
 import ResetPassword from './pages/ResetPassword'
 import VerifyEmail from './pages/VerifyEmail'
+import InventorySystemGhana from './pages/InventorySystemGhana'
 
 // ✅ NEW: public receipt page used by QR/share
 import ReceiptView from './pages/ReceiptView'
@@ -86,6 +87,7 @@ const router = createBrowserRouter([
       { path: 'reset-password', element: <ResetPassword /> },
       { path: 'verify-email', element: <VerifyEmail /> },
       { path: 'billing/verify', element: <BillingVerifyPage /> },
+      { path: 'inventory-system-ghana', element: <InventorySystemGhana /> },
 
       // Legal pages
       { path: 'legal/privacy', element: <PrivacyPage /> },
