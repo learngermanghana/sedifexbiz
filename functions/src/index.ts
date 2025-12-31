@@ -390,6 +390,12 @@ async function verifyOwnerForStore(uid: string, storeId: string) {
   const memberStoreId = typeof memberData.storeId === 'string' ? (memberData.storeId as string) : ''
 
   if (memberRole !== 'owner' || memberStoreId !== storeId) {
+    const storeSnap = await db.collection('stores').doc(storeId).get()
+    const storeData = (storeSnap.data() ?? {}) as Record<string, unknown>
+    const ownerUid = typeof storeData.ownerUid === 'string' ? (storeData.ownerUid as string) : ''
+    if (ownerUid && ownerUid === uid) {
+      return
+    }
     throw new functions.https.HttpsError(
       'permission-denied',
       'Owner permission for this workspace is required',
