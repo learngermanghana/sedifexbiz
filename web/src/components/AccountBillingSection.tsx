@@ -16,11 +16,28 @@ type PlanOption = {
   id: string
   label: string
   amountGhs: number
+  description?: string
 }
 
 const PLANS: PlanOption[] = [
-  { id: 'starter-monthly', label: 'Starter – Monthly', amountGhs: 100 },
-  { id: 'starter-yearly', label: 'Starter – Yearly', amountGhs: 1100 },
+  {
+    id: 'starter-monthly',
+    label: 'Starter – Monthly',
+    amountGhs: 100,
+    description: '1 workspace',
+  },
+  {
+    id: 'starter-yearly',
+    label: 'Starter – Yearly',
+    amountGhs: 1100,
+    description: '1 workspace · 2 months free',
+  },
+  {
+    id: 'business-yearly',
+    label: 'Business – Multi-store (Yearly)',
+    amountGhs: 2500,
+    description: 'Up to 5 workspaces',
+  },
 ]
 
 export const AccountBillingSection: React.FC<Props> = ({
@@ -224,7 +241,9 @@ export const AccountBillingSection: React.FC<Props> = ({
               >
                 {PLANS.map(plan => (
                   <option key={plan.id} value={plan.id}>
-                    {plan.label} – GHS {plan.amountGhs.toFixed(2)}
+                    {plan.label}
+                    {plan.description ? ` · ${plan.description}` : ''} – GHS{' '}
+                    {plan.amountGhs.toFixed(2)}
                   </option>
                 ))}
               </select>
@@ -243,6 +262,11 @@ export const AccountBillingSection: React.FC<Props> = ({
             <p className="text-xs text-gray-500">
               You will be redirected to Paystack’s secure page to complete your subscription.
             </p>
+            <div className="text-xs text-gray-500 space-y-1">
+              <p>Extra workspaces: + GHS 50 / month (monthly plan).</p>
+              <p>Extra workspaces: + GHS 500 / year (starter yearly plan).</p>
+              <p>Business plan includes 5 workspaces. Additional workspaces: + GHS 400 / year.</p>
+            </div>
           </form>
         </>
       )}

@@ -3,16 +3,15 @@
 // The IDs you’ll store in Firestore and send to Paystack
 export type PlanId =
   | 'starter-monthly'
-  | 'starter-annual'
-  | 'pro-monthly'
-  | 'pro-annual'
+  | 'starter-yearly'
+  | 'business-yearly'
 
 export type Plan = {
   id: PlanId
   label: string
   months: number
-  monthlyPriceUsd: number
-  totalPriceUsd: number
+  monthlyPriceGhs: number
+  totalPriceGhs: number
   discountPercent: number | null
   isDefault?: boolean
 }
@@ -26,34 +25,26 @@ const PLAN_CATALOG: Record<PlanId, Plan> = {
     id: 'starter-monthly',
     label: 'Starter Monthly',
     months: 1,
-    monthlyPriceUsd: 9,
-    totalPriceUsd: 9,
+    monthlyPriceGhs: 100,
+    totalPriceGhs: 100,
     discountPercent: null,
     isDefault: true,
   },
-  'starter-annual': {
-    id: 'starter-annual',
-    label: 'Starter Annual',
+  'starter-yearly': {
+    id: 'starter-yearly',
+    label: 'Starter Yearly',
     months: 12,
-    monthlyPriceUsd: 8,
-    totalPriceUsd: 96,
-    discountPercent: 11, // example: (9-8)/9 ≈ 11%
+    monthlyPriceGhs: 92,
+    totalPriceGhs: 1100,
+    discountPercent: 17,
   },
-  'pro-monthly': {
-    id: 'pro-monthly',
-    label: 'Pro Monthly',
-    months: 1,
-    monthlyPriceUsd: 19,
-    totalPriceUsd: 19,
+  'business-yearly': {
+    id: 'business-yearly',
+    label: 'Business Yearly',
+    months: 12,
+    monthlyPriceGhs: 208,
+    totalPriceGhs: 2500,
     discountPercent: null,
-  },
-  'pro-annual': {
-    id: 'pro-annual',
-    label: 'Pro Annual',
-    months: 12,
-    monthlyPriceUsd: 16,
-    totalPriceUsd: 192,
-    discountPercent: 16, // example
   },
 }
 
@@ -72,12 +63,15 @@ const PLAN_ALIAS_MAP: Record<string, PlanId> = {
   // Starter
   starter: 'starter-monthly',
   'starter-monthly': 'starter-monthly',
-  'starter-annual': 'starter-annual',
+  'starter-yearly': 'starter-yearly',
+  'starter-annual': 'starter-yearly',
+  yearly: 'starter-yearly',
+  annual: 'starter-yearly',
 
-  // Pro
-  pro: 'pro-monthly',
-  'pro-monthly': 'pro-monthly',
-  'pro-annual': 'pro-annual',
+  // Business
+  business: 'business-yearly',
+  'business-yearly': 'business-yearly',
+  'business-annual': 'business-yearly',
 }
 
 /**
