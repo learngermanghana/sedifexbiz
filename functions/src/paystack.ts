@@ -54,14 +54,45 @@ const PAYSTACK_PUBLIC = defineString('PAYSTACK_PUBLIC_KEY')
 const APP_BASE_URL = defineString('APP_BASE_URL')
 
 let paystackConfigLogged = false
+function resolveConfigValue(...values: Array<unknown>) {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (trimmed) return trimmed
+    }
+  }
+  return undefined
+}
+
 function getPaystackConfig() {
-  const secret = PAYSTACK_SECRET.value()
-  const publicKey = PAYSTACK_PUBLIC.value()
-  const appBaseUrl = APP_BASE_URL.value()
+  const legacyConfig = functions.config?.() ?? {}
+  const legacyPaystack = legacyConfig.paystack ?? {}
+
+  const secret = resolveConfigValue(
+    PAYSTACK_SECRET.value(),
+    process.env.PAYSTACK_SECRET_KEY,
+    legacyConfig.PAYSTACK_SECRET_KEY,
+    legacyPaystack.secret,
+    legacyPaystack.secret_key,
+  )
+  const publicKey = resolveConfigValue(
+    PAYSTACK_PUBLIC.value(),
+    process.env.PAYSTACK_PUBLIC_KEY,
+    legacyConfig.PAYSTACK_PUBLIC_KEY,
+    legacyPaystack.public_key,
+    legacyPaystack.publicKey,
+  )
+  const appBaseUrl = resolveConfigValue(
+    APP_BASE_URL.value(),
+    process.env.APP_BASE_URL,
+    legacyConfig.APP_BASE_URL,
+    legacyPaystack.app_base_url,
+    legacyPaystack.appBaseUrl,
+  )
 
   if (!paystackConfigLogged && !secret) {
     functions.logger.warn(
-      'Paystack secret not set. Configure PAYSTACK_SECRET_KEY via params (e.g. firebase functions:config:set PAYSTACK_SECRET_KEY="sk_live_xxx")',
+      'Paystack secret not set. Configure PAYSTACK_SECRET_KEY via params or firebase functions:config:set',
     )
     paystackConfigLogged = true
   }
