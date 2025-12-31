@@ -34,6 +34,7 @@ export default function App() {
     '/reset-password',
     '/verify-email',
     '/billing/verify',
+    '/inventory-system-ghana',
     '/legal/privacy',
     '/legal/cookies',
     '/legal/refund',
