@@ -16,7 +16,7 @@ const FEATURE_LIST = [
   {
     title: 'Fast barcode sales',
     description:
-      'Sell faster with quick search, barcode scanning, and mobile-friendly checkout built for busy Ghanaian shops.',
+      'Sell faster with quick search, barcode scanning, and mobile-friendly checkout built for busy Ghanaian shops and retail stores in Accra.',
   },
   {
     title: 'Low stock alerts',
@@ -117,6 +117,44 @@ export default function InventorySystemGhana() {
       applicationCategory: 'BusinessApplication',
     },
   }
+  const faqStructuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: 'What is the best inventory system in Ghana?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Sedifex is a modern inventory system in Ghana designed for shops, pharmacies, supermarkets, and small businesses.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Can Sedifex be used on phones and tablets?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Yes. Sedifex works on computers, tablets, and smartphones.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Does Sedifex support POS and checkout?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Yes. Sedifex includes a POS system with barcode scanning, payments, and digital receipts.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Is Sedifex suitable for small businesses in Ghana?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: 'Yes. Sedifex was built to support small and growing businesses in Ghana.',
+        },
+      },
+    ],
+  }
 
   return (
     <main className="seo-page">
@@ -128,6 +166,10 @@ export default function InventorySystemGhana() {
             Sedifex helps Ghanaian retailers, wholesalers, and service businesses track stock,
             sales, and finance in one smart workspace. Know what to reorder, prevent stock
             losses, and keep every branch aligned.
+          </p>
+          <p>
+            Sedifex is used by shops in Accra and across Ghana to manage inventory, sales,
+            and customer communication efficiently.
           </p>
           <div className="seo-page__hero-actions">
             <Link className="seo-page__cta" to="/">
@@ -241,7 +283,8 @@ export default function InventorySystemGhana() {
         <div className="seo-page__section-header">
           <h2>Who Sedifex helps</h2>
           <p>
-            Sedifex supports every industry that needs reliable inventory tracking in Ghana.
+            Sedifex supports every industry that needs reliable inventory tracking in Ghana,
+            from shops in Ghana to small businesses in Ghana growing beyond a single location.
           </p>
         </div>
         <div className="seo-page__grid seo-page__grid--compact">
@@ -307,8 +350,49 @@ export default function InventorySystemGhana() {
         </div>
       </section>
 
+      <section className="seo-page__section">
+        <div className="seo-page__section-header">
+          <h2>Frequently Asked Questions</h2>
+        </div>
+        <div className="seo-page__faq">
+          <article>
+            <h3>What is the best inventory system in Ghana?</h3>
+            <p>
+              Sedifex is a modern inventory system in Ghana designed for shops, pharmacies,
+              supermarkets, and small businesses to manage stock, sales, receipts, and
+              customer communication.
+            </p>
+          </article>
+          <article>
+            <h3>Can Sedifex be used on phones and tablets?</h3>
+            <p>
+              Yes. Sedifex works on computers, tablets, and smartphones, allowing businesses
+              in Ghana to manage inventory and sales from any device.
+            </p>
+          </article>
+          <article>
+            <h3>Does Sedifex support POS and checkout?</h3>
+            <p>
+              Yes. Sedifex includes a full POS system with barcode scanning, payment
+              tracking, mobile money and cash payments in Ghana, digital receipts, and
+              customer display features.
+            </p>
+          </article>
+          <article>
+            <h3>Is Sedifex suitable for small businesses in Ghana?</h3>
+            <p>
+              Yes. Sedifex was built specifically to make inventory and sales management
+              affordable and practical for small and growing businesses in Ghana.
+            </p>
+          </article>
+        </div>
+      </section>
+
       <script type="application/ld+json">
         {JSON.stringify(structuredData)}
+      </script>
+      <script type="application/ld+json">
+        {JSON.stringify(faqStructuredData)}
       </script>
     </main>
   )
