@@ -7,3 +7,12 @@ dist/
 shared/**/*.js
 shared/**/*.js.map
 functions/.env
+node_modules
+functions/node_modules
+web/node_modules
+.env
+.env.*
+functions/.env
+functions/.env.*
+web/.env
+web/.env.*
