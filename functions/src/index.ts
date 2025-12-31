@@ -1901,7 +1901,7 @@ function resolvePaystackPlanCode(
 
 export const createPaystackCheckout = functions.https.onCall(
   async (data: unknown, context: functions.https.CallableContext) => {
-    assertOwnerAccess(context)
+    assertAuthenticated(context)
     const paystackConfig = ensurePaystackConfig()
 
     const uid = context.auth!.uid
@@ -1930,6 +1930,8 @@ export const createPaystackCheckout = functions.https.onCall(
     const storeSnap = await storeRef.get()
     const storeData = (storeSnap.data() ?? {}) as any
     const billing = (storeData.billing || {}) as any
+
+    await verifyOwnerForStore(uid, storeId)
 
     const emailInput =
       typeof payload.email === 'string' ? (payload.email as string).trim().toLowerCase() : ''
