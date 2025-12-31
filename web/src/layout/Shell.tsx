@@ -7,6 +7,7 @@ import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
 import { useStoreBilling } from '../hooks/useStoreBilling'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useMemberships } from '../hooks/useMemberships'
+import { useWorkspaceOptions } from '../hooks/useWorkspaceOptions'
 import SupportTicketLauncher from '../components/SupportTicketLauncher'
 import { NAV_ITEMS, NavRole } from '../config/navigation'
 import { useWorkspaceIdentity } from '../hooks/useWorkspaceIdentity'
@@ -77,8 +78,12 @@ function buildBannerMessage(queueStatus: ReturnType<typeof useConnectivityStatus
 }
 
 export default function Shell({ children }: { children: React.ReactNode }) {
-  const { storeId } = useActiveStore()
+  const { storeId, setActiveStoreId } = useActiveStore()
   const { memberships, loading: membershipsLoading } = useMemberships()
+  const {
+    options: workspaceOptions,
+    loading: workspaceOptionsLoading,
+  } = useWorkspaceOptions()
   const user = useAuthUser()
   const { isPwaApp } = usePwaContext()
   const userEmail = user?.email ?? 'Account'
@@ -91,6 +96,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const { name: workspaceName, loading: workspaceLoading } = useWorkspaceIdentity()
 
   const [dismissedOn, setDismissedOn] = useState<string | null>(null)
+  const activeWorkspaceOption = useMemo(
+    () =>
+      storeId
+        ? workspaceOptions.find(option => option.storeId === storeId) ?? null
+        : null,
+    [storeId, workspaceOptions],
+  )
 
   const trialEndsAt = billing?.trialEndsAt?.toDate?.() ?? null
   const hasTrialEnded = Boolean(
@@ -274,6 +286,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const workspaceStatus = billing?.planKey ?? 'Workspace ready'
   const workspaceLabel = workspaceName || workspaceStatus
+  const workspaceDisplayName =
+    activeWorkspaceOption?.name ?? workspaceName ?? storeId ?? 'Workspace'
+  const hasMultipleWorkspaces = workspaceOptions.length > 1
+  const showWorkspaceSwitcher =
+    workspaceOptionsLoading || workspaceOptions.length > 0 || Boolean(storeId)
+  const workspaceSelectionValue =
+    storeId ?? workspaceOptions[0]?.storeId ?? ''
+
+  function handleWorkspaceChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const nextId = event.target.value
+    setActiveStoreId(nextId)
+  }
 
   return (
     <div className="shell">
@@ -350,12 +374,50 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="shell__controls">
+              {showWorkspaceSwitcher && (
+                <div
+                  className="shell__store-switcher"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span className="shell__store-label">Workspace</span>
+                  {hasMultipleWorkspaces ? (
+                    <select
+                      className="shell__store-select shell__store-dropdown"
+                      value={workspaceSelectionValue}
+                      onChange={handleWorkspaceChange}
+                      disabled={workspaceOptionsLoading}
+                      aria-label="Switch workspace"
+                    >
+                      {workspaceOptions.map(option => {
+                        const suffix = option.role === 'staff' ? ' (Staff)' : ''
+                        return (
+                          <option
+                            key={option.storeId}
+                            value={option.storeId}
+                          >
+                            {(option.name ?? option.storeId) + suffix}
+                          </option>
+                        )
+                      })}
+                    </select>
+                  ) : (
+                    <span
+                      className="shell__store-select"
+                      data-readonly
+                    >
+                      {workspaceOptionsLoading ? 'Loading…' : workspaceDisplayName}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div
                 className="shell__store-switcher"
                 role="status"
                 aria-live="polite"
               >
-                <span className="shell__store-label">Workspace</span>
+                <span className="shell__store-label">Plan</span>
                 <span
                   className="shell__store-select"
                   data-readonly

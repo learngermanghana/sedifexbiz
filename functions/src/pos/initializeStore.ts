@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions/v1'
 import { admin, defaultDb } from '../firestore'
 import { normalizePhoneE164 } from '../phone'
+import { buildMembershipDocId } from '../utils/teamMembers'
 
 function normalizeString(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -31,7 +32,7 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
   }
 
   const storeIdInput = normalizeString(data?.storeId)
-  const storeId = storeIdInput || context.auth.uid
+  const storeId = storeIdInput || `store-${context.auth.uid}-${Date.now()}`
   const now = admin.firestore.FieldValue.serverTimestamp()
 
   const contact = (data?.contact || {}) as InitializeStoreContact
@@ -49,7 +50,8 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
 
   await defaultDb.runTransaction(async tx => {
     const storeRef = defaultDb.collection('stores').doc(storeId)
-    const teamRef = defaultDb.collection('teamMembers').doc(context.auth!.uid)
+    const teamRef = defaultDb.collection('teamMembers').doc(buildMembershipDocId(context.auth!.uid, storeId))
+    const profileRef = defaultDb.collection('teamMembers').doc(context.auth!.uid)
     const teamAliasRef = contact.firstSignupEmail
       ? defaultDb.collection('teamMembers').doc(contact.firstSignupEmail.toString().toLowerCase())
       : null
@@ -75,6 +77,7 @@ export const initializeStore = functions.https.onCall(async (data, context) => {
     }
 
     tx.set(teamRef, baseTeamData, { merge: true })
+    tx.set(profileRef, { uid: context.auth!.uid, email: baseTeamData.email ?? null, updatedAt: now }, { merge: true })
 
     if (teamAliasRef) {
       tx.set(teamAliasRef, baseTeamData, { merge: true })

@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions/v1'
 import { admin, defaultDb } from './firestore'
+import { findFirstMembership, upsertMembership } from './utils/teamMembers'
 
 export const ensureCanonicalWorkspace = functions.https.onCall(
   async (rawData, context) => {
@@ -20,9 +21,9 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
     }
 
     const now = admin.firestore.FieldValue.serverTimestamp()
-    const memberRef = defaultDb.collection('teamMembers').doc(uid)
-    const memberSnap = await memberRef.get()
-    const existingMember = memberSnap.exists ? memberSnap.data() : null
+    const legacyMemberRef = defaultDb.collection('teamMembers').doc(uid)
+    const legacyMemberSnap = await legacyMemberRef.get()
+    const existingMember = legacyMemberSnap.exists ? legacyMemberSnap.data() : null
 
     const finalize = async (storeId: string, role: 'owner' | 'member') => {
       const claims = { storeId, role }
@@ -48,7 +49,7 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
 
       if (requestedRole === 'owner') {
         if (!storeId) {
-          storeId = `store-${uid}`
+          storeId = `store-${uid}-${Date.now()}`
         }
 
         const workspaceRef = defaultDb.collection('workspaces').doc(storeId)
@@ -68,16 +69,17 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
           { merge: true },
         )
 
-        await memberRef.set(
+        await upsertMembership(
+          defaultDb,
+          uid,
+          storeId,
           {
-            uid,
             email,
             role: 'owner',
-            storeId,
             createdAt: existingMember?.createdAt ?? now,
             updatedAt: now,
           },
-          { merge: true },
+          true,
         )
 
         return finalize(storeId, 'owner')
@@ -100,16 +102,17 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
         )
       }
 
-      await memberRef.set(
+      await upsertMembership(
+        defaultDb,
+        uid,
+        storeId,
         {
-          uid,
           email,
           role: 'member',
-          storeId,
           createdAt: existingMember?.createdAt ?? now,
           updatedAt: now,
         },
-        { merge: true },
+        true,
       )
 
       return finalize(storeId, 'member')
@@ -131,16 +134,17 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
         )
       }
 
-      await memberRef.set(
+      await upsertMembership(
+        defaultDb,
+        uid,
+        storeId,
         {
-          uid,
           email,
           role: 'member',
-          storeId,
           createdAt: existingMember?.createdAt ?? now,
           updatedAt: now,
         },
-        { merge: true },
+        true,
       )
 
       return finalize(storeId, 'member')
@@ -158,8 +162,21 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
       return finalize(storeId, role)
     }
 
+    const firstMembership = await findFirstMembership(defaultDb, uid)
+    if (firstMembership) {
+      const storeId =
+        typeof firstMembership.data.storeId === 'string'
+          ? firstMembership.data.storeId.trim()
+          : ''
+      if (storeId) {
+        const role =
+          ((firstMembership.data.role ?? 'owner') as 'owner' | 'member')
+        return finalize(storeId, role)
+      }
+    }
+
     // Case 2: auto-provision owner store
-    const generatedStoreId = `store-${uid}`
+    const generatedStoreId = `store-${uid}-${Date.now()}`
     const workspaceRef = defaultDb.collection('workspaces').doc(generatedStoreId)
     await workspaceRef.set(
       {
@@ -177,16 +194,17 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
       { merge: true },
     )
 
-    await memberRef.set(
+    await upsertMembership(
+      defaultDb,
+      uid,
+      generatedStoreId,
       {
-        uid,
         email,
         role: 'owner',
-        storeId: generatedStoreId,
         createdAt: existingMember?.createdAt ?? now,
         updatedAt: now,
       },
-      { merge: true },
+      true,
     )
 
     return finalize(generatedStoreId, 'owner')

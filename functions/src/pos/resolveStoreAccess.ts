@@ -2,6 +2,7 @@
 
 import * as functions from 'firebase-functions/v1'
 import { defaultDb } from '../firestore'
+import { findFirstMembership, findMembershipByStore } from '../utils/teamMembers'
 
 function normalizeCandidate(candidate: unknown): string | null {
   if (typeof candidate !== 'string') {
@@ -27,11 +28,15 @@ export const resolveStoreAccess = functions.https.onCall(async (data, context) =
     throw new functions.https.HttpsError('unauthenticated', 'You must be signed in.')
   }
 
-  const memberSnap = await defaultDb.collection('teamMembers').doc(uid).get()
-  const memberData = memberSnap.data() || {}
+  const requestedStoreId =
+    typeof data?.storeId === 'string' ? data.storeId.trim() : ''
+  const memberData =
+    (requestedStoreId
+      ? (await findMembershipByStore(defaultDb, uid, requestedStoreId))?.data
+      : (await findFirstMembership(defaultDb, uid))?.data) || {}
 
   const candidateStoreIds = [
-    data?.storeId,
+    requestedStoreId,
     memberData.storeId,
     memberData.storeID,
     memberData.workspaceSlug,

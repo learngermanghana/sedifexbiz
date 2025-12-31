@@ -2,6 +2,7 @@
 
 import * as functions from 'firebase-functions/v1'
 import { admin, defaultDb } from './firestore'
+import { findFirstMembership, upsertMembership } from './utils/teamMembers'
 
 /**
  * Request shape from the frontend (new flow):
@@ -45,9 +46,9 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
     const data = (rawData ?? {}) as EnsureCanonicalWorkspaceRequest
     const now = admin.firestore.FieldValue.serverTimestamp()
 
-    const memberRef = defaultDb.collection('teamMembers').doc(uid)
-    const memberSnap = await memberRef.get()
-    const existingMember = memberSnap.exists ? (memberSnap.data() as any) : null
+    const legacyMemberRef = defaultDb.collection('teamMembers').doc(uid)
+    const legacyMemberSnap = await legacyMemberRef.get()
+    const existingMember = legacyMemberSnap.exists ? (legacyMemberSnap.data() as any) : null
 
     // Helper to set auth claims and build the response
     const finalize = async (
@@ -82,9 +83,22 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
         return finalize(storeId, role)
       }
 
+      const firstMembership = await findFirstMembership(defaultDb, uid)
+      if (firstMembership) {
+        const role =
+          (firstMembership.data.role as 'owner' | 'member' | undefined) ?? 'owner'
+        const storeId =
+          typeof firstMembership.data.storeId === 'string'
+            ? firstMembership.data.storeId.trim()
+            : ''
+        if (storeId) {
+          return finalize(storeId, role)
+        }
+      }
+
       // Case 2: No storeId yet → auto-provision a default store and
       // treat this user as an owner.
-      const generatedStoreId = `store-${uid}`
+      const generatedStoreId = `store-${uid}-${Date.now()}`
 
       // Optional but useful: keep a workspace document keyed by storeId
       const workspaceRef = defaultDb.collection('workspaces').doc(generatedStoreId)
@@ -105,16 +119,17 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
       )
 
       // Upsert the team member as owner of this store
-      await memberRef.set(
+      await upsertMembership(
+        defaultDb,
+        uid,
+        generatedStoreId,
         {
-          uid,
           email,
           role: 'owner',
-          storeId: generatedStoreId,
           createdAt: existingMember?.createdAt ?? now,
           updatedAt: now,
         },
-        { merge: true },
+        true,
       )
 
       return finalize(generatedStoreId, 'owner')
@@ -130,7 +145,7 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
     if (role === 'owner') {
       // If owner did not provide a storeId, generate one from uid
       if (!storeId) {
-        storeId = `store-${uid}`
+        storeId = `store-${uid}-${Date.now()}`
       }
 
       const workspaceRef = defaultDb.collection('workspaces').doc(storeId)
@@ -150,16 +165,17 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
         { merge: true },
       )
 
-      await memberRef.set(
+      await upsertMembership(
+        defaultDb,
+        uid,
+        storeId,
         {
-          uid,
           email,
           role: 'owner',
-          storeId,
           createdAt: existingMember?.createdAt ?? now,
           updatedAt: now,
         },
-        { merge: true },
+        true,
       )
 
       return finalize(storeId, 'owner')
@@ -176,16 +192,17 @@ export const ensureCanonicalWorkspace = functions.https.onCall(
       // const workspaceSnap = await defaultDb.collection('workspaces').doc(storeId).get()
       // if (!workspaceSnap.exists) { throw new HttpsError(...); }
 
-      await memberRef.set(
+      await upsertMembership(
+        defaultDb,
+        uid,
+        storeId,
         {
-          uid,
           email,
           role: 'member',
-          storeId,
           createdAt: existingMember?.createdAt ?? now,
           updatedAt: now,
         },
-        { merge: true },
+        true,
       )
 
       return finalize(storeId, 'member')

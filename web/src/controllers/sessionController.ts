@@ -119,7 +119,7 @@ type TeamMemberMetadata = {
  * Also creates an email-key alias doc when available for flexible lookups.
  */
 export async function ensureTeamMemberDocument(user: User, metadata?: TeamMemberMetadata) {
-  const storeId = metadata?.storeId ?? user.uid
+  const storeId = metadata?.storeId ?? null
   const role = metadata?.role ?? 'owner'
   const email = user.email ? user.email.toLowerCase() : null
 
@@ -133,13 +133,24 @@ export async function ensureTeamMemberDocument(user: User, metadata?: TeamMember
     updatedAt: serverTimestamp(),
   }
 
+  const profilePayload = {
+    uid: user.uid,
+    email,
+    phone: user.phoneNumber ?? null,
+    updatedAt: serverTimestamp(),
+  }
+
   try {
-    // uid-keyed doc
-    await setDoc(doc(db, 'teamMembers', user.uid), payload, { merge: true })
+    if (storeId) {
+      const membershipDocId = `${user.uid}_${storeId}`
+      await setDoc(doc(db, 'teamMembers', membershipDocId), payload, { merge: true })
+    }
+
+    await setDoc(doc(db, 'teamMembers', user.uid), profilePayload, { merge: true })
 
     // email-keyed alias (optional but useful)
     if (email) {
-      await setDoc(doc(db, 'teamMembers', email), payload, { merge: true })
+      await setDoc(doc(db, 'teamMembers', email), profilePayload, { merge: true })
     }
   } catch (error) {
     console.warn('[team] Failed to ensure team member metadata for user', user.uid, error)

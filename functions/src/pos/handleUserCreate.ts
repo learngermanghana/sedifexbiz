@@ -1,6 +1,7 @@
 // functions/src/pos/handleUserCreate.ts
 import * as functions from 'firebase-functions/v1';
 import { admin, defaultDb } from '../firestore';
+import { upsertMembership } from '../utils/teamMembers';
 
 type SignupMode = 'owner' | 'member';
 
@@ -37,7 +38,10 @@ async function createOwnerStoreAndWorkspace(params: {
   );
 
   // 2) Team member document as owner
-  await defaultDb.collection('teamMembers').doc(uid).set(
+  await upsertMembership(
+    defaultDb,
+    uid,
+    storeId,
     {
       uid,
       email,
@@ -46,7 +50,7 @@ async function createOwnerStoreAndWorkspace(params: {
       createdAt: now,
       updatedAt: now,
     },
-    { merge: true }
+    true,
   );
 
   // 3) Workspace document (ID == storeId)
@@ -105,8 +109,7 @@ export const handleUserCreate = functions.https.onCall(
     // ────────────────────────────────────────────────────────────
     if (mode === 'owner') {
       if (!storeId) {
-        // simplest rule: owner's default store uses uid as ID
-        storeId = uid;
+        storeId = `store-${uid}-${Date.now()}`;
       }
 
       await createOwnerStoreAndWorkspace({
@@ -139,7 +142,10 @@ export const handleUserCreate = functions.https.onCall(
       );
     }
 
-    await defaultDb.collection('teamMembers').doc(uid).set(
+    await upsertMembership(
+      defaultDb,
+      uid,
+      storeId,
       {
         uid,
         email,
@@ -148,7 +154,7 @@ export const handleUserCreate = functions.https.onCall(
         createdAt: now,
         updatedAt: now,
       },
-      { merge: true }
+      true,
     );
 
     await admin.auth().setCustomUserClaims(uid, {

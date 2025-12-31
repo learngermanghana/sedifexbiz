@@ -4,6 +4,7 @@ import * as crypto from 'crypto'
 import { defineString } from 'firebase-functions/params'
 import { admin, defaultDb as db } from './firestore'
 import { normalizePhoneE164 } from './phone'
+import { findFirstMembership, findMembershipByStore, upsertMembership } from './utils/teamMembers'
 export { generateAiAdvice } from './aiAdvisor'
 export { exportDailyStoreReports } from './reports'
 export { checkSignupUnlock } from './paystack'
@@ -382,9 +383,8 @@ function assertOwnerAccess(context: functions.https.CallableContext) {
 }
 
 async function verifyOwnerForStore(uid: string, storeId: string) {
-  const memberRef = db.collection('teamMembers').doc(uid)
-  const memberSnap = await memberRef.get()
-  const memberData = (memberSnap.data() ?? {}) as Record<string, unknown>
+  const membership = await findMembershipByStore(db, uid, storeId)
+  const memberData = (membership?.data ?? {}) as Record<string, unknown>
 
   const memberRole = typeof memberData.role === 'string' ? (memberData.role as string) : ''
   const memberStoreId = typeof memberData.storeId === 'string' ? (memberData.storeId as string) : ''
@@ -404,11 +404,11 @@ function assertStaffAccess(context: functions.https.CallableContext) {
 }
 
 async function resolveStaffStoreId(uid: string) {
-  const memberRef = db.collection('teamMembers').doc(uid)
-  const memberSnap = await memberRef.get()
-  const memberData = (memberSnap.data() ?? {}) as Record<string, unknown>
-
-  const storeIdRaw = typeof memberData.storeId === 'string' ? (memberData.storeId as string).trim() : ''
+  const memberData = (await findFirstMembership(db, uid))?.data ?? {}
+  const storeIdRaw =
+    typeof (memberData as Record<string, unknown>).storeId === 'string'
+      ? ((memberData as Record<string, unknown>).storeId as string).trim()
+      : ''
   if (!storeIdRaw) {
     throw new functions.https.HttpsError('failed-precondition', 'No store associated with this account')
   }
@@ -539,23 +539,15 @@ export const initializeStore = functions.https.onCall(
     const requestedStoreId =
       typeof requestedStoreIdRaw === 'string' ? requestedStoreIdRaw.trim() : ''
 
-    const memberRef = db.collection('teamMembers').doc(uid)
-    const memberSnap = await memberRef.get()
-    const existingData = (memberSnap.data() ?? {}) as Record<string, unknown>
+    const profileRef = db.collection('teamMembers').doc(uid)
+    const profileSnap = await profileRef.get()
+    const existingData = (profileSnap.data() ?? {}) as Record<string, unknown>
 
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
 
-    let existingStoreId: string | null = null
-    if (
-      typeof existingData.storeId === 'string' &&
-      existingData.storeId.trim() !== ''
-    ) {
-      existingStoreId = existingData.storeId
-    }
-
-    let storeId = existingStoreId
+    let storeId = requestedStoreId
     if (!storeId) {
-      storeId = requestedStoreId || uid
+      storeId = `store-${uid}-${Date.now()}`
     }
 
     // --- Determine role ---
@@ -600,8 +592,8 @@ export const initializeStore = functions.https.onCall(
       updatedAt: timestamp,
     }
 
-    if (!memberSnap.exists) memberData.createdAt = timestamp
-    await memberRef.set(memberData, { merge: true })
+    if (!profileSnap.exists) memberData.createdAt = timestamp
+    await upsertMembership(db, uid, storeId, memberData, true)
 
     // --- If owner, create/merge store + workspace profile info ---
     if (role === 'owner') {
@@ -742,16 +734,19 @@ export const resolveStoreAccess = functions.https.onCall(
     const requestedStoreId =
       typeof requestedStoreIdRaw === 'string' ? requestedStoreIdRaw.trim() : ''
 
-    const memberRef = db.collection('teamMembers').doc(uid)
-    const memberSnap = await memberRef.get()
-    const memberData = (memberSnap.data() ?? {}) as Record<string, unknown>
+    const memberData = (
+      requestedStoreId
+        ? (await findMembershipByStore(db, uid, requestedStoreId))?.data
+        : (await findFirstMembership(db, uid))?.data
+    ) ?? ({} as Record<string, unknown>)
 
     let existingStoreId: string | null = null
     if (typeof memberData.storeId === 'string' && memberData.storeId.trim() !== '') {
       existingStoreId = memberData.storeId as string
     }
 
-    const storeId = requestedStoreId || existingStoreId || uid
+    const storeId =
+      requestedStoreId || existingStoreId || `store-${uid}-${Date.now()}`
     let role: 'owner' | 'staff'
 
     if (
@@ -773,11 +768,11 @@ export const resolveStoreAccess = functions.https.onCall(
       updatedAt: timestamp,
     }
 
-    if (!memberSnap.exists) {
+    if (!memberData.createdAt) {
       nextMemberData.createdAt = timestamp
     }
 
-    await memberRef.set(nextMemberData, { merge: true })
+    await upsertMembership(db, uid, storeId, nextMemberData, true)
 
     const storeRef = db.collection('stores').doc(storeId)
     const storeSnap = await storeRef.get()
@@ -1049,8 +1044,6 @@ export const manageStaffAccount = functions.https.onCall(
         created = ensured.created
         await admin.auth().updateUser(record.uid, { disabled: false })
 
-        const memberRef = db.collection('teamMembers').doc(record.uid)
-        const memberSnap = await memberRef.get()
         const memberData: admin.firestore.DocumentData = {
           uid: record.uid,
           email,
@@ -1061,11 +1054,8 @@ export const manageStaffAccount = functions.https.onCall(
           updatedAt: timestamp,
         }
 
-        if (!memberSnap.exists) {
-          memberData.createdAt = timestamp
-        }
-
-        await memberRef.set(memberData, { merge: true })
+        memberData.createdAt = timestamp
+        await upsertMembership(db, record.uid, storeId, memberData, true)
         claims = await updateUserClaims(record.uid, role)
       } else if (action === 'reset') {
         if (!password) {
@@ -1078,10 +1068,12 @@ export const manageStaffAccount = functions.https.onCall(
         record = await getUserOrThrow()
         await admin.auth().updateUser(record.uid, { password, disabled: false })
 
-        const memberRef = db.collection('teamMembers').doc(record.uid)
-        await memberRef.set(
+        await upsertMembership(
+          db,
+          record.uid,
+          storeId,
           { uid: record.uid, email, storeId, role, status: 'active', updatedAt: timestamp },
-          { merge: true },
+          true,
         )
         claims = await updateUserClaims(record.uid, role)
       } else {
@@ -1089,10 +1081,12 @@ export const manageStaffAccount = functions.https.onCall(
         record = await getUserOrThrow()
         await admin.auth().updateUser(record.uid, { disabled: true })
 
-        const memberRef = db.collection('teamMembers').doc(record.uid)
-        await memberRef.set(
+        await upsertMembership(
+          db,
+          record.uid,
+          storeId,
           { uid: record.uid, email, storeId, role, status: 'inactive', updatedAt: timestamp },
-          { merge: true },
+          true,
         )
         created = false
       }
@@ -1906,9 +1900,7 @@ export const createPaystackCheckout = functions.https.onCall(
     const requestedStoreId =
       typeof payload.storeId === 'string' ? (payload.storeId as string).trim() : ''
 
-    const memberRef = db.collection('teamMembers').doc(uid)
-    const memberSnap = await memberRef.get()
-    const memberData = (memberSnap.data() ?? {}) as Record<string, unknown>
+    const memberData = ((await findFirstMembership(db, uid))?.data ?? {}) as Record<string, unknown>
 
     let resolvedStoreId = ''
     if (requestedStoreId) {

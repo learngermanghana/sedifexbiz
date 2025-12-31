@@ -12,6 +12,7 @@ const mockUseStoreBilling = vi.fn()
 const mockUseActiveStore = vi.fn()
 const mockUseWorkspaceIdentity = vi.fn()
 const mockUseMemberships = vi.fn()
+const mockUseWorkspaceOptions = vi.fn()
 
 vi.mock('../hooks/useAuthUser', () => ({
   useAuthUser: () => mockUseAuthUser(),
@@ -35,6 +36,10 @@ vi.mock('../hooks/useWorkspaceIdentity', () => ({
 
 vi.mock('../hooks/useMemberships', () => ({
   useMemberships: () => mockUseMemberships(),
+}))
+
+vi.mock('../hooks/useWorkspaceOptions', () => ({
+  useWorkspaceOptions: () => mockUseWorkspaceOptions(),
 }))
 
 vi.mock('../firebase', () => ({
@@ -69,9 +74,15 @@ describe('Shell', () => {
     mockUseMemberships.mockReset()
 
     mockUseAuthUser.mockReturnValue({ email: 'owner@example.com' })
-    mockUseActiveStore.mockReturnValue({ storeId: 'store-123', isLoading: false, error: null })
+    mockUseActiveStore.mockReturnValue({
+      storeId: 'store-123',
+      isLoading: false,
+      error: null,
+      setActiveStoreId: vi.fn(),
+    })
     mockUseWorkspaceIdentity.mockReturnValue({ name: 'Demo Store', loading: false })
     mockUseMemberships.mockReturnValue({ memberships: [], loading: false, error: null })
+    mockUseWorkspaceOptions.mockReturnValue({ options: [], loading: false, error: null })
     mockUseConnectivityStatus.mockReturnValue({
       isOnline: true,
       isReachable: true,
