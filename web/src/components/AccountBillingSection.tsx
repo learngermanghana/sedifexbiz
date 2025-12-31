@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { startExtraWorkspaceCheckout, startPaystackCheckout } from '../lib/paystackClient'
 import { usePwaContext } from '../context/PwaContext'
 
@@ -13,32 +13,43 @@ type Props = {
 }
 
 type PlanOption = {
-  id: string
+  id: 'starter-monthly' | 'starter-yearly' | 'business-yearly'
   label: string
   amountGhs: number
   description?: string
+  badge?: string
+  highlights: string[]
 }
 
 const PLANS: PlanOption[] = [
   {
     id: 'starter-monthly',
-    label: 'Starter – Monthly',
+    label: 'Starter',
     amountGhs: 100,
-    description: '1 workspace',
+    description: 'Monthly billing',
+    badge: 'Recommended',
+    highlights: ['1 workspace', 'Sell + Inventory + Reports', 'Add extra workspace anytime'],
   },
   {
     id: 'starter-yearly',
-    label: 'Starter – Yearly',
+    label: 'Starter',
     amountGhs: 1100,
-    description: '1 workspace · 2 months free',
+    description: 'Yearly billing (2 months free)',
+    highlights: ['1 workspace', 'Best value for 12 months', 'Add extra workspace anytime'],
   },
   {
     id: 'business-yearly',
-    label: 'Business – Multi-store (Yearly)',
+    label: 'Business (Multi-store)',
     amountGhs: 2500,
-    description: 'Up to 5 workspaces',
+    description: 'Yearly billing',
+    highlights: ['Up to 5 workspaces included', 'Ideal for multi-branch shops', 'Priority support (optional)'],
   },
 ]
+
+function normalizePlanKey(value: string | null | undefined) {
+  if (!value) return null
+  return value.trim().toLowerCase()
+}
 
 export const AccountBillingSection: React.FC<Props> = ({
   storeId,
@@ -50,48 +61,65 @@ export const AccountBillingSection: React.FC<Props> = ({
   contractEndDate,
 }) => {
   const { isPwaApp } = usePwaContext()
-  const defaultPlanId = PLANS[0]?.id ?? ''
-  const [selectedPlanId, setSelectedPlanId] = useState<string>(defaultPlanId)
+
+  const currentPlanKey = normalizePlanKey(billingPlan)
+  const [selectedPlanId, setSelectedPlanId] = useState<PlanOption['id']>('starter-monthly')
+
   const [loading, setLoading] = useState(false)
   const [addonLoading, setAddonLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const isTrial = normalizePlanKey(contractStatus) === 'trial' || currentPlanKey === 'trial'
+  const isUnpaid = normalizePlanKey(contractStatus) === 'unpaid'
+
+  const isBusiness = currentPlanKey?.includes('business') ?? false
+  const isYearlyPlan = currentPlanKey?.includes('year') ?? false
+
+  // Default add-on interval follows current plan (yearly vs monthly)
   const [addonInterval, setAddonInterval] = useState<'monthly' | 'yearly'>(
-    billingPlan?.toLowerCase().includes('year') ? 'yearly' : 'monthly',
+    isYearlyPlan ? 'yearly' : 'monthly',
   )
 
-  const billingPlanDisplay =
-    PLANS.find(plan => plan.id === billingPlan)?.label ?? billingPlan ?? null
-
   useEffect(() => {
-    if (!billingPlan) return
-    const nextInterval = billingPlan.toLowerCase().includes('year') ? 'yearly' : 'monthly'
-    setAddonInterval(nextInterval)
-  }, [billingPlan])
+    setAddonInterval(isYearlyPlan ? 'yearly' : 'monthly')
+  }, [isYearlyPlan])
 
-  const hasPaidContract =
-    (contractStatus && contractStatus !== 'trial' && contractStatus !== 'unpaid') ||
-    (billingPlan && billingPlan !== 'trial')
+  const hasPaidContract = useMemo(() => {
+    // Anything not trial/unpaid is treated as active for UI purposes.
+    if (isTrial) return false
+    if (isUnpaid) return false
+    if (!contractStatus && !billingPlan) return false
+    return true
+  }, [isTrial, isUnpaid, contractStatus, billingPlan])
 
-  const startCheckoutForPlan = async (planId: string) => {
+  const billingPlanDisplay = useMemo(() => {
+    // Try to map known keys
+    const match = PLANS.find(p => p.id === currentPlanKey)
+    if (match) return match.label + (match.description ? ` – ${match.description}` : '')
+
+    // Fallback human label
+    if (!billingPlan) return '—'
+    if (billingPlan === 'trial') return 'Trial'
+    return billingPlan
+  }, [billingPlan, currentPlanKey])
+
+  const startCheckoutForPlan = async (planId: PlanOption['id']) => {
     setError(null)
 
     if (!isOwner) {
-      setError('Only the owner can start a subscription.')
+      setError('Only the owner can manage billing.')
       return
     }
-
     if (!storeId) {
-      setError('Missing store ID. Please refresh and try again.')
+      setError('Missing workspace ID. Please refresh and try again.')
       return
     }
-
     if (!ownerEmail) {
-      setError('Missing owner email. Please log in again.')
+      setError('Missing billing email. Please log in again.')
       return
     }
 
     const targetPlan = PLANS.find(plan => plan.id === planId)
-
     if (!targetPlan) {
       setError('No billing plans are available right now. Please try again later.')
       return
@@ -99,8 +127,9 @@ export const AccountBillingSection: React.FC<Props> = ({
 
     try {
       setLoading(true)
-
-      const redirectUrl = `${window.location.origin}/billing/verify?storeId=${encodeURIComponent(storeId)}`
+      const redirectUrl = `${window.location.origin}/billing/verify?storeId=${encodeURIComponent(
+        storeId,
+      )}`
 
       const response = await startPaystackCheckout({
         email: ownerEmail,
@@ -108,9 +137,7 @@ export const AccountBillingSection: React.FC<Props> = ({
         amount: targetPlan.amountGhs,
         plan: targetPlan.id,
         redirectUrl,
-        metadata: {
-          source: 'account-contract-billing',
-        },
+        metadata: { source: 'account-contract-billing' },
       })
 
       if (!response.ok || !response.authorizationUrl) {
@@ -121,21 +148,10 @@ export const AccountBillingSection: React.FC<Props> = ({
       window.location.assign(response.authorizationUrl)
     } catch (err) {
       console.error('Checkout error', err)
-      const message =
-        err instanceof Error ? err.message : 'Something went wrong starting checkout.'
-      setError(message)
+      setError(err instanceof Error ? err.message : 'Something went wrong starting checkout.')
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleStartCheckout = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    await startCheckoutForPlan(selectedPlanId)
-  }
-
-  const handleUpgradeToYearly = async () => {
-    await startCheckoutForPlan('starter-yearly')
   }
 
   const handleBuyExtraWorkspace = async () => {
@@ -145,14 +161,12 @@ export const AccountBillingSection: React.FC<Props> = ({
       setError('Only the owner can add extra workspaces.')
       return
     }
-
     if (!storeId) {
-      setError('Missing store ID. Please refresh and try again.')
+      setError('Missing workspace ID. Please refresh and try again.')
       return
     }
-
     if (!ownerEmail) {
-      setError('Missing owner email. Please log in again.')
+      setError('Missing billing email. Please log in again.')
       return
     }
 
@@ -165,9 +179,7 @@ export const AccountBillingSection: React.FC<Props> = ({
         interval: addonInterval,
         add: 1,
         redirectUrl,
-        metadata: {
-          source: 'account-extra-workspace',
-        },
+        metadata: { source: 'account-extra-workspace' },
       })
 
       if (!response.ok || !response.authorizationUrl) {
@@ -178,43 +190,34 @@ export const AccountBillingSection: React.FC<Props> = ({
       window.location.assign(response.authorizationUrl)
     } catch (err) {
       console.error('Extra workspace checkout error', err)
-      const message =
-        err instanceof Error ? err.message : 'Something went wrong starting checkout.'
-      setError(message)
+      setError(err instanceof Error ? err.message : 'Something went wrong starting checkout.')
     } finally {
       setAddonLoading(false)
     }
   }
 
-  const isYearlyPlan = billingPlan?.toLowerCase().includes('year') ?? false
-
   if (isPwaApp) {
     return (
       <section id="account-overview-contract">
-        <h2>Contract &amp; billing</h2>
-
+        <h2>Billing</h2>
+        <p className="text-sm text-gray-700">
+          Billing is managed on <strong>sedifex.com</strong>. Open Sedifex in your browser to pay
+          and renew. (Payments are not supported inside the installed app.)
+        </p>
         <dl className="account-overview__grid">
           <div>
-            <dt>Contract status</dt>
+            <dt>Status</dt>
             <dd>{contractStatus ?? '—'}</dd>
           </div>
           <div>
-            <dt>Billing plan</dt>
-            <dd>{billingPlan ?? '—'}</dd>
+            <dt>Plan</dt>
+            <dd>{billingPlanDisplay}</dd>
           </div>
           <div>
-            <dt>Payment provider</dt>
-            <dd>{paymentProvider ?? '—'}</dd>
+            <dt>Provider</dt>
+            <dd>{paymentProvider ?? 'Paystack'}</dd>
           </div>
         </dl>
-
-        <div className="account-overview__notice" role="note">
-          <p className="text-sm text-gray-700">
-            To start or renew your Sedifex subscription, please visit{' '}
-            <strong>sedifex.com</strong> in your browser and log in there. Once your subscription is
-            active, you can use this app to access your account.
-          </p>
-        </div>
       </section>
     )
   }
@@ -222,10 +225,9 @@ export const AccountBillingSection: React.FC<Props> = ({
   if (!isOwner) {
     return (
       <section id="account-overview-contract">
-        <h2>Contract &amp; billing</h2>
+        <h2>Billing</h2>
         <p className="text-sm text-gray-600">
-          Only the workspace owner can manage billing. Ask your owner to start the subscription
-          from their account.
+          Only the workspace owner can manage billing. Ask the owner to subscribe on their account.
         </p>
       </section>
     )
@@ -233,132 +235,172 @@ export const AccountBillingSection: React.FC<Props> = ({
 
   return (
     <section id="account-overview-contract">
-      <h2>Contract &amp; billing</h2>
+      <h2>Billing</h2>
 
       <dl className="account-overview__grid">
         <div>
-          <dt>Contract status</dt>
+          <dt>Status</dt>
           <dd>{contractStatus ?? '—'}</dd>
         </div>
         <div>
-          <dt>Billing plan</dt>
-          <dd>{billingPlan ?? '—'}</dd>
+          <dt>Plan</dt>
+          <dd>{billingPlanDisplay}</dd>
         </div>
         <div>
-          <dt>Payment provider</dt>
-          <dd>{paymentProvider ?? '—'}</dd>
+          <dt>Provider</dt>
+          <dd>{paymentProvider ?? 'Paystack'}</dd>
         </div>
       </dl>
 
       {hasPaidContract ? (
         <div className="account-overview__notice" role="status">
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-sm text-gray-700">
-              Your contract is active
-              {billingPlanDisplay ? ` on the ${billingPlanDisplay} plan` : ''}. It will remain
-              valid until <strong>{contractEndDate ?? '—'}</strong>. If you need to make changes,
-              contact your Sedifex account manager.
+              ✅ Your subscription is active{contractEndDate ? (
+                <>
+                  {' '}
+                  until <strong>{contractEndDate}</strong>.
+                </>
+              ) : null}
             </p>
 
-            {!isYearlyPlan && (
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="button button--secondary"
-                  onClick={handleUpgradeToYearly}
-                  disabled={loading || addonLoading}
-                >
-                  {loading ? 'Starting upgrade…' : 'Upgrade to yearly'}
-                </button>
-                <p className="text-xs text-gray-600">
-                  Switch to annual billing to keep your contract active for a full year.
-                </p>
-              </div>
-            )}
+            {/* Extra workspace only makes sense for Starter; Business already includes 5 */}
+            {!isBusiness && (
+              <div className="border-t border-gray-200 pt-4 space-y-2">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Add another workspace</p>
+                  <p className="text-xs text-gray-600">
+                    For 2 stores, stay on Starter and pay once to unlock one more workspace.
+                  </p>
+                </div>
 
-            <div className="border-t border-gray-200 pt-4 space-y-2">
-              <div>
-                <p className="text-sm font-medium text-gray-900">Add extra workspace</p>
-                <p className="text-xs text-gray-600">
-                  Pay once to add another workspace to your account.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="text-xs text-gray-600">
-                  <span className="sr-only">Billing interval</span>
+                <div className="flex flex-wrap items-center gap-3">
                   <select
                     value={addonInterval}
-                    onChange={event =>
-                      setAddonInterval(event.target.value as 'monthly' | 'yearly')
-                    }
+                    onChange={event => setAddonInterval(event.target.value as 'monthly' | 'yearly')}
                     className="border rounded px-2 py-1 text-sm"
                     disabled={addonLoading || loading}
                   >
-                    <option value="monthly">Monthly · GHS 50</option>
-                    <option value="yearly">Yearly · GHS 500</option>
+                    <option value="monthly">Monthly add-on · GHS 50</option>
+                    <option value="yearly">Yearly add-on · GHS 500</option>
                   </select>
-                </label>
+
+                  <button
+                    type="button"
+                    className="button button--primary"
+                    onClick={handleBuyExtraWorkspace}
+                    disabled={addonLoading || loading}
+                  >
+                    {addonLoading ? 'Starting checkout…' : 'Buy extra workspace'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Upgrade CTA */}
+            {!isBusiness && !isYearlyPlan && (
+              <div className="border-t border-gray-200 pt-4">
+                <p className="text-sm font-medium text-gray-900">Want to pay yearly?</p>
+                <p className="text-xs text-gray-600">
+                  Pay once and stay active for 12 months (2 months free).
+                </p>
                 <button
                   type="button"
-                  className="button button--primary"
-                  onClick={handleBuyExtraWorkspace}
-                  disabled={addonLoading || loading}
+                  className="button button--secondary"
+                  onClick={() => startCheckoutForPlan('starter-yearly')}
+                  disabled={loading || addonLoading}
+                  style={{ marginTop: 8 }}
                 >
-                  {addonLoading ? 'Starting checkout…' : 'Buy extra workspace'}
+                  {loading ? 'Starting…' : 'Switch to yearly'}
                 </button>
               </div>
-            </div>
+            )}
 
             {error && <p className="text-sm text-red-600">{error}</p>}
           </div>
         </div>
       ) : (
         <>
-          <p className="text-sm text-gray-600 mb-4">
-            Choose a plan and start your subscription. You’ll be redirected to Paystack to complete
-            the payment.
-          </p>
+          <div className="space-y-2">
+            {isTrial && (
+              <p className="text-sm text-gray-700">
+                You’re on a <strong>trial</strong>. Choose a plan to keep your workspace active.
+              </p>
+            )}
+            {isUnpaid && (
+              <p className="text-sm text-gray-700">
+                Your workspace is <strong>unpaid</strong>. Pay to unlock full access.
+              </p>
+            )}
+          </div>
 
-          <form
-            onSubmit={handleStartCheckout}
-            className="account-overview__form max-w-md space-y-4"
-          >
-            <label className="block text-sm font-medium">
-              <span>Plan</span>
-              <select
-                value={selectedPlanId}
-                onChange={event => setSelectedPlanId(event.target.value)}
-                className="border rounded px-3 py-2 w-full"
-              >
-                {PLANS.map(plan => (
-                  <option key={plan.id} value={plan.id}>
-                    {plan.label}
-                    {plan.description ? ` · ${plan.description}` : ''} – GHS{' '}
-                    {plan.amountGhs.toFixed(2)}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="mt-4 grid gap-3" style={{ maxWidth: 720 }}>
+            {PLANS.map(plan => {
+              const selected = plan.id === selectedPlanId
+              return (
+                <button
+                  key={plan.id}
+                  type="button"
+                  onClick={() => setSelectedPlanId(plan.id)}
+                  className="button"
+                  style={{
+                    textAlign: 'left',
+                    padding: 14,
+                    borderRadius: 12,
+                    border: selected ? '2px solid #111827' : '1px solid #E5E7EB',
+                    background: selected ? '#F9FAFB' : '#fff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <strong>{plan.label}</strong>
+                        {plan.badge ? (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              padding: '2px 8px',
+                              borderRadius: 999,
+                              border: '1px solid #E5E7EB',
+                            }}
+                          >
+                            {plan.badge}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="text-xs text-gray-600">{plan.description}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: 700 }}>GHS {plan.amountGhs.toFixed(2)}</div>
+                    </div>
+                  </div>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+                  <ul style={{ marginTop: 10, marginLeft: 18, fontSize: 12, color: '#374151' }}>
+                    {plan.highlights.map(h => (
+                      <li key={h}>{h}</li>
+                    ))}
+                  </ul>
+                </button>
+              )
+            })}
+          </div>
 
+          {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
+
+          <div style={{ marginTop: 12 }}>
             <button
-              type="submit"
-              disabled={loading}
+              type="button"
               className="button button--primary"
+              disabled={loading}
+              onClick={() => startCheckoutForPlan(selectedPlanId)}
             >
               {loading ? 'Starting checkout…' : 'Pay with Paystack'}
             </button>
-
-            <p className="text-xs text-gray-500">
-              You will be redirected to Paystack’s secure page to complete your subscription.
+            <p className="text-xs text-gray-500" style={{ marginTop: 8 }}>
+              You’ll be redirected to Paystack’s secure page to complete payment.
             </p>
-            <div className="text-xs text-gray-500 space-y-1">
-              <p>Extra workspaces: + GHS 50 / month (monthly plan).</p>
-              <p>Extra workspaces: + GHS 500 / year (starter yearly plan).</p>
-              <p>Business plan includes 5 workspaces. Additional workspaces: + GHS 400 / year.</p>
-            </div>
-          </form>
+          </div>
         </>
       )}
     </section>
