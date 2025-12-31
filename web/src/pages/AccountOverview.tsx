@@ -31,7 +31,7 @@ type StoreProfile = {
   name: string | null
   displayName: string | null
   email: string | null
-  ownerEmail: string | null // ✅ NEW: owner email (source of truth for billing)
+  ownerEmail: string | null // ✅ source of truth for billing
   phone: string | null
   status: string | null
   contractStatus: string | null
@@ -45,11 +45,7 @@ type StoreProfile = {
   country: string | null
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
-  // 🔹 Billing/trial fields
   trialEndsAt: Timestamp | null
-  // 🔹 Public directory fields
-  isPublicDirectory: boolean
-  publicDescription: string | null
 }
 
 type SubscriptionProfile = {
@@ -99,9 +95,7 @@ function mapStoreSnapshot(
   const billingRaw = (data.billing ?? {}) as Record<string, unknown>
 
   const billingStatus = toNullableString(billingRaw.status)
-  const paymentStatus = toNullableString(
-    (data as { paymentStatus?: unknown }).paymentStatus,
-  )
+  const paymentStatus = toNullableString((data as { paymentStatus?: unknown }).paymentStatus)
 
   let billingPlan =
     toNullableString((data as { billingPlan?: unknown }).billingPlan) ??
@@ -122,14 +116,11 @@ function mapStoreSnapshot(
     billingStatus ??
     toNullableString(data.status)
 
-  // 🔹 Trial end from billing (supports trialEndsAt/trialEnd)
-  const trialEndsRaw =
-    (billingRaw.trialEndsAt as unknown) ?? (billingRaw.trialEnd as unknown)
+  const trialEndsRaw = (billingRaw.trialEndsAt as unknown) ?? (billingRaw.trialEnd as unknown)
   const trialEndsAt = isTimestamp(trialEndsRaw) ? trialEndsRaw : null
 
   // ✅ Prefer stores.ownerEmail for billing; fallback to stores.email
-  const ownerEmail =
-    toNullableString((data as any).ownerEmail) ?? toNullableString(data.email)
+  const ownerEmail = toNullableString((data as any).ownerEmail) ?? toNullableString(data.email)
 
   return {
     name: toNullableString(data.name),
@@ -150,8 +141,6 @@ function mapStoreSnapshot(
     createdAt: isTimestamp(data.createdAt) ? data.createdAt : null,
     updatedAt: isTimestamp(data.updatedAt) ? data.updatedAt : null,
     trialEndsAt,
-    isPublicDirectory: Boolean((data as any).isPublicDirectory),
-    publicDescription: toNullableString((data as any).publicDescription),
   }
 }
 
@@ -168,12 +157,8 @@ function mapSubscriptionSnapshot(
     status: toNullableString(data.status),
     plan: toNullableString(data.plan),
     provider: toNullableString(data.provider) ?? 'Paystack',
-    currentPeriodStart: isTimestamp(data.currentPeriodStart)
-      ? data.currentPeriodStart
-      : null,
-    currentPeriodEnd: isTimestamp(data.currentPeriodEnd)
-      ? data.currentPeriodEnd
-      : null,
+    currentPeriodStart: isTimestamp(data.currentPeriodStart) ? data.currentPeriodStart : null,
+    currentPeriodEnd: isTimestamp(data.currentPeriodEnd) ? data.currentPeriodEnd : null,
     lastPaymentAt: isTimestamp(data.lastPaymentAt) ? data.lastPaymentAt : null,
     receiptUrl: toNullableString(data.receiptUrl),
   }
@@ -182,9 +167,7 @@ function mapSubscriptionSnapshot(
 function mapRosterSnapshot(snapshot: QueryDocumentSnapshot<DocumentData>): RosterMember {
   const data = snapshot.data() || {}
   const role: Membership['role'] = data.role === 'owner' ? 'owner' : 'staff'
-  const uid =
-    typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id
-
+  const uid = typeof data.uid === 'string' && data.uid.trim() ? data.uid : snapshot.id
   const storeId = getStoreIdFromRecord(data)
 
   return {
@@ -233,11 +216,7 @@ type AccountOverviewProps = {
 
 export default function AccountOverview({ headingLevel = 'h1' }: AccountOverviewProps) {
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
-  const {
-    memberships,
-    loading: membershipsLoading,
-    error: membershipsError,
-  } = useMemberships()
+  const { memberships, loading: membershipsLoading, error: membershipsError } = useMemberships()
   const { publish } = useToast()
   const user = useAuthUser()
 
@@ -245,17 +224,20 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileError, setProfileError] = useState<string | null>(null)
 
-  const [subscriptionProfile, setSubscriptionProfile] =
-    useState<SubscriptionProfile | null>(null)
+  const [subscriptionProfile, setSubscriptionProfile] = useState<SubscriptionProfile | null>(null)
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
 
   const [roster, setRoster] = useState<RosterMember[]>([])
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterError, setRosterError] = useState<string | null>(null)
+
   const [pendingActionId, setPendingActionId] = useState<string | null>(null)
   const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false)
   const [isDeletingAccount, setIsDeletingAccount] = useState(false)
+
+  // ✅ NEW: lock details until owner clicks "Edit"
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
 
   const [profileDraft, setProfileDraft] = useState({
     displayName: '',
@@ -270,21 +252,18 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   })
   const [isSavingProfile, setIsSavingProfile] = useState(false)
 
-  // Public directory edit state
-  const [isSavingPublicProfile, setIsSavingPublicProfile] = useState(false)
-  const [publicDescriptionDraft, setPublicDescriptionDraft] = useState('')
-  const [isPublicDirectoryDraft, setIsPublicDirectoryDraft] = useState(false)
-
   const activeMembership = useMemo(() => {
     if (!storeId) return null
     return memberships.find(m => m.storeId === storeId) ?? null
   }, [memberships, storeId])
 
   const isOwner = activeMembership?.role === 'owner'
-  const pendingMembers = useMemo(
-    () => roster.filter(member => member.status === 'pending'),
-    [roster],
-  )
+  const pendingMembers = useMemo(() => roster.filter(m => m.status === 'pending'), [roster])
+
+  // If workspace changes, close edit mode
+  useEffect(() => {
+    setIsEditingProfile(false)
+  }, [storeId])
 
   useEffect(() => {
     if (!storeId) {
@@ -305,14 +284,11 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         if (cancelled) return
 
         if (snapshot.exists()) {
-          const mapped = mapStoreSnapshot(snapshot)
-          setProfile(mapped)
+          setProfile(mapStoreSnapshot(snapshot))
           setProfileError(null)
           return
         }
 
-        // ✅ FIX: the old fallback query used ownerId==storeId (wrong)
-        // If stores/{storeId} doesn't exist, just show a clean error.
         setProfile(null)
         setProfileError('We could not find this workspace profile.')
       } catch (error) {
@@ -327,7 +303,6 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     }
 
     void loadProfile()
-
     return () => {
       cancelled = true
     }
@@ -356,8 +331,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           return
         }
 
-        const mapped = mapSubscriptionSnapshot(snapshot)
-        setSubscriptionProfile(mapped)
+        setSubscriptionProfile(mapSubscriptionSnapshot(snapshot))
       } catch (error) {
         if (cancelled) return
         console.error('Failed to load subscription', error)
@@ -370,7 +344,6 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     }
 
     void loadSubscription()
-
     return () => {
       cancelled = true
     }
@@ -384,17 +357,16 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     }
 
     let cancelled = false
-
     setRosterLoading(true)
     setRosterError(null)
 
     const membersRef = collection(db, 'teamMembers')
     const rosterQuery = query(membersRef, where('storeId', '==', storeId))
+
     getDocs(rosterQuery)
       .then(snapshot => {
         if (cancelled) return
-        const members = snapshot.docs.map(mapRosterSnapshot)
-        setRoster(members)
+        setRoster(snapshot.docs.map(mapRosterSnapshot))
         setRosterError(null)
       })
       .catch(error => {
@@ -413,16 +385,9 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     }
   }, [storeId, publish])
 
-  // Sync public profile drafts with loaded profile
+  // Sync drafts when profile loads
   useEffect(() => {
     if (!profile) return
-    setPublicDescriptionDraft(profile.publicDescription ?? '')
-    setIsPublicDirectoryDraft(profile.isPublicDirectory ?? false)
-  }, [profile])
-
-  useEffect(() => {
-    if (!profile) return
-
     setProfileDraft({
       displayName: profile.displayName ?? profile.name ?? '',
       email: profile.email ?? '',
@@ -450,10 +415,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     if (!storeId) return
 
     if (!isOwner) {
-      publish({
-        message: 'Only the workspace owner can update details.',
-        tone: 'error',
-      })
+      publish({ message: 'Only the workspace owner can update details.', tone: 'error' })
       return
     }
 
@@ -466,8 +428,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         displayName: normalizeInput(profileDraft.displayName),
         name: normalizeInput(profileDraft.displayName),
         email: normalizeInput(profileDraft.email),
-        // ✅ keep ownerEmail in sync so billing can always use it
-        ownerEmail: normalizeInput(profileDraft.email),
+        ownerEmail: normalizeInput(profileDraft.email), // keep in sync for billing
         phone: normalizeInput(profileDraft.phone),
         addressLine1: normalizeInput(profileDraft.addressLine1),
         addressLine2: normalizeInput(profileDraft.addressLine2),
@@ -500,140 +461,35 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
           : current,
       )
 
+      setIsEditingProfile(false)
       publish({ message: 'Workspace details updated.', tone: 'success' })
     } catch (error) {
       console.error('[account] Failed to save workspace profile', error)
-      publish({
-        message: 'Unable to save workspace details. Please try again.',
-        tone: 'error',
-      })
+      publish({ message: 'Unable to save workspace details. Please try again.', tone: 'error' })
     } finally {
       setIsSavingProfile(false)
     }
   }
 
-  const Heading = headingLevel as keyof JSX.IntrinsicElements
-
-  if (storeError) {
-    return <div role="alert">{storeError}</div>
-  }
-
-  if (storeLoading) {
-    return (
-      <div className="account-overview">
-        <Heading>Account overview</Heading>
-        <p role="status" aria-live="polite">
-          Loading workspace…
-        </p>
-      </div>
-    )
-  }
-
-  if (!storeId) {
-    return (
-      <div className="account-overview" role="status">
-        <Heading>Account overview</Heading>
-        <p>Select a workspace to view account details.</p>
-      </div>
-    )
-  }
-
-  const isBusy =
-    membershipsLoading || profileLoading || subscriptionLoading || rosterLoading
-
-  const contractStatus =
-    subscriptionProfile?.status ?? profile?.contractStatus ?? profile?.status ?? null
-
-  const billingPlan = subscriptionProfile?.plan ?? profile?.billingPlan ?? null
-
-  const isTrial = contractStatus === 'trial' || billingPlan === 'trial'
-
-  const lastPaymentDisplay = formatTimestamp(
-    subscriptionProfile?.lastPaymentAt ?? subscriptionProfile?.currentPeriodStart ?? null,
-  )
-
-  const expiryDisplay = formatTimestamp(subscriptionProfile?.currentPeriodEnd ?? null)
-
-  // 🔹 Trial end (from store billing)
-  const trialEndDisplay = formatTimestamp(profile?.trialEndsAt ?? null)
-
-  // 🔹 Period start (from subscription)
-  const periodStartDisplay = formatTimestamp(subscriptionProfile?.currentPeriodStart ?? null)
-
-  async function handleSavePublicProfile() {
-    if (!storeId) return
-    if (!isOwner) {
-      publish({
-        message: 'Only the workspace owner can update public details.',
-        tone: 'error',
-      })
-      return
-    }
-
-    try {
-      setIsSavingPublicProfile(true)
-      const ref = doc(db, 'stores', storeId)
-
-      await setDoc(
-        ref,
-        {
-          isPublicDirectory: isPublicDirectoryDraft,
-          publicDescription: publicDescriptionDraft.trim() || null,
-          displayName: profile?.displayName ?? profile?.name ?? null,
-          addressLine1: profile?.addressLine1 ?? null,
-          city: profile?.city ?? null,
-          country: profile?.country ?? null,
-          phone: profile?.phone ?? null,
-          email: profile?.email ?? null,
-          // ✅ keep ownerEmail aligned (optional but helpful)
-          ownerEmail: profile?.ownerEmail ?? profile?.email ?? null,
-          updatedAt: Timestamp.now(),
-        },
-        { merge: true },
-      )
-
-      publish({ message: 'Public profile updated.', tone: 'success' })
-    } catch (error) {
-      console.error('[account] Failed to save public profile', error)
-      publish({
-        message: 'Unable to save public profile. Please try again.',
-        tone: 'error',
-      })
-    } finally {
-      setIsSavingPublicProfile(false)
-    }
-  }
-
   async function handleDeleteWorkspaceData() {
     if (!storeId) return
-
     if (!isOwner) {
-      publish({
-        message: 'Only the workspace owner can delete workspace data.',
-        tone: 'error',
-      })
+      publish({ message: 'Only the workspace owner can delete workspace data.', tone: 'error' })
       return
     }
 
     const confirmed = window.confirm(
       'This will permanently delete all workspace data, including products, sales, customers, expenses, team members and activity. This action cannot be undone. Continue?',
     )
-
     if (!confirmed) return
 
     try {
       setIsDeletingWorkspace(true)
       await deleteWorkspaceData(storeId)
-      publish({
-        message: 'All workspace data deleted.',
-        tone: 'success',
-      })
+      publish({ message: 'All workspace data deleted.', tone: 'success' })
     } catch (error) {
       console.error('[account] Failed to delete workspace data', error)
-      publish({
-        message: 'Unable to delete workspace data. Please try again.',
-        tone: 'error',
-      })
+      publish({ message: 'Unable to delete workspace data. Please try again.', tone: 'error' })
     } finally {
       setIsDeletingWorkspace(false)
     }
@@ -641,49 +497,35 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
 
   async function handleDeleteAccount() {
     if (!user) {
-      publish({
-        message: 'You need to be signed in to delete your account.',
-        tone: 'error',
-      })
+      publish({ message: 'You need to be signed in to delete your account.', tone: 'error' })
       return
     }
 
     const confirmed = window.confirm(
       'This will permanently delete your Sedifex account and remove you from all workspaces. This action cannot be undone. Continue?',
     )
-
     if (!confirmed) return
 
     try {
       setIsDeletingAccount(true)
 
-      const membershipQuery = query(
-        collection(db, 'teamMembers'),
-        where('uid', '==', user.uid),
-      )
+      const membershipQuery = query(collection(db, 'teamMembers'), where('uid', '==', user.uid))
       const membershipSnapshot = await getDocs(membershipQuery)
 
       await Promise.all(
-        membershipSnapshot.docs.map(snapshot =>
-          deleteDoc(doc(db, 'teamMembers', snapshot.id)),
-        ),
+        membershipSnapshot.docs.map(snapshot => deleteDoc(doc(db, 'teamMembers', snapshot.id))),
       )
 
       await deleteUser(user)
 
-      publish({
-        message: 'Your account has been deleted.',
-        tone: 'success',
-      })
+      publish({ message: 'Your account has been deleted.', tone: 'success' })
     } catch (error) {
       console.error('[account] Failed to delete account', error)
-
       const errorCode = (error as { code?: unknown })?.code
       const message =
         errorCode === 'auth/requires-recent-login'
           ? 'Please sign in again to delete your account.'
           : 'Unable to delete your account. Please try again.'
-
       publish({ message, tone: 'error' })
     } finally {
       setIsDeletingAccount(false)
@@ -702,21 +544,13 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       )
       setRoster(current =>
         current.map(entry =>
-          entry.id === member.id
-            ? { ...entry, status: 'active', updatedAt: Timestamp.now() }
-            : entry,
+          entry.id === member.id ? { ...entry, status: 'active', updatedAt: Timestamp.now() } : entry,
         ),
       )
-      publish({
-        message: `Approved ${member.email ?? 'staff member'}.`,
-        tone: 'success',
-      })
+      publish({ message: `Approved ${member.email ?? 'staff member'}.`, tone: 'success' })
     } catch (error) {
       console.warn('[account] Failed to approve pending staff', error)
-      publish({
-        message: 'Unable to approve this staff member. Please try again.',
-        tone: 'error',
-      })
+      publish({ message: 'Unable to approve this staff member. Please try again.', tone: 'error' })
     } finally {
       setPendingActionId(null)
     }
@@ -734,25 +568,55 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       )
       setRoster(current =>
         current.map(entry =>
-          entry.id === member.id
-            ? { ...entry, status: 'inactive', updatedAt: Timestamp.now() }
-            : entry,
+          entry.id === member.id ? { ...entry, status: 'inactive', updatedAt: Timestamp.now() } : entry,
         ),
       )
-      publish({
-        message: `Removed ${member.email ?? 'staff member'} from your workspace.`,
-        tone: 'success',
-      })
+      publish({ message: `Removed ${member.email ?? 'staff member'} from your workspace.`, tone: 'success' })
     } catch (error) {
       console.warn('[account] Failed to reject pending staff', error)
-      publish({
-        message: 'Unable to remove this staff member. Please try again.',
-        tone: 'error',
-      })
+      publish({ message: 'Unable to remove this staff member. Please try again.', tone: 'error' })
     } finally {
       setPendingActionId(null)
     }
   }
+
+  const Heading = headingLevel as keyof JSX.IntrinsicElements
+
+  if (storeError) return <div role="alert">{storeError}</div>
+
+  if (storeLoading) {
+    return (
+      <div className="account-overview">
+        <Heading>Account overview</Heading>
+        <p role="status" aria-live="polite">Loading workspace…</p>
+      </div>
+    )
+  }
+
+  if (!storeId) {
+    return (
+      <div className="account-overview" role="status">
+        <Heading>Account overview</Heading>
+        <p>Select a workspace to view account details.</p>
+      </div>
+    )
+  }
+
+  const isBusy = membershipsLoading || profileLoading || subscriptionLoading || rosterLoading
+
+  const contractStatus =
+    subscriptionProfile?.status ?? profile?.contractStatus ?? profile?.status ?? null
+
+  const billingPlan = subscriptionProfile?.plan ?? profile?.billingPlan ?? null
+
+  const isTrial = contractStatus === 'trial' || billingPlan === 'trial'
+
+  const lastPaymentDisplay = formatTimestamp(
+    subscriptionProfile?.lastPaymentAt ?? subscriptionProfile?.currentPeriodStart ?? null,
+  )
+  const expiryDisplay = formatTimestamp(subscriptionProfile?.currentPeriodEnd ?? null)
+  const trialEndDisplay = formatTimestamp(profile?.trialEndsAt ?? null)
+  const periodStartDisplay = formatTimestamp(subscriptionProfile?.currentPeriodStart ?? null)
 
   return (
     <div className="account-overview">
@@ -770,17 +634,12 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       )}
 
       {isTrial && (
-        <div
-          className="account-overview__banner account-overview__banner--trial"
-          role="status"
-          aria-live="polite"
-        >
+        <div className="account-overview__banner account-overview__banner--trial" role="status" aria-live="polite">
           <p>
             You’re currently on a <strong>trial</strong> plan.
             {profile?.trialEndsAt && (
               <>
-                {' '}
-                Your trial ends on <strong>{trialEndDisplay}</strong>.
+                {' '}Your trial ends on <strong>{trialEndDisplay}</strong>.
               </>
             )}
             {isOwner
@@ -800,15 +659,13 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       )}
 
       {isBusy && (
-        <p role="status" aria-live="polite">
-          Loading account details…
-        </p>
+        <p role="status" aria-live="polite">Loading account details…</p>
       )}
 
       {profile && (
         <section aria-labelledby="account-overview-profile" id="store-profile">
           <div className="account-overview__section-header">
-            <h2 id="account-overview-profile">Store profile</h2>
+            <h2 id="account-overview-profile">Workspace details</h2>
 
             {isOwner && (
               <div className="account-overview__actions account-overview__actions--profile">
@@ -817,10 +674,9 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   className="button button--secondary"
                   data-testid="account-edit-store"
                   onClick={() => {
+                    setIsEditingProfile(true)
                     const el = document.getElementById('store-profile')
-                    if (el) {
-                      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                    }
+                    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                   }}
                 >
                   Edit workspace details
@@ -871,7 +727,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
             </div>
           </dl>
 
-          {isOwner && (
+          {/* ✅ LOCKED UNTIL EDIT CLICK */}
+          {isOwner && isEditingProfile && (
             <form
               className="account-overview__profile-form"
               onSubmit={handleSaveProfile}
@@ -883,7 +740,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.displayName}
-                    onChange={event => updateProfileDraft('displayName', event.target.value)}
+                    onChange={e => updateProfileDraft('displayName', e.target.value)}
                     placeholder="e.g. Sedifex Coffee"
                     data-testid="account-profile-name"
                   />
@@ -894,7 +751,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="email"
                     value={profileDraft.email}
-                    onChange={event => updateProfileDraft('email', event.target.value)}
+                    onChange={e => updateProfileDraft('email', e.target.value)}
                     placeholder="you@example.com"
                     data-testid="account-profile-email"
                   />
@@ -905,7 +762,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="tel"
                     value={profileDraft.phone}
-                    onChange={event => updateProfileDraft('phone', event.target.value)}
+                    onChange={e => updateProfileDraft('phone', e.target.value)}
                     placeholder="+233 20 123 4567"
                     data-testid="account-profile-phone"
                   />
@@ -916,9 +773,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.addressLine1}
-                    onChange={event =>
-                      updateProfileDraft('addressLine1', event.target.value)
-                    }
+                    onChange={e => updateProfileDraft('addressLine1', e.target.value)}
                     placeholder="Street and house number"
                     data-testid="account-profile-address1"
                   />
@@ -929,9 +784,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.addressLine2}
-                    onChange={event =>
-                      updateProfileDraft('addressLine2', event.target.value)
-                    }
+                    onChange={e => updateProfileDraft('addressLine2', e.target.value)}
                     placeholder="Apartment, suite, etc."
                     data-testid="account-profile-address2"
                   />
@@ -942,8 +795,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.city}
-                    onChange={event => updateProfileDraft('city', event.target.value)}
-                    placeholder="Nairobi"
+                    onChange={e => updateProfileDraft('city', e.target.value)}
+                    placeholder="Accra"
                     data-testid="account-profile-city"
                   />
                 </label>
@@ -953,8 +806,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.region}
-                    onChange={event => updateProfileDraft('region', event.target.value)}
-                    placeholder="Nairobi County"
+                    onChange={e => updateProfileDraft('region', e.target.value)}
+                    placeholder="Greater Accra"
                     data-testid="account-profile-region"
                   />
                 </label>
@@ -964,10 +817,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.postalCode}
-                    onChange={event =>
-                      updateProfileDraft('postalCode', event.target.value)
-                    }
-                    placeholder="00100"
+                    onChange={e => updateProfileDraft('postalCode', e.target.value)}
+                    placeholder="00233"
                     data-testid="account-profile-postal"
                   />
                 </label>
@@ -977,97 +828,43 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   <input
                     type="text"
                     value={profileDraft.country}
-                    onChange={event => updateProfileDraft('country', event.target.value)}
-                    placeholder="Kenya or Ghana"
+                    onChange={e => updateProfileDraft('country', e.target.value)}
+                    placeholder="Ghana"
                     data-testid="account-profile-country"
                   />
                 </label>
               </div>
 
-              <div className="account-overview__actions">
+              <div className="account-overview__actions" style={{ gap: 12 }}>
                 <p className="account-overview__hint">
-                  Update your workspace name and contact details for invoices and public listings.
+                  Update workspace name and contact details for receipts/invoices.
                 </p>
-                <button type="submit" className="button button--primary" disabled={isSavingProfile}>
-                  {isSavingProfile ? 'Saving…' : 'Save workspace details'}
-                </button>
+
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    onClick={() => setIsEditingProfile(false)}
+                    disabled={isSavingProfile}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    className="button button--primary"
+                    disabled={isSavingProfile}
+                  >
+                    {isSavingProfile ? 'Saving…' : 'Save workspace details'}
+                  </button>
+                </div>
               </div>
             </form>
           )}
         </section>
       )}
 
-      {/* Public directory profile section */}
-      {profile && (
-        <section aria-labelledby="account-overview-public">
-          <div className="account-overview__section-header">
-            <h2 id="account-overview-public">Public directory profile</h2>
-            <p className="account-overview__subtitle">
-              Control what customers see on <strong>stores.sedifex.com</strong>.
-            </p>
-          </div>
-
-          {isOwner ? (
-            <div className="account-overview__grid">
-              <div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={isPublicDirectoryDraft}
-                    onChange={e => setIsPublicDirectoryDraft(e.target.checked)}
-                  />
-                  <span>Show this store in the public Sedifex directory</span>
-                </label>
-                <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
-                  When enabled, your store will appear on stores.sedifex.com with your name, city,
-                  country, address and contact details.
-                </p>
-
-                {isPublicDirectoryDraft && (
-                  <p style={{ fontSize: 12, color: '#374151', marginTop: 8 }}>
-                    Preview your listing:{' '}
-                    <a
-                      href={`https://stores.sedifex.com/${encodeURIComponent(storeId)}`}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                    >
-                      Visit stores.sedifex.com with your store ID
-                    </a>
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span>What your store does (short description)</span>
-                  <textarea
-                    rows={3}
-                    value={publicDescriptionDraft}
-                    onChange={e => setPublicDescriptionDraft(e.target.value)}
-                    placeholder="E.g. We sell fresh fish, feed and equipment for aquaculture farms across Lagos."
-                    style={{ width: '100%', resize: 'vertical' }}
-                  />
-                </label>
-              </div>
-
-              <div>
-                <button
-                  type="button"
-                  className="button button--primary"
-                  onClick={handleSavePublicProfile}
-                  disabled={isSavingPublicProfile}
-                >
-                  {isSavingPublicProfile ? 'Saving…' : 'Save public profile'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p role="note">Only the workspace owner can change the public directory settings.</p>
-          )}
-        </section>
-      )}
-
-      {/* ✅ Billing summary: prefer profile.ownerEmail, fallback to auth email */}
+      {/* Billing section */}
       <AccountBillingSection
         storeId={storeId}
         ownerEmail={profile?.ownerEmail ?? user?.email ?? null}
@@ -1182,16 +979,10 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         <h2 id="account-overview-roster">Team roster</h2>
 
         {isOwner && pendingMembers.length > 0 && (
-          <div
-            className="account-overview__alert"
-            role="alert"
-            aria-live="polite"
-            data-testid="account-pending-approvals"
-          >
+          <div className="account-overview__alert" role="alert" aria-live="polite" data-testid="account-pending-approvals">
             <p className="account-overview__eyebrow">Action needed</p>
             <p className="account-overview__subtitle">
-              These people signed up with your Store ID. Approve to grant access or reject to block
-              it.
+              These people signed up with your Store ID. Approve to grant access or reject to block it.
             </p>
             <div className="account-overview__approvals">
               {pendingMembers.map(member => (
@@ -1204,9 +995,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                     <p className="account-overview__approval-email">
                       {formatValue(member.email ?? member.firstSignupEmail)}
                     </p>
-                    <p className="account-overview__hint">
-                      Pending approval · Requested access as staff
-                    </p>
+                    <p className="account-overview__hint">Pending approval · Requested access as staff</p>
                   </div>
                   <div className="account-overview__approval-actions">
                     <button
