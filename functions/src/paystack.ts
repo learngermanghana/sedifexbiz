@@ -65,7 +65,8 @@ function resolveConfigValue(...values: Array<unknown>) {
 }
 
 function getPaystackConfig() {
-  const legacyConfig = functions.config?.() ?? {}
+  const legacyConfig =
+    (functions as { config?: () => Record<string, unknown> }).config?.() ?? {}
   const legacyPaystack = legacyConfig.paystack ?? {}
 
   const secret = resolveConfigValue(
