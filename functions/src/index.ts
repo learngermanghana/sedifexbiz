@@ -1797,6 +1797,22 @@ const PAYSTACK_CURRENCY = defineString('PAYSTACK_CURRENCY')
 
 type PaystackPlanKey = 'starter-monthly' | 'starter-yearly' | string
 
+type LegacyPaystackConfig = {
+  secret?: string
+  secret_key?: string
+  public_key?: string
+  publicKey?: string
+  currency?: string
+  starter_monthly_plan_code?: string
+  starterMonthlyPlanCode?: string
+  starter_monthly_plan?: string
+  standard_plan_code?: string
+  standardPlanCode?: string
+  starter_yearly_plan_code?: string
+  starterYearlyPlanCode?: string
+  starter_yearly_plan?: string
+}
+
 // Fixed packages (GHS)
 const BULK_CREDITS_PACKAGES: Record<string, { credits: number; amount: number }> = {
   '100': { credits: 100, amount: 50 },
@@ -1818,7 +1834,8 @@ function resolveConfigValue(...values: Array<unknown>) {
 function getPaystackConfig() {
   const legacyConfig =
     (functions as { config?: () => Record<string, unknown> }).config?.() ?? {}
-  const legacyPaystack = legacyConfig.paystack ?? {}
+  const legacyPaystack =
+    (legacyConfig as { paystack?: LegacyPaystackConfig }).paystack ?? {}
 
   const secret = resolveConfigValue(
     PAYSTACK_SECRET_KEY.value(),

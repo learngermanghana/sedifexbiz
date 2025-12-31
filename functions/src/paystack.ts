@@ -46,6 +46,15 @@ type PaystackEvent = {
   data: PaystackEventData
 }
 
+type LegacyPaystackConfig = {
+  secret?: string
+  secret_key?: string
+  public_key?: string
+  publicKey?: string
+  app_base_url?: string
+  appBaseUrl?: string
+}
+
 /**
  * Config
  */
@@ -67,7 +76,8 @@ function resolveConfigValue(...values: Array<unknown>) {
 function getPaystackConfig() {
   const legacyConfig =
     (functions as { config?: () => Record<string, unknown> }).config?.() ?? {}
-  const legacyPaystack = legacyConfig.paystack ?? {}
+  const legacyPaystack =
+    (legacyConfig as { paystack?: LegacyPaystackConfig }).paystack ?? {}
 
   const secret = resolveConfigValue(
     PAYSTACK_SECRET.value(),
