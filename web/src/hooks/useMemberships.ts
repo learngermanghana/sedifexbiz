@@ -84,7 +84,35 @@ export function useMemberships(_activeStoreId?: string | null) {
         if (cancelled) return
 
         const rows = snapshot.docs.map(mapMembershipSnapshot)
-        setMemberships(rows)
+        const storeMap = new Map<string, Membership>()
+        const legacyMap = new Map<string, Membership>()
+        const withoutStore: Membership[] = []
+
+        for (const row of rows) {
+          if (!row.storeId) {
+            withoutStore.push(row)
+            continue
+          }
+
+          if (row.id === row.uid) {
+            if (!legacyMap.has(row.storeId)) {
+              legacyMap.set(row.storeId, row)
+            }
+            continue
+          }
+
+          storeMap.set(row.storeId, row)
+        }
+
+        const merged = [...storeMap.values()]
+
+        for (const [storeId, legacyMember] of legacyMap.entries()) {
+          if (!storeMap.has(storeId)) {
+            merged.push(legacyMember)
+          }
+        }
+
+        setMemberships([...merged, ...withoutStore])
         setError(null)
       } catch (e) {
         if (!cancelled) {
