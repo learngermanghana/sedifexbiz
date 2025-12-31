@@ -475,6 +475,13 @@ export default function AuthPage() {
           workspaceSlug: resolution.workspaceSlug,
           role: resolution.role,
         })
+
+        // Refresh ID token for fresh custom claims before starting checkout
+        try {
+          await nextUser.getIdToken(true)
+        } catch (error) {
+          console.warn('[auth] Unable to refresh ID token after signup', error)
+        }
         const reminder = formatTrialReminder(resolution.billing)
         if (reminder && signupBillingChoice === 'trial') {
           publish({ tone: 'info', message: reminder })
@@ -545,13 +552,6 @@ export default function AuthPage() {
           console.warn('[customers] Unable to upsert customer record', error)
         }
 
-        // 4) Refresh ID token for fresh custom claims
-        try {
-          await nextUser.getIdToken(true)
-        } catch (error) {
-          console.warn('[auth] Unable to refresh ID token after signup', error)
-        }
-
         // 5) Send email verification
         try {
           const continueUrl = `${window.location.origin}/verify-email`
@@ -563,9 +563,8 @@ export default function AuthPage() {
           console.warn('[auth] Failed to send verification email', error)
         }
 
-        // 6) Mark onboarding as pending and bounce to login
+        // 6) Mark onboarding as pending
         setOnboardingStatus(nextUser.uid, 'pending')
-        setMode('login')
       }
 
       const signupSuccessMessage =
@@ -590,8 +589,19 @@ export default function AuthPage() {
       setAddress('')
 
       if (paystackAuthUrl) {
-        window.location.assign(paystackAuthUrl)
+        try {
+          window.location.assign(paystackAuthUrl)
+          return
+        } catch (error) {
+          console.warn('[signup] Unable to open Paystack checkout', error)
+          setStatus({
+            tone: 'error',
+            message:
+              'We could not open the Paystack checkout. Please log in and retry from the billing page.',
+          })
+        }
       }
+      setMode('login')
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getAuthErrorMessage(err, mode) })
     }
