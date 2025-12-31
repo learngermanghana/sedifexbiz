@@ -374,8 +374,7 @@ export default function InventorySystemGhana() {
             <h3>Does Sedifex support POS and checkout?</h3>
             <p>
               Yes. Sedifex includes a full POS system with barcode scanning, payment
-              tracking, mobile money and cash payments in Ghana, digital receipts, and
-              customer display features.
+              tracking, digital receipts, and customer display features.
             </p>
           </article>
           <article>
