@@ -46,6 +46,9 @@ type StoreProfile = {
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
   trialEndsAt: Timestamp | null
+  graceEndsAt: Timestamp | null
+  lastCheckoutUrl: string | null
+  lastCheckoutAt: Timestamp | null
 }
 
 type SubscriptionProfile = {
@@ -56,6 +59,8 @@ type SubscriptionProfile = {
   currentPeriodEnd: Timestamp | null
   lastPaymentAt: Timestamp | null
   receiptUrl: string | null
+  lastCheckoutUrl: string | null
+  lastCheckoutAt: Timestamp | null
 }
 
 type RosterMember = {
@@ -118,6 +123,10 @@ function mapStoreSnapshot(
 
   const trialEndsRaw = (billingRaw.trialEndsAt as unknown) ?? (billingRaw.trialEnd as unknown)
   const trialEndsAt = isTimestamp(trialEndsRaw) ? trialEndsRaw : null
+  const graceEndsRaw = (billingRaw.graceEndsAt as unknown) ?? (billingRaw.graceEnd as unknown)
+  const graceEndsAt = isTimestamp(graceEndsRaw) ? graceEndsRaw : null
+  const lastCheckoutUrl = toNullableString(billingRaw.lastCheckoutUrl)
+  const lastCheckoutAt = isTimestamp(billingRaw.lastCheckoutAt) ? billingRaw.lastCheckoutAt : null
 
   // ✅ Prefer stores.ownerEmail for billing; fallback to stores.email
   const ownerEmail = toNullableString((data as any).ownerEmail) ?? toNullableString(data.email)
@@ -141,6 +150,9 @@ function mapStoreSnapshot(
     createdAt: isTimestamp(data.createdAt) ? data.createdAt : null,
     updatedAt: isTimestamp(data.updatedAt) ? data.updatedAt : null,
     trialEndsAt,
+    graceEndsAt,
+    lastCheckoutUrl,
+    lastCheckoutAt,
   }
 }
 
@@ -161,6 +173,8 @@ function mapSubscriptionSnapshot(
     currentPeriodEnd: isTimestamp(data.currentPeriodEnd) ? data.currentPeriodEnd : null,
     lastPaymentAt: isTimestamp(data.lastPaymentAt) ? data.lastPaymentAt : null,
     receiptUrl: toNullableString(data.receiptUrl),
+    lastCheckoutUrl: toNullableString(data.lastCheckoutUrl),
+    lastCheckoutAt: isTimestamp(data.lastCheckoutAt) ? data.lastCheckoutAt : null,
   }
 }
 
@@ -198,6 +212,22 @@ function formatTimestamp(timestamp: Timestamp | null) {
   } catch (error) {
     console.warn('Unable to render timestamp', error)
     return '—'
+  }
+}
+
+function formatDaysRemaining(timestamp: Timestamp | null) {
+  if (!timestamp) return null
+  try {
+    const end = timestamp.toDate()
+    const diffMs = end.getTime() - Date.now()
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+    if (!Number.isFinite(diffDays)) return null
+    if (diffDays < 0) return null
+    if (diffDays === 0) return 'Ends today'
+    return `${diffDays} day${diffDays === 1 ? '' : 's'} left`
+  } catch (error) {
+    console.warn('Unable to render remaining days', error)
+    return null
   }
 }
 
@@ -616,7 +646,15 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
   )
   const expiryDisplay = formatTimestamp(subscriptionProfile?.currentPeriodEnd ?? null)
   const trialEndDisplay = formatTimestamp(profile?.trialEndsAt ?? null)
+  const graceEndDisplay = formatTimestamp(profile?.graceEndsAt ?? null)
   const periodStartDisplay = formatTimestamp(subscriptionProfile?.currentPeriodStart ?? null)
+  const trialDaysRemaining = formatDaysRemaining(profile?.trialEndsAt ?? null)
+  const graceDaysRemaining = formatDaysRemaining(profile?.graceEndsAt ?? null)
+  const lastCheckoutUrl =
+    subscriptionProfile?.lastCheckoutUrl ?? profile?.lastCheckoutUrl ?? null
+  const lastCheckoutDisplay = formatTimestamp(
+    subscriptionProfile?.lastCheckoutAt ?? profile?.lastCheckoutAt ?? null,
+  )
 
   return (
     <div className="account-overview">
@@ -639,7 +677,8 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
             You’re currently on a <strong>trial</strong> plan.
             {profile?.trialEndsAt && (
               <>
-                {' '}Your trial ends on <strong>{trialEndDisplay}</strong>.
+                {' '}Your trial ends on <strong>{trialEndDisplay}</strong>
+                {trialDaysRemaining ? ` (${trialDaysRemaining}).` : '.'}
               </>
             )}
             {isOwner
@@ -873,6 +912,12 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
         billingPlan={billingPlan}
         paymentProvider={subscriptionProfile?.provider ?? profile?.paymentProvider ?? 'Paystack'}
         contractEndDate={expiryDisplay}
+        trialEndDate={trialEndDisplay}
+        trialDaysRemaining={trialDaysRemaining}
+        graceEndDate={graceEndDisplay}
+        graceDaysRemaining={graceDaysRemaining}
+        lastCheckoutUrl={lastCheckoutUrl}
+        lastCheckoutAt={lastCheckoutDisplay}
       />
 
       {/* Billing history */}
