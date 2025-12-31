@@ -10,6 +10,12 @@ type Props = {
   billingPlan?: string | null
   paymentProvider?: string | null
   contractEndDate?: string | null
+  trialEndDate?: string | null
+  trialDaysRemaining?: string | null
+  graceEndDate?: string | null
+  graceDaysRemaining?: string | null
+  lastCheckoutUrl?: string | null
+  lastCheckoutAt?: string | null
 }
 
 type PlanOption = {
@@ -59,6 +65,12 @@ export const AccountBillingSection: React.FC<Props> = ({
   billingPlan,
   paymentProvider,
   contractEndDate,
+  trialEndDate,
+  trialDaysRemaining,
+  graceEndDate,
+  graceDaysRemaining,
+  lastCheckoutUrl,
+  lastCheckoutAt,
 }) => {
   const { isPwaApp } = usePwaContext()
 
@@ -102,6 +114,16 @@ export const AccountBillingSection: React.FC<Props> = ({
     if (billingPlan === 'trial') return 'Trial'
     return billingPlan
   }, [billingPlan, currentPlanKey])
+
+  const trialDetail = useMemo(() => {
+    if (!trialEndDate || trialEndDate === '—') return '—'
+    return trialDaysRemaining ? `${trialEndDate} (${trialDaysRemaining})` : trialEndDate
+  }, [trialEndDate, trialDaysRemaining])
+
+  const graceDetail = useMemo(() => {
+    if (!graceEndDate || graceEndDate === '—') return '—'
+    return graceDaysRemaining ? `${graceEndDate} (${graceDaysRemaining})` : graceEndDate
+  }, [graceEndDate, graceDaysRemaining])
 
   const startCheckoutForPlan = async (planId: PlanOption['id']) => {
     setError(null)
@@ -214,10 +236,31 @@ export const AccountBillingSection: React.FC<Props> = ({
             <dd>{billingPlanDisplay}</dd>
           </div>
           <div>
+            <dt>Trial ends</dt>
+            <dd>{trialDetail}</dd>
+          </div>
+          <div>
+            <dt>Grace period ends</dt>
+            <dd>{graceDetail}</dd>
+          </div>
+          <div>
+            <dt>Last checkout</dt>
+            <dd>{lastCheckoutAt ?? '—'}</dd>
+          </div>
+          <div>
             <dt>Provider</dt>
             <dd>{paymentProvider ?? 'Paystack'}</dd>
           </div>
         </dl>
+        {lastCheckoutUrl && (
+          <p className="text-sm text-gray-600">
+            Resume payment in your browser:{' '}
+            <a href={lastCheckoutUrl} target="_blank" rel="noreferrer noopener">
+              Open Paystack checkout
+            </a>
+            .
+          </p>
+        )}
       </section>
     )
   }
@@ -245,6 +288,18 @@ export const AccountBillingSection: React.FC<Props> = ({
         <div>
           <dt>Plan</dt>
           <dd>{billingPlanDisplay}</dd>
+        </div>
+        <div>
+          <dt>Trial ends</dt>
+          <dd>{trialDetail}</dd>
+        </div>
+        <div>
+          <dt>Grace period ends</dt>
+          <dd>{graceDetail}</dd>
+        </div>
+        <div>
+          <dt>Last checkout</dt>
+          <dd>{lastCheckoutAt ?? '—'}</dd>
         </div>
         <div>
           <dt>Provider</dt>
@@ -332,6 +387,10 @@ export const AccountBillingSection: React.FC<Props> = ({
                 Your workspace is <strong>unpaid</strong>. Pay to unlock full access.
               </p>
             )}
+            <p className="text-sm text-gray-700">
+              To pay, select a plan below and click <strong>Pay with Paystack</strong>. You’ll be
+              redirected to Paystack’s secure checkout to complete payment.
+            </p>
           </div>
 
           <div className="mt-4 grid gap-3" style={{ maxWidth: 720 }}>
@@ -397,9 +456,15 @@ export const AccountBillingSection: React.FC<Props> = ({
             >
               {loading ? 'Starting checkout…' : 'Pay with Paystack'}
             </button>
-            <p className="text-xs text-gray-500" style={{ marginTop: 8 }}>
-              You’ll be redirected to Paystack’s secure page to complete payment.
-            </p>
+            {lastCheckoutUrl && (
+              <p className="text-xs text-gray-500" style={{ marginTop: 8 }}>
+                Already started?{' '}
+                <a href={lastCheckoutUrl} target="_blank" rel="noreferrer noopener">
+                  Resume your Paystack checkout
+                </a>
+                .
+              </p>
+            )}
           </div>
         </>
       )}
