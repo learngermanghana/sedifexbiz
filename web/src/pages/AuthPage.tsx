@@ -180,6 +180,9 @@ function formatTrialReminder(
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login')
   const [selectedPackageId, setSelectedPackageId] = useState(PACKAGE_OPTIONS[0].id)
+  const [signupBillingChoice, setSignupBillingChoice] = useState<'trial' | 'paid'>(
+    'trial',
+  )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -212,6 +215,8 @@ export default function AuthPage() {
     () => PACKAGE_OPTIONS.find(option => option.id === selectedPackageId) ?? PACKAGE_OPTIONS[0],
     [selectedPackageId],
   )
+  const signupPlanLabel =
+    signupBillingChoice === 'trial' ? 'Free 14-day trial' : selectedPackage.label
   const passwordChecklist = useMemo(
     () => [
       {
@@ -383,10 +388,28 @@ export default function AuthPage() {
 
     setStatus({
       tone: 'loading',
-      message: mode === 'login' ? 'Signing you in…' : 'Creating your account…',
+      message:
+        mode === 'login'
+          ? 'Signing you in…'
+          : signupBillingChoice === 'paid'
+            ? 'Creating your account and preparing payment…'
+            : 'Creating your account…',
     })
 
     try {
+      const checkoutLink =
+        mode === 'signup' && signupBillingChoice === 'paid'
+          ? PAYSTACK_PAYMENT_LINKS[selectedPackageId]
+          : null
+
+      if (mode === 'signup' && signupBillingChoice === 'paid' && !checkoutLink) {
+        setStatus({
+          tone: 'error',
+          message: 'We could not find a payment link for that plan. Please try again.',
+        })
+        return
+      }
+
       if (mode === 'login') {
         // ---------- LOGIN FLOW ----------
         const { user: nextUser } = await signInWithEmailAndPassword(
@@ -463,7 +486,7 @@ export default function AuthPage() {
           role: resolution.role,
         })
         const reminder = formatTrialReminder(resolution.billing)
-        if (reminder) {
+        if (reminder && signupBillingChoice === 'trial') {
           publish({ tone: 'info', message: reminder })
         }
 
@@ -522,12 +545,17 @@ export default function AuthPage() {
         setMode('login')
       }
 
+      const signupSuccessMessage =
+        signupBillingChoice === 'paid'
+          ? 'Account created! We’ve emailed you a verification link — please confirm your email, then continue to Paystack to complete payment.'
+          : 'Account created! We’ve emailed you a verification link — please confirm your email, then sign in.'
+
       setStatus({
         tone: 'success',
         message:
           mode === 'login'
             ? 'Welcome back! Redirecting…'
-            : 'Account created! We’ve emailed you a verification link — please confirm your email, then sign in.',
+            : signupSuccessMessage,
       })
       setPassword('')
       setConfirmPassword('')
@@ -537,6 +565,10 @@ export default function AuthPage() {
       setCountry('')
       setTown('')
       setAddress('')
+
+      if (mode === 'signup' && signupBillingChoice === 'paid' && checkoutLink) {
+        window.location.assign(checkoutLink)
+      }
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getAuthErrorMessage(err, mode) })
     }
@@ -556,7 +588,7 @@ export default function AuthPage() {
                 Sell faster. <span className="app__highlight">Count smarter.</span>
               </p>
               <p className="app__trial-note">
-                Start with a free 14-day trial—no payment required until you’re ready.
+                Choose a 14-day trial or pay now to activate your plan immediately.
               </p>
             </div>
           </div>
@@ -584,7 +616,7 @@ export default function AuthPage() {
               type="button"
               disabled={isLoading}
             >
-              Start free trial
+              Sign up
             </button>
           </div>
 
@@ -612,6 +644,36 @@ export default function AuthPage() {
                   : 'Enter the email you use for work.'}
               </p>
             </div>
+
+            {mode === 'signup' && (
+              <fieldset className="form__field form__field--choices">
+                <legend>Choose how you want to start</legend>
+                <div className="form__choice-group">
+                  {SIGNUP_BILLING_CHOICES.map(choice => (
+                    <label
+                      key={choice.id}
+                      className="form__choice"
+                      data-selected={signupBillingChoice === choice.id}
+                    >
+                      <input
+                        type="radio"
+                        name="signup-billing-choice"
+                        value={choice.id}
+                        checked={signupBillingChoice === choice.id}
+                        onChange={() => setSignupBillingChoice(choice.id)}
+                        disabled={isLoading}
+                      />
+                      <span>{choice.label}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="form__hint" style={{ marginTop: 8 }}>
+                  {signupBillingChoice === 'trial'
+                    ? 'Enjoy 14 days on us. You can upgrade anytime from the billing dashboard.'
+                    : 'After signup we’ll send you to Paystack to complete payment.'}
+                </p>
+              </fieldset>
+            )}
 
             {mode === 'signup' && (
               <div className="form__field">
@@ -820,7 +882,7 @@ export default function AuthPage() {
             {mode === 'signup' && (
               <p className="form__hint" style={{ marginTop: 8 }}>
                 Summary: You are creating a new store and will be the owner of this
-                workspace. Selected package: {selectedPackage.label}.
+                workspace. Selected option: {signupPlanLabel}.
               </p>
             )}
 
@@ -828,10 +890,14 @@ export default function AuthPage() {
               {isLoading
                 ? mode === 'login'
                   ? 'Signing in…'
-                  : 'Starting free trial…'
+                  : signupBillingChoice === 'paid'
+                    ? 'Creating account…'
+                    : 'Starting free trial…'
                 : mode === 'login'
                   ? 'Log in'
-                  : 'Start free trial'}
+                  : signupBillingChoice === 'paid'
+                    ? 'Create account & pay'
+                    : 'Start free trial'}
             </button>
           </form>
 
@@ -927,8 +993,8 @@ export default function AuthPage() {
           <span className="app__pill">Packages</span>
           <h2>Pick the Sedifex package that matches your store today</h2>
           <p>
-            Choose a plan, start your free 14-day trial, and we will keep your inventory
-            workspace active when you are ready to pay.
+            Choose a plan or start your free 14-day trial. We’ll keep your inventory
+            workspace active and ready whenever you decide to pay.
           </p>
         </header>
 
@@ -1137,6 +1203,23 @@ const PACKAGE_OPTIONS = [
     highlights: ['Up to 5 workspaces', 'Multi-branch reporting', 'Dedicated success check-ins'],
   },
 ] as const
+
+const SIGNUP_BILLING_CHOICES = [
+  {
+    id: 'trial',
+    label: 'Start with a free 14-day trial',
+  },
+  {
+    id: 'paid',
+    label: 'Pay now to activate my plan',
+  },
+] as const
+
+const PAYSTACK_PAYMENT_LINKS: Record<string, string> = {
+  'starter-monthly': 'https://paystack.shop/pay/fzo4zcfixu',
+  'starter-yearly': 'https://paystack.shop/pay/uqav0i8j6-',
+  'business-yearly': 'https://paystack.shop/pay/irm6yiuyik',
+}
 
 async function cleanupFailedSignup(_user: User) {
   try {
