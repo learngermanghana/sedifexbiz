@@ -2007,13 +2007,17 @@ export const createPaystackCheckout = functions.https.onCall(
 
       responseJson = await response.json()
       if (!response.ok || !responseJson.status) {
+        const message =
+          typeof responseJson?.message === 'string'
+            ? responseJson.message
+            : 'Unable to start checkout with Paystack.'
         console.error('[paystack] initialize failed', responseJson)
-        throw new functions.https.HttpsError(
-          'unknown',
-          'Unable to start checkout with Paystack.',
-        )
+        throw new functions.https.HttpsError('failed-precondition', message)
       }
     } catch (error) {
+      if (error instanceof functions.https.HttpsError) {
+        throw error
+      }
       console.error('[paystack] initialize error', error)
       throw new functions.https.HttpsError(
         'unknown',
@@ -2198,13 +2202,17 @@ export const createBulkCreditsCheckout = functions.https.onCall(
 
       responseJson = await response.json()
       if (!response.ok || !responseJson.status) {
+        const message =
+          typeof responseJson?.message === 'string'
+            ? responseJson.message
+            : 'Unable to start checkout with Paystack.'
         console.error('[paystack] bulk credits initialize failed', responseJson)
-        throw new functions.https.HttpsError(
-          'unknown',
-          'Unable to start checkout with Paystack.',
-        )
+        throw new functions.https.HttpsError('failed-precondition', message)
       }
     } catch (error) {
+      if (error instanceof functions.https.HttpsError) {
+        throw error
+      }
       console.error('[paystack] bulk credits initialize error', error)
       throw new functions.https.HttpsError(
         'unknown',
