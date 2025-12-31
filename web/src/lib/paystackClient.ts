@@ -19,6 +19,23 @@ export type CreateCheckoutResponse = {
   publicKey: string | null
 }
 
+export type ExtraWorkspaceCheckoutPayload = {
+  storeId: string
+  interval: 'monthly' | 'yearly'
+  add: number
+  redirectUrl?: string
+  metadata?: Record<string, any>
+}
+
+export type ExtraWorkspaceCheckoutResponse = {
+  ok: boolean
+  authorizationUrl: string
+  reference: string
+  interval: 'monthly' | 'yearly'
+  add: number
+  amount: number
+}
+
 function isCallableNotFound(err: unknown) {
   const code = (err as any)?.code
   const message = String((err as any)?.message ?? '')
@@ -50,6 +67,14 @@ export async function startPaystackCheckout(
   }
 
   throw lastErr ?? new Error('Unable to start Paystack checkout.')
+}
+
+export async function startExtraWorkspaceCheckout(
+  payload: ExtraWorkspaceCheckoutPayload,
+): Promise<ExtraWorkspaceCheckoutResponse> {
+  const callable = httpsCallable(functions, 'createExtraWorkspaceCheckout')
+  const res = await callable(payload)
+  return res.data as ExtraWorkspaceCheckoutResponse
 }
 
 export type CheckSignupUnlockPayload = {

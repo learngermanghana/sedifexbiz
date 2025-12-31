@@ -91,6 +91,15 @@ type BulkCreditsCheckoutPayload = {
   metadata?: unknown
 }
 
+type ExtraWorkspaceCheckoutPayload = {
+  storeId?: unknown
+  interval?: unknown
+  add?: unknown
+  returnUrl?: unknown
+  redirectUrl?: unknown
+  metadata?: unknown
+}
+
 const VALID_ROLES = new Set(['owner', 'staff'])
 const TRIAL_DAYS = 14
 const GRACE_DAYS = 7
@@ -1805,6 +1814,11 @@ const BULK_CREDITS_PACKAGES: Record<string, { credits: number; amount: number }>
   '1000': { credits: 1000, amount: 430 },
 }
 
+const EXTRA_WORKSPACE_PRICING: Record<'monthly' | 'yearly', number> = {
+  monthly: 50,
+  yearly: 500,
+}
+
 let paystackConfigLogged = false
 function getPaystackConfig() {
   const secret = PAYSTACK_SECRET_KEY.value()
@@ -1873,6 +1887,13 @@ function resolveBulkCreditsPackage(raw: unknown): string | null {
   return BULK_CREDITS_PACKAGES[trimmed] ? trimmed : null
 }
 
+function resolveWorkspaceAddonInterval(raw: unknown): 'monthly' | 'yearly' | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim().toLowerCase()
+  if (trimmed === 'monthly' || trimmed === 'yearly') return trimmed
+  return null
+}
+
 function resolvePlanMonths(planKey: string | null): number {
   if (!planKey) return 1
   const lower = planKey.toLowerCase()
@@ -1937,7 +1958,12 @@ async function getWorkspaceUsageAndLimit(uid: string) {
     if (!snapshot.exists) return DEFAULT_WORKSPACE_LIMIT
     const billing = (snapshot.data()?.billing ?? {}) as Record<string, unknown>
     const planKey = typeof billing.planKey === 'string' ? billing.planKey : null
-    return resolveWorkspaceLimit(planKey)
+    const workspaceLimitRaw = billing.workspaceLimit
+    const workspaceLimit =
+      typeof workspaceLimitRaw === 'number' && Number.isFinite(workspaceLimitRaw)
+        ? workspaceLimitRaw
+        : null
+    return workspaceLimit ?? resolveWorkspaceLimit(planKey)
   })
 
   const limit = Math.max(DEFAULT_WORKSPACE_LIMIT, ...limits)
@@ -2290,6 +2316,142 @@ export const createBulkCreditsCheckout = functions.https.onCall(
 
 
 /** ============================================================================
+ *  CALLABLE: createExtraWorkspaceCheckout (extra workspace add-on)
+ * ==========================================================================*/
+
+export const createExtraWorkspaceCheckout = functions.https.onCall(
+  async (data: unknown, context: functions.https.CallableContext) => {
+    assertOwnerAccess(context)
+    const paystackConfig = ensurePaystackConfig()
+
+    const payload = (data ?? {}) as ExtraWorkspaceCheckoutPayload
+
+    const storeId =
+      typeof payload.storeId === 'string' ? payload.storeId.trim() : ''
+    if (!storeId) {
+      throw new functions.https.HttpsError('invalid-argument', 'storeId is required.')
+    }
+
+    await verifyOwnerForStore(context.auth!.uid, storeId)
+
+    const interval = resolveWorkspaceAddonInterval(payload.interval) || null
+    if (!interval) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'interval must be monthly or yearly.',
+      )
+    }
+
+    const addRaw = payload.add
+    const add =
+      typeof addRaw === 'number' && Number.isFinite(addRaw) && addRaw > 0
+        ? Math.floor(addRaw)
+        : 1
+
+    const amount = EXTRA_WORKSPACE_PRICING[interval] * add
+
+    const storeSnap = await db.collection('stores').doc(storeId).get()
+    const storeData = (storeSnap.data() ?? {}) as Record<string, unknown>
+
+    const token = context.auth!.token as Record<string, unknown>
+    const tokenEmail = typeof token.email === 'string' ? (token.email as string) : null
+
+    const email =
+      tokenEmail ||
+      (typeof storeData.ownerEmail === 'string' ? (storeData.ownerEmail as string) : null)
+
+    if (!email) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Missing owner email. Please sign in again.',
+      )
+    }
+
+    const reference = `${storeId}_workspace_addon_${Date.now()}`
+
+    const callbackUrl =
+      typeof (payload as any).redirectUrl === 'string'
+        ? String((payload as any).redirectUrl)
+        : typeof (payload as any).returnUrl === 'string'
+          ? String((payload as any).returnUrl)
+          : undefined
+
+    const extraMetadata =
+      payload.metadata && typeof payload.metadata === 'object'
+        ? (payload.metadata as Record<string, any>)
+        : {}
+
+    const body: any = {
+      email,
+      amount: toMinorUnits(amount),
+      currency: paystackConfig.currency,
+      reference,
+      metadata: {
+        storeId,
+        userId: context.auth!.uid,
+        kind: 'workspace_addon',
+        add,
+        interval,
+        ...extraMetadata,
+      },
+    }
+
+    if (callbackUrl) {
+      body.callback_url = callbackUrl
+    }
+
+    let responseJson: any
+    try {
+      const response = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${paystackConfig.secret}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      })
+
+      responseJson = await response.json()
+      if (!response.ok || !responseJson.status) {
+        console.error('[paystack] workspace addon initialize failed', responseJson)
+        throw new functions.https.HttpsError(
+          'unknown',
+          'Unable to start checkout with Paystack.',
+        )
+      }
+    } catch (error) {
+      console.error('[paystack] workspace addon initialize error', error)
+      throw new functions.https.HttpsError(
+        'unknown',
+        'Unable to start checkout with Paystack.',
+      )
+    }
+
+    const authUrl =
+      responseJson.data && typeof responseJson.data.authorization_url === 'string'
+        ? responseJson.data.authorization_url
+        : null
+
+    if (!authUrl) {
+      throw new functions.https.HttpsError(
+        'unknown',
+        'Paystack did not return a valid authorization URL.',
+      )
+    }
+
+    return {
+      ok: true,
+      authorizationUrl: authUrl,
+      reference,
+      interval,
+      add,
+      amount,
+    }
+  },
+)
+
+
+/** ============================================================================
  *  HTTP: handlePaystackWebhook
  * ==========================================================================*/
 
@@ -2334,6 +2496,67 @@ export const handlePaystackWebhook = functions.https.onRequest(async (req, res) 
 
       const storeId = typeof metadata.storeId === 'string' ? metadata.storeId.trim() : ''
       const kind = typeof metadata.kind === 'string' ? metadata.kind.trim() : null
+
+      // ✅ EXTRA WORKSPACE ADD-ON
+      if (kind === 'workspace_addon') {
+        if (!storeId) {
+          console.warn('[paystack] workspace_addon missing storeId in metadata')
+          res.status(200).send('ok')
+          return
+        }
+
+        const addRaw = metadata.add
+        const add =
+          typeof addRaw === 'number' && Number.isFinite(addRaw)
+            ? Math.floor(addRaw)
+            : Number(addRaw)
+
+        if (!Number.isFinite(add) || add <= 0) {
+          console.warn('[paystack] workspace_addon missing/invalid add in metadata', metadata)
+          res.status(200).send('ok')
+          return
+        }
+
+        const eventId = reference || `${storeId}_workspace_addon_${Date.now()}`
+        const eventRef = db.collection('paystackEvents').doc(eventId)
+        const storeRef = db.collection('stores').doc(storeId)
+        const timestamp = admin.firestore.FieldValue.serverTimestamp()
+
+        await db.runTransaction(async tx => {
+          const existing = await tx.get(eventRef)
+          if (existing.exists) return
+
+          const storeSnap = await tx.get(storeRef)
+          const storeData = (storeSnap.data() ?? {}) as Record<string, any>
+          const billing = (storeData.billing ?? {}) as Record<string, any>
+          const planKey = typeof billing.planKey === 'string' ? billing.planKey : null
+          const workspaceLimitRaw = billing.workspaceLimit
+          const currentLimit =
+            typeof workspaceLimitRaw === 'number' && Number.isFinite(workspaceLimitRaw)
+              ? workspaceLimitRaw
+              : resolveWorkspaceLimit(planKey)
+
+          tx.set(eventRef, {
+            kind: 'workspace_addon',
+            storeId,
+            add,
+            reference: reference || null,
+            createdAt: timestamp,
+          })
+
+          tx.set(
+            storeRef,
+            {
+              'billing.workspaceLimit': currentLimit + add,
+              updatedAt: timestamp,
+            },
+            { merge: true },
+          )
+        })
+
+        res.status(200).send('ok')
+        return
+      }
 
       // ✅ BULK CREDITS FLOW
       if (kind === 'bulk_credits') {
