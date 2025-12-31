@@ -28,6 +28,7 @@ import {
   INACTIVE_WORKSPACE_MESSAGE,
 } from '../controllers/accessController'
 import { auth, db } from '../firebase'
+import { startPaystackCheckout } from '../lib/paystackClient'
 import { setOnboardingStatus } from '../utils/onboarding'
 
 const LOGI_PARTNER_IMAGE_URL =
@@ -396,20 +397,9 @@ export default function AuthPage() {
             : 'Creating your account…',
     })
 
+    let paystackAuthUrl: string | null = null
+
     try {
-      const checkoutLink =
-        mode === 'signup' && signupBillingChoice === 'paid'
-          ? PAYSTACK_PAYMENT_LINKS[selectedPackageId]
-          : null
-
-      if (mode === 'signup' && signupBillingChoice === 'paid' && !checkoutLink) {
-        setStatus({
-          tone: 'error',
-          message: 'We could not find a payment link for that plan. Please try again.',
-        })
-        return
-      }
-
       if (mode === 'login') {
         // ---------- LOGIN FLOW ----------
         const { user: nextUser } = await signInWithEmailAndPassword(
@@ -490,6 +480,39 @@ export default function AuthPage() {
           publish({ tone: 'info', message: reminder })
         }
 
+        if (signupBillingChoice === 'paid') {
+          try {
+            const redirectUrl = `${window.location.origin}/billing/verify?storeId=${encodeURIComponent(
+              resolution.storeId,
+            )}`
+            const response = await startPaystackCheckout({
+              email: sanitizedEmail,
+              storeId: resolution.storeId,
+              amount: selectedPackage.amountGhs,
+              plan: selectedPackage.id,
+              redirectUrl,
+              metadata: { source: 'signup', planKey: selectedPackage.id },
+            })
+
+            if (!response.ok || !response.authorizationUrl) {
+              setStatus({
+                tone: 'error',
+                message: 'Unable to start Paystack checkout. Please try again.',
+              })
+              return
+            }
+
+            paystackAuthUrl = response.authorizationUrl
+          } catch (error) {
+            console.warn('[signup] Failed to start Paystack checkout', error)
+            setStatus({
+              tone: 'error',
+              message: getAuthErrorMessage(error, 'signup'),
+            })
+            return
+          }
+        }
+
         // 3) Upsert customer profile – always owner for self-signup
         try {
           const preferredDisplayName =
@@ -566,8 +589,8 @@ export default function AuthPage() {
       setTown('')
       setAddress('')
 
-      if (mode === 'signup' && signupBillingChoice === 'paid' && checkoutLink) {
-        window.location.assign(checkoutLink)
+      if (paystackAuthUrl) {
+        window.location.assign(paystackAuthUrl)
       }
     } catch (err: unknown) {
       setStatus({ tone: 'error', message: getAuthErrorMessage(err, mode) })
@@ -1214,12 +1237,6 @@ const SIGNUP_BILLING_CHOICES = [
     label: 'Pay now to activate my plan',
   },
 ] as const
-
-const PAYSTACK_PAYMENT_LINKS: Record<string, string> = {
-  'starter-monthly': 'https://paystack.shop/pay/fzo4zcfixu',
-  'starter-yearly': 'https://paystack.shop/pay/uqav0i8j6-',
-  'business-yearly': 'https://paystack.shop/pay/irm6yiuyik',
-}
 
 async function cleanupFailedSignup(_user: User) {
   try {
