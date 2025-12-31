@@ -3,6 +3,8 @@ functions/node_modules/
 web/node_modules/
 **/tsconfig.tsbuildinfo
 lib/
+!web/src/lib/
+!web/src/lib/**
 dist/
 shared/**/*.js
 shared/**/*.js.map
