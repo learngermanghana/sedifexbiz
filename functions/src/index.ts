@@ -98,6 +98,8 @@ const MILLIS_PER_DAY = 1000 * 60 * 60 * 24
 const BULK_MESSAGE_LIMIT = 1000
 const BULK_MESSAGE_BATCH_LIMIT = 200
 const SMS_SEGMENT_SIZE = 160
+const DEFAULT_WORKSPACE_LIMIT = 1
+const BUSINESS_WORKSPACE_LIMIT = 5
 /** ============================================================================
  *  HELPERS
  * ==========================================================================*/
@@ -544,6 +546,16 @@ export const initializeStore = functions.https.onCall(
     const existingData = (profileSnap.data() ?? {}) as Record<string, unknown>
 
     const timestamp = admin.firestore.FieldValue.serverTimestamp()
+
+    if (!requestedStoreId) {
+      const { count, limit } = await getWorkspaceUsageAndLimit(uid)
+      if (count >= limit) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Upgrade your plan to add more workspaces.',
+        )
+      }
+    }
 
     let storeId = requestedStoreId
     if (!storeId) {
@@ -1780,10 +1792,11 @@ const PAYSTACK_STANDARD_PLAN_CODE = defineString('PAYSTACK_STANDARD_PLAN_CODE')
 // New: map frontend plan keys -> Paystack plan codes (optional).
 const PAYSTACK_STARTER_MONTHLY_PLAN_CODE = defineString('PAYSTACK_STARTER_MONTHLY_PLAN_CODE')
 const PAYSTACK_STARTER_YEARLY_PLAN_CODE = defineString('PAYSTACK_STARTER_YEARLY_PLAN_CODE')
+const PAYSTACK_BUSINESS_YEARLY_PLAN_CODE = defineString('PAYSTACK_BUSINESS_YEARLY_PLAN_CODE')
 
 const PAYSTACK_CURRENCY = defineString('PAYSTACK_CURRENCY')
 
-type PaystackPlanKey = 'starter-monthly' | 'starter-yearly' | string
+type PaystackPlanKey = 'starter-monthly' | 'starter-yearly' | 'business-yearly' | string
 
 // Fixed packages (GHS)
 const BULK_CREDITS_PACKAGES: Record<string, { credits: number; amount: number }> = {
@@ -1801,6 +1814,7 @@ function getPaystackConfig() {
   const starterMonthly =
     PAYSTACK_STARTER_MONTHLY_PLAN_CODE.value() || PAYSTACK_STANDARD_PLAN_CODE.value()
   const starterYearly = PAYSTACK_STARTER_YEARLY_PLAN_CODE.value()
+  const businessYearly = PAYSTACK_BUSINESS_YEARLY_PLAN_CODE.value()
 
   if (!paystackConfigLogged) {
     console.log('[paystack] startup config', {
@@ -1809,6 +1823,7 @@ function getPaystackConfig() {
       currency,
       hasStarterMonthlyPlan: !!starterMonthly,
       hasStarterYearlyPlan: !!starterYearly,
+      hasBusinessYearlyPlan: !!businessYearly,
     })
     paystackConfigLogged = true
   }
@@ -1820,6 +1835,7 @@ function getPaystackConfig() {
     plans: {
       'starter-monthly': starterMonthly,
       'starter-yearly': starterYearly,
+      'business-yearly': businessYearly,
     } as Record<string, string | undefined>,
   }
 }
@@ -1881,6 +1897,51 @@ function resolvePaystackPlanCode(
   if (!planKey) return undefined
   const key = String(planKey).toLowerCase()
   return config.plans[key]
+}
+
+function resolveWorkspaceLimit(planKey: string | null) {
+  if (!planKey) return DEFAULT_WORKSPACE_LIMIT
+  const normalized = planKey.toLowerCase()
+  if (normalized.includes('business') || normalized.includes('multi')) {
+    return BUSINESS_WORKSPACE_LIMIT
+  }
+  return DEFAULT_WORKSPACE_LIMIT
+}
+
+async function getWorkspaceUsageAndLimit(uid: string) {
+  const snapshot = await db.collection('teamMembers').where('uid', '==', uid).get()
+  const storeIds = new Set<string>()
+  const ownerStoreIds: string[] = []
+
+  snapshot.forEach(doc => {
+    const data = doc.data() ?? {}
+    const storeId =
+      typeof data.storeId === 'string' ? (data.storeId as string).trim() : ''
+    if (!storeId) return
+
+    storeIds.add(storeId)
+    if (data.role === 'owner') {
+      ownerStoreIds.push(storeId)
+    }
+  })
+
+  if (ownerStoreIds.length === 0) {
+    return { count: storeIds.size, limit: DEFAULT_WORKSPACE_LIMIT }
+  }
+
+  const storeSnapshots = await Promise.all(
+    ownerStoreIds.map(storeId => db.collection('stores').doc(storeId).get()),
+  )
+
+  const limits = storeSnapshots.map(snapshot => {
+    if (!snapshot.exists) return DEFAULT_WORKSPACE_LIMIT
+    const billing = (snapshot.data()?.billing ?? {}) as Record<string, unknown>
+    const planKey = typeof billing.planKey === 'string' ? billing.planKey : null
+    return resolveWorkspaceLimit(planKey)
+  })
+
+  const limit = Math.max(DEFAULT_WORKSPACE_LIMIT, ...limits)
+  return { count: storeIds.size, limit }
 }
 
 /** ============================================================================
