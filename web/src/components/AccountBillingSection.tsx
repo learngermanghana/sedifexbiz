@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { startPaystackCheckout } from '../lib/paystackClient'
+import React, { useEffect, useState } from 'react'
+import { startExtraWorkspaceCheckout, startPaystackCheckout } from '../lib/paystackClient'
 import { usePwaContext } from '../context/PwaContext'
 
 type Props = {
@@ -53,10 +53,20 @@ export const AccountBillingSection: React.FC<Props> = ({
   const defaultPlanId = PLANS[0]?.id ?? ''
   const [selectedPlanId, setSelectedPlanId] = useState<string>(defaultPlanId)
   const [loading, setLoading] = useState(false)
+  const [addonLoading, setAddonLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [addonInterval, setAddonInterval] = useState<'monthly' | 'yearly'>(
+    billingPlan?.toLowerCase().includes('year') ? 'yearly' : 'monthly',
+  )
 
   const billingPlanDisplay =
     PLANS.find(plan => plan.id === billingPlan)?.label ?? billingPlan ?? null
+
+  useEffect(() => {
+    if (!billingPlan) return
+    const nextInterval = billingPlan.toLowerCase().includes('year') ? 'yearly' : 'monthly'
+    setAddonInterval(nextInterval)
+  }, [billingPlan])
 
   const hasPaidContract =
     (contractStatus && contractStatus !== 'trial' && contractStatus !== 'unpaid') ||
@@ -126,6 +136,54 @@ export const AccountBillingSection: React.FC<Props> = ({
 
   const handleUpgradeToYearly = async () => {
     await startCheckoutForPlan('starter-yearly')
+  }
+
+  const handleBuyExtraWorkspace = async () => {
+    setError(null)
+
+    if (!isOwner) {
+      setError('Only the owner can add extra workspaces.')
+      return
+    }
+
+    if (!storeId) {
+      setError('Missing store ID. Please refresh and try again.')
+      return
+    }
+
+    if (!ownerEmail) {
+      setError('Missing owner email. Please log in again.')
+      return
+    }
+
+    try {
+      setAddonLoading(true)
+      const redirectUrl = `${window.location.origin}/account`
+
+      const response = await startExtraWorkspaceCheckout({
+        storeId,
+        interval: addonInterval,
+        add: 1,
+        redirectUrl,
+        metadata: {
+          source: 'account-extra-workspace',
+        },
+      })
+
+      if (!response.ok || !response.authorizationUrl) {
+        setError('Unable to start checkout. Please try again.')
+        return
+      }
+
+      window.location.assign(response.authorizationUrl)
+    } catch (err) {
+      console.error('Extra workspace checkout error', err)
+      const message =
+        err instanceof Error ? err.message : 'Something went wrong starting checkout.'
+      setError(message)
+    } finally {
+      setAddonLoading(false)
+    }
   }
 
   const isYearlyPlan = billingPlan?.toLowerCase().includes('year') ?? false
@@ -208,7 +266,7 @@ export const AccountBillingSection: React.FC<Props> = ({
                   type="button"
                   className="button button--secondary"
                   onClick={handleUpgradeToYearly}
-                  disabled={loading}
+                  disabled={loading || addonLoading}
                 >
                   {loading ? 'Starting upgrade…' : 'Upgrade to yearly'}
                 </button>
@@ -217,6 +275,42 @@ export const AccountBillingSection: React.FC<Props> = ({
                 </p>
               </div>
             )}
+
+            <div className="border-t border-gray-200 pt-4 space-y-2">
+              <div>
+                <p className="text-sm font-medium text-gray-900">Add extra workspace</p>
+                <p className="text-xs text-gray-600">
+                  Pay once to add another workspace to your account.
+                </p>
+                <p className="text-xs text-gray-600">
+                  For 2 stores, stay on Starter and add 1 extra workspace instead of Business.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-xs text-gray-600">
+                  <span className="sr-only">Billing interval</span>
+                  <select
+                    value={addonInterval}
+                    onChange={event =>
+                      setAddonInterval(event.target.value as 'monthly' | 'yearly')
+                    }
+                    className="border rounded px-2 py-1 text-sm"
+                    disabled={addonLoading || loading}
+                  >
+                    <option value="monthly">Monthly · GHS 50</option>
+                    <option value="yearly">Yearly · GHS 500</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={handleBuyExtraWorkspace}
+                  disabled={addonLoading || loading}
+                >
+                  {addonLoading ? 'Starting checkout…' : 'Buy extra workspace'}
+                </button>
+              </div>
+            </div>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
           </div>
