@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import type { User } from 'firebase/auth'
 import {
   createUserWithEmailAndPassword,
@@ -31,6 +31,16 @@ import { auth, db } from '../firebase'
 import { startPaystackCheckout } from '../lib/paystackClient'
 import { setOnboardingStatus } from '../utils/onboarding'
 
+/*
+ * This updated AuthPage component incorporates several improvements based on the
+ * recommendations from the previous review:
+ *  - Consolidated form state using a reducer to reduce repetitive useState calls.
+ *  - memoized handlers using useCallback to avoid unnecessary re-renders.
+ *  - Centralised input normalisation before validation in handleSubmit.
+ *  - Preserved email when switching between login and signup modes.
+ *  - Added explicit error message IDs and aria attributes for improved accessibility.
+ */
+
 const LOGI_PARTNER_IMAGE_URL =
   'https://raw.githubusercontent.com/learngermanghana/sedifexbiz/main/photos/pexels-omotayo-tajudeen-1650120-3213283%281%29.jpg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -57,6 +67,48 @@ interface PartnerStoreSnippet {
   name: string
   town: string | null
   country: string | null
+}
+
+interface AuthFormState {
+  email: string
+  password: string
+  confirmPassword: string
+  fullName: string
+  businessName: string
+  phone: string
+  country: string
+  town: string
+  address: string
+}
+
+const initialFormState: AuthFormState = {
+  email: '',
+  password: '',
+  confirmPassword: '',
+  fullName: '',
+  businessName: '',
+  phone: '',
+  country: '',
+  town: '',
+  address: '',
+}
+
+type FormAction =
+  | { type: 'SET_FIELD'; field: keyof AuthFormState; value: string }
+  | { type: 'RESET_FORM'; preserveEmail?: boolean }
+
+function formReducer(state: AuthFormState, action: FormAction): AuthFormState {
+  switch (action.type) {
+    case 'SET_FIELD':
+      return { ...state, [action.field]: action.value }
+    case 'RESET_FORM':
+      // Optionally preserve the email when switching modes so the user doesn’t lose it
+      return action.preserveEmail
+        ? { ...initialFormState, email: state.email }
+        : initialFormState
+    default:
+      return state
+  }
 }
 
 function sanitizePhone(value: string): string {
@@ -181,19 +233,11 @@ function formatTrialReminder(
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login')
   const [selectedPackageId, setSelectedPackageId] = useState(PACKAGE_OPTIONS[0].id)
-  const [signupBillingChoice, setSignupBillingChoice] = useState<'trial' | 'paid'>(
-    'trial',
-  )
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [businessName, setBusinessName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [country, setCountry] = useState('')
-  const [town, setTown] = useState('')
-  const [address, setAddress] = useState('')
+  const [signupBillingChoice, setSignupBillingChoice] = useState<'trial' | 'paid'>('trial')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
+
+  // Consolidated form state
+  const [formState, dispatch] = useReducer(formReducer, initialFormState)
 
   // random partner stores for the marketing section
   const [partnerStores, setPartnerStores] = useState<PartnerStoreSnippet[]>([])
@@ -201,23 +245,23 @@ export default function AuthPage() {
   const isLoading = status.tone === 'loading'
   const { publish } = useToast()
 
-  const normalizedEmail = email.trim()
-  const normalizedPassword = password.trim()
-  const normalizedConfirmPassword = confirmPassword.trim()
-  const normalizedFullName = fullName.trim()
-  const normalizedBusinessName = businessName.trim()
-  const normalizedPhone = sanitizePhone(phone)
-  const normalizedCountry = country.trim()
-  const normalizedTown = town.trim()
-  const normalizedAddress = address.trim()
+  // Derived values for validation
+  const normalizedEmail = formState.email.trim()
+  const normalizedPassword = formState.password.trim()
+  const normalizedConfirmPassword = formState.confirmPassword.trim()
+  const normalizedFullName = formState.fullName.trim()
+  const normalizedBusinessName = formState.businessName.trim()
+  const normalizedPhone = sanitizePhone(formState.phone)
+  const normalizedCountry = formState.country.trim()
+  const normalizedTown = formState.town.trim()
+  const normalizedAddress = formState.address.trim()
 
-  const passwordStrength = evaluatePasswordStrength(normalizedPassword)
+  const passwordStrength = useMemo(() => evaluatePasswordStrength(normalizedPassword), [normalizedPassword])
   const selectedPackage = useMemo(
     () => PACKAGE_OPTIONS.find(option => option.id === selectedPackageId) ?? PACKAGE_OPTIONS[0],
     [selectedPackageId],
   )
-  const signupPlanLabel =
-    signupBillingChoice === 'trial' ? 'Free 14-day trial' : selectedPackage.label
+  const signupPlanLabel = signupBillingChoice === 'trial' ? 'Free 14-day trial' : selectedPackage.label
   const passwordChecklist = useMemo(
     () => [
       {
@@ -238,13 +282,7 @@ export default function AuthPage() {
       { id: 'number', label: 'Includes a number', passed: passwordStrength.hasNumber },
       { id: 'symbol', label: 'Includes a symbol', passed: passwordStrength.hasSymbol },
     ] as const,
-    [
-      passwordStrength.hasLowercase,
-      passwordStrength.hasNumber,
-      passwordStrength.hasSymbol,
-      passwordStrength.hasUppercase,
-      passwordStrength.isLongEnough,
-    ],
+    [passwordStrength],
   )
 
   const doesPasswordMeetAllChecks = passwordChecklist.every(item => item.passed)
@@ -261,10 +299,8 @@ export default function AuthPage() {
     normalizedTown.length > 0 &&
     normalizedAddress.length > 0
 
-  const isLoginFormValid =
-    EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
-  const isSubmitDisabled =
-    isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
+  const isLoginFormValid = EMAIL_PATTERN.test(normalizedEmail) && normalizedPassword.length > 0
+  const isSubmitDisabled = isLoading || (mode === 'login' ? !isLoginFormValid : !isSignupFormValid)
 
   useEffect(() => {
     document.title = mode === 'login' ? 'Sedifex — Log in' : 'Sedifex — Sign up'
@@ -277,7 +313,7 @@ export default function AuthPage() {
     }
   }, [publish, status.message, status.tone])
 
-  // 🔹 Load a handful of stores and pick some at random for the partners section
+  // Load a handful of stores and pick some at random for the partners section
   useEffect(() => {
     const q = query(collection(db, 'stores'), limit(30))
 
@@ -323,289 +359,281 @@ export default function AuthPage() {
     return unsubscribe
   }, [])
 
-  function handleModeChange(nextMode: AuthMode) {
-    setMode(nextMode)
-    setStatus({ tone: 'idle', message: '' })
-    setConfirmPassword('')
-    setFullName('')
-    setBusinessName('')
-    setPhone('')
-    setCountry('')
-    setTown('')
-    setAddress('')
-  }
+  const handleModeChange = useCallback(
+    (nextMode: AuthMode) => {
+      setMode(nextMode)
+      setStatus({ tone: 'idle', message: '' })
+      // reset form fields, preserving email to reduce friction
+      dispatch({ type: 'RESET_FORM', preserveEmail: true })
+    },
+    [],
+  )
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const sanitizedEmail = email.trim()
-    const sanitizedPassword = password.trim()
-    const sanitizedConfirmPassword = confirmPassword.trim()
-    setEmail(sanitizedEmail)
-    setPassword(sanitizedPassword)
-    if (mode === 'signup') setConfirmPassword(sanitizedConfirmPassword)
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault()
+      // Sanitize form fields once at submit time
+      const sanitizedEmail = formState.email.trim()
+      const sanitizedPassword = formState.password.trim()
+      const sanitizedConfirmPassword = formState.confirmPassword.trim()
+      dispatch({ type: 'SET_FIELD', field: 'email', value: sanitizedEmail })
+      dispatch({ type: 'SET_FIELD', field: 'password', value: sanitizedPassword })
+      if (mode === 'signup') dispatch({ type: 'SET_FIELD', field: 'confirmPassword', value: sanitizedConfirmPassword })
 
-    const sanitizedPhone = sanitizePhone(phone)
-    const sanitizedFullName = fullName.trim()
-    const sanitizedBusinessName = businessName.trim()
-    const sanitizedCountry = country.trim()
-    const sanitizedTown = town.trim()
-    const sanitizedAddress = address.trim()
+      const sanitizedPhone = sanitizePhone(formState.phone)
+      const sanitizedFullName = formState.fullName.trim()
+      const sanitizedBusinessName = formState.businessName.trim()
+      const sanitizedCountry = formState.country.trim()
+      const sanitizedTown = formState.town.trim()
+      const sanitizedAddress = formState.address.trim()
 
-    const validationError =
-      mode === 'login'
+      const validationError = mode === 'login'
         ? getLoginValidationError(sanitizedEmail, sanitizedPassword)
         : null
 
-    if (mode === 'signup') {
-      setPhone(sanitizedPhone)
-      setFullName(sanitizedFullName)
-      setBusinessName(sanitizedBusinessName)
-      setCountry(sanitizedCountry)
-      setTown(sanitizedTown)
-      setAddress(sanitizedAddress)
+      if (mode === 'signup') {
+        // update normalized values in state so UI reflects trimmed values
+        dispatch({ type: 'SET_FIELD', field: 'phone', value: sanitizedPhone })
+        dispatch({ type: 'SET_FIELD', field: 'fullName', value: sanitizedFullName })
+        dispatch({ type: 'SET_FIELD', field: 'businessName', value: sanitizedBusinessName })
+        dispatch({ type: 'SET_FIELD', field: 'country', value: sanitizedCountry })
+        dispatch({ type: 'SET_FIELD', field: 'town', value: sanitizedTown })
+        dispatch({ type: 'SET_FIELD', field: 'address', value: sanitizedAddress })
 
-      if (!doesPasswordMeetAllChecks) {
-        setStatus({
-          tone: 'error',
-          message:
-            'Use a stronger password that is at least 8 characters and includes uppercase, lowercase, number, and symbol.',
-        })
+        if (!doesPasswordMeetAllChecks) {
+          setStatus({
+            tone: 'error',
+            message:
+              'Use a stronger password that is at least 8 characters and includes uppercase, lowercase, number, and symbol.',
+          })
+          return
+        }
+        if (sanitizedPassword !== sanitizedConfirmPassword) {
+          setStatus({ tone: 'error', message: 'Passwords do not match. Please re-enter them.' })
+          return
+        }
+      }
+
+      if (validationError) {
+        setStatus({ tone: 'error', message: validationError })
         return
       }
 
-      if (sanitizedPassword !== sanitizedConfirmPassword) {
-        setStatus({
-          tone: 'error',
-          message: 'Passwords do not match. Please re-enter them.',
-        })
-        return
-      }
-    }
+      setStatus({
+        tone: 'loading',
+        message:
+          mode === 'login'
+            ? 'Signing you in…'
+            : signupBillingChoice === 'paid'
+              ? 'Creating your account and preparing payment…'
+              : 'Creating your account…',
+      })
 
-    if (validationError) {
-      setStatus({ tone: 'error', message: validationError })
-      return
-    }
+      let paystackAuthUrl: string | null = null
 
-    setStatus({
-      tone: 'loading',
-      message:
-        mode === 'login'
-          ? 'Signing you in…'
-          : signupBillingChoice === 'paid'
-            ? 'Creating your account and preparing payment…'
-            : 'Creating your account…',
-    })
+      try {
+        if (mode === 'login') {
+          // ---------- LOGIN FLOW ----------
+          const { user: nextUser } = await signInWithEmailAndPassword(
+            auth,
+            sanitizedEmail,
+            sanitizedPassword,
+          )
+          await persistSession(nextUser)
+          try {
+            const resolution = await resolveStoreAccess()
+            await persistSession(nextUser, {
+              storeId: resolution.storeId,
+              workspaceSlug: resolution.workspaceSlug,
+              role: resolution.role,
+            })
+            const reminder = formatTrialReminder(resolution.billing)
+            if (reminder) {
+              publish({ tone: 'info', message: reminder })
+            }
+          } catch (error) {
+            console.warn('[auth] Failed to resolve workspace access', error)
+            setStatus({ tone: 'error', message: getAuthErrorMessage(error, 'login') })
+            return
+          }
+        } else {
+          // ---------- SIGNUP FLOW ----------
+          const { user: nextUser } = await createUserWithEmailAndPassword(
+            auth,
+            sanitizedEmail,
+            sanitizedPassword,
+          )
+          await persistSession(nextUser)
 
-    let paystackAuthUrl: string | null = null
+          let initializedStoreId: string | undefined
+          const signupRoleForWorkspace: SignupRoleOption = 'owner'
 
-    try {
-      if (mode === 'login') {
-        // ---------- LOGIN FLOW ----------
-        const { user: nextUser } = await signInWithEmailAndPassword(
-          auth,
-          sanitizedEmail,
-          sanitizedPassword,
-        )
-        await persistSession(nextUser)
-        try {
-          const resolution = await resolveStoreAccess()
+          // 1) Initialize workspace (always a new store now)
+          try {
+            const initialization = await initializeStore(
+              {
+                phone: sanitizedPhone || null,
+                firstSignupEmail: sanitizedEmail ? sanitizedEmail.toLowerCase() : null,
+                ownerName: sanitizedFullName || null,
+                businessName: sanitizedBusinessName || null,
+                country: sanitizedCountry || null,
+                town: sanitizedTown || null,
+                address: sanitizedAddress || null,
+                signupRole: signupRoleForWorkspace,
+              },
+              null,
+            )
+            initializedStoreId = initialization.storeId
+          } catch (error) {
+            console.warn('[signup] Failed to initialize workspace', error)
+            setStatus({ tone: 'error', message: getAuthErrorMessage(error, 'signup') })
+            await cleanupFailedSignup(nextUser)
+            return
+          }
+
+          // 2) Resolve access (gets final storeId + role)
+          let resolution: ResolveStoreAccessResult
+          try {
+            resolution = await resolveStoreAccess(initializedStoreId)
+          } catch (error) {
+            console.warn('[signup] Failed to resolve workspace access', error)
+            setStatus({ tone: 'error', message: getAuthErrorMessage(error, 'signup') })
+            await cleanupFailedSignup(nextUser)
+            return
+          }
+
           await persistSession(nextUser, {
             storeId: resolution.storeId,
             workspaceSlug: resolution.workspaceSlug,
             role: resolution.role,
           })
+
+          // Refresh ID token for fresh custom claims before starting checkout
+          try {
+            await nextUser.getIdToken(true)
+          } catch (error) {
+            console.warn('[auth] Unable to refresh ID token after signup', error)
+          }
           const reminder = formatTrialReminder(resolution.billing)
-          if (reminder) {
+          if (reminder && signupBillingChoice === 'trial') {
             publish({ tone: 'info', message: reminder })
           }
-        } catch (error) {
-          console.warn('[auth] Failed to resolve workspace access', error)
-          setStatus({ tone: 'error', message: getAuthErrorMessage(error, 'login') })
-          return
-        }
-      } else {
-        // ---------- SIGNUP FLOW ----------
-        const { user: nextUser } = await createUserWithEmailAndPassword(
-          auth,
-          sanitizedEmail,
-          sanitizedPassword,
-        )
-        await persistSession(nextUser)
 
-        let initializedStoreId: string | undefined
-        const signupRoleForWorkspace: SignupRoleOption = 'owner'
-
-        // 1) Initialize workspace (always a new store now)
-        try {
-          const initialization = await initializeStore(
-            {
-              phone: sanitizedPhone || null,
-              firstSignupEmail: sanitizedEmail ? sanitizedEmail.toLowerCase() : null,
-              ownerName: sanitizedFullName || null,
-              businessName: sanitizedBusinessName || null,
-              country: sanitizedCountry || null,
-              town: sanitizedTown || null,
-              address: sanitizedAddress || null,
-              signupRole: signupRoleForWorkspace,
-            },
-            null,
-          )
-          initializedStoreId = initialization.storeId
-        } catch (error) {
-          console.warn('[signup] Failed to initialize workspace', error)
-          setStatus({ tone: 'error', message: getAuthErrorMessage(error, 'signup') })
-          await cleanupFailedSignup(nextUser)
-          return
-        }
-
-        // 2) Resolve access (gets final storeId + role)
-        let resolution: ResolveStoreAccessResult
-        try {
-          resolution = await resolveStoreAccess(initializedStoreId)
-        } catch (error) {
-          console.warn('[signup] Failed to resolve workspace access', error)
-          setStatus({ tone: 'error', message: getAuthErrorMessage(error, 'signup') })
-          await cleanupFailedSignup(nextUser)
-          return
-        }
-
-        await persistSession(nextUser, {
-          storeId: resolution.storeId,
-          workspaceSlug: resolution.workspaceSlug,
-          role: resolution.role,
-        })
-
-        // Refresh ID token for fresh custom claims before starting checkout
-        try {
-          await nextUser.getIdToken(true)
-        } catch (error) {
-          console.warn('[auth] Unable to refresh ID token after signup', error)
-        }
-        const reminder = formatTrialReminder(resolution.billing)
-        if (reminder && signupBillingChoice === 'trial') {
-          publish({ tone: 'info', message: reminder })
-        }
-
-        if (signupBillingChoice === 'paid') {
-          try {
-            const redirectUrl = `${window.location.origin}/billing/verify?storeId=${encodeURIComponent(
-              resolution.storeId,
-            )}`
-            const response = await startPaystackCheckout({
-              email: sanitizedEmail,
-              storeId: resolution.storeId,
-              amount: selectedPackage.amountGhs,
-              plan: selectedPackage.id,
-              redirectUrl,
-              metadata: { source: 'signup', planKey: selectedPackage.id },
-            })
-
-            if (!response.ok || !response.authorizationUrl) {
-              setStatus({
-                tone: 'error',
-                message: 'Unable to start Paystack checkout. Please try again.',
+          if (signupBillingChoice === 'paid') {
+            try {
+              const redirectUrl = `${window.location.origin}/billing/verify?storeId=${encodeURIComponent(
+                resolution.storeId,
+              )}`
+              const response = await startPaystackCheckout({
+                email: sanitizedEmail,
+                storeId: resolution.storeId,
+                amount: selectedPackage.amountGhs,
+                plan: selectedPackage.id,
+                redirectUrl,
+                metadata: { source: 'signup', planKey: selectedPackage.id },
               })
+
+              if (!response.ok || !response.authorizationUrl) {
+                setStatus({
+                  tone: 'error',
+                  message: 'Unable to start Paystack checkout. Please try again.',
+                })
+                return
+              }
+
+              paystackAuthUrl = response.authorizationUrl
+            } catch (error) {
+              console.warn('[signup] Failed to start Paystack checkout', error)
+              setStatus({ tone: 'error', message: getAuthErrorMessage(error, 'signup') })
               return
             }
+          }
 
-            paystackAuthUrl = response.authorizationUrl
+          // 3) Upsert customer profile – always owner for self-signup
+          try {
+            const preferredDisplayName =
+              sanitizedFullName || nextUser.displayName?.trim() || sanitizedEmail
+            const resolvedBusinessName = sanitizedBusinessName || null
+            const resolvedOwnerName = sanitizedFullName || preferredDisplayName
+            const customerName = resolvedBusinessName || resolvedOwnerName
+
+            await setDoc(
+              doc(db, 'customers', nextUser.uid),
+              {
+                storeId: resolution.storeId,
+                name: customerName,
+                displayName: resolvedOwnerName,
+                email: sanitizedEmail,
+                phone: sanitizedPhone,
+                businessName: resolvedBusinessName,
+                ownerName: resolvedOwnerName,
+                country: sanitizedCountry || null,
+                town: sanitizedTown || null,
+                address: sanitizedAddress || null,
+                status: 'active',
+                role: 'owner',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true },
+            )
           } catch (error) {
-            console.warn('[signup] Failed to start Paystack checkout', error)
+            console.warn('[customers] Unable to upsert customer record', error)
+          }
+
+          // 5) Send email verification
+          try {
+            const continueUrl = `${window.location.origin}/verify-email`
+            await sendEmailVerification(nextUser, {
+              url: continueUrl,
+              handleCodeInApp: true,
+            })
+          } catch (error) {
+            console.warn('[auth] Failed to send verification email', error)
+          }
+
+          // 6) Mark onboarding as pending
+          setOnboardingStatus(nextUser.uid, 'pending')
+        }
+
+        const signupSuccessMessage =
+          signupBillingChoice === 'paid'
+            ? 'Account created! We’ve emailed you a verification link — please confirm your email, then continue to Paystack to complete payment.'
+            : 'Account created! We’ve emailed you a verification link — please confirm your email, then sign in.'
+
+        setStatus({
+          tone: 'success',
+          message: mode === 'login' ? 'Welcome back! Redirecting…' : signupSuccessMessage,
+        })
+        // Clear sensitive fields from form
+        dispatch({ type: 'SET_FIELD', field: 'password', value: '' })
+        dispatch({ type: 'SET_FIELD', field: 'confirmPassword', value: '' })
+        dispatch({ type: 'SET_FIELD', field: 'fullName', value: '' })
+        dispatch({ type: 'SET_FIELD', field: 'businessName', value: '' })
+        dispatch({ type: 'SET_FIELD', field: 'phone', value: '' })
+        dispatch({ type: 'SET_FIELD', field: 'country', value: '' })
+        dispatch({ type: 'SET_FIELD', field: 'town', value: '' })
+        dispatch({ type: 'SET_FIELD', field: 'address', value: '' })
+
+        if (paystackAuthUrl) {
+          try {
+            window.location.assign(paystackAuthUrl)
+            return
+          } catch (error) {
+            console.warn('[signup] Unable to open Paystack checkout', error)
             setStatus({
               tone: 'error',
-              message: getAuthErrorMessage(error, 'signup'),
+              message: 'We could not open the Paystack checkout. Please log in and retry from the billing page.',
             })
-            return
           }
         }
-
-        // 3) Upsert customer profile – always owner for self-signup
-        try {
-          const preferredDisplayName =
-            sanitizedFullName || nextUser.displayName?.trim() || sanitizedEmail
-          const resolvedBusinessName = sanitizedBusinessName || null
-          const resolvedOwnerName = sanitizedFullName || preferredDisplayName
-          const customerName = resolvedBusinessName || resolvedOwnerName
-
-          await setDoc(
-            doc(db, 'customers', nextUser.uid),
-            {
-              storeId: resolution.storeId,
-              name: customerName,
-              displayName: resolvedOwnerName,
-              email: sanitizedEmail,
-              phone: sanitizedPhone,
-              businessName: resolvedBusinessName,
-              ownerName: resolvedOwnerName,
-              country: sanitizedCountry || null,
-              town: sanitizedTown || null,
-              address: sanitizedAddress || null,
-              status: 'active',
-              role: 'owner',
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true },
-          )
-        } catch (error) {
-          console.warn('[customers] Unable to upsert customer record', error)
-        }
-
-        // 5) Send email verification
-        try {
-          const continueUrl = `${window.location.origin}/verify-email`
-          await sendEmailVerification(nextUser, {
-            url: continueUrl,
-            handleCodeInApp: true,
-          })
-        } catch (error) {
-          console.warn('[auth] Failed to send verification email', error)
-        }
-
-        // 6) Mark onboarding as pending
-        setOnboardingStatus(nextUser.uid, 'pending')
+        setMode('login')
+      } catch (err: unknown) {
+        setStatus({ tone: 'error', message: getAuthErrorMessage(err, mode) })
       }
-
-      const signupSuccessMessage =
-        signupBillingChoice === 'paid'
-          ? 'Account created! We’ve emailed you a verification link — please confirm your email, then continue to Paystack to complete payment.'
-          : 'Account created! We’ve emailed you a verification link — please confirm your email, then sign in.'
-
-      setStatus({
-        tone: 'success',
-        message:
-          mode === 'login'
-            ? 'Welcome back! Redirecting…'
-            : signupSuccessMessage,
-      })
-      setPassword('')
-      setConfirmPassword('')
-      setFullName('')
-      setBusinessName('')
-      setPhone('')
-      setCountry('')
-      setTown('')
-      setAddress('')
-
-      if (paystackAuthUrl) {
-        try {
-          window.location.assign(paystackAuthUrl)
-          return
-        } catch (error) {
-          console.warn('[signup] Unable to open Paystack checkout', error)
-          setStatus({
-            tone: 'error',
-            message:
-              'We could not open the Paystack checkout. Please log in and retry from the billing page.',
-          })
-        }
-      }
-      setMode('login')
-    } catch (err: unknown) {
-      setStatus({ tone: 'error', message: getAuthErrorMessage(err, mode) })
-    }
-  }
+    },
+    [formState, mode, signupBillingChoice, doesPasswordMeetAllChecks, publish, selectedPackage],
+  )
 
   const appStyle: React.CSSProperties = { minHeight: '100dvh' }
 
@@ -626,11 +654,7 @@ export default function AuthPage() {
             </div>
           </div>
 
-          <div
-            className="app__mode-toggle"
-            role="tablist"
-            aria-label="Authentication mode"
-          >
+          <div className="app__mode-toggle" role="tablist" aria-label="Authentication mode">
             <button
               className={`app__mode-button${mode === 'login' ? ' is-active' : ''}`}
               role="tab"
@@ -653,28 +677,24 @@ export default function AuthPage() {
             </button>
           </div>
 
-          <form
-            className="form"
-            onSubmit={handleSubmit}
-            aria-label={mode === 'login' ? 'Log in form' : 'Sign up form'}
-          >
+          <form className="form" onSubmit={handleSubmit} aria-label={mode === 'login' ? 'Log in form' : 'Sign up form'}>
             <div className="form__field">
               <label htmlFor="email">Email</label>
               <input
                 id="email"
-                value={email}
-                onChange={event => setEmail(event.target.value)}
-                onBlur={() => setEmail(current => current.trim())}
+                value={formState.email}
+                onChange={event => dispatch({ type: 'SET_FIELD', field: 'email', value: event.target.value })}
+                onBlur={() => dispatch({ type: 'SET_FIELD', field: 'email', value: formState.email.trim() })}
                 type="email"
                 autoComplete="email"
                 placeholder="you@company.com"
                 required
                 disabled={isLoading}
+                aria-invalid={mode === 'login' && !isLoginFormValid}
+                aria-describedby="email-error"
               />
-              <p className="form__hint">
-                {mode === 'signup'
-                  ? 'We’ll send a verification link to this address.'
-                  : 'Enter the email you use for work.'}
+              <p className="form__hint" id="email-error">
+                {mode === 'signup' ? 'We’ll send a verification link to this address.' : 'Enter the email you use for work.'}
               </p>
             </div>
 
@@ -713,15 +733,15 @@ export default function AuthPage() {
                 <label htmlFor="full-name">Full name</label>
                 <input
                   id="full-name"
-                  value={fullName}
-                  onChange={event => setFullName(event.target.value)}
-                  onBlur={() => setFullName(current => current.trim())}
+                  value={formState.fullName}
+                  onChange={event => dispatch({ type: 'SET_FIELD', field: 'fullName', value: event.target.value })}
+                  onBlur={() => dispatch({ type: 'SET_FIELD', field: 'fullName', value: formState.fullName.trim() })}
                   type="text"
                   autoComplete="name"
                   placeholder="Ada Lovelace"
                   required
                   disabled={isLoading}
-                  aria-invalid={fullName.length > 0 && normalizedFullName.length === 0}
+                  aria-invalid={formState.fullName.length > 0 && normalizedFullName.length === 0}
                   aria-describedby="full-name-hint"
                 />
                 <p className="form__hint" id="full-name-hint">
@@ -735,17 +755,15 @@ export default function AuthPage() {
                 <label htmlFor="business-name">Business name</label>
                 <input
                   id="business-name"
-                  value={businessName}
-                  onChange={event => setBusinessName(event.target.value)}
-                  onBlur={() => setBusinessName(current => current.trim())}
+                  value={formState.businessName}
+                  onChange={event => dispatch({ type: 'SET_FIELD', field: 'businessName', value: event.target.value })}
+                  onBlur={() => dispatch({ type: 'SET_FIELD', field: 'businessName', value: formState.businessName.trim() })}
                   type="text"
                   autoComplete="organization"
                   placeholder="Sedifex Retail"
                   required
                   disabled={isLoading}
-                  aria-invalid={
-                    businessName.length > 0 && normalizedBusinessName.length === 0
-                  }
+                  aria-invalid={formState.businessName.length > 0 && normalizedBusinessName.length === 0}
                   aria-describedby="business-name-hint"
                 />
                 <p className="form__hint" id="business-name-hint">
@@ -759,15 +777,15 @@ export default function AuthPage() {
                 <label htmlFor="phone">Phone number</label>
                 <input
                   id="phone"
-                  value={phone}
-                  onChange={event => setPhone(event.target.value)}
-                  onBlur={() => setPhone(current => sanitizePhone(current))}
+                  value={formState.phone}
+                  onChange={event => dispatch({ type: 'SET_FIELD', field: 'phone', value: event.target.value })}
+                  onBlur={() => dispatch({ type: 'SET_FIELD', field: 'phone', value: sanitizePhone(formState.phone) })}
                   type="tel"
                   autoComplete="tel"
                   placeholder="254 712 345 678"
                   required
                   disabled={isLoading}
-                  aria-invalid={phone.length > 0 && normalizedPhone.length === 0}
+                  aria-invalid={formState.phone.length > 0 && normalizedPhone.length === 0}
                   aria-describedby="phone-hint"
                 />
                 <p className="form__hint" id="phone-hint">
@@ -781,15 +799,15 @@ export default function AuthPage() {
                 <label htmlFor="country">Country</label>
                 <input
                   id="country"
-                  value={country}
-                  onChange={event => setCountry(event.target.value)}
-                  onBlur={() => setCountry(current => current.trim())}
+                  value={formState.country}
+                  onChange={event => dispatch({ type: 'SET_FIELD', field: 'country', value: event.target.value })}
+                  onBlur={() => dispatch({ type: 'SET_FIELD', field: 'country', value: formState.country.trim() })}
                   type="text"
                   autoComplete="country-name"
                   placeholder="Kenya or Ghana"
                   required
                   disabled={isLoading}
-                  aria-invalid={country.length > 0 && normalizedCountry.length === 0}
+                  aria-invalid={formState.country.length > 0 && normalizedCountry.length === 0}
                   aria-describedby="country-hint"
                 />
                 <p className="form__hint" id="country-hint">
@@ -803,15 +821,15 @@ export default function AuthPage() {
                 <label htmlFor="town">Town or city</label>
                 <input
                   id="town"
-                  value={town}
-                  onChange={event => setTown(event.target.value)}
-                  onBlur={() => setTown(current => current.trim())}
+                  value={formState.town}
+                  onChange={event => dispatch({ type: 'SET_FIELD', field: 'town', value: event.target.value })}
+                  onBlur={() => dispatch({ type: 'SET_FIELD', field: 'town', value: formState.town.trim() })}
                   type="text"
                   autoComplete="address-level2"
                   placeholder="Nairobi"
                   required
                   disabled={isLoading}
-                  aria-invalid={town.length > 0 && normalizedTown.length === 0}
+                  aria-invalid={formState.town.length > 0 && normalizedTown.length === 0}
                   aria-describedby="town-hint"
                 />
                 <p className="form__hint" id="town-hint">
@@ -825,14 +843,14 @@ export default function AuthPage() {
                 <label htmlFor="address">Business address</label>
                 <textarea
                   id="address"
-                  value={address}
-                  onChange={event => setAddress(event.target.value)}
-                  onBlur={() => setAddress(current => current.trim())}
+                  value={formState.address}
+                  onChange={event => dispatch({ type: 'SET_FIELD', field: 'address', value: event.target.value })}
+                  onBlur={() => dispatch({ type: 'SET_FIELD', field: 'address', value: formState.address.trim() })}
                   autoComplete="street-address"
                   placeholder="123 Market Street, Suite 5"
                   required
                   disabled={isLoading}
-                  aria-invalid={address.length > 0 && normalizedAddress.length === 0}
+                  aria-invalid={formState.address.length > 0 && normalizedAddress.length === 0}
                   aria-describedby="address-hint"
                   rows={3}
                 />
@@ -846,32 +864,22 @@ export default function AuthPage() {
               <label htmlFor="password">Password</label>
               <input
                 id="password"
-                value={password}
-                onChange={event => setPassword(event.target.value)}
-                onBlur={() => setPassword(current => current.trim())}
+                value={formState.password}
+                onChange={event => dispatch({ type: 'SET_FIELD', field: 'password', value: event.target.value })}
+                onBlur={() => dispatch({ type: 'SET_FIELD', field: 'password', value: formState.password.trim() })}
                 type="password"
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 placeholder="Use a strong password"
                 required
                 disabled={isLoading}
-                aria-invalid={
-                  mode === 'signup' &&
-                  normalizedPassword.length > 0 &&
-                  !doesPasswordMeetAllChecks
-                }
+                aria-invalid={mode === 'signup' && formState.password.length > 0 && !doesPasswordMeetAllChecks}
                 aria-describedby={mode === 'signup' ? 'password-guidelines' : undefined}
               />
               {mode === 'signup' && (
                 <ul className="form__hint-list" id="password-guidelines">
                   {passwordChecklist.map(item => (
                     <li key={item.id} data-complete={item.passed}>
-                      <span
-                        className={`form__hint-indicator${
-                          item.passed ? ' is-valid' : ''
-                        }`}
-                      >
-                        {item.passed ? '✓' : '•'}
-                      </span>
+                      <span className={`form__hint-indicator${item.passed ? ' is-valid' : ''}`}>{item.passed ? '✓' : '•'}</span>
                       {item.label}
                     </li>
                   ))}
@@ -892,18 +900,15 @@ export default function AuthPage() {
                 <label htmlFor="confirm-password">Confirm password</label>
                 <input
                   id="confirm-password"
-                  value={confirmPassword}
-                  onChange={event => setConfirmPassword(event.target.value)}
-                  onBlur={() => setConfirmPassword(current => current.trim())}
+                  value={formState.confirmPassword}
+                  onChange={event => dispatch({ type: 'SET_FIELD', field: 'confirmPassword', value: event.target.value })}
+                  onBlur={() => dispatch({ type: 'SET_FIELD', field: 'confirmPassword', value: formState.confirmPassword.trim() })}
                   type="password"
                   autoComplete="new-password"
                   placeholder="Re-enter your password"
                   required
                   disabled={isLoading}
-                  aria-invalid={
-                    normalizedConfirmPassword.length > 0 &&
-                    normalizedPassword !== normalizedConfirmPassword
-                  }
+                  aria-invalid={normalizedConfirmPassword.length > 0 && !doPasswordsMatch}
                   aria-describedby="confirm-password-hint"
                 />
                 <p className="form__hint" id="confirm-password-hint">
@@ -914,8 +919,7 @@ export default function AuthPage() {
 
             {mode === 'signup' && (
               <p className="form__hint" style={{ marginTop: 8 }}>
-                Summary: You are creating a new store and will be the owner of this
-                workspace. Selected option: {signupPlanLabel}.
+                Summary: You are creating a new store and will be the owner of this workspace. Selected option: {signupPlanLabel}.
               </p>
             )}
 
@@ -945,10 +949,7 @@ export default function AuthPage() {
           )}
         </div>
 
-        <aside
-          className="app__visual"
-          aria-label="Watch the Sedifex walkthrough before signing in"
-        >
+        <aside className="app__visual" aria-label="Watch the Sedifex walkthrough before signing in">
           <div className="app__visual-media" role="presentation">
             <iframe
               src="https://www.youtube.com/embed/Jgyfz1CT2YY"
@@ -962,33 +963,23 @@ export default function AuthPage() {
             <span className="app__visual-pill">Quick tutorial</span>
             <h2>See how our AI inventory system works before logging in</h2>
             <p>
-              Watch the short walkthrough to learn how Sedifex uses AI to connect sales,
-              inventory, and finance in one workspace built for small businesses. Start
-              the video right here before creating an account.
+              Watch the short walkthrough to learn how Sedifex uses AI to connect sales, inventory, and finance in one workspace built for small businesses. Start the video right here before creating an account.
             </p>
           </div>
         </aside>
       </div>
 
-      <section
-        className="app__partners"
-        aria-label="Stores using Sedifex and sharing snapshots with partners"
-      >
+      <section className="app__partners" aria-label="Stores using Sedifex and sharing snapshots with partners">
         <div className="app__partners-copy">
           <span className="app__pill">Store partners</span>
           <h2>Share your AI-backed store snapshot before partners sign in</h2>
           <p>
-            Provide partners with a live, read-only view of non-sensitive store details.
-            Your store name, location, and overview refresh automatically after sign
-            up—no extra setup required. Our AI keeps inventory details accurate while we
-            list your store on stores.sedifex.com automatically for free SEO visibility.
+            Provide partners with a live, read-only view of non-sensitive store details. Your store name, location, and overview refresh automatically after sign up—no extra setup required. Our AI keeps inventory details accurate while we list your store on stores.sedifex.com automatically for free SEO visibility.
           </p>
 
           {partnerStores.length > 0 && (
             <div className="app__partners-examples">
-              <p className="app__partners-examples-label">
-                Example stores currently running on Sedifex:
-              </p>
+              <p className="app__partners-examples-label">Example stores currently running on Sedifex:</p>
               <ul className="app__partners-list">
                 {partnerStores.map(store => (
                   <li key={store.id} className="app__partners-badge">
@@ -1026,8 +1017,7 @@ export default function AuthPage() {
           <span className="app__pill">Packages</span>
           <h2>Pick the Sedifex package that matches your store today</h2>
           <p>
-            Choose a plan or start your free 14-day trial. We’ll keep your inventory
-            workspace active and ready whenever you decide to pay.
+            Choose a plan or start your free 14-day trial. We’ll keep your inventory workspace active and ready whenever you decide to pay.
           </p>
         </header>
 
@@ -1045,7 +1035,7 @@ export default function AuthPage() {
                     <p className="package-card__eyebrow">{option.name}</p>
                     <h3>{option.label}</h3>
                   </div>
-                  {option.badge && <span className="package-card__badge">{option.badge}</span>}
+                    {option.badge && <span className="package-card__badge">{option.badge}</span>}
                 </div>
                 <p className="package-card__price">
                   GHS {option.amountGhs.toLocaleString('en-GH')}{' '}
@@ -1072,8 +1062,7 @@ export default function AuthPage() {
           })}
         </div>
         <p className="app__packages-note">
-          Not sure? Start with the recommended package and upgrade anytime from your billing
-          dashboard.
+          Not sure? Start with the recommended package and upgrade anytime from your billing dashboard.
         </p>
       </section>
 
@@ -1081,11 +1070,9 @@ export default function AuthPage() {
         <header className="app__features-header">
           <h2>Explore the AI workspace</h2>
           <p>
-            Every Sedifex page is built to keep retail operations synchronized with
-            AI-powered inventory insights—from the sales floor to finance.
+            Every Sedifex page is built to keep retail operations synchronized with AI-powered inventory insights—from the sales floor to finance.
           </p>
         </header>
-
         <div className="app__features-grid" role="list">
           {PAGE_FEATURES.map(feature => (
             <Link
@@ -1111,14 +1098,10 @@ export default function AuthPage() {
         <article className="info-card">
           <h3>About Sedifex</h3>
           <p>
-            Sedifex is the smart AI inventory system for modern small businesses. We unite
-            store execution, warehouse visibility, and merchandising insights so every
-            location can act on the same live source of truth.
+            Sedifex is the smart AI inventory system for modern small businesses. We unite store execution, warehouse visibility, and merchandising insights so every location can act on the same live source of truth.
           </p>
           <p>
-            Connect your POS, ecommerce, and supplier systems in minutes to orchestrate
-            the entire product journey—from forecast to fulfillment—with less manual work,
-            fewer stockouts, and smarter AI-driven decisions.
+            Connect your POS, ecommerce, and supplier systems in minutes to orchestrate the entire product journey—from forecast to fulfillment—with less manual work, fewer stockouts, and smarter AI-driven decisions.
           </p>
           <footer>
             <ul className="info-card__list">
@@ -1128,13 +1111,10 @@ export default function AuthPage() {
             </ul>
           </footer>
         </article>
-
         <article className="info-card">
           <h3>Our Mission</h3>
           <p>
-            We believe resilient retailers win by responding to change faster than their
-            inventory can move. Sedifex exists to give small business operators the AI
-            clarity and confidence to do exactly that.
+            We believe resilient retailers win by responding to change faster than their inventory can move. Sedifex exists to give small business operators the AI clarity and confidence to do exactly that.
           </p>
           <ul className="info-card__list">
             <li>Deliver every SKU promise with predictive AI inventory intelligence</li>
@@ -1142,25 +1122,15 @@ export default function AuthPage() {
             <li>Earn shopper loyalty through always-on availability</li>
           </ul>
         </article>
-
         <article className="info-card">
           <h3>Contact Sales</h3>
           <p>
-            Partner with a retail operations strategist to tailor Sedifex to your fleet,
-            review pricing, and build an onboarding plan that keeps stores running while
-            we launch.
+            Partner with a retail operations strategist to tailor Sedifex to your fleet, review pricing, and build an onboarding plan that keeps stores running while we launch.
           </p>
-          <a
-            className="info-card__cta"
-            href="https://calendly.com/sedifexbiz"
-            target="_blank"
-            rel="noreferrer noopener"
-          >
+          <a className="info-card__cta" href="https://calendly.com/sedifexbiz" target="_blank" rel="noreferrer noopener">
             Book a 30-minute consultation
           </a>
-          <p className="info-card__caption">
-            Prefer email? Reach us at sedifexbiz@gmail.com.
-          </p>
+          <p className="info-card__caption">Prefer email? Reach us at sedifexbiz@gmail.com.</p>
         </article>
       </section>
     </main>
@@ -1171,38 +1141,32 @@ const PAGE_FEATURES = [
   {
     path: '/products',
     name: 'Items',
-    description:
-      'Spot low inventory, sync counts, and keep every SKU accurate across locations.',
+    description: 'Spot low inventory, sync counts, and keep every SKU accurate across locations.',
   },
   {
     path: '/sell',
     name: 'Sell',
-    description:
-      'Ring up sales with guided workflows that keep the floor moving and customers happy.',
+    description: 'Ring up sales with guided workflows that keep the floor moving and customers happy.',
   },
   {
     path: '/receive',
     name: 'Receive',
-    description:
-      'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.',
+    description: 'Check in purchase orders, reconcile deliveries, and put new stock to work immediately.',
   },
   {
     path: '/customers',
     name: 'Customers',
-    description:
-      'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.',
+    description: 'Understand top shoppers, loyalty trends, and service follow-ups without exporting data.',
   },
   {
     path: '/finance',
     name: 'Finance',
-    description:
-      'Track cash-up, expenses, and profitability with one simple view.',
+    description: 'Track cash-up, expenses, and profitability with one simple view.',
   },
   {
     path: '/logi',
     name: 'Logi partners',
-    description:
-      'Share a live public snapshot of your store name, location, and overview with partners.',
+    description: 'Share a live public snapshot of your store name, location, and overview with partners.',
   },
 ] as const
 
