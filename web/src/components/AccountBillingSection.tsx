@@ -63,9 +63,10 @@ export const AccountBillingSection: React.FC<Props> = ({
   const yearlySavings =
     monthlyPlan && yearlyPlan ? monthlyPlan.amountGhs * 12 - yearlyPlan.amountGhs : null
 
-  const hasPaidContract =
-    (contractStatus && contractStatus !== 'trial' && contractStatus !== 'unpaid') ||
-    (billingPlan && billingPlan !== 'trial')
+  const normalizedContractStatus = contractStatus?.toLowerCase() ?? null
+  const hasPaidContract = normalizedContractStatus === 'active'
+  const isPendingContract = normalizedContractStatus === 'pending'
+  const isFailedContract = normalizedContractStatus === 'failed'
 
   const startCheckoutForPlan = async (planId: string) => {
     setError(null)
@@ -258,6 +259,16 @@ export const AccountBillingSection: React.FC<Props> = ({
         </div>
       ) : (
         <>
+          {(isPendingContract || isFailedContract) && (
+            <div
+              className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-4"
+              role="status"
+            >
+              {isPendingContract
+                ? 'Your last payment was not completed yet. If you already paid, refresh in a few minutes. Otherwise, start a new checkout below.'
+                : 'Your last payment attempt did not go through. Please start a new checkout below.'}
+            </div>
+          )}
           <p className="text-sm text-gray-600 mb-4">
             Choose a plan and start your subscription. You’ll be redirected to Paystack to complete
             the payment.
