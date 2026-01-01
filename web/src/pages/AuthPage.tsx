@@ -1133,9 +1133,8 @@ const PRICING_PLANS = [
       'Free invoice & receipt generator',
     ],
     cta: {
-      type: 'link' as const,
-      label: 'Choose monthly',
-      href: 'https://paystack.shop/pay/opd2z7tow6',
+      type: 'button' as const,
+      label: 'Sign up',
     },
   },
   {
@@ -1149,9 +1148,8 @@ const PRICING_PLANS = [
       'Priority onboarding & support',
     ],
     cta: {
-      type: 'link' as const,
-      label: 'Choose yearly',
-      href: 'https://paystack.shop/pay/pa5tmww0ml',
+      type: 'button' as const,
+      label: 'Sign up',
     },
     isFeatured: true,
     note: 'Billed once per year.',
