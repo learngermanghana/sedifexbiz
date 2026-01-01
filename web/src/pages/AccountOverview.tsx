@@ -1079,12 +1079,12 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       />
 
       {/* Billing history */}
-      {subscriptionProfile && (
-        <section aria-labelledby="account-overview-billing-history">
-          <div className="account-overview__section-header">
-            <h2 id="account-overview-billing-history">Billing history</h2>
-          </div>
+      <section aria-labelledby="account-overview-billing-history">
+        <div className="account-overview__section-header">
+          <h2 id="account-overview-billing-history">Billing history</h2>
+        </div>
 
+        {subscriptionProfile ? (
           <dl className="account-overview__grid">
             <div>
               <dt>Last payment</dt>
@@ -1116,8 +1116,13 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
               </dd>
             </div>
           </dl>
-        </section>
-      )}
+        ) : (
+          <p className="text-sm text-gray-600">
+            No billing history yet. We’ll show receipts and renewal dates after your first
+            successful payment.
+          </p>
+        )}
+      </section>
 
       <section aria-labelledby="account-overview-deletion">
         <div className="account-overview__section-header">
