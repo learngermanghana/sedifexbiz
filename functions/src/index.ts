@@ -1639,7 +1639,7 @@ async function sendHubtelMessage(options: {
   body: string
 }) {
   const { clientId, clientSecret, to, from, body } = options
-  const url = 'https://sms.hubtel.com/v1/messages/send'
+  const url = 'https://smsc.hubtel.com/v1/messages/send'
   const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
   const payload = {
     From: from,
@@ -1658,7 +1658,8 @@ async function sendHubtelMessage(options: {
 
   if (!response.ok) {
     const errorText = await response.text()
-    throw new Error(`Hubtel error ${response.status}: ${errorText}`)
+    const details = errorText || response.statusText || 'Unknown error'
+    throw new Error(`Hubtel error ${response.status}: ${details}`)
   }
 
   return response.json()
