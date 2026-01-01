@@ -389,12 +389,31 @@ async function verifyOwnerForStore(uid: string, storeId: string) {
   const memberRole = typeof memberData.role === 'string' ? (memberData.role as string) : ''
   const memberStoreId = typeof memberData.storeId === 'string' ? (memberData.storeId as string) : ''
 
-  if (memberRole !== 'owner' || memberStoreId !== storeId) {
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      'Owner permission for this workspace is required',
-    )
+  if (memberRole === 'owner' && memberStoreId === storeId) {
+    return
   }
+
+  const storeSnap = await db.collection('stores').doc(storeId).get()
+  const storeData = (storeSnap.data() ?? {}) as Record<string, unknown>
+  const ownerUid = typeof storeData.ownerUid === 'string' ? (storeData.ownerUid as string) : ''
+
+  if (ownerUid && ownerUid === uid) {
+    await memberRef.set(
+      {
+        uid,
+        role: 'owner',
+        storeId,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    )
+    return
+  }
+
+  throw new functions.https.HttpsError(
+    'permission-denied',
+    'Owner permission for this workspace is required',
+  )
 }
 
 function assertStaffAccess(context: functions.https.CallableContext) {
