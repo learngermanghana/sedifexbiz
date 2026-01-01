@@ -51,6 +51,7 @@ type BulkMessageResult = {
 type BulkCreditsCheckoutPayload = {
   storeId: string
   package: string
+  redirectUrl?: string
 }
 
 type BulkCreditsCheckoutResult = {
@@ -411,9 +412,11 @@ export default function BulkMessaging() {
     setBuyingPackageId(packageId)
 
     try {
+      const redirectUrl = `${window.location.origin}/bulk-messaging`
       const response = await createBulkCreditsCheckout({
         storeId,
         package: packageId,
+        redirectUrl,
       })
       const data = response.data
       const authorizationUrl =
