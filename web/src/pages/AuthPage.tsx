@@ -866,6 +866,65 @@ export default function AuthPage() {
         </aside>
       </div>
 
+      <section className="app__pricing" aria-label="Sedifex pricing plans">
+        <header className="app__pricing-header">
+          <span className="app__pill">Pricing</span>
+          <h2>Pick the plan that matches your store growth</h2>
+          <p>
+            Start with a free 14-day trial, then switch to monthly or yearly billing when
+            you are ready. Every plan unlocks the full inventory + CRM platform: live
+            dashboards, smart products, expiring stock tracking, sales with customer
+            display, QR price sharing, bulk SMS, and finance tools.
+          </p>
+        </header>
+
+        <div className="app__pricing-grid" role="list">
+          {PRICING_PLANS.map(plan => (
+            <article
+              key={plan.name}
+              className={`pricing-card${plan.isFeatured ? ' pricing-card--featured' : ''}`}
+              role="listitem"
+            >
+              <div className="pricing-card__heading">
+                <h3>{plan.name}</h3>
+                <p>{plan.summary}</p>
+              </div>
+              <div className="pricing-card__price">
+                <span className="pricing-card__amount">{plan.amount}</span>
+                <span className="pricing-card__cadence">{plan.cadence}</span>
+              </div>
+              <ul className="pricing-card__list">
+                {plan.features.map(item => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              {plan.cta.type === 'button' ? (
+                <button
+                  className="pricing-card__cta"
+                  type="button"
+                  onClick={() => {
+                    handleModeChange('signup')
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  }}
+                >
+                  {plan.cta.label}
+                </button>
+              ) : (
+                <a
+                  className="pricing-card__cta"
+                  href={plan.cta.href}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {plan.cta.label}
+                </a>
+              )}
+              {plan.note && <p className="pricing-card__note">{plan.note}</p>}
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section
         className="app__partners"
         aria-label="Stores using Sedifex and sharing snapshots with partners"
@@ -1043,6 +1102,59 @@ const PAGE_FEATURES = [
     name: 'Logi partners',
     description:
       'Share a live public snapshot of your store name, location, and overview with partners.',
+  },
+] as const
+
+const PRICING_PLANS = [
+  {
+    name: 'Free Trial',
+    summary: 'Explore Sedifex before you pay.',
+    amount: 'GHS 0',
+    cadence: '/ 14 days',
+    features: [
+      'Live dashboard updates',
+      'Products with expiry & made-to-order options',
+      'Sell with customer display or QR pricing',
+    ],
+    cta: {
+      type: 'button' as const,
+      label: 'Start free trial',
+    },
+    note: 'No card required to start.',
+  },
+  {
+    name: 'Monthly',
+    summary: 'Flexible billing for growing teams.',
+    amount: 'GHS 100',
+    cadence: '/ month',
+    features: [
+      'Inventory + CRM platform',
+      'Bulk SMS at lower rates',
+      'Free invoice & receipt generator',
+    ],
+    cta: {
+      type: 'link' as const,
+      label: 'Choose monthly',
+      href: 'https://paystack.shop/pay/opd2z7tow6',
+    },
+  },
+  {
+    name: 'Yearly',
+    summary: 'Best value with annual savings.',
+    amount: 'GHS 1,100',
+    cadence: '/ year',
+    features: [
+      'Everything in Monthly',
+      'Finance, close-day & reporting suite',
+      'Priority onboarding & support',
+    ],
+    cta: {
+      type: 'link' as const,
+      label: 'Choose yearly',
+      href: 'https://paystack.shop/pay/pa5tmww0ml',
+    },
+    isFeatured: true,
+    note: 'Billed once per year.',
   },
 ] as const
 
