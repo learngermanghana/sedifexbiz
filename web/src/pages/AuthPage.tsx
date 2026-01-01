@@ -925,45 +925,69 @@ export default function AuthPage() {
         </div>
       </section>
 
-      <section
-        className="app__partners"
-        aria-label="Stores using Sedifex and sharing snapshots with partners"
-      >
+      <section className="app__partners" aria-label="Xenom IT Solutions offerings">
         <div className="app__partners-copy">
-          <span className="app__pill">Store partners</span>
-          <h2>Share your AI-backed store snapshot before partners sign in</h2>
+          <span className="app__pill">Xenom IT Solutions</span>
+          <h2>Sedifex was built by Xenom IT Solutions</h2>
           <p>
-            Provide partners with a live, read-only view of non-sensitive store details.
-            Your store name, location, and overview refresh automatically after sign
-            up—no extra setup required. Our AI keeps inventory details accurate while we
-            list your store on stores.sedifex.com automatically for free SEO visibility.
+            We build reliable digital products for ambitious businesses. In addition to
+            Sedifex, we deliver ready-to-use platforms and custom web builds that help
+            teams launch fast and scale with confidence.
           </p>
 
-          {partnerStores.length > 0 && (
-            <div className="app__partners-examples">
-              <p className="app__partners-examples-label">
-                Example stores currently running on Sedifex:
-              </p>
-              <ul className="app__partners-list">
-                {partnerStores.map(store => (
-                  <li key={store.id} className="app__partners-badge">
-                    <span className="app__partners-name">{store.name}</span>
-                    {(store.town || store.country) && (
-                      <span className="app__partners-location">
-                        {store.town}
-                        {store.town && store.country ? ', ' : ''}
-                        {store.country}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <div className="app__partners-examples">
+            <p className="app__partners-examples-label">Other products we have built:</p>
+            <ul className="app__partners-list">
+              <li className="app__partners-badge">
+                <span className="app__partners-name">Falowen German Learning App</span>
+              </li>
+              <li className="app__partners-badge">
+                <span className="app__partners-name">Apzla Church Management Software</span>
+              </li>
+              <li className="app__partners-badge">
+                <span className="app__partners-name">Sedifex</span>
+              </li>
+            </ul>
+          </div>
 
-          <Link className="app__partners-link" to="/logi">
-            Preview the Logi snapshot
-          </Link>
+          <div className="app__partners-examples">
+            <p className="app__partners-examples-label">
+              Website setup packages (pricing in GHS):
+            </p>
+            <ul className="app__partners-list">
+              <li className="app__partners-badge">
+                <span className="app__partners-name">
+                  Basic Landing Website — GHS 1,200 – 2,500
+                </span>
+                <span className="app__partners-location">
+                  4–6 pages (Home, Services, Packages, Gallery, About, Contact), WhatsApp
+                  booking button, Google Map embed, basic gallery, mobile responsive.
+                </span>
+              </li>
+              <li className="app__partners-badge">
+                <span className="app__partners-name">
+                  Standard Business Website — GHS 2,500 – 5,500
+                </span>
+                <span className="app__partners-location">
+                  Everything in Basic plus enhanced visuals, SEO basics, contact form,
+                  speed optimization, 1–2 revisions, and optional analytics setup.
+                </span>
+              </li>
+              <li className="app__partners-badge">
+                <span className="app__partners-name">
+                  Premium / Booking Website — GHS 6,000 – 12,000+
+                </span>
+                <span className="app__partners-location">
+                  Everything in Standard plus booking system, admin dashboard, email/SMS
+                  confirmations, payments, and a CMS for self-updates.
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <a className="app__partners-link" href="mailto:sedifexbiz@gmail.com">
+            Book a Sedifex demo: sedifexbiz@gmail.com
+          </a>
         </div>
 
         <div className="app__partners-visual" aria-hidden="true">
