@@ -38,6 +38,23 @@ export const AccountBillingSection: React.FC<Props> = ({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const selectedPlan = PLANS.find(plan => plan.id === selectedPlanId) ?? null
+  const isSelectedYearlyPlan = selectedPlan?.id.includes('year') ?? false
+  const selectedCadenceLabel = isSelectedYearlyPlan ? 'Yearly' : 'Monthly'
+  const selectedCadenceDescription = isSelectedYearlyPlan
+    ? 'Billed once per year.'
+    : 'Billed every month.'
+  const renewalIntervalMonths = isSelectedYearlyPlan ? 12 : 1
+  const nextChargeDate = (() => {
+    const base = new Date()
+    const nextDate = new Date(base)
+    nextDate.setMonth(base.getMonth() + renewalIntervalMonths)
+    return nextDate
+  })()
+  const nextChargeDisplay = nextChargeDate.toLocaleDateString(undefined, {
+    dateStyle: 'medium',
+  })
+
   const billingPlanDisplay =
     PLANS.find(plan => plan.id === billingPlan)?.label ?? billingPlan ?? null
 
@@ -184,6 +201,9 @@ export const AccountBillingSection: React.FC<Props> = ({
               valid until <strong>{contractEndDate ?? '—'}</strong>. If you need to make changes,
               contact your Sedifex account manager.
             </p>
+            <p className="text-sm text-gray-600">
+              Next renewal: <strong>{contractEndDate ?? '—'}</strong>
+            </p>
 
             {!isYearlyPlan && (
               <div className="flex items-center gap-3">
@@ -229,6 +249,25 @@ export const AccountBillingSection: React.FC<Props> = ({
                 ))}
               </select>
             </label>
+
+            <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 space-y-1">
+              <p className="font-medium">Plan summary</p>
+              <p>
+                Price:{' '}
+                <strong>
+                  GHS {selectedPlan?.amountGhs.toFixed(2) ?? '—'}
+                </strong>{' '}
+                ({selectedCadenceLabel})
+              </p>
+              <p>Billing cadence: {selectedCadenceDescription}</p>
+              <p>
+                Renews automatically every {selectedCadenceLabel.toLowerCase()}.
+              </p>
+              <p>
+                Estimated next charge:{' '}
+                <strong>{nextChargeDisplay}</strong> (once your subscription starts).
+              </p>
+            </div>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
