@@ -269,6 +269,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     country: '',
   })
   const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
 
   // Public directory edit state
   const [isSavingPublicProfile, setIsSavingPublicProfile] = useState(false)
@@ -290,6 +291,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
     if (!storeId) {
       setProfile(null)
       setProfileError(null)
+      setIsEditingProfile(false)
       return
     }
 
@@ -501,6 +503,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
       )
 
       publish({ message: 'Workspace details updated.', tone: 'success' })
+      setIsEditingProfile(false)
     } catch (error) {
       console.error('[account] Failed to save workspace profile', error)
       publish({
@@ -817,13 +820,10 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                   className="button button--secondary"
                   data-testid="account-edit-store"
                   onClick={() => {
-                    const el = document.getElementById('store-profile')
-                    if (el) {
-                      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                    }
+                    setIsEditingProfile(current => !current)
                   }}
                 >
-                  Edit workspace details
+                  {isEditingProfile ? 'Close workspace details' : 'Edit workspace details'}
                 </button>
               </div>
             )}
@@ -871,7 +871,7 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
             </div>
           </dl>
 
-          {isOwner && (
+          {isOwner && isEditingProfile && (
             <form
               className="account-overview__profile-form"
               onSubmit={handleSaveProfile}
@@ -988,9 +988,22 @@ export default function AccountOverview({ headingLevel = 'h1' }: AccountOverview
                 <p className="account-overview__hint">
                   Update your workspace name and contact details for invoices and public listings.
                 </p>
-                <button type="submit" className="button button--primary" disabled={isSavingProfile}>
-                  {isSavingProfile ? 'Saving…' : 'Save workspace details'}
-                </button>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <button
+                    type="submit"
+                    className="button button--primary"
+                    disabled={isSavingProfile}
+                  >
+                    {isSavingProfile ? 'Saving…' : 'Save workspace details'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    onClick={() => setIsEditingProfile(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </form>
           )}

@@ -254,6 +254,10 @@ describe('AccountOverview', () => {
       await Promise.resolve()
     })
 
+    await userEvent.click(
+      await screen.findByRole('button', { name: /edit workspace details/i }),
+    )
+
     const nameInput = await screen.findByTestId('account-profile-name')
     const emailInput = await screen.findByTestId('account-profile-email')
     expect(nameInput).toHaveValue('Sedifex Coffee')
