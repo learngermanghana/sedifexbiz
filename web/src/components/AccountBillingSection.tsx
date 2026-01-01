@@ -36,6 +36,7 @@ export const AccountBillingSection: React.FC<Props> = ({
   const defaultPlanId = PLANS[0]?.id ?? ''
   const [selectedPlanId, setSelectedPlanId] = useState<string>(defaultPlanId)
   const [loading, setLoading] = useState(false)
+  const [upgradeLoading, setUpgradeLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const selectedPlan = PLANS.find(plan => plan.id === selectedPlanId) ?? null
@@ -57,6 +58,10 @@ export const AccountBillingSection: React.FC<Props> = ({
 
   const billingPlanDisplay =
     PLANS.find(plan => plan.id === billingPlan)?.label ?? billingPlan ?? null
+  const monthlyPlan = PLANS.find(plan => plan.id.includes('monthly')) ?? null
+  const yearlyPlan = PLANS.find(plan => plan.id.includes('year')) ?? null
+  const yearlySavings =
+    monthlyPlan && yearlyPlan ? monthlyPlan.amountGhs * 12 - yearlyPlan.amountGhs : null
 
   const hasPaidContract =
     (contractStatus && contractStatus !== 'trial' && contractStatus !== 'unpaid') ||
@@ -125,7 +130,13 @@ export const AccountBillingSection: React.FC<Props> = ({
   }
 
   const handleUpgradeToYearly = async () => {
-    await startCheckoutForPlan('starter-yearly')
+    setError(null)
+    setUpgradeLoading(true)
+    try {
+      await startCheckoutForPlan('starter-yearly')
+    } finally {
+      setUpgradeLoading(false)
+    }
   }
 
   const isYearlyPlan = billingPlan?.toLowerCase().includes('year') ?? false
@@ -192,6 +203,12 @@ export const AccountBillingSection: React.FC<Props> = ({
         </div>
       </dl>
 
+      {error && (
+        <div className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mb-4" role="alert">
+          {error}
+        </div>
+      )}
+
       {hasPaidContract ? (
         <div className="account-overview__notice" role="status">
           <div className="space-y-2">
@@ -206,22 +223,37 @@ export const AccountBillingSection: React.FC<Props> = ({
             </p>
 
             {!isYearlyPlan && (
-              <div className="flex items-center gap-3">
+              <div className="rounded border border-gray-200 bg-white p-3 space-y-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-gray-900">Upgrade to yearly billing</p>
+                  <p className="text-xs text-gray-600">
+                    Current plan: {billingPlanDisplay ?? 'Monthly plan'}
+                    {monthlyPlan ? ` at GHS ${monthlyPlan.amountGhs.toFixed(2)} / month.` : '.'}
+                  </p>
+                  {yearlyPlan && (
+                    <p className="text-xs text-gray-600">
+                      Yearly plan: GHS {yearlyPlan.amountGhs.toFixed(2)} billed once per year.
+                      {yearlySavings !== null && yearlySavings > 0
+                        ? ` Save GHS ${yearlySavings.toFixed(2)} compared to monthly.`
+                        : ''}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
                 <button
                   type="button"
                   className="button button--secondary"
                   onClick={handleUpgradeToYearly}
-                  disabled={loading}
+                  disabled={loading || upgradeLoading}
                 >
-                  {loading ? 'Starting upgrade…' : 'Upgrade to yearly'}
+                  {upgradeLoading ? 'Starting upgrade…' : 'Upgrade to yearly'}
                 </button>
                 <p className="text-xs text-gray-600">
-                  Switch to annual billing to keep your contract active for a full year.
+                  Extends your contract term for 12 months and simplifies renewals.
                 </p>
+                </div>
               </div>
             )}
-
-            {error && <p className="text-sm text-red-600">{error}</p>}
           </div>
         </div>
       ) : (
@@ -235,53 +267,56 @@ export const AccountBillingSection: React.FC<Props> = ({
             onSubmit={handleStartCheckout}
             className="account-overview__form max-w-md space-y-4"
           >
-            <label className="block text-sm font-medium">
-              <span>Plan</span>
-              <select
-                value={selectedPlanId}
-                onChange={event => setSelectedPlanId(event.target.value)}
-                className="border rounded px-3 py-2 w-full"
-              >
-                {PLANS.map(plan => (
-                  <option key={plan.id} value={plan.id}>
-                    {plan.label} – GHS {plan.amountGhs.toFixed(2)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 space-y-1">
-              <p className="font-medium">Plan summary</p>
-              <p>
-                Price:{' '}
-                <strong>
-                  GHS {selectedPlan?.amountGhs.toFixed(2) ?? '—'}
-                </strong>{' '}
-                ({selectedCadenceLabel})
-              </p>
-              <p>Billing cadence: {selectedCadenceDescription}</p>
-              <p>
-                Renews automatically every {selectedCadenceLabel.toLowerCase()}.
-              </p>
-              <p>
-                Estimated next charge:{' '}
-                <strong>{nextChargeDisplay}</strong> (once your subscription starts).
-              </p>
-            </div>
-
-            {error && <p className="text-sm text-red-600">{error}</p>}
-
-            <button
-              type="submit"
+            <fieldset
               disabled={loading}
-              className="button button--primary"
+              className={loading ? 'opacity-70 pointer-events-none' : undefined}
             >
-              {loading ? 'Starting checkout…' : 'Pay with Paystack'}
-            </button>
+              <label className="block text-sm font-medium">
+                <span>Plan</span>
+                <select
+                  value={selectedPlanId}
+                  onChange={event => setSelectedPlanId(event.target.value)}
+                  className="border rounded px-3 py-2 w-full"
+                >
+                  {PLANS.map(plan => (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.label} – GHS {plan.amountGhs.toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <p className="text-xs text-gray-500">
-              You will be redirected to Paystack’s secure page to complete your subscription.
-            </p>
+              <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700 space-y-1">
+                <p className="font-medium">Plan summary</p>
+                <p>
+                  Price:{' '}
+                  <strong>
+                    GHS {selectedPlan?.amountGhs.toFixed(2) ?? '—'}
+                  </strong>{' '}
+                  ({selectedCadenceLabel})
+                </p>
+                <p>Billing cadence: {selectedCadenceDescription}</p>
+                <p>
+                  Renews automatically every {selectedCadenceLabel.toLowerCase()}.
+                </p>
+                <p>
+                  Estimated next charge:{' '}
+                  <strong>{nextChargeDisplay}</strong> (once your subscription starts).
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="button button--primary"
+              >
+                {loading ? 'Starting checkout…' : 'Pay with Paystack'}
+              </button>
+
+              <p className="text-xs text-gray-500">
+                You will be redirected to Paystack’s secure page to complete your subscription.
+              </p>
+            </fieldset>
           </form>
         </>
       )}
