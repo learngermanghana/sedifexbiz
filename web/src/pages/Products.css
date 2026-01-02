@@ -241,6 +241,17 @@
   margin: 16px 0;
 }
 
+.products-page__abc-hint {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.products-page__abc-hint .products-page__abc-error {
+  color: #b91c1c;
+  margin-left: 6px;
+}
+
 .products-page__list-header {
   display: flex;
   flex-direction: column;
@@ -394,6 +405,34 @@
 .products-page__badge--muted {
   background-color: #eef2ff;
   color: #4338ca;
+}
+
+.products-page__badge--abc-a {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.products-page__badge--abc-b {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.products-page__badge--abc-c {
+  background-color: #e5e7eb;
+  color: #374151;
+}
+
+.products-page__abc {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.products-page__abc-note {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
 }
 
 .products-page__actions {
