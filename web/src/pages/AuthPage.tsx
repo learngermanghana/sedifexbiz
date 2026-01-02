@@ -32,6 +32,8 @@ import { setOnboardingStatus } from '../utils/onboarding'
 
 const LOGI_PARTNER_IMAGE_URL =
   'https://raw.githubusercontent.com/learngermanghana/sedifexbiz/main/photos/pexels-omotayo-tajudeen-1650120-3213283%281%29.jpg'
+const AUTH_VISUAL_IMAGE_URL =
+  'https://raw.githubusercontent.com/learngermanghana/sedifexbiz/main/photos/pexels-olly-3801439.jpg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
 
@@ -843,24 +845,22 @@ export default function AuthPage() {
 
         <aside
           className="app__visual"
-          aria-label="Watch the Sedifex walkthrough before signing in"
+          aria-label="Sedifex snapshot of a small business owner at work"
         >
           <div className="app__visual-media" role="presentation">
-            <iframe
-              src="https://www.youtube.com/embed/Jgyfz1CT2YY"
-              title="Sedifex tutorial video"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
+            <img
+              src={AUTH_VISUAL_IMAGE_URL}
+              alt="Small business owner reviewing inventory on a laptop"
+              loading="lazy"
             />
           </div>
           <div className="app__visual-overlay" />
           <div className="app__visual-caption">
-            <span className="app__visual-pill">Quick tutorial</span>
-            <h2>See how our AI inventory system works before logging in</h2>
+            <h2>See how Sedifex supports growing stores</h2>
             <p>
-              Watch the short walkthrough to learn how Sedifex uses AI to connect sales,
-              inventory, and finance in one workspace built for small businesses. Start
-              the video right here before creating an account.
+              Sedifex keeps sales, inventory, and finance in one workspace built for
+              small businesses. Get a clear snapshot of the experience before starting
+              your free trial.
             </p>
           </div>
         </aside>
