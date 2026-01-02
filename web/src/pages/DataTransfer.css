@@ -33,39 +33,6 @@
   margin-top: 16px;
 }
 
-.data-transfer__options {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.data-transfer__option {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  background: #f9fafb;
-  cursor: pointer;
-}
-
-.data-transfer__option input {
-  margin-top: 4px;
-}
-
-.data-transfer__option strong {
-  display: block;
-  color: #111827;
-}
-
-.data-transfer__option-hint {
-  display: block;
-  color: #6b7280;
-  font-size: 0.9rem;
-  margin-top: 4px;
-}
-
 .data-transfer__file-input {
   display: none;
 }

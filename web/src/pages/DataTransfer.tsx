@@ -25,7 +25,6 @@ function downloadCsv(filename: string, content: string) {
 
 export default function DataTransfer() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [importMode, setImportMode] = useState<'merge' | 'override'>('merge')
 
   const itemRequired: HeaderSpec[] = [
     { key: 'name', description: 'Item name as it appears on receipts.' },
@@ -129,38 +128,6 @@ export default function DataTransfer() {
           <p className="data-transfer__muted">
             Upload a CSV file with the headers below to migrate your items and customers.
           </p>
-          <div className="data-transfer__options" role="radiogroup" aria-label="Import mode">
-            <label className="data-transfer__option">
-              <input
-                type="radio"
-                name="import-mode"
-                value="merge"
-                checked={importMode === 'merge'}
-                onChange={() => setImportMode('merge')}
-              />
-              <span>
-                <strong>Merge with existing data</strong>
-                <span className="data-transfer__option-hint">
-                  Keep current records and add any new rows from the CSV.
-                </span>
-              </span>
-            </label>
-            <label className="data-transfer__option">
-              <input
-                type="radio"
-                name="import-mode"
-                value="override"
-                checked={importMode === 'override'}
-                onChange={() => setImportMode('override')}
-              />
-              <span>
-                <strong>Override existing data</strong>
-                <span className="data-transfer__option-hint">
-                  Replace matching items or customers with the CSV values.
-                </span>
-              </span>
-            </label>
-          </div>
           <div className="data-transfer__upload">
             <input
               className="data-transfer__file-input"
@@ -176,9 +143,6 @@ export default function DataTransfer() {
               {selectedFile ? selectedFile.name : 'No file selected'}
             </span>
           </div>
-          <p className="data-transfer__hint">
-            Selected mode: {importMode === 'merge' ? 'Merge with existing data.' : 'Override existing data.'}
-          </p>
           <div className="data-transfer__actions">
             <button
               type="button"
