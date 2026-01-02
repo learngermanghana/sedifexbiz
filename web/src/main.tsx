@@ -26,6 +26,7 @@ import DocumentsGenerator from './pages/DocumentsGenerator'
 import ResetPassword from './pages/ResetPassword'
 import VerifyEmail from './pages/VerifyEmail'
 import InventorySystemGhana from './pages/InventorySystemGhana'
+import DataTransfer from './pages/DataTransfer'
 
 // ✅ NEW: public receipt page used by QR/share
 import ReceiptView from './pages/ReceiptView'
@@ -63,6 +64,7 @@ const router = createBrowserRouter([
           { path: 'sell', element: <Sell /> },
           { path: 'receive', element: <Receive /> },
           { path: 'customers', element: <Customers /> },
+          { path: 'data-transfer', element: <DataTransfer /> },
           { path: 'bulk-messaging', element: <BulkMessaging /> },
           { path: 'activity', element: <Navigate to="/dashboard/activity" replace /> },
           { path: 'logi', element: <Logi /> },
