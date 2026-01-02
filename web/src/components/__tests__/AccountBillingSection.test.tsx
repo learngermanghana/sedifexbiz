@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { AccountBillingSection } from '../AccountBillingSection'
 
 const mockStartPaystackCheckout = vi.fn()
+const mockCancelPaystackSubscription = vi.fn()
 const originalLocation = window.location
 
 function mockWindowAssign() {
@@ -18,11 +19,15 @@ function mockWindowAssign() {
 vi.mock('../../lib/paystackClient', () => ({
   startPaystackCheckout: (...args: Parameters<typeof mockStartPaystackCheckout>) =>
     mockStartPaystackCheckout(...args),
+  cancelPaystackSubscription: (
+    ...args: Parameters<typeof mockCancelPaystackSubscription>
+  ) => mockCancelPaystackSubscription(...args),
 }))
 
   describe('AccountBillingSection', () => {
     beforeEach(() => {
       mockStartPaystackCheckout.mockReset()
+      mockCancelPaystackSubscription.mockReset()
       Object.defineProperty(window, 'location', {
         configurable: true,
         value: originalLocation,

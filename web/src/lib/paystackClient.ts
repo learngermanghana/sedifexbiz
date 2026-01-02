@@ -28,6 +28,11 @@ type SignupUnlockResponse = {
   lastEvent?: unknown
 }
 
+type CancelSubscriptionResponse = {
+  ok: boolean
+  status?: string | null
+}
+
 export async function startPaystackCheckout(
   payload: PaystackCheckoutPayload,
 ): Promise<PaystackCheckoutResponse> {
@@ -49,6 +54,20 @@ export async function checkSignupUnlockStatus(storeId: string): Promise<SignupUn
 
   if (!data) {
     throw new Error('Unable to verify subscription. Please try again later.')
+  }
+
+  return data
+}
+
+export async function cancelPaystackSubscription(
+  storeId: string,
+): Promise<CancelSubscriptionResponse> {
+  const callable = httpsCallable(functions, 'cancelPaystackSubscription')
+  const result = await callable({ storeId })
+  const data = result.data as CancelSubscriptionResponse | undefined
+
+  if (!data) {
+    throw new Error('Unable to cancel the subscription. Please try again later.')
   }
 
   return data
