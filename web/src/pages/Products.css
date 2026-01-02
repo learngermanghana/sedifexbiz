@@ -17,6 +17,102 @@
   margin-bottom: 24px;
 }
 
+.products-page__smart-count-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.products-page__smart-count-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.products-page__smart-count-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.products-page__smart-count-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.products-page__smart-count-owner {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.products-page__smart-count-alert {
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.products-page__smart-count-muted {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.products-page__smart-count-error {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  margin: 0;
+}
+
+.products-page__smart-count-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.products-page__smart-count-note {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.products-page__smart-count-events {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.products-page__smart-count-event {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.products-page__smart-count-time {
+  font-size: 12px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.products-page__smart-count-detail {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
 .field__optional {
   color: #6b7280;
   font-weight: 400;

@@ -49,6 +49,20 @@ type Product = {
 }
 
 type CachedProduct = Omit<Product, 'id'>
+type SmartCountSession = {
+  id: string
+  startedAt: Date | null
+  status: 'active' | 'completed'
+  createdBy: string | null
+}
+
+type CountActivity = {
+  id: string
+  type: 'sale' | 'inventory'
+  summary: string
+  detail: string
+  createdAt: Date | null
+}
 
 /**
  * Helpers
@@ -261,6 +275,12 @@ export default function Products() {
   const [editManufacturerInput, setEditManufacturerInput] = useState('')
   const [editBatchNumberInput, setEditBatchNumberInput] = useState('')
   const [editShowOnReceipt, setEditShowOnReceipt] = useState(false)
+  const [smartCount, setSmartCount] = useState<SmartCountSession | null>(null)
+  const [countActivity, setCountActivity] = useState<CountActivity[]>([])
+  const [smartCountStatus, setSmartCountStatus] = useState<
+    'idle' | 'starting' | 'stopping'
+  >('idle')
+  const [smartCountError, setSmartCountError] = useState<string | null>(null)
 
   useEffect(() => {
     if (editingId) return
@@ -276,6 +296,75 @@ export default function Products() {
   )
 
   const canManageProducts = activeMembership?.role === 'owner'
+
+  /**
+   * Smart count tracking
+   */
+  useEffect(() => {
+    if (!activeStoreId) {
+      setSmartCount(null)
+      setCountActivity([])
+      return
+    }
+
+    const countQuery = query(
+      collection(db, 'inventoryCounts'),
+      where('storeId', '==', activeStoreId),
+      where('status', '==', 'active'),
+      orderBy('startedAt', 'desc'),
+      limit(1),
+    )
+
+    const unsubscribe = onSnapshot(countQuery, snapshot => {
+      const docSnap = snapshot.docs[0]
+      if (!docSnap) {
+        setSmartCount(null)
+        setCountActivity([])
+        return
+      }
+      const data = docSnap.data() as Record<string, unknown>
+      setSmartCount({
+        id: docSnap.id,
+        startedAt: toDate(data.startedAt),
+        status: data.status === 'completed' ? 'completed' : 'active',
+        createdBy: typeof data.createdBy === 'string' ? data.createdBy : null,
+      })
+    })
+
+    return () => unsubscribe()
+  }, [activeStoreId])
+
+  useEffect(() => {
+    if (!activeStoreId || !smartCount?.startedAt) {
+      setCountActivity([])
+      return
+    }
+
+    const activityQuery = query(
+      collection(db, 'activity'),
+      where('storeId', '==', activeStoreId),
+      where('type', 'in', ['sale', 'inventory']),
+      where('createdAt', '>=', smartCount.startedAt),
+      orderBy('createdAt', 'desc'),
+      limit(25),
+    )
+
+    const unsubscribe = onSnapshot(activityQuery, snapshot => {
+      const rows = snapshot.docs.map(docSnap => {
+        const data = docSnap.data() as Record<string, unknown>
+        return {
+          id: docSnap.id,
+          type: data.type === 'sale' ? 'sale' : 'inventory',
+          summary: typeof data.summary === 'string' ? data.summary : 'Activity logged',
+          detail: typeof data.detail === 'string' ? data.detail : '',
+          createdAt: toDate(data.createdAt),
+        } as CountActivity
+      })
+      setCountActivity(rows)
+    })
+
+    return () => unsubscribe()
+  }, [activeStoreId, smartCount?.startedAt])
 
   /**
    * Load products for the active store
@@ -543,6 +632,44 @@ export default function Products() {
     }
   }
 
+  async function startSmartCount() {
+    if (!activeStoreId || smartCountStatus !== 'idle') return
+    setSmartCountError(null)
+    setSmartCountStatus('starting')
+    try {
+      await addDoc(collection(db, 'inventoryCounts'), {
+        storeId: activeStoreId,
+        status: 'active',
+        startedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        createdBy: activityActor,
+      })
+    } catch (error) {
+      console.error('[products] Failed to start smart count', error)
+      setSmartCountError('Unable to start smart count. Please try again.')
+    } finally {
+      setSmartCountStatus('idle')
+    }
+  }
+
+  async function stopSmartCount() {
+    if (!smartCount || smartCountStatus !== 'idle') return
+    setSmartCountError(null)
+    setSmartCountStatus('stopping')
+    try {
+      await updateDoc(doc(db, 'inventoryCounts', smartCount.id), {
+        status: 'completed',
+        endedAt: serverTimestamp(),
+        closedBy: activityActor,
+      })
+    } catch (error) {
+      console.error('[products] Failed to complete smart count', error)
+      setSmartCountError('Unable to complete smart count. Please try again.')
+    } finally {
+      setSmartCountStatus('idle')
+    }
+  }
+
   /**
    * Edit helpers
    */
@@ -714,6 +841,18 @@ export default function Products() {
     }
   }
 
+  const smartCountStartedLabel = smartCount?.startedAt
+    ? smartCount.startedAt.toLocaleString()
+    : 'just now'
+  const salesDuringCount = countActivity.filter(activity => activity.type === 'sale')
+  const receiptDuringCount = countActivity.filter(
+    activity =>
+      activity.type === 'inventory' &&
+      activity.summary.toLowerCase().startsWith('received'),
+  )
+  const hasCountAlerts = salesDuringCount.length + receiptDuringCount.length > 0
+  const recentCountActivity = countActivity.slice(0, 5)
+
   return (
     <div className="page products-page">
       <header className="page__header products-page__header">
@@ -732,6 +871,101 @@ export default function Products() {
       </header>
 
       <div className="products-page__grid">
+        <section className="card products-page__smart-count-card">
+          <h3 className="card__title">Smart count</h3>
+          <p className="card__subtitle">
+            Count inventory without freezing your whole warehouse. We track sales and
+            stock receipts that land during the count so you can reconcile accurately.
+          </p>
+          {smartCountError && (
+            <p className="products-page__smart-count-error" role="alert">
+              {smartCountError}
+            </p>
+          )}
+          {smartCount ? (
+            <div className="products-page__smart-count-body">
+              <div className="products-page__smart-count-meta">
+                <span className="products-page__smart-count-label">Active since</span>
+                <strong>{smartCountStartedLabel}</strong>
+                {smartCount.createdBy && (
+                  <span className="products-page__smart-count-owner">
+                    Started by {smartCount.createdBy}
+                  </span>
+                )}
+              </div>
+              {hasCountAlerts ? (
+                <div className="products-page__smart-count-alert" role="status">
+                  <strong>Heads up:</strong> {salesDuringCount.length} sale
+                  {salesDuringCount.length === 1 ? '' : 's'} and{' '}
+                  {receiptDuringCount.length} stock receipt
+                  {receiptDuringCount.length === 1 ? '' : 's'} recorded since the count
+                  began.
+                </div>
+              ) : (
+                <p className="products-page__smart-count-muted">
+                  No sales or receipts recorded yet during this count.
+                </p>
+              )}
+              {recentCountActivity.length > 0 && (
+                <ul className="products-page__smart-count-events">
+                  {recentCountActivity.map(activity => (
+                    <li key={activity.id}>
+                      <div className="products-page__smart-count-event">
+                        <span>{activity.summary}</span>
+                        <span className="products-page__smart-count-time">
+                          {activity.createdAt ? activity.createdAt.toLocaleTimeString() : 'Just now'}
+                        </span>
+                      </div>
+                      {activity.detail && (
+                        <p className="products-page__smart-count-detail">
+                          {activity.detail}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="products-page__smart-count-actions">
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={stopSmartCount}
+                  disabled={!canManageProducts || smartCountStatus !== 'idle'}
+                >
+                  {smartCountStatus === 'stopping' ? 'Completing…' : 'Complete count'}
+                </button>
+                {!canManageProducts && (
+                  <span className="products-page__smart-count-note">
+                    Only owners can complete counts.
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="products-page__smart-count-body">
+              <p className="products-page__smart-count-muted">
+                Start a cycle count and keep selling while we track everything that
+                changes in the background.
+              </p>
+              <div className="products-page__smart-count-actions">
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={startSmartCount}
+                  disabled={!canManageProducts || smartCountStatus !== 'idle'}
+                >
+                  {smartCountStatus === 'starting' ? 'Starting…' : 'Start smart count'}
+                </button>
+                {!canManageProducts && (
+                  <span className="products-page__smart-count-note">
+                    Only owners can start counts.
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+
         {/* Add item card */}
         <section className="card products-page__add-card">
           <h3 className="card__title">Add item</h3>
