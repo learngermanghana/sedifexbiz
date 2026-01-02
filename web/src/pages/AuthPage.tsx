@@ -1048,7 +1048,7 @@ export default function AuthPage() {
             <ul className="info-card__list">
               <li>Real-time inventory that syncs every channel and warehouse</li>
               <li>Automated replenishment playbooks driven by store performance</li>
-              <li>Integrations for Shopify, NetSuite, Square, and 40+ retail tools</li>
+              <li>Count inventory without freezing your whole warehouse.</li>
             </ul>
           </footer>
         </article>
@@ -1188,3 +1188,4 @@ async function cleanupFailedSignup(_user: User) {
     console.warn('[signup] Unable to sign out after rejected signup', error)
   }
 }
+
