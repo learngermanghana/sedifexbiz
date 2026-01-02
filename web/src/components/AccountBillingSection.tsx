@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { startPaystackCheckout } from '../lib/paystackClient'
+import { cancelPaystackSubscription, startPaystackCheckout } from '../lib/paystackClient'
 import { usePwaContext } from '../context/PwaContext'
 
 type Props = {
@@ -37,7 +37,9 @@ export const AccountBillingSection: React.FC<Props> = ({
   const [selectedPlanId, setSelectedPlanId] = useState<string>(defaultPlanId)
   const [loading, setLoading] = useState(false)
   const [upgradeLoading, setUpgradeLoading] = useState(false)
+  const [cancelLoading, setCancelLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [cancelSuccess, setCancelSuccess] = useState(false)
 
   const selectedPlan = PLANS.find(plan => plan.id === selectedPlanId) ?? null
   const isSelectedYearlyPlan = selectedPlan?.id.includes('year') ?? false
@@ -137,6 +139,38 @@ export const AccountBillingSection: React.FC<Props> = ({
       await startCheckoutForPlan('starter-yearly')
     } finally {
       setUpgradeLoading(false)
+    }
+  }
+
+  const handleCancelSubscription = async () => {
+    setError(null)
+    setCancelSuccess(false)
+
+    if (!storeId) {
+      setError('Missing store ID. Please refresh and try again.')
+      return
+    }
+
+    const confirmed = window.confirm(
+      'Cancel your Paystack subscription? You will not be charged again.',
+    )
+    if (!confirmed) return
+
+    try {
+      setCancelLoading(true)
+      const response = await cancelPaystackSubscription(storeId)
+      if (!response.ok) {
+        setError('Unable to cancel your subscription. Please try again.')
+        return
+      }
+      setCancelSuccess(true)
+    } catch (err) {
+      console.error('Cancel subscription error', err)
+      const message =
+        err instanceof Error ? err.message : 'Something went wrong canceling the subscription.'
+      setError(message)
+    } finally {
+      setCancelLoading(false)
     }
   }
 
@@ -255,6 +289,25 @@ export const AccountBillingSection: React.FC<Props> = ({
                 </div>
               </div>
             )}
+            <div className="rounded border border-gray-200 bg-white p-3 space-y-2">
+              <p className="text-sm font-medium text-gray-900">Cancel your subscription</p>
+              <p className="text-xs text-gray-600">
+                Cancelling stops future Paystack charges for this workspace.
+              </p>
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={handleCancelSubscription}
+                disabled={cancelLoading}
+              >
+                {cancelLoading ? 'Canceling…' : 'Cancel subscription'}
+              </button>
+              {cancelSuccess && (
+                <p className="text-xs text-green-700">
+                  Subscription canceled. Paystack will not charge you again.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       ) : (

@@ -845,7 +845,7 @@ export default function AuthPage() {
 
         <aside
           className="app__visual"
-          aria-label="Sedifex snapshot of a small business owner at work"
+          aria-label="Watch the Sedifex walkthrough before signing in"
         >
           <div className="app__visual-media" role="presentation">
             <img
@@ -856,11 +856,12 @@ export default function AuthPage() {
           </div>
           <div className="app__visual-overlay" />
           <div className="app__visual-caption">
-            <h2>See how Sedifex supports growing stores</h2>
+            <span className="app__visual-pill">Quick tutorial</span>
+            <h2>See how our AI inventory system works before logging in</h2>
             <p>
-              Sedifex keeps sales, inventory, and finance in one workspace built for
-              small businesses. Get a clear snapshot of the experience before starting
-              your free trial.
+              Watch the short walkthrough to learn how Sedifex uses AI to connect sales,
+              inventory, and finance in one workspace built for small businesses. Start
+              the video right here before creating an account.
             </p>
           </div>
         </aside>
