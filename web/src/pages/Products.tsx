@@ -49,6 +49,17 @@ type Product = {
 }
 
 type CachedProduct = Omit<Product, 'id'>
+type AbcBucket = 'A' | 'B' | 'C'
+type SaleRecord = {
+  id: string
+  items: Array<{
+    productId: string | null
+    qty: number
+    price: number
+    type?: string | null
+    isService?: boolean
+  }>
+}
 type SmartCountSession = {
   id: string
   startedAt: Date | null
@@ -235,6 +246,26 @@ function formatLastReceipt(lastReceiptAt: unknown): string {
   return 'No receipts recorded'
 }
 
+function normalizeSaleItems(items: unknown): SaleRecord['items'] {
+  if (!Array.isArray(items)) return []
+  return items.map(item => {
+    const itemData = item as Record<string, unknown>
+    const productId = typeof itemData.productId === 'string' ? itemData.productId : null
+    const qty = Number(itemData.qty) || 0
+    const price = Number(itemData.price) || 0
+    const type = typeof itemData.type === 'string' ? itemData.type : null
+    const isService = itemData.isService === true
+
+    return {
+      productId,
+      qty,
+      price,
+      type,
+      isService,
+    }
+  })
+}
+
 export default function Products() {
   const { storeId: activeStoreId } = useActiveStore()
   const { memberships } = useMemberships()
@@ -242,6 +273,7 @@ export default function Products() {
   const { preferences } = useStorePreferences(activeStoreId)
 
   const [products, setProducts] = useState<Product[]>([])
+  const [sales, setSales] = useState<SaleRecord[]>([])
   const [searchText, setSearchText] = useState('')
   const [showLowStockOnly, setShowLowStockOnly] = useState(false)
   // add-item form state
@@ -281,6 +313,7 @@ export default function Products() {
     'idle' | 'starting' | 'stopping'
   >('idle')
   const [smartCountError, setSmartCountError] = useState<string | null>(null)
+  const [salesError, setSalesError] = useState<string | null>(null)
 
   useEffect(() => {
     if (editingId) return
@@ -438,6 +471,96 @@ export default function Products() {
       unsubscribe()
     }
   }, [activeStoreId])
+
+  /**
+   * Load sales to compute ABC analysis
+   */
+  useEffect(() => {
+    if (!activeStoreId) {
+      setSales([])
+      setSalesError(null)
+      return
+    }
+
+    const q = query(
+      collection(db, 'sales'),
+      where('storeId', '==', activeStoreId),
+      orderBy('createdAt', 'desc'),
+      limit(500),
+    )
+
+    const unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        const rows: SaleRecord[] = snapshot.docs.map(docSnap => {
+          const data = docSnap.data() as Record<string, unknown>
+          return {
+            id: docSnap.id,
+            items: normalizeSaleItems(data.items),
+          }
+        })
+        setSales(rows)
+        setSalesError(null)
+      },
+      error => {
+        console.warn('[products] Failed to load sales for ABC analysis', error)
+        setSales([])
+        setSalesError('Sales data unavailable, ABC analysis may be incomplete.')
+      },
+    )
+
+    return () => unsubscribe()
+  }, [activeStoreId])
+
+  const abcAnalysis = useMemo(() => {
+    const revenueByProduct = new Map<string, number>()
+    let totalRevenue = 0
+
+    for (const sale of sales) {
+      for (const item of sale.items) {
+        if (!item.productId) continue
+        const itemType = typeof item.type === 'string' ? item.type.toLowerCase() : null
+        if (item.isService || itemType === 'service' || itemType === 'made_to_order') {
+          continue
+        }
+        const revenue = item.qty * item.price
+        if (!Number.isFinite(revenue) || revenue <= 0) continue
+        totalRevenue += revenue
+        revenueByProduct.set(item.productId, (revenueByProduct.get(item.productId) ?? 0) + revenue)
+      }
+    }
+
+    if (totalRevenue <= 0) return new Map<string, { bucket: AbcBucket; shareOfSales: number }>()
+
+    const sorted = [...revenueByProduct.entries()].sort((a, b) => b[1] - a[1])
+    const analysis = new Map<string, { bucket: AbcBucket; shareOfSales: number }>()
+    let cumulativeRevenue = 0
+
+    for (const [productId, revenue] of sorted) {
+      cumulativeRevenue += revenue
+      const cumulativeShare = cumulativeRevenue / totalRevenue
+      const bucket: AbcBucket =
+        cumulativeShare <= 0.7 ? 'A' : cumulativeShare <= 0.9 ? 'B' : 'C'
+      analysis.set(productId, {
+        bucket,
+        shareOfSales: revenue / totalRevenue,
+      })
+    }
+
+    return analysis
+  }, [sales])
+
+  const getAbcInfo = (productId: string) => {
+    const entry = abcAnalysis.get(productId)
+    if (!entry) {
+      return { bucket: 'C' as AbcBucket, note: 'No sales yet' }
+    }
+    const shareLabel =
+      entry.shareOfSales < 0.01
+        ? '<1% of sales'
+        : `${Math.round(entry.shareOfSales * 100)}% of sales`
+    return { bucket: entry.bucket, note: shareLabel }
+  }
 
   /**
    * Filtering logic
@@ -1220,6 +1343,11 @@ export default function Products() {
               Download reorder list
             </button>
           </div>
+          <p className="products-page__abc-hint">
+            ABC analysis ranks items by sales revenue from the last 500 sales. A = top 70%, B = next
+            20%, C = remaining.
+            {salesError ? <span className="products-page__abc-error">{salesError}</span> : null}
+          </p>
 
           {editingProduct ? (
             editingProduct.itemType === 'service' ? (
@@ -1383,6 +1511,27 @@ export default function Products() {
                           />
                         ) : (
                           <p className="products-page__list-value">{formatCurrency(product.price)}</p>
+                        )}
+                      </div>
+
+                      <div className="products-page__list-field">
+                        <label className="field__label">ABC class</label>
+                        {isStockTracked ? (
+                          (() => {
+                            const abcInfo = getAbcInfo(product.id)
+                            return (
+                              <div className="products-page__abc">
+                                <span
+                                  className={`products-page__badge products-page__badge--abc-${abcInfo.bucket.toLowerCase()}`}
+                                >
+                                  {abcInfo.bucket}
+                                </span>
+                                <span className="products-page__abc-note">{abcInfo.note}</span>
+                              </div>
+                            )
+                          })()
+                        ) : (
+                          <p className="products-page__list-value">—</p>
                         )}
                       </div>
 
