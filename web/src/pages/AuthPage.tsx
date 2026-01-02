@@ -32,6 +32,8 @@ import { setOnboardingStatus } from '../utils/onboarding'
 
 const LOGI_PARTNER_IMAGE_URL =
   'https://raw.githubusercontent.com/learngermanghana/sedifexbiz/main/photos/pexels-omotayo-tajudeen-1650120-3213283%281%29.jpg'
+const AUTH_VISUAL_IMAGE_URL =
+  'https://raw.githubusercontent.com/learngermanghana/sedifexbiz/main/photos/pexels-olly-3801439.jpg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
 
@@ -846,11 +848,10 @@ export default function AuthPage() {
           aria-label="Watch the Sedifex walkthrough before signing in"
         >
           <div className="app__visual-media" role="presentation">
-            <iframe
-              src="https://www.youtube.com/embed/Jgyfz1CT2YY"
-              title="Sedifex tutorial video"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
+            <img
+              src={AUTH_VISUAL_IMAGE_URL}
+              alt="Small business owner reviewing inventory on a laptop"
+              loading="lazy"
             />
           </div>
           <div className="app__visual-overlay" />
