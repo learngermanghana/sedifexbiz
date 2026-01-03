@@ -955,18 +955,21 @@ export default function AuthPage() {
             <p className="app__partners-examples-label">Send bulk SMS to clients</p>
             <ul className="app__partners-list">
               <li className="app__partners-badge">
-                <span className="app__partners-name">
-                  Starter — ₵50, 10,000 credits · ~833 SMS
+                <span className="app__partners-name">Starter — ₵50</span>
+                <span className="app__partners-location">
+                  10,000 credits · ~833 SMS
                 </span>
               </li>
               <li className="app__partners-badge">
-                <span className="app__partners-name">
-                  Growth — ₵230, 50,000 credits · ~4,166 SMS
+                <span className="app__partners-name">Growth — ₵230</span>
+                <span className="app__partners-location">
+                  50,000 credits · ~4,166 SMS
                 </span>
               </li>
               <li className="app__partners-badge">
-                <span className="app__partners-name">
-                  Scale — ₵430, 100,000 credits · ~8,333 SMS
+                <span className="app__partners-name">Scale — ₵430</span>
+                <span className="app__partners-location">
+                  100,000 credits · ~8,333 SMS
                 </span>
               </li>
             </ul>
