@@ -44,6 +44,11 @@
   color: var(--color-text-primary);
 }
 
+.documents-generator__item .form__hint {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
 .documents-generator__add {
   justify-self: start;
 }
