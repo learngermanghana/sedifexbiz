@@ -13,7 +13,6 @@ import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { CUSTOMER_CACHE_LIMIT } from '../utils/offlineCache'
 import { DebtSummary, formatGhsFromCents, summarizeCustomerDebt } from '../utils/debt'
-import Expenses from './Expenses'
 
 type RangeKey = 'month' | '30d' | '7d' | 'all'
 type DownloadTab = 'sales' | 'products' | 'expenses'
@@ -576,7 +575,22 @@ export default function Finance() {
         </div>
       </section>
 
-      <Expenses embedded />
+      <section className="card" style={{ marginTop: 24 }} aria-label="Expenses">
+        <div className="page__header" style={{ padding: 0 }}>
+          <div>
+            <h3 className="card__title">Expenses</h3>
+            <p className="card__subtitle">
+              Review and manage detailed expense entries in the dedicated ledger.
+            </p>
+          </div>
+          <Link className="button button--primary button--small" to="/expenses">
+            Open expenses
+          </Link>
+        </div>
+        <p className="card__subtitle" style={{ marginTop: 12 }}>
+          Use the Expenses page to capture payouts, reimbursements, and store costs.
+        </p>
+      </section>
 
       {/* Downloads */}
       <section className="card" style={{ marginTop: 24 }} aria-label="Download finance data">
