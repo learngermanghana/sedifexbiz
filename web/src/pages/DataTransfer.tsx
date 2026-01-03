@@ -10,6 +10,7 @@ import {
 import {
   csvToRows,
   addRowsToExcelTable,
+  fetchExcelTableRows,
 } from '../utils/excel'
 
 type HeaderSpec = {
@@ -33,12 +34,24 @@ function downloadCsv(filename: string, content: string) {
   URL.revokeObjectURL(url)
 }
 
+function buildCsvFromRows(headers: string[], rows: string[][]) {
+  if (headers.length === 0 && rows.length === 0) {
+    return ''
+  }
+
+  const normalizedHeaders =
+    headers.length > 0 ? headers : rows[0]?.map((_, index) => `Column ${index + 1}`)
+  return buildCsv(normalizedHeaders ?? [], rows)
+}
+
 export default function DataTransfer() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
   // NEW: loading flags for Excel exports
   const [isItemsExcelExporting, setIsItemsExcelExporting] = useState(false)
   const [isCustomersExcelExporting, setIsCustomersExcelExporting] = useState(false)
+  const [isItemsExcelImporting, setIsItemsExcelImporting] = useState(false)
+  const [isCustomersExcelImporting, setIsCustomersExcelImporting] = useState(false)
 
   const itemRequired: HeaderSpec[] = [
     { key: 'name', description: 'Item name as it appears on receipts.' },
@@ -212,6 +225,72 @@ export default function DataTransfer() {
     }
   }
 
+  async function handleImportItemsFromExcel() {
+    try {
+      setIsItemsExcelImporting(true)
+
+      const account = await signInWithMicrosoft()
+      if (!account) {
+        return
+      }
+
+      const token = await acquireGraphToken(['Files.ReadWrite.All', 'Sites.ReadWrite.All'])
+      const data = await fetchExcelTableRows(token, 'sedifex-items.xlsx', 'Table1')
+
+      if (!data || data.headers.length === 0) {
+        alert('No items table found in sedifex-items.xlsx. Please export first.')
+        return
+      }
+
+      const csv = buildCsvFromRows(data.headers, data.rows)
+      if (!csv) {
+        alert('No items data found in sedifex-items.xlsx.')
+        return
+      }
+
+      downloadCsv('sedifex-items-import.csv', csv)
+      alert('Items downloaded from Excel. Upload the CSV to import.')
+    } catch (error) {
+      console.error('Failed to import items from Excel', error)
+      alert('Failed to import items from Excel. Please check the console for details.')
+    } finally {
+      setIsItemsExcelImporting(false)
+    }
+  }
+
+  async function handleImportCustomersFromExcel() {
+    try {
+      setIsCustomersExcelImporting(true)
+
+      const account = await signInWithMicrosoft()
+      if (!account) {
+        return
+      }
+
+      const token = await acquireGraphToken(['Files.ReadWrite.All', 'Sites.ReadWrite.All'])
+      const data = await fetchExcelTableRows(token, 'sedifex-customers.xlsx', 'Table1')
+
+      if (!data || data.headers.length === 0) {
+        alert('No customers table found in sedifex-customers.xlsx. Please export first.')
+        return
+      }
+
+      const csv = buildCsvFromRows(data.headers, data.rows)
+      if (!csv) {
+        alert('No customer data found in sedifex-customers.xlsx.')
+        return
+      }
+
+      downloadCsv('sedifex-customers-import.csv', csv)
+      alert('Customers downloaded from Excel. Upload the CSV to import.')
+    } catch (error) {
+      console.error('Failed to import customers from Excel', error)
+      alert('Failed to import customers from Excel. Please check the console for details.')
+    } finally {
+      setIsCustomersExcelImporting(false)
+    }
+  }
+
   return (
     <PageSection
       title="Data transfer"
@@ -254,6 +333,28 @@ export default function DataTransfer() {
               }
             >
               Download customers template
+            </button>
+          </div>
+          <div className="data-transfer__actions data-transfer__actions--stacked">
+            <button
+              type="button"
+              className="button button--outline"
+              onClick={handleImportItemsFromExcel}
+              disabled={isItemsExcelImporting}
+            >
+              {isItemsExcelImporting
+                ? 'Importing items from Excel…'
+                : 'Import items from Excel (OneDrive)'}
+            </button>
+            <button
+              type="button"
+              className="button button--outline"
+              onClick={handleImportCustomersFromExcel}
+              disabled={isCustomersExcelImporting}
+            >
+              {isCustomersExcelImporting
+                ? 'Importing customers from Excel…'
+                : 'Import customers from Excel (OneDrive)'}
             </button>
           </div>
         </section>

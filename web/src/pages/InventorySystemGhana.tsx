@@ -5,7 +5,7 @@ import './InventorySystemGhana.css'
 
 const PAGE_TITLE = 'Inventory System Ghana | Sedifex'
 const PAGE_DESCRIPTION =
-  'Sedifex is the AI-powered inventory system built for Ghana businesses. Track stock, sales, and finance in one place with smart count accuracy, easy CSV data transfer, real-time alerts, and insights.'
+  'Sedifex is the AI-powered inventory system built for Ghana businesses. Track stock, sales, and finance in one place with smart count accuracy, easy Excel/CSV sharing, real-time alerts, and insights.'
 
 const FEATURE_LIST = [
   {
@@ -24,9 +24,9 @@ const FEATURE_LIST = [
       'Never run out of best sellers. Get smart notifications and reorder insights before products run low.',
   },
   {
-    title: 'Easy data transfer from CSV',
+    title: 'Easy Excel & CSV sharing',
     description:
-      'Move inventory lists quickly with CSV imports so you can switch from spreadsheets or other systems without friction.',
+      'Share data between Excel and Sedifex in minutes so teams can forecast, budget, and move over from spreadsheets with confidence.',
   },
   {
     title: 'Smart count',
@@ -175,7 +175,7 @@ export default function InventorySystemGhana() {
           <p>
             Sedifex helps Ghanaian retailers, wholesalers, and service businesses track stock,
             sales, and finance in one smart workspace. Know what to reorder, prevent stock
-            losses, and keep every branch aligned.
+            losses, share data with Excel for better projections, and keep every branch aligned.
           </p>
           <div className="seo-page__hero-actions">
             <Link className="seo-page__cta" to="/">
