@@ -115,68 +115,6 @@
 }
 
 /* ======================
-   Draft sales
-   ====================== */
-
-.sell-page__drafts {
-  margin-bottom: 16px;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.sell-page__drafts-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.sell-page__drafts-title {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.sell-page__drafts-subtitle {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #64748b;
-}
-
-.sell-page__drafts-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.sell-page__drafts-resume {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  align-items: flex-end;
-}
-
-.sell-page__drafts-status {
-  margin: 0;
-  font-size: 12px;
-  color: #0f172a;
-}
-
-.sell-page__drafts-active {
-  margin: 0;
-  font-size: 12px;
-  color: #4338ca;
-  font-weight: 600;
-}
-
-/* ======================
    Customer selection
    ====================== */
 
