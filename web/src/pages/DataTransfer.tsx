@@ -32,7 +32,7 @@ export default function DataTransfer() {
   ]
   const itemOptional: HeaderSpec[] = [
     { key: 'sku', description: 'SKU or internal code.' },
-    { key: 'barcode', description: 'Digits-only barcode for scanning.' },
+    { key: 'barcode', description: 'Barcode for scanning (letters + digits are supported).' },
     { key: 'stock_count', description: 'Current stock quantity.' },
     { key: 'reorder_point', description: 'Restock alert level.' },
     { key: 'item_type', description: 'product, service, or made_to_order.' },
