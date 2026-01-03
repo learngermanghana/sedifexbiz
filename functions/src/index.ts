@@ -1647,22 +1647,16 @@ async function sendHubtelMessage(options: {
   body: string
 }) {
   const { clientId, clientSecret, to, from, body } = options
-  const url = 'https://smsc.hubtel.com/v1/messages/send'
-  const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
-  const payload = {
-    From: from,
-    To: to,
-    Content: body,
-  }
+  const url = new URL('https://smsc.hubtel.com/v1/messages/send')
+  url.search = new URLSearchParams({
+    clientid: clientId,
+    clientsecret: clientSecret,
+    from,
+    to,
+    content: body,
+  }).toString()
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${auth}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
+  const response = await fetch(url, { method: 'GET' })
 
   if (!response.ok) {
     const errorText = await response.text()
