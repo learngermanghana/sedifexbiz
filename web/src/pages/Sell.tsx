@@ -256,6 +256,7 @@ export default function Sell() {
   const [products, setProducts] = useState<Product[]>([])
   const [searchText, setSearchText] = useState('')
   const [cart, setCart] = useState<CartLine[]>([])
+  const [qtyInputs, setQtyInputs] = useState<Record<string, string>>({})
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
   const [amountPaidInput, setAmountPaidInput] = useState('')
   const [additionalTenders, setAdditionalTenders] = useState<{ id: string; method: PaymentMethod; amount: string }[]>([])
@@ -1026,6 +1027,17 @@ export default function Sell() {
     }
   }, [isCameraOpen, products])
 
+  useEffect(() => {
+    setQtyInputs(prev => {
+      const next: Record<string, string> = {}
+      cart.forEach(line => {
+        const prevValue = prev[line.productId]
+        next[line.productId] = prevValue === '' ? '' : String(line.qty)
+      })
+      return next
+    })
+  }, [cart])
+
   function handleCloseCameraClick() {
     setIsCameraOpen(false)
     scannerControlsRef.current?.stop()
@@ -1064,6 +1076,18 @@ export default function Sell() {
     setCart(prev =>
       prev.map(line => (line.productId === productId ? { ...line, qty } : line)).filter(line => line.qty > 0),
     )
+  }
+
+  function syncQtyInput(productId: string, qty: number) {
+    setQtyInputs(prev => ({ ...prev, [productId]: String(qty) }))
+  }
+
+  function handleQtyChange(productId: string, nextValue: string) {
+    setQtyInputs(prev => ({ ...prev, [productId]: nextValue }))
+    if (nextValue.trim() === '') return
+    const nextQty = Number(nextValue)
+    if (!Number.isFinite(nextQty) || nextQty <= 0) return
+    updateCartQty(productId, Math.floor(nextQty))
   }
 
   function removeCartLine(productId: string) {
@@ -1710,6 +1734,7 @@ export default function Sell() {
                 <tbody>
                   {cart.map(line => {
                     const lineTotal = line.price * line.qty
+                    const qtyValue = qtyInputs[line.productId] ?? String(line.qty)
                     return (
                       <tr key={line.productId}>
                         <td>{line.name}</td>
@@ -1718,8 +1743,9 @@ export default function Sell() {
                             type="number"
                             min={1}
                             step={1}
-                            value={line.qty}
-                            onChange={e => updateCartQty(line.productId, Math.max(1, Number(e.target.value) || 1))}
+                            value={qtyValue}
+                            onChange={e => handleQtyChange(line.productId, e.target.value)}
+                            onBlur={() => syncQtyInput(line.productId, line.qty)}
                             className="sell-page__qty-input"
                           />
                         </td>
