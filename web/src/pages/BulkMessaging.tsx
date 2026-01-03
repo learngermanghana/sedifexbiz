@@ -370,9 +370,19 @@ export default function BulkMessaging() {
       }
 
       if (data.failures.length) {
+        const failureSummary = data.failures
+          .slice(0, 3)
+          .map((failure: { phone: string; error: string }) => {
+            const phone = failure.phone || 'Unknown number'
+            const reason = failure.error || 'Unknown error'
+            return `${phone}: ${reason}`
+          })
+          .join(' | ')
+        const extraFailures =
+          data.failures.length > 3 ? ` (+${data.failures.length - 3} more)` : ''
         setStatus({
           tone: 'info',
-          message: `Sent ${data.sent} of ${data.attempted} messages. ${data.failures.length} failed to send.`,
+          message: `Sent ${data.sent} of ${data.attempted} messages. ${data.failures.length} failed to send. ${failureSummary}${extraFailures}`,
         })
       } else {
         setStatus({
