@@ -108,24 +108,6 @@ type DisplaySessionPayload = DisplaySessionBase & {
   updatedAt: ReturnType<typeof serverTimestamp>
 }
 
-type DraftSale = {
-  id: string
-  cart: CartLine[]
-  reference: string
-  paymentMethod: PaymentMethod
-  amountPaidInput: string
-  additionalTenders: { id: string; method: PaymentMethod; amount: string }[]
-  discountInput: string
-  taxInput: string
-  customerMode: CustomerMode
-  customerNameInput: string
-  customerPhoneInput: string
-  customerSearchTerm: string
-  selectedCustomerId: string | null
-  createdAt: Date | null
-  updatedAt: Date | null
-}
-
 const PUBLIC_ORIGIN = (() => {
   const raw = (import.meta as any).env?.VITE_PUBLIC_ORIGIN
   if (typeof raw !== 'string') return window.location.origin
@@ -157,72 +139,6 @@ function toDate(value: unknown): Date | null {
     return null
   }
   return null
-}
-
-function parseNumber(value: unknown, fallback = 0) {
-  const num = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(num) ? num : fallback
-}
-
-function mapDraftSale(id: string, data: any): DraftSale {
-  const cart = Array.isArray(data?.cart)
-    ? data.cart
-        .map((line: any) => ({
-          productId: typeof line?.productId === 'string' ? line.productId : '',
-          name: typeof line?.name === 'string' ? line.name : 'Unknown item',
-          qty: parseNumber(line?.qty, 1) || 1,
-          price: parseNumber(line?.price, 0),
-          taxRate: parseNumber(line?.taxRate, 0),
-          itemType: line?.itemType === 'service' ? 'service' : 'product',
-          metadata: Array.isArray(line?.metadata) ? line.metadata.filter((entry: any) => typeof entry === 'string') : undefined,
-        }))
-        .filter((line: CartLine) => line.productId)
-    : []
-
-  const additionalTenders = Array.isArray(data?.additionalTenders)
-    ? data.additionalTenders
-        .map((entry: any) => ({
-          id: typeof entry?.id === 'string' ? entry.id : createTenderId(),
-          method: entry?.method === 'card' || entry?.method === 'mobile_money' || entry?.method === 'transfer' ? entry.method : 'cash',
-          amount: typeof entry?.amount === 'string' ? entry.amount : String(parseNumber(entry?.amount, 0)),
-        }))
-        .filter((entry: { id: string }) => entry.id)
-    : []
-
-  const paymentMethod =
-    data?.paymentMethod === 'card' || data?.paymentMethod === 'mobile_money' || data?.paymentMethod === 'transfer'
-      ? data.paymentMethod
-      : 'cash'
-
-  const customerMode = data?.customerMode === 'named' ? 'named' : 'walk_in'
-
-  return {
-    id,
-    cart,
-    reference: typeof data?.reference === 'string' ? data.reference : '',
-    paymentMethod,
-    amountPaidInput: typeof data?.amountPaidInput === 'string' ? data.amountPaidInput : '',
-    additionalTenders,
-    discountInput: typeof data?.discountInput === 'string' ? data.discountInput : '',
-    taxInput: typeof data?.taxInput === 'string' ? data.taxInput : '',
-    customerMode,
-    customerNameInput: typeof data?.customerNameInput === 'string' ? data.customerNameInput : '',
-    customerPhoneInput: typeof data?.customerPhoneInput === 'string' ? data.customerPhoneInput : '',
-    customerSearchTerm: typeof data?.customerSearchTerm === 'string' ? data.customerSearchTerm : '',
-    selectedCustomerId: typeof data?.selectedCustomerId === 'string' ? data.selectedCustomerId : null,
-    createdAt: toDate(data?.createdAt),
-    updatedAt: toDate(data?.updatedAt),
-  }
-}
-
-function formatDraftTimestamp(value: Date | null) {
-  if (!value) return 'Just now'
-  return value.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
 }
 
 function mapFirestoreProduct(id: string, data: any): Product {
@@ -346,14 +262,9 @@ export default function Sell() {
   const [additionalTenders, setAdditionalTenders] = useState<{ id: string; method: PaymentMethod; amount: string }[]>([])
   const [discountInput, setDiscountInput] = useState('')
   const [taxInput, setTaxInput] = useState('')
-  const [draftReferenceInput, setDraftReferenceInput] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const [drafts, setDrafts] = useState<DraftSale[]>([])
-  const [activeDraftId, setActiveDraftId] = useState<string | null>(null)
-  const [selectedDraftId, setSelectedDraftId] = useState<string>('')
-  const [draftStatus, setDraftStatus] = useState<string | null>(null)
 
   const activityActor = user?.displayName || user?.email || 'Team member'
 
@@ -598,43 +509,6 @@ export default function Sell() {
       unsub()
     }
   }, [activeStoreId])
-
-  useEffect(() => {
-    if (!activeStoreId) {
-      setDrafts([])
-      setActiveDraftId(null)
-      setSelectedDraftId('')
-      return
-    }
-
-    const q = query(
-      collection(db, 'draftSales'),
-      where('storeId', '==', activeStoreId),
-      orderBy('updatedAt', 'desc'),
-      limit(25),
-    )
-
-    const unsub = onSnapshot(q, snap => {
-      const rows = snap.docs.map(docSnap => mapDraftSale(docSnap.id, docSnap.data()))
-      setDrafts(rows)
-    })
-
-    return () => unsub()
-  }, [activeStoreId])
-
-  useEffect(() => {
-    if (!activeDraftId) return
-    if (!drafts.find(draft => draft.id === activeDraftId)) {
-      setActiveDraftId(null)
-    }
-  }, [activeDraftId, drafts])
-
-  useEffect(() => {
-    if (!selectedDraftId) return
-    if (!drafts.find(draft => draft.id === selectedDraftId)) {
-      setSelectedDraftId('')
-    }
-  }, [drafts, selectedDraftId])
 
   const initialCustomerId = searchParams.get('customerId')
 
@@ -921,122 +795,6 @@ export default function Sell() {
 
     lastCartHasItemsRef.current = hasItems
   }, [activeStoreId, cart.length, displaySessionId])
-
-  function resetSaleState(options?: { keepMessages?: boolean }) {
-    setCart([])
-    setQtyInputs({})
-    setPaymentMethod('cash')
-    setAmountPaidInput('')
-    setAdditionalTenders([])
-    setDiscountInput('')
-    setTaxInput('')
-    setDraftReferenceInput('')
-    setCustomerMode('walk_in')
-    setCustomerNameInput('')
-    setCustomerPhoneInput('')
-    setCustomerSearchTerm('')
-    setSelectedCustomerId(null)
-    setLastReceipt(null)
-    setReceiptDownload(null)
-    setScanStatus(null)
-    if (!options?.keepMessages) {
-      setErrorMessage(null)
-      setSuccessMessage(null)
-    }
-  }
-
-  function applyDraftSale(draft: DraftSale) {
-    setCart(draft.cart)
-    setQtyInputs(
-      draft.cart.reduce<Record<string, string>>((acc, line) => {
-        acc[line.productId] = String(line.qty)
-        return acc
-      }, {}),
-    )
-    setPaymentMethod(draft.paymentMethod)
-    setAmountPaidInput(draft.amountPaidInput)
-    setAdditionalTenders(draft.additionalTenders)
-    setDiscountInput(draft.discountInput)
-    setTaxInput(draft.taxInput)
-    setDraftReferenceInput(draft.reference)
-    setCustomerMode(draft.customerMode)
-    setCustomerNameInput(draft.customerNameInput)
-    setCustomerPhoneInput(draft.customerPhoneInput)
-    setCustomerSearchTerm(draft.customerMode === 'named' ? draft.customerSearchTerm || draft.customerNameInput : '')
-    setSelectedCustomerId(draft.selectedCustomerId)
-    setActiveDraftId(draft.id)
-    setSelectedDraftId(draft.id)
-    setLastReceipt(null)
-    setReceiptDownload(null)
-    setErrorMessage(null)
-    setSuccessMessage(null)
-    setDraftStatus('Draft loaded.')
-  }
-
-  async function handleHoldDraft() {
-    if (!activeStoreId) {
-      setDraftStatus('Select a workspace before holding a draft.')
-      return
-    }
-    if (!cart.length) {
-      setDraftStatus('Add items to the cart before holding a draft.')
-      return
-    }
-
-    const payload = {
-      storeId: activeStoreId,
-      cart,
-      paymentMethod,
-      amountPaidInput,
-      additionalTenders,
-      discountInput,
-      taxInput,
-      reference: draftReferenceInput,
-      customerMode,
-      customerNameInput,
-      customerPhoneInput,
-      customerSearchTerm,
-      selectedCustomerId,
-      updatedAt: serverTimestamp(),
-    }
-
-    try {
-      if (activeDraftId) {
-        await setDoc(doc(db, 'draftSales', activeDraftId), payload, { merge: true })
-      } else {
-        const docRef = await addDoc(collection(db, 'draftSales'), {
-          ...payload,
-          createdAt: serverTimestamp(),
-        })
-        setActiveDraftId(docRef.id)
-        setSelectedDraftId(docRef.id)
-      }
-      setDraftStatus('Draft saved.')
-    } catch (error) {
-      console.warn('[sell] Unable to hold draft', error)
-      setDraftStatus('Unable to save the draft. Please try again.')
-    }
-  }
-
-  function handleNewSale() {
-    setActiveDraftId(null)
-    setSelectedDraftId('')
-    resetSaleState()
-    setDraftStatus('New sale ready.')
-  }
-
-  function handleResumeDraft() {
-    if (!selectedDraftId) {
-      setDraftStatus('Select a draft to resume.')
-      return
-    }
-    const draft = drafts.find(item => item.id === selectedDraftId)
-    if (!draft) {
-      setDraftStatus('That draft is no longer available.')
-      return
-    }
-    applyDraftSale(draft)
-  }
 
   function handleAddTender() {
     setAdditionalTenders(current => [...current, { id: createTenderId(), method: 'cash', amount: '' }])
@@ -1814,24 +1572,14 @@ export default function Sell() {
         receipt: receiptPayload,
       })
 
-      if (activeDraftId) {
-        deleteDoc(doc(db, 'draftSales', activeDraftId)).catch(err => {
-          console.warn('[sell] Unable to remove draft after sale', err)
-        })
-      }
-
       setCart([])
-      setQtyInputs({})
       setAmountPaidInput('')
       setAdditionalTenders([])
       setDiscountInput('')
       setTaxInput('')
-      setDraftReferenceInput('')
       setCustomerNameInput('')
       setCustomerPhoneInput('')
       setSelectedCustomerId(null)
-      setActiveDraftId(null)
-      setSelectedDraftId('')
       setSuccessMessage('Sale recorded successfully.')
     } catch (error: any) {
       console.error('[sell] Failed to commit sale', error)
@@ -1969,59 +1717,6 @@ export default function Sell() {
           <div className="sell-page__section-header">
             <h3>Cart</h3>
             <p>Review items, apply discount, pick customer, then save the sale.</p>
-          </div>
-
-          <div className="sell-page__drafts" aria-label="Draft sales">
-            <div className="sell-page__drafts-header">
-              <div>
-                <p className="sell-page__drafts-title">Hold / Resume sales</p>
-                <p className="sell-page__drafts-subtitle">Pause a cart and pick it up later from any device.</p>
-              </div>
-              <div className="sell-page__drafts-actions">
-                <button type="button" className="button button--ghost" onClick={handleHoldDraft} disabled={isSaving || !cart.length}>
-                  Hold
-                </button>
-                <button type="button" className="button button--ghost" onClick={handleNewSale} disabled={isSaving}>
-                  New Sale
-                </button>
-              </div>
-            </div>
-
-            <div className="sell-page__drafts-resume">
-              <label className="field">
-                <span className="field__label">Resume draft</span>
-                <select value={selectedDraftId} onChange={event => setSelectedDraftId(event.target.value)}>
-                  <option value="">Select a saved draft</option>
-                  {drafts.map(draft => {
-                    const label = formatDraftTimestamp(draft.updatedAt || draft.createdAt)
-                    const cartCount = draft.cart.length
-                    const referenceLabel = draft.reference ? `${draft.reference} · ` : ''
-                    return (
-                      <option key={draft.id} value={draft.id}>
-                        {cartCount ? `${referenceLabel}${cartCount} items · ${label}` : `${referenceLabel}Empty draft · ${label}`}
-                      </option>
-                    )
-                  })}
-                </select>
-              </label>
-
-              <button type="button" className="button button--ghost" onClick={handleResumeDraft} disabled={isSaving || !drafts.length}>
-                Resume Draft
-              </button>
-            </div>
-
-            <label className="field">
-              <span className="field__label">Draft reference</span>
-              <input
-                placeholder="e.g. Ama Mensah, Order #42"
-                value={draftReferenceInput}
-                onChange={event => setDraftReferenceInput(event.target.value)}
-              />
-              <span className="field__hint">Add a name or note to quickly find this draft later.</span>
-            </label>
-
-            {draftStatus && <p className="sell-page__drafts-status">{draftStatus}</p>}
-            {activeDraftId && <p className="sell-page__drafts-active">Active draft synced.</p>}
           </div>
 
           <div className="sell-page__cart">
@@ -2499,15 +2194,12 @@ export default function Sell() {
               className="button button--ghost"
               onClick={() => {
                 setCart([])
-                setQtyInputs({})
                 setAmountPaidInput('')
                 setDiscountInput('')
                 setTaxInput('')
                 setScanStatus(null)
                 setErrorMessage(null)
                 setSuccessMessage(null)
-                setDraftStatus(null)
-                setDraftReferenceInput('')
                 setCustomerNameInput('')
                 setCustomerPhoneInput('')
                 setSelectedCustomerId(null)
