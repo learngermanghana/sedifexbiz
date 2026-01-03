@@ -186,12 +186,15 @@ body {
 
 .pricing-card__amount {
   font-size: clamp(24px, 4vw, 32px);
-  font-weight: 700;
+  font-weight: 800;
+  color: #f8fafc;
+  text-shadow: 0 2px 12px rgba(15, 23, 42, 0.6);
 }
 
 .pricing-card__cadence {
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   font-size: 14px;
+  font-weight: 600;
 }
 
 .pricing-card__list {
