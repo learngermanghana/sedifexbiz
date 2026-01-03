@@ -35,6 +35,7 @@ type Customer = {
   email?: string
   notes?: string
   tags?: string[]
+  birthdate?: string | Timestamp | null
   createdAt?: Timestamp | null
   updatedAt?: Timestamp | null
   debt?: {
@@ -181,6 +182,28 @@ function parseDateInput(value: string): Date | null {
   return Number.isNaN(parsed) ? null : new Date(parsed)
 }
 
+function normalizeBirthdateInput(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Date.parse(trimmed)
+  if (Number.isNaN(parsed)) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed
+  }
+  const normalized = new Date(parsed)
+  return Number.isNaN(normalized.getTime()) ? null : normalized.toISOString().slice(0, 10)
+}
+
+function normalizeBirthdate(value: unknown): Date | null {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    return Number.isNaN(parsed) ? null : new Date(parsed)
+  }
+  return normalizeDateLike(value)
+}
+
 function formatDate(date: Date | null): string {
   if (!date) return '—'
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
@@ -309,6 +332,7 @@ export default function Customers() {
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
   const [tagsInput, setTagsInput] = useState('')
+  const [birthdateInput, setBirthdateInput] = useState('')
   const [debtAmountInput, setDebtAmountInput] = useState('')
   const [debtDueDateInput, setDebtDueDateInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -635,6 +659,7 @@ export default function Customers() {
     ? customerStats[selectedCustomerId] ?? { visits: 0, totalSpend: 0, lastVisit: null }
     : { visits: 0, totalSpend: 0, lastVisit: null }
 
+  const selectedBirthdate = normalizeBirthdate(selectedCustomer?.birthdate)
   const selectedOutstandingCents = selectedCustomer ? getOutstandingCents(selectedCustomer) : 0
   const selectedDueDate = normalizeDateLike(selectedCustomer?.debt?.dueDate)
   const selectedLastReminder = normalizeDateLike(selectedCustomer?.debt?.lastReminderAt)
@@ -812,6 +837,7 @@ export default function Customers() {
     setEmail('')
     setNotes('')
     setTagsInput('')
+    setBirthdateInput('')
     setDebtAmountInput('')
     setDebtDueDateInput('')
     setEditingCustomerId(null)
@@ -834,6 +860,7 @@ export default function Customers() {
     try {
       const parsedTags = normalizeTags(tagsInput)
       const normalizedPhone = normalizePhoneNumber(phone)
+      const normalizedBirthdate = normalizeBirthdateInput(birthdateInput)
       const parsedDebtCents = parseAmountToCents(debtAmountInput)
       const parsedDueDate = parseDateInput(debtDueDateInput)
       if (editingCustomerId) {
@@ -846,6 +873,7 @@ export default function Customers() {
         updatePayload.email = email.trim() ? email.trim() : null
         updatePayload.notes = notes.trim() ? notes.trim() : null
         updatePayload.tags = parsedTags
+        updatePayload.birthdate = normalizedBirthdate ? normalizedBirthdate : null
 
         if (parsedDebtCents && parsedDebtCents > 0) {
           updatePayload['debt.outstandingCents'] = parsedDebtCents
@@ -864,6 +892,7 @@ export default function Customers() {
           ...(email.trim() ? { email: email.trim() } : {}),
           ...(notes.trim() ? { notes: notes.trim() } : {}),
           ...(parsedTags.length ? { tags: parsedTags } : {}),
+          ...(normalizedBirthdate ? { birthdate: normalizedBirthdate } : {}),
           ...(parsedDebtCents && parsedDebtCents > 0
             ? { debt: { outstandingCents: parsedDebtCents, dueDate: parsedDueDate ?? null } }
             : {}),
@@ -932,6 +961,7 @@ export default function Customers() {
       const emailIndex = headers.indexOf('email')
       const notesIndex = headers.indexOf('notes')
       const tagsIndex = headers.indexOf('tags')
+      const birthdateIndex = headers.indexOf('birthdate')
 
       const existingByEmail = new Map<string, string>()
       const existingByPhone = new Map<string, string>()
@@ -956,6 +986,8 @@ export default function Customers() {
         const rawNotes = notesIndex >= 0 ? row[notesIndex]?.trim() ?? '' : ''
         const rawTags = tagsIndex >= 0 ? row[tagsIndex] ?? '' : ''
         const parsedTags = tagsIndex >= 0 ? normalizeTags(rawTags) : undefined
+        const rawBirthdate = birthdateIndex >= 0 ? row[birthdateIndex]?.trim() ?? '' : ''
+        const parsedBirthdate = birthdateIndex >= 0 ? normalizeBirthdateInput(rawBirthdate) : null
 
         const normalizedPhone = normalizePhoneNumber(rawPhone)
         const emailKey = rawEmail.toLowerCase()
@@ -980,6 +1012,9 @@ export default function Customers() {
           if (notesIndex >= 0) {
             payload.notes = rawNotes ? rawNotes : null
           }
+          if (birthdateIndex >= 0) {
+            payload.birthdate = parsedBirthdate ? parsedBirthdate : null
+          }
           if (parsedTags) {
             payload.tags = parsedTags
           }
@@ -999,6 +1034,9 @@ export default function Customers() {
           }
           if (rawNotes) {
             payload.notes = rawNotes
+          }
+          if (parsedBirthdate) {
+            payload.birthdate = parsedBirthdate
           }
           if (parsedTags && parsedTags.length) {
             payload.tags = parsedTags
@@ -1027,17 +1065,19 @@ export default function Customers() {
   }
 
   function exportToCsv() {
-    const headers = ['Name', 'Phone', 'Email', 'Notes', 'Tags', 'Visits', 'Last visit', 'Total spend']
+    const headers = ['Name', 'Phone', 'Email', 'Birthdate', 'Notes', 'Tags', 'Visits', 'Last visit', 'Total spend']
     const lines = customers.map(customer => {
       const stats = customerStats[customer.id]
       const visitCount = stats?.visits ?? 0
       const lastVisit = stats?.lastVisit ? stats.lastVisit.toISOString() : ''
       const totalSpend = stats?.totalSpend ?? 0
       const tags = (customer.tags ?? []).join(', ')
+      const birthdate = normalizeBirthdate(customer.birthdate)
       const cells = [
         getCustomerPrimaryName(customer) || '',
         customer.phone ?? '',
         customer.email ?? '',
+        birthdate ? birthdate.toISOString().slice(0, 10) : '',
         customer.notes ?? '',
         tags,
         String(visitCount),
@@ -1067,6 +1107,8 @@ export default function Customers() {
     setEmail(customer.email ?? '')
     setNotes(customer.notes ?? '')
     setTagsInput((customer.tags ?? []).join(', '))
+    const birthdate = normalizeBirthdate(customer.birthdate)
+    setBirthdateInput(birthdate ? birthdate.toISOString().slice(0, 10) : '')
     const outstandingCents = getOutstandingCents(customer)
     setDebtAmountInput(outstandingCents > 0 ? (outstandingCents / 100).toFixed(2) : '')
     const dueDate = normalizeDateLike(customer.debt?.dueDate)
@@ -1177,6 +1219,20 @@ export default function Customers() {
                 <p className="field__hint">Separate multiple tags with commas to power quick filters and campaigns.</p>
               </div>
 
+              <div className="field">
+                <label className="field__label" htmlFor="customer-birthdate">Birthdate</label>
+                <input
+                  id="customer-birthdate"
+                  type="date"
+                  value={birthdateInput}
+                  onChange={event => setBirthdateInput(event.target.value)}
+                  disabled={isFormDisabled}
+                />
+                <p className="field__hint">Add a birthdate so the dashboard can surface upcoming birthdays.</p>
+              </div>
+            </div>
+
+            <div className="customers-page__form-row">
               <div className="field">
                 <label className="field__label" htmlFor="customer-debt">Outstanding balance (GHS)</label>
                 <input
@@ -1451,6 +1507,10 @@ export default function Customers() {
                 <div>
                   <dt>Notes</dt>
                   <dd>{selectedCustomer.notes ? selectedCustomer.notes : '—'}</dd>
+                </div>
+                <div>
+                  <dt>Birthdate</dt>
+                  <dd>{selectedBirthdate ? selectedBirthdate.toLocaleDateString() : '—'}</dd>
                 </div>
                 <div>
                   <dt>Segmentation tags</dt>
