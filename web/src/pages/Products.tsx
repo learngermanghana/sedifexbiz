@@ -32,7 +32,7 @@ type Product = {
   id: string
   name: string
   sku: string | null
-  barcode: string | null // 🔹 digits-only version for scanning
+  barcode: string | null // 🔹 normalized version for scanning
   price: number | null
   stockCount: number | null
   reorderPoint: number | null
@@ -664,7 +664,7 @@ export default function Products() {
         name: trimmedName,
         itemType,
         price: finalPrice,
-        // 🔹 Keep SKU as typed, but also store a digits-only barcode field
+        // 🔹 Keep SKU as typed, but also store a normalized barcode field
         sku: isService ? null : trimmedSku || null,
         barcode: isService ? null : normalizeBarcode(trimmedSku) || null,
         taxRate: taxRateNumber,
@@ -1164,8 +1164,8 @@ export default function Products() {
                 />
                 <p className="field__hint">
                   If you scan barcodes, this should match the code on the product. We
-                  also store a digits-only version so camera scans work even if you add
-                  spaces.
+                  also store a normalized version (letters + digits) so camera scans work even if
+                  you add spaces or dashes.
                 </p>
               </div>
             )}
