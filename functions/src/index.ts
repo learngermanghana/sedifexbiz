@@ -1815,9 +1815,9 @@ type PaystackPlanKey = 'starter-monthly' | 'starter-yearly' | string
 
 // Fixed packages (GHS)
 const BULK_CREDITS_PACKAGES: Record<string, { credits: number; amount: number }> = {
-  '100': { credits: 100, amount: 50 },
-  '500': { credits: 500, amount: 230 },
-  '1000': { credits: 1000, amount: 430 },
+  '10000': { credits: 10000, amount: 50 },
+  '50000': { credits: 50000, amount: 230 },
+  '100000': { credits: 100000, amount: 430 },
 }
 
 let paystackConfigLogged = false
