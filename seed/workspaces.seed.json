@@ -1,0 +1,43 @@
+{
+  "workspaces": {
+    "demo-store": {
+      "company": "Demo Store",
+      "storeId": "store-demo",
+      "status": "active",
+      "contractStart": "2024-01-01T00:00:00.000Z",
+      "contractEnd": "2025-12-31T23:59:59.000Z",
+      "paymentStatus": "paid",
+      "amountPaid": 129900,
+      "billingCycle": "annual",
+      "plan": "Growth",
+      "contactEmail": "owner@demo-store.test",
+      "notes": "Default workspace used for staging and QA reviewers."
+    },
+    "sedifex-labs": {
+      "company": "Sedifex Labs",
+      "storeId": "store-labs",
+      "status": "active",
+      "contractStart": "2024-03-15T00:00:00.000Z",
+      "contractEnd": "2026-03-14T23:59:59.000Z",
+      "paymentStatus": "trial",
+      "amountPaid": 0,
+      "billingCycle": "monthly",
+      "plan": "Starter",
+      "contactEmail": "ops@sedifex.com",
+      "notes": "Internal workspace for product experimentation and demos."
+    },
+    "nairobi-collective": {
+      "company": "Nairobi Collective",
+      "storeId": "store-nairobi",
+      "status": "active",
+      "contractStart": "2024-06-01T00:00:00.000Z",
+      "contractEnd": "2025-05-31T23:59:59.000Z",
+      "paymentStatus": "past-due",
+      "amountPaid": 59900,
+      "billingCycle": "monthly",
+      "plan": "Standard",
+      "contactEmail": "finance@nairobi-collective.com",
+      "notes": "Flagged for follow-up by customer success due to outstanding balance."
+    }
+  }
+}

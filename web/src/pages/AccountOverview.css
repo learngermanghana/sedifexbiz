@@ -1,0 +1,227 @@
+/* ============================
+   Account Overview (Improved Contrast)
+   + Added high-contrast Monthly/Yearly toggle (segmented control)
+   ============================ */
+
+.account-overview__alert {
+  border: 1px solid #f3c87a;
+  background: #fff7e6;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.account-overview__eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  color: #8b5e00;
+  margin: 0 0 4px;
+}
+
+.account-overview__approvals {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.account-overview__approval-card {
+  border: 1px solid #f3e1b0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.account-overview__approval-email {
+  font-weight: 600;
+  margin: 0;
+  color: #111827;
+}
+
+.account-overview__approval-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-overview__approval-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.account-overview__profile-form {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.account-overview__form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.account-overview__profile-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: #111827;
+}
+
+.account-overview__profile-form input,
+.account-overview__profile-form textarea {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #111827;
+  background: #ffffff;
+}
+
+.account-overview__profile-form input:focus,
+.account-overview__profile-form textarea:focus {
+  outline: none;
+  border-color: #f59e0b; /* amber */
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22);
+}
+
+.account-overview__hint {
+  color: #475569; /* slate-600 (better contrast than #6b7280) */
+  font-size: 14px;
+  margin: 0;
+}
+
+.account-overview__status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  text-transform: capitalize;
+  background: #edf2ff;
+  color: #1d3a8a;
+  border: 1px solid #c7d2fe;
+}
+
+.account-overview__status[data-variant='inactive'] {
+  background: #fff1f0;
+  color: #a8071a;
+  border-color: #ffa39e;
+}
+
+.account-overview__status[data-variant='pending'] {
+  background: #fff7e6;
+  color: #8b5e00;
+  border-color: #ffd591;
+}
+
+.account-overview__data-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin: 12px 0 8px;
+}
+
+.account-overview__card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.account-overview__card h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #111827;
+}
+
+.account-overview__danger-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* =========================================================
+   Monthly / Yearly selector (SEGMENTED CONTROL)
+   Use these classes on your monthly/yearly toggle wrapper/buttons.
+   Example:
+   <div class="account-overview__plan-toggle">
+     <button class="account-overview__plan-toggle-btn is-active">Monthly</button>
+     <button class="account-overview__plan-toggle-btn">Yearly</button>
+   </div>
+   OR use aria-pressed="true" instead of .is-active
+   ========================================================= */
+
+.account-overview__plan-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+
+  /* Higher contrast container (fix “faded” look) */
+  background: #f1f5f9;       /* slate-100 */
+  border: 1px solid #cbd5e1; /* slate-300 */
+}
+
+.account-overview__plan-toggle-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  border-radius: 999px;
+  padding: 8px 14px;
+
+  /* Darker inactive text (avoid opacity) */
+  color: #334155; /* slate-700 */
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.account-overview__plan-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.75);
+  color: #0f172a; /* slate-900 */
+}
+
+.account-overview__plan-toggle-btn.is-active,
+.account-overview__plan-toggle-btn[aria-pressed="true"] {
+  /* Clear selected pill */
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
+  outline: 1px solid #e2e8f0; /* slate-200 */
+}
+
+.account-overview__plan-toggle-btn:focus-visible {
+  outline: 3px solid rgba(245, 158, 11, 0.35); /* amber ring */
+  outline-offset: 2px;
+}
+
+/* Optional: disabled state if you have it */
+.account-overview__plan-toggle-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+/* Optional: prefer-contrast support */
+@media (prefers-contrast: more) {
+  .account-overview__plan-toggle {
+    border-color: #64748b; /* slate-500 */
+  }
+  .account-overview__plan-toggle-btn {
+    color: #0f172a;
+  }
+}
