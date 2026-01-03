@@ -952,38 +952,31 @@ export default function AuthPage() {
           </div>
 
           <div className="app__partners-examples">
-            <p className="app__partners-examples-label">
-              Website setup packages (pricing in GHS):
-            </p>
+            <p className="app__partners-examples-label">Send bulk SMS to clients</p>
             <ul className="app__partners-list">
               <li className="app__partners-badge">
-                <span className="app__partners-name">
-                  Basic Landing Website — GHS 1,200 – 2,500
-                </span>
+                <span className="app__partners-name">Starter — ₵50</span>
                 <span className="app__partners-location">
-                  4–6 pages (Home, Services, Packages, Gallery, About, Contact), WhatsApp
-                  booking button, Google Map embed, basic gallery, mobile responsive.
+                  10,000 credits · ~833 SMS
                 </span>
               </li>
               <li className="app__partners-badge">
-                <span className="app__partners-name">
-                  Standard Business Website — GHS 2,500 – 5,500
-                </span>
+                <span className="app__partners-name">Growth — ₵230</span>
                 <span className="app__partners-location">
-                  Everything in Basic plus enhanced visuals, SEO basics, contact form,
-                  speed optimization, 1–2 revisions, and optional analytics setup.
+                  50,000 credits · ~4,166 SMS
                 </span>
               </li>
               <li className="app__partners-badge">
-                <span className="app__partners-name">
-                  Premium / Booking Website — GHS 6,000 – 12,000+
-                </span>
+                <span className="app__partners-name">Scale — ₵430</span>
                 <span className="app__partners-location">
-                  Everything in Standard plus booking system, admin dashboard, email/SMS
-                  confirmations, payments, and a CMS for self-updates.
+                  100,000 credits · ~8,333 SMS
                 </span>
               </li>
             </ul>
+            <p className="app__partners-location">
+              Free invoice and receipt generator. Link your Sedifex account to Excel for
+              easy data transfers.
+            </p>
           </div>
 
           <a className="app__partners-link" href="mailto:sedifexbiz@gmail.com">
@@ -1188,4 +1181,3 @@ async function cleanupFailedSignup(_user: User) {
     console.warn('[signup] Unable to sign out after rejected signup', error)
   }
 }
-
