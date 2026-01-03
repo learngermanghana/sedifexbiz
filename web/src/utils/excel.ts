@@ -146,3 +146,40 @@ export async function addRowsToExcelTable(
   const url = `/me/drive/root:/${workbookName}:/workbook/tables/${tableName}/rows/add`
   await client.api(url).post({ index: null, values })
 }
+
+function normalizeExcelValue(value: unknown) {
+  if (value === null || value === undefined) {
+    return ''
+  }
+  if (typeof value === 'string') {
+    return value
+  }
+  return String(value)
+}
+
+export async function fetchExcelTableRows(
+  accessToken: string,
+  workbookName: string,
+  tableName: string,
+): Promise<{ headers: string[]; rows: string[][] } | null> {
+  const client = createGraphClient(accessToken)
+  const table = await fetchTable(client, workbookName, tableName)
+  if (!table) {
+    return null
+  }
+
+  const range = await client
+    .api(`/me/drive/root:/${workbookName}:/workbook/tables/${tableName}/range`)
+    .get()
+
+  const values: unknown[][] = Array.isArray(range?.values) ? range.values : []
+  if (values.length === 0) {
+    return { headers: [], rows: [] }
+  }
+
+  const [headerRow, ...dataRows] = values
+  const headers = (headerRow ?? []).map(cell => normalizeExcelValue(cell))
+  const rows = dataRows.map(row => row.map(cell => normalizeExcelValue(cell)))
+
+  return { headers, rows }
+}
