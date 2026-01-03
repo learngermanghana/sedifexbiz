@@ -73,6 +73,7 @@ const collectionMock = vi.fn((_db: unknown, path: string) => ({ type: 'collectio
 const whereMock = vi.fn((field: string, op: string, value: unknown) => ({ field, op, value }))
 const orderByMock = vi.fn((field: string, direction: string) => ({ field, direction }))
 const limitMock = vi.fn((n: number) => ({ n }))
+const queryMock = vi.fn((...clauses: unknown[]) => ({ clauses }))
 const onSnapshotMock = vi.fn()
 const docMock = vi.fn((_db: unknown, path: string, id?: string) => ({
   path: id ? `${path}/${id}` : path,
@@ -87,6 +88,7 @@ vi.mock('firebase/firestore', () => ({
   where: (...args: Parameters<typeof whereMock>) => whereMock(...args),
   orderBy: (...args: Parameters<typeof orderByMock>) => orderByMock(...args),
   limit: (...args: Parameters<typeof limitMock>) => limitMock(...args),
+  query: (...args: Parameters<typeof queryMock>) => queryMock(...args),
   onSnapshot: (...args: Parameters<typeof onSnapshotMock>) => onSnapshotMock(...args),
   doc: (...args: Parameters<typeof docMock>) => docMock(...args),
   getDoc: (...args: Parameters<typeof getDocMock>) => getDocMock(...args),
