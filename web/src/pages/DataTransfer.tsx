@@ -78,6 +78,7 @@ export default function DataTransfer() {
     { key: 'display_name', description: 'Preferred display name.' },
     { key: 'phone', description: 'Phone number with country code if available.' },
     { key: 'email', description: 'Customer email address.' },
+    { key: 'birthdate', description: 'Customer birthdate (YYYY-MM-DD).' },
     { key: 'notes', description: 'Notes or preferences.' },
     { key: 'tags', description: 'Comma-separated tags.' },
   ]
@@ -124,13 +125,14 @@ export default function DataTransfer() {
   const customerTemplate = useMemo(
     () =>
       buildCsv(
-        ['name', 'display_name', 'phone', 'email', 'notes', 'tags'],
+        ['name', 'display_name', 'phone', 'email', 'birthdate', 'notes', 'tags'],
         [
           [
             'Ama Mensah',
             'Ama M.',
             '+233555123456',
             'ama@example.com',
+            '1993-08-12',
             'Prefers SMS updates',
             'vip,loyalty',
           ],

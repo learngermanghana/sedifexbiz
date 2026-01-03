@@ -56,7 +56,22 @@ type ExpiringProduct = {
   stockCount: number | null
 }
 
+type BirthdayCustomer = {
+  id: string
+  name?: string | null
+  displayName?: string | null
+  birthdate?: unknown
+}
+
+type UpcomingBirthday = {
+  id: string
+  name: string
+  date: Date
+  daysUntil: number
+}
+
 const EXPIRY_LOOKAHEAD_DAYS = 90
+const BIRTHDAY_LOOKAHEAD_DAYS = 30
 
 function isSameDay(a: Date, b: Date) {
   return (
@@ -85,6 +100,77 @@ function toDate(value: unknown): Date | null {
     return null
   }
   return null
+}
+
+function getCustomerLabel(customer: Pick<BirthdayCustomer, 'displayName' | 'name'>): string {
+  const displayName = customer.displayName?.trim()
+  if (displayName) return displayName
+  const name = customer.name?.trim()
+  if (name) return name
+  return 'Customer'
+}
+
+function getBirthdateParts(value: unknown): { month: number; day: number } | null {
+  if (!value) return null
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (match) {
+      const month = Number(match[2]) - 1
+      const day = Number(match[3])
+      if (Number.isFinite(month) && Number.isFinite(day)) {
+        return { month, day }
+      }
+    }
+    const parsed = new Date(value)
+    if (!Number.isNaN(parsed.getTime())) {
+      return { month: parsed.getMonth(), day: parsed.getDate() }
+    }
+  }
+  if (typeof (value as any).toDate === 'function') {
+    const parsed = (value as any).toDate()
+    if (parsed instanceof Date && !Number.isNaN(parsed.getTime())) {
+      return { month: parsed.getMonth(), day: parsed.getDate() }
+    }
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return { month: value.getMonth(), day: value.getDate() }
+  }
+  return null
+}
+
+function formatBirthdayCountdown(daysUntil: number): string {
+  if (daysUntil === 0) return 'Today'
+  if (daysUntil === 1) return 'Tomorrow'
+  return `In ${daysUntil} days`
+}
+
+function buildUpcomingBirthdays(customers: BirthdayCustomer[], today = new Date()): UpcomingBirthday[] {
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const msPerDay = 1000 * 60 * 60 * 24
+
+  return customers
+    .reduce<UpcomingBirthday[]>((accumulator, customer) => {
+      const parts = getBirthdateParts(customer.birthdate)
+      if (!parts) return accumulator
+      const nextBirthday = new Date(todayStart.getFullYear(), parts.month, parts.day)
+      if (Number.isNaN(nextBirthday.getTime())) return accumulator
+      if (nextBirthday < todayStart) {
+        nextBirthday.setFullYear(nextBirthday.getFullYear() + 1)
+      }
+      const daysUntil = Math.round((nextBirthday.getTime() - todayStart.getTime()) / msPerDay)
+      if (daysUntil < 0 || daysUntil > BIRTHDAY_LOOKAHEAD_DAYS) return accumulator
+      accumulator.push({
+        id: customer.id,
+        name: getCustomerLabel(customer),
+        date: nextBirthday,
+        daysUntil,
+      })
+      return accumulator
+    }, [])
+    .sort((a, b) => {
+      if (a.daysUntil !== b.daysUntil) return a.daysUntil - b.daysUntil
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    })
 }
 
 function describeExpiry(date: Date) {
@@ -261,6 +347,9 @@ export default function Dashboard() {
   const [debtSummary, setDebtSummary] = useState<DebtSummary | null>(null)
   const [isLoadingDebt, setIsLoadingDebt] = useState(false)
   const [debtError, setDebtError] = useState<string | null>(null)
+  const [upcomingBirthdays, setUpcomingBirthdays] = useState<UpcomingBirthday[]>([])
+  const [isLoadingBirthdays, setIsLoadingBirthdays] = useState(false)
+  const [birthdayError, setBirthdayError] = useState<string | null>(null)
 
   const [aiSummary, setAiSummary] = useState<{
     message: string | null
@@ -358,11 +447,16 @@ export default function Dashboard() {
     if (!storeId) {
       setDebtSummary(null)
       setDebtError(null)
+      setUpcomingBirthdays([])
+      setBirthdayError(null)
+      setIsLoadingBirthdays(false)
       return () => {}
     }
 
     setIsLoadingDebt(true)
     setDebtError(null)
+    setIsLoadingBirthdays(true)
+    setBirthdayError(null)
 
     const debtQuery = query(
       collection(db, 'customers'),
@@ -375,17 +469,22 @@ export default function Dashboard() {
     const unsubscribe = onSnapshot(
       debtQuery,
       snapshot => {
-        const rows: CustomerDebt[] = snapshot.docs.map(docSnap => ({
+        const rows = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
           ...(docSnap.data() as CustomerDebt),
         }))
 
         setDebtSummary(summarizeCustomerDebt(rows))
+        setUpcomingBirthdays(buildUpcomingBirthdays(rows as BirthdayCustomer[]))
         setIsLoadingDebt(false)
+        setIsLoadingBirthdays(false)
       },
       error => {
         console.error('[dashboard] Failed to load customer debt', error)
         setDebtError('Unable to load customer debt balances right now.')
         setIsLoadingDebt(false)
+        setBirthdayError('Unable to load customer birthdays right now.')
+        setIsLoadingBirthdays(false)
       },
     )
 
@@ -1149,6 +1248,70 @@ export default function Dashboard() {
                       : 'No due dates set for customers.'}
                   </p>
                 </>
+              )}
+            </article>
+
+            {/* Upcoming birthdays */}
+            <article
+              style={{
+                background: '#F8FAFC',
+                borderRadius: 14,
+                padding: '14px 16px',
+                border: '1px solid #E2E8F0',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.6,
+                  color: '#64748B',
+                  fontWeight: 600,
+                }}
+              >
+                Upcoming birthdays
+              </p>
+
+              {birthdayError ? (
+                <p style={{ margin: '6px 0 0', color: '#DC2626', fontSize: 13 }}>
+                  {birthdayError}
+                </p>
+              ) : isLoadingBirthdays ? (
+                <p style={{ margin: '6px 0 0', color: '#475569', fontSize: 13 }}>
+                  Loading birthday reminders…
+                </p>
+              ) : upcomingBirthdays.length ? (
+                <>
+                  <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'grid', gap: 6 }}>
+                    {upcomingBirthdays.slice(0, 4).map(birthday => (
+                      <li
+                        key={birthday.id}
+                        style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}
+                      >
+                        <span style={{ fontWeight: 600, color: '#0F172A', fontSize: 13 }}>
+                          {birthday.name}
+                        </span>
+                        <span style={{ fontSize: 12, color: '#64748B' }}>
+                          {birthday.date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                          • {formatBirthdayCountdown(birthday.daysUntil)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {upcomingBirthdays.length > 4 ? (
+                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748B' }}>
+                      +{upcomingBirthdays.length - 4} more in the next {BIRTHDAY_LOOKAHEAD_DAYS} days.
+                    </p>
+                  ) : null}
+                </>
+              ) : (
+                <p style={{ margin: '6px 0 0', color: '#64748B', fontSize: 13 }}>
+                  No birthdays coming up in the next {BIRTHDAY_LOOKAHEAD_DAYS} days.
+                </p>
               )}
             </article>
           </div>
