@@ -153,9 +153,8 @@ export default function DataTransfer() {
       }
 
       const rows = csvToRows(itemTemplate)
-      // If you want to exclude the header row from Excel table:
       const [headerRow, ...dataRows] = rows
-      const rowsToExport = dataRows.length > 0 ? dataRows : rows
+      const rowsToExport = dataRows.length > 0 ? dataRows : []
 
       // 4) Push rows into sedifex-items.xlsx / Table1
       await addRowsToExcelTable(
@@ -163,6 +162,7 @@ export default function DataTransfer() {
         'sedifex-items.xlsx',
         'Table1',
         rowsToExport,
+        headerRow ?? [],
       )
 
       alert('Items exported to Excel in your OneDrive (sedifex-items.xlsx).')
@@ -193,13 +193,14 @@ export default function DataTransfer() {
 
       const rows = csvToRows(customerTemplate)
       const [headerRow, ...dataRows] = rows
-      const rowsToExport = dataRows.length > 0 ? dataRows : rows
+      const rowsToExport = dataRows.length > 0 ? dataRows : []
 
       await addRowsToExcelTable(
         token,
         'sedifex-customers.xlsx',
         'Table1',
         rowsToExport,
+        headerRow ?? [],
       )
 
       alert('Customers exported to Excel in your OneDrive (sedifex-customers.xlsx).')
