@@ -22,11 +22,16 @@ vi.mock('../../hooks/useSubscriptionStatus', () => ({
   useSubscriptionStatus: () => mockUseSubscriptionStatus(),
 }))
 
-vi.mock('react-router-dom', () => ({
-  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
-    <a href={to}>{children}</a>
-  ),
-}))
+vi.mock('react-router-dom', async importOriginal => {
+  const actual = await importOriginal<typeof import('react-router-dom')>()
+  return {
+    ...actual,
+    Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
+      <a href={to}>{children}</a>
+    ),
+    useSearchParams: () => [new URLSearchParams(), vi.fn()],
+  }
+})
 
 vi.mock('../../components/BarcodeScanner', () => ({
   __esModule: true,

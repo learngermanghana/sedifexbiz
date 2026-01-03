@@ -23,11 +23,16 @@ vi.mock('../../hooks/useSubscriptionStatus', () => ({
 }))
 
 // Avoid React Router issues
-vi.mock('react-router-dom', () => ({
-  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
-    <a href={to}>{children}</a>
-  ),
-}))
+vi.mock('react-router-dom', async importOriginal => {
+  const actual = await importOriginal<typeof import('react-router-dom')>()
+  return {
+    ...actual,
+    Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
+      <a href={to}>{children}</a>
+    ),
+    useSearchParams: () => [new URLSearchParams(), vi.fn()],
+  }
+})
 
 // Replace BarcodeScanner with a simple stub
 vi.mock('../../components/BarcodeScanner', () => ({
