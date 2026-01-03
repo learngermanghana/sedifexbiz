@@ -319,22 +319,15 @@ export default function Finance() {
             }}
           >
             <div className="info-card">
-              <h4>Gross sales</h4>
+              <h4>Sales + VAT</h4>
               <p style={{ fontSize: 24, fontWeight: 600 }}>
                 GHS {grossSales.toFixed(2)}
               </p>
-              <p className="card__subtitle">
-                Sum of recorded sales (including VAT) in the selected range.
-              </p>
-            </div>
-
-            <div className="info-card">
-              <h4>VAT collected</h4>
-              <p style={{ fontSize: 24, fontWeight: 600 }}>
-                GHS {totalVat.toFixed(2)}
+              <p className="card__subtitle" style={{ marginBottom: 4 }}>
+                VAT included: <strong>GHS {totalVat.toFixed(2)}</strong>
               </p>
               <p className="card__subtitle">
-                Total VAT portion from all recorded sales in this period.
+                Gross sales total (VAT included) for the selected range.
               </p>
             </div>
 
@@ -383,13 +376,14 @@ export default function Finance() {
               </p>
             </div>
 
-            <div className="info-card">
-              <h4>Net profit</h4>
+            <details className="info-card">
+              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Net profit</summary>
               <p
                 style={{
                   fontSize: 24,
                   fontWeight: 600,
                   color: netProfit >= 0 ? 'var(--green, #16a34a)' : 'var(--red, #dc2626)',
+                  marginTop: 8,
                 }}
               >
                 GHS {netProfit.toFixed(2)}
@@ -397,7 +391,7 @@ export default function Finance() {
               <p className="card__subtitle">
                 Gross sales minus expenses. (VAT is shown separately above.)
               </p>
-            </div>
+            </details>
           </div>
         ) : (
           <div className="empty-state" style={{ marginTop: 8 }}>
@@ -411,24 +405,21 @@ export default function Finance() {
         )}
       </section>
 
-      <section className="card" style={{ marginTop: 24 }} aria-label="Document tools">
+      <section className="card" style={{ marginTop: 24 }} aria-label="Documents">
         <div className="page__header" style={{ padding: 0 }}>
           <div>
             <h3 className="card__title">Documents</h3>
             <p className="card__subtitle">
-              Create invoices or receipts without adding another navigation tab.
+              Create invoices and receipts from the dedicated documents page.
             </p>
           </div>
           <Link className="button button--primary button--small" to="/finance/documents">
-            Open generator
+            Open documents
           </Link>
         </div>
-        <div className="info-card" style={{ marginTop: 12 }}>
-          <h4 style={{ marginBottom: 8 }}>Invoice & receipt generator</h4>
-          <p className="card__subtitle" style={{ marginBottom: 0 }}>
-            Add company details, customer contacts, line items, and totals to build a print-ready PDF.
-          </p>
-        </div>
+        <p className="card__subtitle" style={{ marginTop: 12 }}>
+          Build PDFs with company details, customer contacts, line items, and totals.
+        </p>
       </section>
 
       <section className="card" style={{ marginTop: 24 }} aria-label="Expenses">
