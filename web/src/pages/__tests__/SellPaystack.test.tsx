@@ -38,6 +38,7 @@ vi.mock('../../components/BarcodeScanner', () => ({
   default: (props: { className?: string }) => (
     <div data-testid="mock-barcode-scanner" className={props.className} />
   ),
+  useKeyboardScanner: () => undefined,
 }))
 
 // Offline cache / customers
