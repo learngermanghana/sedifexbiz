@@ -231,6 +231,11 @@
   color: #1e293b;
 }
 
+.bulk-messaging-page__buy-credits-sms {
+  font-size: 13px;
+  color: #64748b;
+}
+
 .bulk-messaging-page__buy-credits-price {
   font-size: 14px;
   font-weight: 600;

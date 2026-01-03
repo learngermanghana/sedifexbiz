@@ -75,11 +75,17 @@ type CreditsPackage = {
 
 const MESSAGE_LIMIT = 1000
 const SMS_SEGMENT_SIZE = 160
+const CREDITS_PER_SMS = 12
 const BULK_CREDITS_PACKAGES: CreditsPackage[] = [
-  { id: '100', credits: 100, price: 50, label: 'Starter' },
-  { id: '500', credits: 500, price: 230, label: 'Growth' },
-  { id: '1000', credits: 1000, price: 430, label: 'Scale' },
+  { id: '10000', credits: 10000, price: 50, label: 'Starter' },
+  { id: '50000', credits: 50000, price: 230, label: 'Growth' },
+  { id: '100000', credits: 100000, price: 430, label: 'Scale' },
 ]
+const SMS_PRICE_ESTIMATE_GHS =
+  BULK_CREDITS_PACKAGES[0].price / (BULK_CREDITS_PACKAGES[0].credits / CREDITS_PER_SMS)
+const formatNumber = (value: number) => value.toLocaleString('en-GH')
+const formatPrice = (value: number) =>
+  value.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 function getCustomerPrimaryName(customer: Pick<Customer, 'displayName' | 'name'>): string {
   const displayName = customer.displayName?.trim()
@@ -642,7 +648,10 @@ export default function BulkMessaging() {
                     {creditPackage.label}
                   </span>
                   <span className="bulk-messaging-page__buy-credits-amount">
-                    {creditPackage.credits} credits
+                    {formatNumber(creditPackage.credits)} credits
+                  </span>
+                  <span className="bulk-messaging-page__buy-credits-sms">
+                    ~{formatNumber(Math.round(creditPackage.credits / CREDITS_PER_SMS))} SMS
                   </span>
                   <span className="bulk-messaging-page__buy-credits-price">
                     GHS {creditPackage.price}
@@ -660,7 +669,8 @@ export default function BulkMessaging() {
             </div>
           ) : (
             <p className="bulk-messaging-page__buy-credits-note">
-              Choose a package to continue to Paystack checkout.
+              Choose a package to continue to Paystack checkout. Estimated SMS cost is about GHS{' '}
+              {formatPrice(SMS_PRICE_ESTIMATE_GHS)} per SMS (12 credits per SMS).
             </p>
           )}
         </div>
