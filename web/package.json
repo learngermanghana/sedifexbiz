@@ -21,14 +21,6 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.26.1",
-    /*
-     * The following dependencies enable authentication via Microsoft Entra (Azure AD)
-     * and communication with the Microsoft Graph API.  These packages are not present
-     * in the original project; they must be installed via npm or pnpm after
-     * updating this file.  @azure/msal-browser provides client-side OAuth
-     * functionality, while @microsoft/microsoft-graph-client wraps the
-     * Microsoft Graph REST endpoints.
-     */
     "@azure/msal-browser": "^3.4.2",
     "@microsoft/microsoft-graph-client": "^3.0.0"
   },
