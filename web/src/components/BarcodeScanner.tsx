@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { BrowserMultiFormatReader } from '@zxing/browser'
+import { BarcodeFormat, DecodeHintType, NotFoundException } from '@zxing/library'
 
 type ScanSource = 'keyboard' | 'manual' | 'camera'
 
@@ -96,62 +98,76 @@ export default function BarcodeScanner({
   const [manualCode, setManualCode] = useState('')
   const [isCameraActive, setIsCameraActive] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const scannerControlsRef = useRef<{ stop: () => void } | null>(null)
 
   useKeyboardScanner(onScan, onError, minLength, debounceMs)
 
-  const stopStream = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-    }
-    streamRef.current = null
-    if (videoRef.current) {
-      videoRef.current.srcObject = null
-    }
-  }, [])
-
   useEffect(() => {
-    if (!enableCameraFallback || !isCameraActive) return
+    if (!enableCameraFallback || !isCameraActive || !videoRef.current) return
 
     let cancelled = false
 
-    async function startCamera() {
+    const reader = new BrowserMultiFormatReader()
+    const hints = new Map<DecodeHintType, any>()
+    hints.set(DecodeHintType.TRY_HARDER, true)
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.ITF,
+      BarcodeFormat.QR_CODE,
+    ])
+    reader.setHints(hints)
+
+    ;(async () => {
       try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error('Camera access is not supported on this device.')
-        }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-        })
-        if (cancelled) {
-          stream.getTracks().forEach(track => track.stop())
-          return
-        }
-        streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          try {
-            await videoRef.current.play()
-          } catch (error) {
-            console.warn('[BarcodeScanner] Unable to autoplay camera stream', error)
+        let deviceId: string | undefined
+        if (navigator.mediaDevices?.enumerateDevices) {
+          const devices = await navigator.mediaDevices.enumerateDevices()
+          const videoDevices = devices.filter(d => d.kind === 'videoinput')
+          if (videoDevices.length > 0) {
+            const backCamera = videoDevices.find(d => /back|rear|environment/i.test(d.label || '')) || videoDevices[0]
+            deviceId = backCamera.deviceId
           }
         }
+
+        const controls = await reader.decodeFromVideoDevice(deviceId, videoRef.current!, (result, error) => {
+          if (cancelled) return
+          if (result) {
+            const text = result.getText()
+            if (text) onScan({ code: text, source: 'camera' })
+          }
+          if (error && !(error instanceof NotFoundException)) {
+            console.error('[BarcodeScanner] Camera decode error', error)
+          }
+        })
+
+        if (cancelled) {
+          controls.stop()
+          return
+        }
+        scannerControlsRef.current = controls
       } catch (error) {
         console.error('[BarcodeScanner] Unable to start camera', error)
-        onError?.('Unable to access the camera. Enter the code manually instead.')
-        setIsCameraActive(false)
+        if (!cancelled) {
+          onError?.('Unable to access the camera. Enter the code manually instead.')
+          setIsCameraActive(false)
+        }
       }
-    }
-
-    startCamera()
+    })()
 
     return () => {
       cancelled = true
-      stopStream()
+      scannerControlsRef.current?.stop()
+      scannerControlsRef.current = null
+      if (videoRef.current) {
+        videoRef.current.srcObject = null
+      }
     }
-  }, [enableCameraFallback, isCameraActive, onError, stopStream])
-
-  useEffect(() => () => stopStream(), [stopStream])
+  }, [enableCameraFallback, isCameraActive, onError, onScan])
 
   const handleManualSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
