@@ -113,6 +113,7 @@ describe('Sell page selectors', () => {
         __esModule: true,
         default: vi.fn(() => null),
         ScanResult: class MockScanResult {},
+        useKeyboardScanner: vi.fn(),
       }),
       { virtual: true },
     )
