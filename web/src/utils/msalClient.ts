@@ -31,6 +31,11 @@ const msalConfig = {
 }
 
 const msalInstance = new PublicClientApplication(msalConfig)
+const msalInitialization = msalInstance.initialize()
+
+async function ensureMsalInitialized() {
+  await msalInitialization
+}
 
 export function getMsalInstance() {
   return msalInstance
@@ -43,6 +48,7 @@ export function getMsalInstance() {
 export async function signInWithMicrosoft(
   scopes: string[] = ['Files.ReadWrite.All', 'Sites.ReadWrite.All']
 ): Promise<AccountInfo | undefined> {
+  await ensureMsalInitialized()
   const existingAccounts = msalInstance.getAllAccounts()
   if (existingAccounts.length > 0) {
     return existingAccounts[0]
@@ -71,6 +77,7 @@ export async function signInWithMicrosoft(
 export async function acquireGraphToken(
   scopes: string[] = ['Files.ReadWrite.All', 'Sites.ReadWrite.All']
 ): Promise<string> {
+  await ensureMsalInitialized()
   const accounts = msalInstance.getAllAccounts()
   if (accounts.length === 0) {
     throw new Error('No signed-in Microsoft account found')
