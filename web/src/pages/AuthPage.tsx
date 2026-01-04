@@ -36,6 +36,7 @@ const AUTH_VISUAL_IMAGE_URL =
   'https://raw.githubusercontent.com/learngermanghana/sedifexbiz/main/photos/pexels-olly-3801439.jpg'
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PASSWORD_MIN_LENGTH = 8
+const MAX_BLOG_POSTS = 3
 
 type AuthMode = 'login' | 'signup'
 type StatusTone = 'idle' | 'loading' | 'success' | 'error'
@@ -43,6 +44,14 @@ type StatusTone = 'idle' | 'loading' | 'success' | 'error'
 interface StatusState {
   tone: StatusTone
   message: string
+}
+
+interface BlogPost {
+  title: string
+  link: string
+  published: string
+  excerpt: string
+  imageUrl?: string
 }
 
 interface PasswordStrength {
@@ -160,6 +169,58 @@ function getAuthErrorMessage(error: unknown, mode: AuthMode): string {
     : 'We couldn’t create your account. Ensure all details are filled in, your network is stable, and try again. If the issue persists, please contact support.'
 }
 
+function stripHtml(html: string): string {
+  if (!html) return ''
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+  return doc.body.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+}
+
+function formatBlogDate(rawDate: string): string {
+  if (!rawDate) return ''
+  const parsed = new Date(rawDate)
+  if (Number.isNaN(parsed.getTime())) return rawDate
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function extractFeedText(element: Element, tagName: string): string {
+  return element.getElementsByTagName(tagName)[0]?.textContent?.trim() ?? ''
+}
+
+function extractImageFromFeed(item: Element): string | null {
+  const mediaContent = item.getElementsByTagName('media:content')[0]
+  const mediaContentUrl = mediaContent?.getAttribute('url')
+  if (mediaContentUrl) return mediaContentUrl
+
+  const mediaThumbnail = item.getElementsByTagName('media:thumbnail')[0]
+  const mediaThumbnailUrl = mediaThumbnail?.getAttribute('url')
+  if (mediaThumbnailUrl) return mediaThumbnailUrl
+
+  const enclosure = item.getElementsByTagName('enclosure')[0]
+  const enclosureType = enclosure?.getAttribute('type') ?? ''
+  const enclosureUrl = enclosure?.getAttribute('url')
+  if (enclosureUrl && enclosureType.startsWith('image')) return enclosureUrl
+
+  const encodedContent = extractFeedText(item, 'content:encoded')
+  const description = extractFeedText(item, 'description')
+  const content = encodedContent || description
+  if (!content) return null
+
+  const match = content.match(/<img[^>]+src=["']([^"']+)["']/i)
+  return match?.[1] ?? null
+}
+
+function clampExcerpt(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  const truncated = text.slice(0, maxLength)
+  const trimmed = truncated.replace(/\s+\S*$/, '')
+  return `${trimmed}…`
+}
+
 function formatTrialReminder(
   billing: ResolveStoreAccessResult['billing'],
 ): string | null {
@@ -191,6 +252,9 @@ export default function AuthPage() {
   const [town, setTown] = useState('')
   const [address, setAddress] = useState('')
   const [status, setStatus] = useState<StatusState>({ tone: 'idle', message: '' })
+  const [blogPosts, setBlogPosts] = useState<BlogPost[]>([])
+  const [isBlogLoading, setIsBlogLoading] = useState(true)
+  const [blogError, setBlogError] = useState<string | null>(null)
 
   // random partner stores for the marketing section
   const [partnerStores, setPartnerStores] = useState<PartnerStoreSnippet[]>([])
@@ -312,6 +376,78 @@ export default function AuthPage() {
     )
 
     return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+    const controller = new AbortController()
+
+    const loadBlogPosts = async () => {
+      try {
+        setIsBlogLoading(true)
+        setBlogError(null)
+
+        const response = await fetch('https://blog.sedifex.com/feed.xml', {
+          signal: controller.signal,
+        })
+
+        if (!response.ok) {
+          throw new Error(`Blog feed request failed: ${response.status}`)
+        }
+
+        const xmlText = await response.text()
+        const parser = new DOMParser()
+        const doc = parser.parseFromString(xmlText, 'application/xml')
+        const errors = doc.getElementsByTagName('parsererror')
+        if (errors.length > 0) {
+          throw new Error('Unable to parse blog feed.')
+        }
+
+        const items = Array.from(doc.getElementsByTagName('item'))
+        const posts = items
+          .map(item => {
+            const title = extractFeedText(item, 'title') || 'Sedifex update'
+            const link = extractFeedText(item, 'link')
+            const publishedRaw = extractFeedText(item, 'pubDate')
+            const description =
+              extractFeedText(item, 'description') ||
+              extractFeedText(item, 'content:encoded')
+            const excerpt = clampExcerpt(stripHtml(description), 160)
+
+            return {
+              title,
+              link,
+              published: formatBlogDate(publishedRaw),
+              excerpt,
+              imageUrl: extractImageFromFeed(item) ?? undefined,
+            }
+          })
+          .filter(post => post.link)
+          .slice(0, MAX_BLOG_POSTS)
+
+        if (isMounted) {
+          setBlogPosts(posts)
+        }
+      } catch (error) {
+        const isAbortError =
+          error instanceof DOMException && error.name === 'AbortError'
+        if (!isAbortError && isMounted) {
+          console.warn('Unable to load blog posts:', error)
+          setBlogError('Unable to load the latest blog posts right now.')
+        }
+      } finally {
+        if (isMounted) {
+          setIsBlogLoading(false)
+        }
+      }
+    }
+
+    void loadBlogPosts()
+
+    return () => {
+      isMounted = false
+      controller.abort()
+    }
   }, [])
 
   function handleModeChange(nextMode: AuthMode) {
@@ -924,6 +1060,78 @@ export default function AuthPage() {
             </article>
           ))}
         </div>
+      </section>
+
+      <section className="app__blog" aria-label="Latest Sedifex blog posts">
+        <header className="app__blog-header">
+          <span className="app__pill">From the blog</span>
+          <h2>Latest tips for faster inventory growth</h2>
+          <p>
+            Read what we are building, learning, and sharing for modern retailers.
+            Stay updated with new playbooks from the Sedifex team.
+          </p>
+        </header>
+
+        {isBlogLoading ? (
+          <p className="app__blog-status">Loading the latest posts…</p>
+        ) : blogError ? (
+          <div className="app__blog-status">
+            <p>{blogError}</p>
+            <a
+              className="app__blog-link"
+              href="https://blog.sedifex.com"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Visit the Sedifex blog
+            </a>
+          </div>
+        ) : (
+          <>
+            {blogPosts.length ? (
+              <div className="app__blog-grid" role="list">
+                {blogPosts.map(post => (
+                  <a
+                    key={post.link}
+                    className="blog-card"
+                    href={post.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    role="listitem"
+                  >
+                    <div className="blog-card__image">
+                      {post.imageUrl ? (
+                        <img src={post.imageUrl} alt={post.title} loading="lazy" />
+                      ) : (
+                        <div className="blog-card__placeholder" aria-hidden="true">
+                          Sedifex
+                        </div>
+                      )}
+                    </div>
+                    <div className="blog-card__body">
+                      <span className="blog-card__date">{post.published}</span>
+                      <h3>{post.title}</h3>
+                      <p>{post.excerpt}</p>
+                      <span className="blog-card__cta">Read article</span>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="app__blog-status">
+                No blog posts are available right now. Please check back soon.
+              </p>
+            )}
+            <a
+              className="app__blog-link"
+              href="https://blog.sedifex.com"
+              target="_blank"
+              rel="noreferrer"
+            >
+              View all articles
+            </a>
+          </>
+        )}
       </section>
 
       <section className="app__partners" aria-label="Xenom IT Solutions offerings">
