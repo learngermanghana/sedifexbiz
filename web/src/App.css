@@ -300,6 +300,31 @@ body {
   outline-offset: 2px;
 }
 
+.app__partners-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.app__partners-badge {
+  display: grid;
+  gap: 4px;
+}
+
+.app__partners-name {
+  font-weight: 600;
+  color: #eef2ff;
+  display: block;
+}
+
+.app__partners-location {
+  display: block;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
 .app__partners-visual {
   position: relative;
   border-radius: 24px;
