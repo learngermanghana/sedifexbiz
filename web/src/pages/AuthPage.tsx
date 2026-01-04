@@ -191,6 +191,30 @@ function extractFeedText(element: Element, tagName: string): string {
   return element.getElementsByTagName(tagName)[0]?.textContent?.trim() ?? ''
 }
 
+function extractFeedLink(element: Element): string {
+  const linkNode = element.getElementsByTagName('link')[0]
+  if (!linkNode) return ''
+  const href = linkNode.getAttribute('href')
+  return (href || linkNode.textContent || '').trim()
+}
+
+function extractFeedDate(element: Element): string {
+  return (
+    extractFeedText(element, 'pubDate') ||
+    extractFeedText(element, 'published') ||
+    extractFeedText(element, 'updated')
+  )
+}
+
+function extractFeedSummary(element: Element): string {
+  return (
+    extractFeedText(element, 'description') ||
+    extractFeedText(element, 'content:encoded') ||
+    extractFeedText(element, 'summary') ||
+    extractFeedText(element, 'content')
+  )
+}
+
 function extractImageFromFeed(item: Element): string | null {
   const mediaContent = item.getElementsByTagName('media:content')[0]
   const mediaContentUrl = mediaContent?.getAttribute('url')
@@ -404,14 +428,15 @@ export default function AuthPage() {
         }
 
         const items = Array.from(doc.getElementsByTagName('item'))
-        const posts = items
+        const entries = Array.from(doc.getElementsByTagName('entry'))
+        const rawPosts = items.length ? items : entries
+
+        const posts = rawPosts
           .map(item => {
             const title = extractFeedText(item, 'title') || 'Sedifex update'
-            const link = extractFeedText(item, 'link')
-            const publishedRaw = extractFeedText(item, 'pubDate')
-            const description =
-              extractFeedText(item, 'description') ||
-              extractFeedText(item, 'content:encoded')
+            const link = extractFeedLink(item)
+            const publishedRaw = extractFeedDate(item)
+            const description = extractFeedSummary(item)
             const excerpt = clampExcerpt(stripHtml(description), 160)
 
             return {
