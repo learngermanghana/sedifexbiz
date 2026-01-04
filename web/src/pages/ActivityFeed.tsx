@@ -33,6 +33,8 @@ type Activity = {
   receipt: ReceiptPayload | null
 }
 
+type ReceiptTender = NonNullable<ReceiptPayload['tenders']>[number]
+
 const BASE_URL = import.meta.env.BASE_URL.endsWith('/')
   ? import.meta.env.BASE_URL
   : `${import.meta.env.BASE_URL}/`
@@ -97,6 +99,21 @@ function toReceiptPayload(value: any): ReceiptPayload | null {
     total: Number(totalsRaw.total) || 0,
   }
 
+  const tenders = Array.isArray(value.tenders)
+    ? value.tenders
+        .map((tender: any): ReceiptTender | null => {
+          const method: PaymentMethod =
+            tender?.method === 'card' ||
+            tender?.method === 'mobile_money' ||
+            tender?.method === 'transfer'
+              ? tender.method
+              : 'cash'
+          const amount = Number(tender?.amount) || 0
+          return { method, amount }
+        })
+        .filter(tender => tender.amount > 0)
+    : undefined
+
   const paymentMethod: PaymentMethod =
     value.paymentMethod === 'card' ||
     value.paymentMethod === 'mobile_money' ||
@@ -113,6 +130,7 @@ function toReceiptPayload(value: any): ReceiptPayload | null {
     items,
     totals,
     paymentMethod,
+    tenders,
     discountInput,
     companyName,
     customerName,
@@ -139,6 +157,24 @@ function buildCsvValue(value: string) {
   const needsQuotes = value.includes(',') || value.includes('"') || value.includes('\n')
   if (!needsQuotes) return value
   return `"${value.replace(/"/g, '""')}"`
+}
+
+function formatCurrency(amount: number | null | undefined): string {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return 'GHS 0.00'
+  return `GHS ${amount.toFixed(2)}`
+}
+
+function formatPaymentLabel(receipt: ReceiptPayload) {
+  if (receipt.tenders && receipt.tenders.length > 1) {
+    return receipt.tenders
+      .map(tender => `${tender.method.replace('_', ' ')} (${formatCurrency(tender.amount)})`)
+      .join(' + ')
+  }
+  return receipt.paymentMethod.replace('_', ' ')
+}
+
+function countReceiptItems(items: ReceiptPayload['items']) {
+  return items.reduce((sum, item) => sum + item.qty, 0)
 }
 
 function mapActivitySnapshot(
@@ -373,8 +409,12 @@ export default function ActivityFeed() {
     window.URL.revokeObjectURL(built.url)
   }
 
-  const renderActivityCard = (activity: Activity) => (
-    <article key={activity.id} className="activity-item">
+  const renderActivityCard = (activity: Activity) => {
+    const itemCount =
+      activity.type === 'sale' && activity.receipt ? countReceiptItems(activity.receipt.items) : 0
+
+    return (
+      <article key={activity.id} className="activity-item">
       <div className="activity-type" style={{ color: TYPE_COLORS[activity.type] }}>
         <span
           className="activity-type__dot"
@@ -390,6 +430,19 @@ export default function ActivityFeed() {
         <p className="activity-detail">{activity.detail}</p>
         <div className="activity-meta">By {activity.actor}</div>
         {activity.type === 'sale' && activity.receipt && (
+          <div className="activity-sale-meta">
+            <span className="activity-sale-meta__item">
+              Payment: {formatPaymentLabel(activity.receipt)}
+            </span>
+            <span className="activity-sale-meta__item">
+              {itemCount} item{itemCount === 1 ? '' : 's'}
+            </span>
+            <span className="activity-sale-meta__item">
+              Total: {formatCurrency(activity.receipt.totals.total)}
+            </span>
+          </div>
+        )}
+        {activity.type === 'sale' && activity.receipt && (
           <div className="activity-actions-row">
             <button
               type="button"
@@ -402,7 +455,8 @@ export default function ActivityFeed() {
         )}
       </div>
     </article>
-  )
+    )
+  }
 
   const VirtualizedActivityRow = ({ index, style, data }: ListChildComponentProps<Activity[]>) => {
     const activity = data[index]
