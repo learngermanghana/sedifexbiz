@@ -115,6 +115,27 @@
 }
 
 /* ======================
+   Cart inputs
+   ====================== */
+
+.sell-page__qty-input,
+.sell-page__price-input {
+  width: 100%;
+  max-width: 110px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.sell-page__price-input--error {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+/* ======================
    Customer selection
    ====================== */
 

@@ -257,6 +257,7 @@ export default function Sell() {
   const [searchText, setSearchText] = useState('')
   const [cart, setCart] = useState<CartLine[]>([])
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>({})
+  const [priceInputs, setPriceInputs] = useState<Record<string, string>>({})
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
   const [amountPaidInput, setAmountPaidInput] = useState('')
   const [additionalTenders, setAdditionalTenders] = useState<{ id: string; method: PaymentMethod; amount: string }[]>([])
@@ -933,10 +934,14 @@ export default function Sell() {
       return
     }
 
-    addProductToCart(found, 1)
+    const result = addProductToCart(found, 1)
+    if (!result?.ok) return
+    const needsPriceMessage = result.needsPrice ? ' Add the price in the cart before saving.' : ''
     setScanStatus({
       type: 'success',
-      message: source === 'keyboard' ? `Added "${found.name}" via the scanner.` : `Added "${found.name}" to the cart.`,
+      message:
+        (source === 'keyboard' ? `Added "${found.name}" via the scanner.` : `Added "${found.name}" to the cart.`) +
+        needsPriceMessage,
     })
   }
 
@@ -1042,6 +1047,21 @@ export default function Sell() {
     })
   }, [cart])
 
+  useEffect(() => {
+    setPriceInputs(prev => {
+      const next: Record<string, string> = {}
+      cart.forEach(line => {
+        const prevValue = prev[line.productId]
+        if (prevValue === '') {
+          next[line.productId] = ''
+          return
+        }
+        next[line.productId] = line.price > 0 ? String(line.price) : ''
+      })
+      return next
+    })
+  }, [cart])
+
   function handleCloseCameraClick() {
     setIsCameraOpen(false)
     scannerControlsRef.current?.stop()
@@ -1049,9 +1069,12 @@ export default function Sell() {
   }
 
   function addProductToCart(product: Product, qty: number = 1) {
-    if (!product.price || product.price < 0) {
+    const hasValidPrice = typeof product.price === 'number' && Number.isFinite(product.price) && product.price > 0
+    const canSetPriceAtCheckout = product.itemType === 'service'
+
+    if (!hasValidPrice && !canSetPriceAtCheckout) {
       setScanStatus({ type: 'error', message: `This item has no price. Set a price on the Items page first.` })
-      return
+      return { ok: false, needsPrice: false }
     }
 
     setCart(prev => {
@@ -1061,19 +1084,22 @@ export default function Sell() {
         next[existingIndex] = { ...next[existingIndex], qty: next[existingIndex].qty + qty }
         return next
       }
+      const priceToUse = hasValidPrice ? product.price ?? 0 : 0
       return [
         ...prev,
         {
           productId: product.id,
           name: product.name,
           qty,
-          price: product.price,
+          price: priceToUse,
           taxRate: product.taxRate || 0,
           itemType: product.itemType,
           metadata: buildProductMetadata(product),
         },
       ]
     })
+
+    return { ok: true, needsPrice: !hasValidPrice && canSetPriceAtCheckout }
   }
 
   function updateCartQty(productId: string, qty: number) {
@@ -1082,8 +1108,16 @@ export default function Sell() {
     )
   }
 
+  function updateCartPrice(productId: string, price: number) {
+    setCart(prev => prev.map(line => (line.productId === productId ? { ...line, price } : line)))
+  }
+
   function syncQtyInput(productId: string, qty: number) {
     setQtyInputs(prev => ({ ...prev, [productId]: String(qty) }))
+  }
+
+  function syncPriceInput(productId: string, price: number) {
+    setPriceInputs(prev => ({ ...prev, [productId]: price > 0 ? String(price) : '' }))
   }
 
   function handleQtyChange(productId: string, nextValue: string) {
@@ -1092,6 +1126,14 @@ export default function Sell() {
     const nextQty = Number(nextValue)
     if (!Number.isFinite(nextQty) || nextQty <= 0) return
     updateCartQty(productId, Math.floor(nextQty))
+  }
+
+  function handlePriceChange(productId: string, nextValue: string) {
+    setPriceInputs(prev => ({ ...prev, [productId]: nextValue }))
+    if (nextValue.trim() === '') return
+    const nextPrice = Number(nextValue)
+    if (!Number.isFinite(nextPrice) || nextPrice < 0) return
+    updateCartPrice(productId, nextPrice)
   }
 
   function removeCartLine(productId: string) {
@@ -1443,6 +1485,9 @@ export default function Sell() {
     if (taxError) return setErrorMessage('Please fix the VAT field before saving.')
     if (discountError) return setErrorMessage('Please fix the discount field before saving.')
     if (customerMode === 'named' && !customerNameInput.trim()) return setErrorMessage('Enter or choose a customer name.')
+    if (cart.some(line => !Number.isFinite(line.price) || line.price <= 0)) {
+      return setErrorMessage('Enter a valid price for every item before saving.')
+    }
 
     setIsSaving(true)
     try {
@@ -1685,7 +1730,9 @@ export default function Sell() {
           <div className="sell-page__product-list">
             {filteredProducts.length ? (
               filteredProducts.map(p => {
-                const isUnavailable = typeof p.price !== 'number' || !Number.isFinite(p.price) || p.price <= 0
+                const hasValidPrice = typeof p.price === 'number' && Number.isFinite(p.price) && p.price > 0
+                const canSetPriceAtCheckout = p.itemType === 'service'
+                const isUnavailable = !hasValidPrice && !canSetPriceAtCheckout
                 return (
                   <button
                     key={p.id}
@@ -1702,10 +1749,12 @@ export default function Sell() {
                       </div>
                     </div>
                     <div className="sell-page__product-price">
-                      {isUnavailable ? (
-                        <span style={{ color: '#b91c1c', fontSize: 12 }}>Price unavailable – set price to sell</span>
-                      ) : (
+                      {hasValidPrice ? (
                         formatCurrency(p.price)
+                      ) : canSetPriceAtCheckout ? (
+                        <span style={{ color: '#4b5563', fontSize: 12 }}>Set price at checkout</span>
+                      ) : (
+                        <span style={{ color: '#b91c1c', fontSize: 12 }}>Price unavailable – set price to sell</span>
                       )}
                     </div>
                   </button>
@@ -1739,6 +1788,8 @@ export default function Sell() {
                   {cart.map(line => {
                     const lineTotal = line.price * line.qty
                     const qtyValue = qtyInputs[line.productId] ?? String(line.qty)
+                    const priceValue = priceInputs[line.productId] ?? (line.price > 0 ? String(line.price) : '')
+                    const showPriceInput = line.itemType === 'service'
                     return (
                       <tr key={line.productId}>
                         <td>{line.name}</td>
@@ -1753,7 +1804,24 @@ export default function Sell() {
                             className="sell-page__qty-input"
                           />
                         </td>
-                        <td>{formatCurrency(line.price)}</td>
+                        <td>
+                          {showPriceInput ? (
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={priceValue}
+                              onChange={e => handlePriceChange(line.productId, e.target.value)}
+                              onBlur={() => syncPriceInput(line.productId, line.price)}
+                              className={
+                                'sell-page__price-input' + (line.price <= 0 ? ' sell-page__price-input--error' : '')
+                              }
+                              placeholder="Enter price"
+                            />
+                          ) : (
+                            formatCurrency(line.price)
+                          )}
+                        </td>
                         <td>{formatCurrency(lineTotal)}</td>
                         <td>
                           <button
