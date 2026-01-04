@@ -1,6 +1,9 @@
 import React, { useMemo, useState } from 'react'
+import { collection, getDocs, query, where } from 'firebase/firestore'
 import PageSection from '../layout/PageSection'
 import './DataTransfer.css'
+import { db } from '../firebase'
+import { useActiveStore } from '../hooks/useActiveStore'
 
 // NEW: Microsoft Graph helpers
 import {
@@ -18,8 +21,17 @@ type HeaderSpec = {
   description: string
 }
 
+function buildCsvValue(value: string) {
+  const needsQuotes = value.includes(',') || value.includes('"') || value.includes('\n')
+  if (!needsQuotes) return value
+  return `"${value.replace(/"/g, '""')}"`
+}
+
 function buildCsv(headers: string[], rows: string[][]) {
-  return [headers.join(','), ...rows.map(row => row.join(','))].join('\n')
+  return [
+    headers.map(buildCsvValue).join(','),
+    ...rows.map(row => row.map(buildCsvValue).join(',')),
+  ].join('\n')
 }
 
 function downloadCsv(filename: string, content: string) {
@@ -44,14 +56,61 @@ function buildCsvFromRows(headers: string[], rows: string[][]) {
   return buildCsv(normalizedHeaders ?? [], rows)
 }
 
+function normalizeText(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  return value.trim()
+}
+
+function normalizeNumber(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+  if (typeof value === 'string' && value.trim().length) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function normalizeDate(value: unknown): Date | null {
+  if (!value) return null
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+  if (typeof value === 'object' && typeof (value as { toDate?: () => Date }).toDate === 'function') {
+    const parsed = (value as { toDate: () => Date }).toDate()
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+  return null
+}
+
+function formatDateForCsv(value: unknown): string {
+  const parsed = normalizeDate(value)
+  return parsed ? parsed.toISOString().slice(0, 10) : ''
+}
+
+function formatTaxRate(value: unknown): string {
+  const parsed = normalizeNumber(value)
+  if (parsed === null) return ''
+  if (parsed > 1) return `${parsed}`
+  return `${(parsed * 100).toString()}`
+}
+
 export default function DataTransfer() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const { storeId: activeStoreId, isLoading: isStoreLoading } = useActiveStore()
 
   // NEW: loading flags for Excel exports
   const [isItemsExcelExporting, setIsItemsExcelExporting] = useState(false)
   const [isCustomersExcelExporting, setIsCustomersExcelExporting] = useState(false)
   const [isItemsExcelImporting, setIsItemsExcelImporting] = useState(false)
   const [isCustomersExcelImporting, setIsCustomersExcelImporting] = useState(false)
+  const [isItemsCsvExporting, setIsItemsCsvExporting] = useState(false)
+  const [isCustomersCsvExporting, setIsCustomersCsvExporting] = useState(false)
 
   const itemRequired: HeaderSpec[] = [
     { key: 'name', description: 'Item name as it appears on receipts.' },
@@ -140,6 +199,139 @@ export default function DataTransfer() {
       ),
     [],
   )
+
+  async function handleDownloadItemsCsv() {
+    try {
+      setIsItemsCsvExporting(true)
+
+      if (isStoreLoading) {
+        alert('Loading your store data. Please try again in a moment.')
+        return
+      }
+      if (!activeStoreId) {
+        alert('Select a store before downloading items.')
+        return
+      }
+
+      const snapshot = await getDocs(
+        query(collection(db, 'products'), where('storeId', '==', activeStoreId)),
+      )
+      const rows = snapshot.docs.map(docSnap => {
+        const data = docSnap.data() as Record<string, unknown>
+        const name = normalizeText(data.name)
+        const sku = normalizeText(data.sku)
+        const barcode = normalizeText(data.barcode ?? data.sku)
+        const price = normalizeNumber(data.price)
+        const stockCount = normalizeNumber(data.stockCount)
+        const reorderPoint = normalizeNumber(
+          data.reorderPoint ?? data.reorderLevel ?? (data as any).reorderThreshold,
+        )
+        const itemType =
+          data.itemType === 'service'
+            ? 'service'
+            : data.itemType === 'made_to_order'
+              ? 'made_to_order'
+              : 'product'
+        const taxRate = formatTaxRate(data.taxRate)
+        const expiryDate = formatDateForCsv(data.expiryDate)
+        const manufacturerName = normalizeText(data.manufacturerName)
+        const productionDate = formatDateForCsv(data.productionDate)
+        const batchNumber = normalizeText(data.batchNumber)
+        const showOnReceipt =
+          data.showOnReceipt === true ? 'true' : data.showOnReceipt === false ? 'false' : ''
+
+        return [
+          name,
+          sku,
+          barcode,
+          price === null ? '' : price.toString(),
+          stockCount === null ? '' : stockCount.toString(),
+          reorderPoint === null ? '' : reorderPoint.toString(),
+          itemType,
+          taxRate,
+          expiryDate,
+          manufacturerName,
+          productionDate,
+          batchNumber,
+          showOnReceipt,
+        ]
+      })
+
+      if (!rows.length) {
+        alert('No items found to export.')
+        return
+      }
+
+      const headers = [
+        'name',
+        'sku',
+        'barcode',
+        'price',
+        'stock_count',
+        'reorder_point',
+        'item_type',
+        'tax_rate',
+        'expiry_date',
+        'manufacturer_name',
+        'production_date',
+        'batch_number',
+        'show_on_receipt',
+      ]
+      downloadCsv('sedifex-items-export.csv', buildCsv(headers, rows))
+    } catch (error) {
+      console.error('Failed to export items CSV', error)
+      alert('Failed to export items CSV. Please check the console for details.')
+    } finally {
+      setIsItemsCsvExporting(false)
+    }
+  }
+
+  async function handleDownloadCustomersCsv() {
+    try {
+      setIsCustomersCsvExporting(true)
+
+      if (isStoreLoading) {
+        alert('Loading your store data. Please try again in a moment.')
+        return
+      }
+      if (!activeStoreId) {
+        alert('Select a store before downloading customers.')
+        return
+      }
+
+      const snapshot = await getDocs(
+        query(collection(db, 'customers'), where('storeId', '==', activeStoreId)),
+      )
+
+      const rows = snapshot.docs.map(docSnap => {
+        const data = docSnap.data() as Record<string, unknown>
+        const displayName = normalizeText(data.displayName)
+        const name = normalizeText(data.name) || displayName
+        const phone = normalizeText(data.phone)
+        const email = normalizeText(data.email)
+        const birthdate = formatDateForCsv(data.birthdate)
+        const notes = normalizeText(data.notes)
+        const tags = Array.isArray(data.tags)
+          ? data.tags.map(tag => normalizeText(tag)).filter(Boolean).join(', ')
+          : ''
+
+        return [name, displayName, phone, email, birthdate, notes, tags]
+      })
+
+      if (!rows.length) {
+        alert('No customers found to export.')
+        return
+      }
+
+      const headers = ['name', 'display_name', 'phone', 'email', 'birthdate', 'notes', 'tags']
+      downloadCsv('sedifex-customers-export.csv', buildCsv(headers, rows))
+    } catch (error) {
+      console.error('Failed to export customers CSV', error)
+      alert('Failed to export customers CSV. Please check the console for details.')
+    } finally {
+      setIsCustomersCsvExporting(false)
+    }
+  }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null
@@ -371,16 +563,18 @@ export default function DataTransfer() {
             <button
               type="button"
               className="button button--primary"
-              onClick={() => downloadCsv('sedifex-items-export.csv', itemTemplate)}
+              onClick={handleDownloadItemsCsv}
+              disabled={isItemsCsvExporting}
             >
-              Download items CSV
+              {isItemsCsvExporting ? 'Downloading items CSV…' : 'Download items CSV'}
             </button>
             <button
               type="button"
               className="button button--primary"
-              onClick={() => downloadCsv('sedifex-customers-export.csv', customerTemplate)}
+              onClick={handleDownloadCustomersCsv}
+              disabled={isCustomersCsvExporting}
             >
-              Download customers CSV
+              {isCustomersCsvExporting ? 'Downloading customers CSV…' : 'Download customers CSV'}
             </button>
 
             {/* NEW: Excel export buttons */}
