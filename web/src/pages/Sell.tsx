@@ -545,7 +545,11 @@ export default function Sell() {
       setCustomerPhoneInput('')
       setCustomerSearchTerm('')
       setSelectedCustomerId(null)
-    } else if (customerMode === 'named' && customerNameInput) {
+    }
+  }, [customerMode])
+
+  useEffect(() => {
+    if (customerMode === 'named' && customerNameInput) {
       setCustomerSearchTerm(customerNameInput)
     }
   }, [customerMode, customerNameInput])
