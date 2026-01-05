@@ -29,6 +29,13 @@ type CsvHeaderValidation = {
   error?: string
 }
 
+type ActionStatusTone = 'info' | 'success' | 'error'
+
+type ActionStatus = {
+  tone: ActionStatusTone
+  message: string
+}
+
 const ITEM_REQUIRED_HEADERS: HeaderSpec[] = [
   { key: 'name', description: 'Item name as it appears on receipts.' },
   { key: 'price', description: 'Selling price (number). Example: 25.5' },
@@ -187,6 +194,14 @@ export default function DataTransfer() {
   const [isCustomersCsvExporting, setIsCustomersCsvExporting] = useState(false)
   const [isItemsCsvImporting, setIsItemsCsvImporting] = useState(false)
   const [isCustomersCsvImporting, setIsCustomersCsvImporting] = useState(false)
+  const [itemsCsvExportStatus, setItemsCsvExportStatus] = useState<ActionStatus | null>(null)
+  const [customersCsvExportStatus, setCustomersCsvExportStatus] = useState<ActionStatus | null>(null)
+  const [itemsCsvImportStatus, setItemsCsvImportStatus] = useState<ActionStatus | null>(null)
+  const [customersCsvImportStatus, setCustomersCsvImportStatus] = useState<ActionStatus | null>(null)
+  const [itemsExcelExportStatus, setItemsExcelExportStatus] = useState<ActionStatus | null>(null)
+  const [customersExcelExportStatus, setCustomersExcelExportStatus] = useState<ActionStatus | null>(null)
+  const [itemsExcelImportStatus, setItemsExcelImportStatus] = useState<ActionStatus | null>(null)
+  const [customersExcelImportStatus, setCustomersExcelImportStatus] = useState<ActionStatus | null>(null)
 
   const itemRequired = ITEM_REQUIRED_HEADERS
   const itemOptional = ITEM_OPTIONAL_HEADERS
@@ -319,13 +334,20 @@ export default function DataTransfer() {
   async function handleDownloadItemsCsv() {
     try {
       setIsItemsCsvExporting(true)
+      setItemsCsvExportStatus({ tone: 'info', message: 'Exporting items CSV…' })
 
       if (isStoreLoading) {
-        alert('Loading your store data. Please try again in a moment.')
+        setItemsCsvExportStatus({
+          tone: 'error',
+          message: 'Loading your store data. Please try again in a moment.',
+        })
         return
       }
       if (!activeStoreId) {
-        alert('Select a store before downloading items.')
+        setItemsCsvExportStatus({
+          tone: 'error',
+          message: 'Select a store before downloading items.',
+        })
         return
       }
 
@@ -374,7 +396,7 @@ export default function DataTransfer() {
       })
 
       if (!rows.length) {
-        alert('No items found to export.')
+        setItemsCsvExportStatus({ tone: 'info', message: 'No items found to export.' })
         return
       }
 
@@ -394,9 +416,13 @@ export default function DataTransfer() {
         'show_on_receipt',
       ]
       downloadCsv('sedifex-items-export.csv', buildCsv(headers, rows))
+      setItemsCsvExportStatus({ tone: 'success', message: 'Items CSV downloaded.' })
     } catch (error) {
       console.error('Failed to export items CSV', error)
-      alert('Failed to export items CSV. Please check the console for details.')
+      setItemsCsvExportStatus({
+        tone: 'error',
+        message: 'Failed to export items CSV. Please check the console for details.',
+      })
     } finally {
       setIsItemsCsvExporting(false)
     }
@@ -405,13 +431,20 @@ export default function DataTransfer() {
   async function handleDownloadCustomersCsv() {
     try {
       setIsCustomersCsvExporting(true)
+      setCustomersCsvExportStatus({ tone: 'info', message: 'Exporting customers CSV…' })
 
       if (isStoreLoading) {
-        alert('Loading your store data. Please try again in a moment.')
+        setCustomersCsvExportStatus({
+          tone: 'error',
+          message: 'Loading your store data. Please try again in a moment.',
+        })
         return
       }
       if (!activeStoreId) {
-        alert('Select a store before downloading customers.')
+        setCustomersCsvExportStatus({
+          tone: 'error',
+          message: 'Select a store before downloading customers.',
+        })
         return
       }
 
@@ -435,15 +468,19 @@ export default function DataTransfer() {
       })
 
       if (!rows.length) {
-        alert('No customers found to export.')
+        setCustomersCsvExportStatus({ tone: 'info', message: 'No customers found to export.' })
         return
       }
 
       const headers = ['name', 'display_name', 'phone', 'email', 'birthdate', 'notes', 'tags']
       downloadCsv('sedifex-customers-export.csv', buildCsv(headers, rows))
+      setCustomersCsvExportStatus({ tone: 'success', message: 'Customers CSV downloaded.' })
     } catch (error) {
       console.error('Failed to export customers CSV', error)
-      alert('Failed to export customers CSV. Please check the console for details.')
+      setCustomersCsvExportStatus({
+        tone: 'error',
+        message: 'Failed to export customers CSV. Please check the console for details.',
+      })
     } finally {
       setIsCustomersCsvExporting(false)
     }
@@ -464,20 +501,30 @@ export default function DataTransfer() {
 
   async function handleImportItemsFromCsv() {
     if (!selectedFile) {
-      alert('Choose a CSV file before importing items.')
+      setItemsCsvImportStatus({
+        tone: 'error',
+        message: 'Choose a CSV file before importing items.',
+      })
       return
     }
     if (isStoreLoading) {
-      alert('Loading your store data. Please try again in a moment.')
+      setItemsCsvImportStatus({
+        tone: 'error',
+        message: 'Loading your store data. Please try again in a moment.',
+      })
       return
     }
     if (!activeStoreId) {
-      alert('Select a store before importing items.')
+      setItemsCsvImportStatus({
+        tone: 'error',
+        message: 'Select a store before importing items.',
+      })
       return
     }
 
     try {
       setIsItemsCsvImporting(true)
+      setItemsCsvImportStatus({ tone: 'info', message: 'Importing items from CSV…' })
       const text = await selectedFile.text()
       const rows = csvToRows(text)
       if (!rows.length) {
@@ -559,17 +606,22 @@ export default function DataTransfer() {
         throw new Error('No valid item rows were found in this file.')
       }
 
-      alert(
-        `Imported ${importedCount} items${skippedCount ? ` (${skippedCount} skipped).` : '.'}`,
-      )
+      setItemsCsvImportStatus({
+        tone: 'success',
+        message: `Imported ${importedCount} items${
+          skippedCount ? ` (${skippedCount} skipped).` : '.'
+        }`,
+      })
       clearSelectedFile()
     } catch (error) {
       console.error('Failed to import items CSV', error)
-      alert(
-        error instanceof Error
-          ? error.message
-          : 'Failed to import items CSV. Please check the console for details.',
-      )
+      setItemsCsvImportStatus({
+        tone: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to import items CSV. Please check the console for details.',
+      })
     } finally {
       setIsItemsCsvImporting(false)
     }
@@ -577,20 +629,30 @@ export default function DataTransfer() {
 
   async function handleImportCustomersFromCsv() {
     if (!selectedFile) {
-      alert('Choose a CSV file before importing customers.')
+      setCustomersCsvImportStatus({
+        tone: 'error',
+        message: 'Choose a CSV file before importing customers.',
+      })
       return
     }
     if (isStoreLoading) {
-      alert('Loading your store data. Please try again in a moment.')
+      setCustomersCsvImportStatus({
+        tone: 'error',
+        message: 'Loading your store data. Please try again in a moment.',
+      })
       return
     }
     if (!activeStoreId) {
-      alert('Select a store before importing customers.')
+      setCustomersCsvImportStatus({
+        tone: 'error',
+        message: 'Select a store before importing customers.',
+      })
       return
     }
 
     try {
       setIsCustomersCsvImporting(true)
+      setCustomersCsvImportStatus({ tone: 'info', message: 'Importing customers from CSV…' })
       const text = await selectedFile.text()
       const rows = csvToRows(text)
       if (!rows.length) {
@@ -647,19 +709,22 @@ export default function DataTransfer() {
         throw new Error('No valid customer rows were found in this file.')
       }
 
-      alert(
-        `Imported ${importedCount} customers${
+      setCustomersCsvImportStatus({
+        tone: 'success',
+        message: `Imported ${importedCount} customers${
           skippedCount ? ` (${skippedCount} skipped).` : '.'
         }`,
-      )
+      })
       clearSelectedFile()
     } catch (error) {
       console.error('Failed to import customers CSV', error)
-      alert(
-        error instanceof Error
-          ? error.message
-          : 'Failed to import customers CSV. Please check the console for details.',
-      )
+      setCustomersCsvImportStatus({
+        tone: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to import customers CSV. Please check the console for details.',
+      })
     } finally {
       setIsCustomersCsvImporting(false)
     }
@@ -669,10 +734,12 @@ export default function DataTransfer() {
   async function handleExportItemsToExcel() {
     try {
       setIsItemsExcelExporting(true)
+      setItemsExcelExportStatus({ tone: 'info', message: 'Exporting items to Excel…' })
 
       // 1) Ensure Microsoft sign-in
       const account = await signInWithMicrosoft()
       if (!account) {
+        setItemsExcelExportStatus({ tone: 'info', message: 'Microsoft sign-in canceled.' })
         // user cancelled or sign-in failed gracefully
         return
       }
@@ -682,7 +749,7 @@ export default function DataTransfer() {
 
       // 3) Convert CSV template to rows
       if (!itemTemplate || itemTemplate.trim().length === 0) {
-        alert('No item data available to export.')
+        setItemsExcelExportStatus({ tone: 'info', message: 'No item data available to export.' })
         return
       }
 
@@ -699,10 +766,16 @@ export default function DataTransfer() {
         headerRow ?? [],
       )
 
-      alert('Items exported to Excel in your OneDrive (sedifex-items.xlsx).')
+      setItemsExcelExportStatus({
+        tone: 'success',
+        message: 'Items exported to Excel in your OneDrive (sedifex-items.xlsx).',
+      })
     } catch (error) {
       console.error('Failed to export items to Excel', error)
-      alert('Failed to export items to Excel. Please check the console for details.')
+      setItemsExcelExportStatus({
+        tone: 'error',
+        message: 'Failed to export items to Excel. Please check the console for details.',
+      })
     } finally {
       setIsItemsExcelExporting(false)
     }
@@ -712,16 +785,24 @@ export default function DataTransfer() {
   async function handleExportCustomersToExcel() {
     try {
       setIsCustomersExcelExporting(true)
+      setCustomersExcelExportStatus({
+        tone: 'info',
+        message: 'Exporting customers to Excel…',
+      })
 
       const account = await signInWithMicrosoft()
       if (!account) {
+        setCustomersExcelExportStatus({ tone: 'info', message: 'Microsoft sign-in canceled.' })
         return
       }
 
       const token = await acquireGraphToken(['Files.ReadWrite.All', 'Sites.ReadWrite.All'])
 
       if (!customerTemplate || customerTemplate.trim().length === 0) {
-        alert('No customer data available to export.')
+        setCustomersExcelExportStatus({
+          tone: 'info',
+          message: 'No customer data available to export.',
+        })
         return
       }
 
@@ -737,10 +818,16 @@ export default function DataTransfer() {
         headerRow ?? [],
       )
 
-      alert('Customers exported to Excel in your OneDrive (sedifex-customers.xlsx).')
+      setCustomersExcelExportStatus({
+        tone: 'success',
+        message: 'Customers exported to Excel in your OneDrive (sedifex-customers.xlsx).',
+      })
     } catch (error) {
       console.error('Failed to export customers to Excel', error)
-      alert('Failed to export customers to Excel. Please check the console for details.')
+      setCustomersExcelExportStatus({
+        tone: 'error',
+        message: 'Failed to export customers to Excel. Please check the console for details.',
+      })
     } finally {
       setIsCustomersExcelExporting(false)
     }
@@ -749,9 +836,14 @@ export default function DataTransfer() {
   async function handleImportItemsFromExcel() {
     try {
       setIsItemsExcelImporting(true)
+      setItemsExcelImportStatus({
+        tone: 'info',
+        message: 'Fetching items from Excel…',
+      })
 
       const account = await signInWithMicrosoft()
       if (!account) {
+        setItemsExcelImportStatus({ tone: 'info', message: 'Microsoft sign-in canceled.' })
         return
       }
 
@@ -759,21 +851,33 @@ export default function DataTransfer() {
       const data = await fetchExcelTableRows(token, 'sedifex-items.xlsx', 'Table1')
 
       if (!data || data.headers.length === 0) {
-        alert('No items table found in sedifex-items.xlsx. Please export first.')
+        setItemsExcelImportStatus({
+          tone: 'info',
+          message: 'No items table found in sedifex-items.xlsx. Please export first.',
+        })
         return
       }
 
       const csv = buildCsvFromRows(data.headers, data.rows)
       if (!csv) {
-        alert('No items data found in sedifex-items.xlsx.')
+        setItemsExcelImportStatus({
+          tone: 'info',
+          message: 'No items data found in sedifex-items.xlsx.',
+        })
         return
       }
 
       downloadCsv('sedifex-items-import.csv', csv)
-      alert('Items downloaded from Excel. Upload the CSV to import.')
+      setItemsExcelImportStatus({
+        tone: 'success',
+        message: 'Items downloaded from Excel. Upload the CSV to import.',
+      })
     } catch (error) {
       console.error('Failed to import items from Excel', error)
-      alert('Failed to import items from Excel. Please check the console for details.')
+      setItemsExcelImportStatus({
+        tone: 'error',
+        message: 'Failed to import items from Excel. Please check the console for details.',
+      })
     } finally {
       setIsItemsExcelImporting(false)
     }
@@ -782,9 +886,14 @@ export default function DataTransfer() {
   async function handleImportCustomersFromExcel() {
     try {
       setIsCustomersExcelImporting(true)
+      setCustomersExcelImportStatus({
+        tone: 'info',
+        message: 'Fetching customers from Excel…',
+      })
 
       const account = await signInWithMicrosoft()
       if (!account) {
+        setCustomersExcelImportStatus({ tone: 'info', message: 'Microsoft sign-in canceled.' })
         return
       }
 
@@ -792,21 +901,33 @@ export default function DataTransfer() {
       const data = await fetchExcelTableRows(token, 'sedifex-customers.xlsx', 'Table1')
 
       if (!data || data.headers.length === 0) {
-        alert('No customers table found in sedifex-customers.xlsx. Please export first.')
+        setCustomersExcelImportStatus({
+          tone: 'info',
+          message: 'No customers table found in sedifex-customers.xlsx. Please export first.',
+        })
         return
       }
 
       const csv = buildCsvFromRows(data.headers, data.rows)
       if (!csv) {
-        alert('No customer data found in sedifex-customers.xlsx.')
+        setCustomersExcelImportStatus({
+          tone: 'info',
+          message: 'No customer data found in sedifex-customers.xlsx.',
+        })
         return
       }
 
       downloadCsv('sedifex-customers-import.csv', csv)
-      alert('Customers downloaded from Excel. Upload the CSV to import.')
+      setCustomersExcelImportStatus({
+        tone: 'success',
+        message: 'Customers downloaded from Excel. Upload the CSV to import.',
+      })
     } catch (error) {
       console.error('Failed to import customers from Excel', error)
-      alert('Failed to import customers from Excel. Please check the console for details.')
+      setCustomersExcelImportStatus({
+        tone: 'error',
+        message: 'Failed to import customers from Excel. Please check the console for details.',
+      })
     } finally {
       setIsCustomersExcelImporting(false)
     }
@@ -895,22 +1016,40 @@ export default function DataTransfer() {
               </div>
             )}
             <div className="data-transfer__actions data-transfer__actions--stacked">
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={handleImportItemsFromCsv}
-                disabled={!selectedFile || isItemsCsvImporting}
-              >
-                {isItemsCsvImporting ? 'Importing items…' : 'Import items from CSV'}
-              </button>
-              <button
-                type="button"
-                className="button button--primary"
-                onClick={handleImportCustomersFromCsv}
-                disabled={!selectedFile || isCustomersCsvImporting}
-              >
-                {isCustomersCsvImporting ? 'Importing customers…' : 'Import customers from CSV'}
-              </button>
+              <div className="data-transfer__action">
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={handleImportItemsFromCsv}
+                  disabled={!selectedFile || isItemsCsvImporting}
+                >
+                  {isItemsCsvImporting ? 'Importing items…' : 'Import items from CSV'}
+                </button>
+                {itemsCsvImportStatus && (
+                  <p
+                    className={`data-transfer__status data-transfer__status--${itemsCsvImportStatus.tone}`}
+                  >
+                    {itemsCsvImportStatus.message}
+                  </p>
+                )}
+              </div>
+              <div className="data-transfer__action">
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={handleImportCustomersFromCsv}
+                  disabled={!selectedFile || isCustomersCsvImporting}
+                >
+                  {isCustomersCsvImporting ? 'Importing customers…' : 'Import customers from CSV'}
+                </button>
+                {customersCsvImportStatus && (
+                  <p
+                    className={`data-transfer__status data-transfer__status--${customersCsvImportStatus.tone}`}
+                  >
+                    {customersCsvImportStatus.message}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
           <div className="data-transfer__section">
@@ -930,26 +1069,44 @@ export default function DataTransfer() {
               </li>
             </ol>
             <div className="data-transfer__actions data-transfer__actions--stacked">
-              <button
-                type="button"
-                className="button button--outline"
-                onClick={handleImportItemsFromExcel}
-                disabled={isItemsExcelImporting}
-              >
-                {isItemsExcelImporting
-                  ? 'Importing items from Excel…'
-                  : 'Import items from Excel (OneDrive)'}
-              </button>
-              <button
-                type="button"
-                className="button button--outline"
-                onClick={handleImportCustomersFromExcel}
-                disabled={isCustomersExcelImporting}
-              >
-                {isCustomersExcelImporting
-                  ? 'Importing customers from Excel…'
-                  : 'Import customers from Excel (OneDrive)'}
-              </button>
+              <div className="data-transfer__action">
+                <button
+                  type="button"
+                  className="button button--outline"
+                  onClick={handleImportItemsFromExcel}
+                  disabled={isItemsExcelImporting}
+                >
+                  {isItemsExcelImporting
+                    ? 'Importing items from Excel…'
+                    : 'Import items from Excel (OneDrive)'}
+                </button>
+                {itemsExcelImportStatus && (
+                  <p
+                    className={`data-transfer__status data-transfer__status--${itemsExcelImportStatus.tone}`}
+                  >
+                    {itemsExcelImportStatus.message}
+                  </p>
+                )}
+              </div>
+              <div className="data-transfer__action">
+                <button
+                  type="button"
+                  className="button button--outline"
+                  onClick={handleImportCustomersFromExcel}
+                  disabled={isCustomersExcelImporting}
+                >
+                  {isCustomersExcelImporting
+                    ? 'Importing customers from Excel…'
+                    : 'Import customers from Excel (OneDrive)'}
+                </button>
+                {customersExcelImportStatus && (
+                  <p
+                    className={`data-transfer__status data-transfer__status--${customersExcelImportStatus.tone}`}
+                  >
+                    {customersExcelImportStatus.message}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
         </section>
@@ -961,44 +1118,82 @@ export default function DataTransfer() {
           </p>
           <div className="data-transfer__actions data-transfer__actions--stacked">
             {/* Existing CSV downloads */}
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={handleDownloadItemsCsv}
-              disabled={isItemsCsvExporting}
-            >
-              {isItemsCsvExporting ? 'Downloading items CSV…' : 'Download items CSV'}
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={handleDownloadCustomersCsv}
-              disabled={isCustomersCsvExporting}
-            >
-              {isCustomersCsvExporting ? 'Downloading customers CSV…' : 'Download customers CSV'}
-            </button>
+            <div className="data-transfer__action">
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={handleDownloadItemsCsv}
+                disabled={isItemsCsvExporting}
+              >
+                {isItemsCsvExporting ? 'Downloading items CSV…' : 'Download items CSV'}
+              </button>
+              {itemsCsvExportStatus && (
+                <p
+                  className={`data-transfer__status data-transfer__status--${itemsCsvExportStatus.tone}`}
+                >
+                  {itemsCsvExportStatus.message}
+                </p>
+              )}
+            </div>
+            <div className="data-transfer__action">
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={handleDownloadCustomersCsv}
+                disabled={isCustomersCsvExporting}
+              >
+                {isCustomersCsvExporting
+                  ? 'Downloading customers CSV…'
+                  : 'Download customers CSV'}
+              </button>
+              {customersCsvExportStatus && (
+                <p
+                  className={`data-transfer__status data-transfer__status--${customersCsvExportStatus.tone}`}
+                >
+                  {customersCsvExportStatus.message}
+                </p>
+              )}
+            </div>
 
             {/* NEW: Excel export buttons */}
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={handleExportItemsToExcel}
-              disabled={isItemsExcelExporting}
-            >
-              {isItemsExcelExporting
-                ? 'Exporting items to Excel…'
-                : 'Export items to Excel (OneDrive)'}
-            </button>
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={handleExportCustomersToExcel}
-              disabled={isCustomersExcelExporting}
-            >
-              {isCustomersExcelExporting
-                ? 'Exporting customers to Excel…'
-                : 'Export customers to Excel (OneDrive)'}
-            </button>
+            <div className="data-transfer__action">
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={handleExportItemsToExcel}
+                disabled={isItemsExcelExporting}
+              >
+                {isItemsExcelExporting
+                  ? 'Exporting items to Excel…'
+                  : 'Export items to Excel (OneDrive)'}
+              </button>
+              {itemsExcelExportStatus && (
+                <p
+                  className={`data-transfer__status data-transfer__status--${itemsExcelExportStatus.tone}`}
+                >
+                  {itemsExcelExportStatus.message}
+                </p>
+              )}
+            </div>
+            <div className="data-transfer__action">
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={handleExportCustomersToExcel}
+                disabled={isCustomersExcelExporting}
+              >
+                {isCustomersExcelExporting
+                  ? 'Exporting customers to Excel…'
+                  : 'Export customers to Excel (OneDrive)'}
+              </button>
+              {customersExcelExportStatus && (
+                <p
+                  className={`data-transfer__status data-transfer__status--${customersExcelExportStatus.tone}`}
+                >
+                  {customersExcelExportStatus.message}
+                </p>
+              )}
+            </div>
           </div>
           <p className="data-transfer__hint">
             Tip: Keep headers lowercase with underscores exactly as shown.
