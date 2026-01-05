@@ -105,6 +105,29 @@
   align-items: flex-start;
 }
 
+.data-transfer__action {
+  display: grid;
+  gap: 6px;
+}
+
+.data-transfer__status {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.data-transfer__status--info {
+  color: #1f2937;
+}
+
+.data-transfer__status--success {
+  color: #047857;
+}
+
+.data-transfer__status--error {
+  color: #b91c1c;
+}
+
 .data-transfer__header-group {
   display: grid;
   gap: 20px;
