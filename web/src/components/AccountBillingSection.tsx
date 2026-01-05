@@ -38,6 +38,7 @@ export const AccountBillingSection: React.FC<Props> = ({
   const [loading, setLoading] = useState(false)
   const [upgradeLoading, setUpgradeLoading] = useState(false)
   const [cancelLoading, setCancelLoading] = useState(false)
+  const [cancelConfirming, setCancelConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cancelSuccess, setCancelSuccess] = useState(false)
 
@@ -142,7 +143,7 @@ export const AccountBillingSection: React.FC<Props> = ({
     }
   }
 
-  const handleCancelSubscription = async () => {
+  const beginCancelSubscription = () => {
     setError(null)
     setCancelSuccess(false)
 
@@ -151,10 +152,11 @@ export const AccountBillingSection: React.FC<Props> = ({
       return
     }
 
-    const confirmed = window.confirm(
-      'Cancel your Paystack subscription? You will not be charged again.',
-    )
-    if (!confirmed) return
+    setCancelConfirming(true)
+  }
+
+  const handleCancelSubscription = async () => {
+    setError(null)
 
     try {
       setCancelLoading(true)
@@ -164,6 +166,7 @@ export const AccountBillingSection: React.FC<Props> = ({
         return
       }
       setCancelSuccess(true)
+      setCancelConfirming(false)
     } catch (err) {
       console.error('Cancel subscription error', err)
       const message =
@@ -294,14 +297,35 @@ export const AccountBillingSection: React.FC<Props> = ({
               <p className="text-xs text-gray-600">
                 Cancelling stops future Paystack charges for this workspace.
               </p>
-              <button
-                type="button"
-                className="button button--secondary"
-                onClick={handleCancelSubscription}
-                disabled={cancelLoading}
-              >
-                {cancelLoading ? 'Canceling…' : 'Cancel subscription'}
-              </button>
+              {!cancelConfirming ? (
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={beginCancelSubscription}
+                  disabled={cancelLoading}
+                >
+                  {cancelLoading ? 'Canceling…' : 'Cancel subscription'}
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    onClick={handleCancelSubscription}
+                    disabled={cancelLoading}
+                  >
+                    {cancelLoading ? 'Canceling…' : 'Yes, cancel now'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--ghost"
+                    onClick={() => setCancelConfirming(false)}
+                    disabled={cancelLoading}
+                  >
+                    Keep subscription
+                  </button>
+                </div>
+              )}
               {cancelSuccess && (
                 <p className="text-xs text-green-700">
                   Subscription canceled. Paystack will not charge you again.
