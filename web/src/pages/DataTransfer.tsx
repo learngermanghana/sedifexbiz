@@ -744,79 +744,113 @@ export default function DataTransfer() {
           <p className="data-transfer__muted">
             Upload a CSV file with the headers below to migrate your items and customers.
           </p>
-          <div className="data-transfer__upload">
-            <input
-              className="data-transfer__file-input"
-              id="data-transfer-upload"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={handleFileChange}
-              ref={fileInputRef}
-            />
-            <label className="button button--outline" htmlFor="data-transfer-upload">
-              Choose CSV file
-            </label>
-            <span className="data-transfer__file-name">
-              {selectedFile ? selectedFile.name : 'No file selected'}
-            </span>
+          <div className="data-transfer__section">
+            <h4 className="data-transfer__section-title">CSV file import</h4>
+            <ol className="data-transfer__steps">
+              <li>
+                <span className="data-transfer__step-label">Step 1:</span>
+                Download the items or customers template.
+              </li>
+              <li>
+                <span className="data-transfer__step-label">Step 2:</span>
+                Fill in the CSV and upload it below.
+              </li>
+              <li>
+                <span className="data-transfer__step-label">Step 3:</span>
+                Import items or customers.
+              </li>
+            </ol>
+            <div className="data-transfer__actions">
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => downloadCsv('sedifex-items-import-template.csv', itemTemplate)}
+              >
+                Download items template
+              </button>
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() =>
+                  downloadCsv('sedifex-customers-import-template.csv', customerTemplate)
+                }
+              >
+                Download customers template
+              </button>
+            </div>
+            <div className="data-transfer__upload">
+              <input
+                className="data-transfer__file-input"
+                id="data-transfer-upload"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileChange}
+                ref={fileInputRef}
+              />
+              <label className="button button--outline" htmlFor="data-transfer-upload">
+                Choose CSV file
+              </label>
+              <span className="data-transfer__file-name">
+                {selectedFile ? selectedFile.name : 'No file selected'}
+              </span>
+            </div>
+            <div className="data-transfer__actions data-transfer__actions--stacked">
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={handleImportItemsFromCsv}
+                disabled={!selectedFile || isItemsCsvImporting}
+              >
+                {isItemsCsvImporting ? 'Importing items…' : 'Import items from CSV'}
+              </button>
+              <button
+                type="button"
+                className="button button--primary"
+                onClick={handleImportCustomersFromCsv}
+                disabled={!selectedFile || isCustomersCsvImporting}
+              >
+                {isCustomersCsvImporting ? 'Importing customers…' : 'Import customers from CSV'}
+              </button>
+            </div>
           </div>
-          <div className="data-transfer__actions">
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={() => downloadCsv('sedifex-items-import-template.csv', itemTemplate)}
-            >
-              Download items template
-            </button>
-            <button
-              type="button"
-              className="button button--ghost"
-              onClick={() =>
-                downloadCsv('sedifex-customers-import-template.csv', customerTemplate)
-              }
-            >
-              Download customers template
-            </button>
-          </div>
-          <div className="data-transfer__actions data-transfer__actions--stacked">
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={handleImportItemsFromCsv}
-              disabled={!selectedFile || isItemsCsvImporting}
-            >
-              {isItemsCsvImporting ? 'Importing items…' : 'Import items from CSV'}
-            </button>
-            <button
-              type="button"
-              className="button button--primary"
-              onClick={handleImportCustomersFromCsv}
-              disabled={!selectedFile || isCustomersCsvImporting}
-            >
-              {isCustomersCsvImporting ? 'Importing customers…' : 'Import customers from CSV'}
-            </button>
-          </div>
-          <div className="data-transfer__actions data-transfer__actions--stacked">
-            <button
-              type="button"
-              className="button button--outline"
-              onClick={handleImportItemsFromExcel}
-              disabled={isItemsExcelImporting}
-            >
-              {isItemsExcelImporting
-                ? 'Importing items from Excel…'
-                : 'Import items from Excel (OneDrive)'}
-            </button>
-            <button
-              type="button"
-              className="button button--outline"
-              onClick={handleImportCustomersFromExcel}
-              disabled={isCustomersExcelImporting}
-            >
-              {isCustomersExcelImporting
-                ? 'Importing customers from Excel…'
-                : 'Import customers from Excel (OneDrive)'}
-            </button>
+          <div className="data-transfer__section">
+            <h4 className="data-transfer__section-title">OneDrive Excel import</h4>
+            <ol className="data-transfer__steps">
+              <li>
+                <span className="data-transfer__step-label">Step 1:</span>
+                Pull the latest sedifex-items.xlsx or sedifex-customers.xlsx from OneDrive.
+              </li>
+              <li>
+                <span className="data-transfer__step-label">Step 2:</span>
+                Upload the downloaded CSV using the uploader above.
+              </li>
+              <li>
+                <span className="data-transfer__step-label">Step 3:</span>
+                Import the CSV with the buttons above.
+              </li>
+            </ol>
+            <div className="data-transfer__actions data-transfer__actions--stacked">
+              <button
+                type="button"
+                className="button button--outline"
+                onClick={handleImportItemsFromExcel}
+                disabled={isItemsExcelImporting}
+              >
+                {isItemsExcelImporting
+                  ? 'Importing items from Excel…'
+                  : 'Import items from Excel (OneDrive)'}
+              </button>
+              <button
+                type="button"
+                className="button button--outline"
+                onClick={handleImportCustomersFromExcel}
+                disabled={isCustomersExcelImporting}
+              >
+                {isCustomersExcelImporting
+                  ? 'Importing customers from Excel…'
+                  : 'Import customers from Excel (OneDrive)'}
+              </button>
+            </div>
           </div>
         </section>
 

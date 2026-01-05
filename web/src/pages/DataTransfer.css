@@ -33,6 +33,40 @@
   margin-top: 16px;
 }
 
+.data-transfer__section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.data-transfer__section:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.data-transfer__section-title {
+  font-size: 1rem;
+  margin: 0;
+  color: #111827;
+}
+
+.data-transfer__steps {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  gap: 8px;
+  color: #4b5563;
+  font-size: 0.95rem;
+}
+
+.data-transfer__step-label {
+  font-weight: 600;
+  color: #111827;
+  margin-right: 6px;
+}
+
 .data-transfer__file-input {
   display: none;
 }
