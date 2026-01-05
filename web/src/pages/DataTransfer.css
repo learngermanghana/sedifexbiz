@@ -33,6 +33,61 @@
   margin-top: 16px;
 }
 
+.data-transfer__header-summary {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  display: grid;
+  gap: 10px;
+}
+
+.data-transfer__header-summary-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.data-transfer__header-toggle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.data-transfer__header-toggle:hover,
+.data-transfer__header-toggle:focus {
+  text-decoration: underline;
+}
+
+.data-transfer__header-summary-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #4b5563;
+  align-items: center;
+}
+
+.data-transfer__header-summary-label {
+  font-weight: 600;
+  color: #111827;
+}
+
+.data-transfer__header-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .data-transfer__section {
   margin-top: 20px;
   padding-top: 20px;

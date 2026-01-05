@@ -978,6 +978,28 @@ export default function DataTransfer() {
                 Download customers template
               </button>
             </div>
+            <div className="data-transfer__header-summary">
+              <div className="data-transfer__header-summary-title">
+                <span>Required headers</span>
+                <a className="data-transfer__header-toggle" href="#data-transfer-guide">
+                  Show full headers
+                </a>
+              </div>
+              <div className="data-transfer__header-summary-list">
+                <span className="data-transfer__header-summary-label">Items:</span>
+                {itemRequired.map(header => (
+                  <span key={header.key} className="data-transfer__header-chip">
+                    {header.key}
+                  </span>
+                ))}
+                <span className="data-transfer__header-summary-label">Customers:</span>
+                {customerRequired.map(header => (
+                  <span key={header.key} className="data-transfer__header-chip">
+                    {header.key}
+                  </span>
+                ))}
+              </div>
+            </div>
             <div className="data-transfer__upload">
               <input
                 className="data-transfer__file-input"
@@ -1201,7 +1223,7 @@ export default function DataTransfer() {
         </section>
       </div>
 
-      <div className="data-transfer__guide">
+      <div className="data-transfer__guide" id="data-transfer-guide">
         <section className="card data-transfer__card">
           <h3>Items CSV headers</h3>
           <div className="data-transfer__header-group">
