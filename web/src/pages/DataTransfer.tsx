@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { addDoc, collection, getDocs, query, serverTimestamp, where } from 'firebase/firestore'
 import PageSection from '../layout/PageSection'
 import './DataTransfer.css'
@@ -22,6 +22,43 @@ type HeaderSpec = {
 }
 
 type CsvHeaderIndex = Record<string, number>
+
+type CsvHeaderValidation = {
+  itemsMissing: string[]
+  customersMissing: string[]
+  error?: string
+}
+
+const ITEM_REQUIRED_HEADERS: HeaderSpec[] = [
+  { key: 'name', description: 'Item name as it appears on receipts.' },
+  { key: 'price', description: 'Selling price (number). Example: 25.5' },
+]
+const ITEM_OPTIONAL_HEADERS: HeaderSpec[] = [
+  { key: 'sku', description: 'SKU or internal code.' },
+  { key: 'barcode', description: 'Barcode for scanning (letters + digits are supported).' },
+  { key: 'stock_count', description: 'Current stock quantity.' },
+  { key: 'reorder_point', description: 'Restock alert level.' },
+  { key: 'item_type', description: 'product, service, or made_to_order.' },
+  { key: 'tax_rate', description: 'Tax rate as 7.5 or 0.075.' },
+  { key: 'expiry_date', description: 'Use YYYY-MM-DD.' },
+  { key: 'manufacturer_name', description: 'Brand or manufacturer name.' },
+  { key: 'production_date', description: 'Use YYYY-MM-DD.' },
+  { key: 'batch_number', description: 'Batch or lot code.' },
+  { key: 'show_on_receipt', description: 'true or false.' },
+]
+const CUSTOMER_REQUIRED_HEADERS: HeaderSpec[] = [
+  { key: 'name', description: 'Primary customer name.' },
+]
+const CUSTOMER_OPTIONAL_HEADERS: HeaderSpec[] = [
+  { key: 'display_name', description: 'Preferred display name.' },
+  { key: 'phone', description: 'Phone number with country code if available.' },
+  { key: 'email', description: 'Customer email address.' },
+  { key: 'birthdate', description: 'Customer birthdate (YYYY-MM-DD).' },
+  { key: 'notes', description: 'Notes or preferences.' },
+  { key: 'tags', description: 'Comma-separated tags.' },
+]
+const ITEM_REQUIRED_KEYS = ITEM_REQUIRED_HEADERS.map(header => header.key)
+const CUSTOMER_REQUIRED_KEYS = CUSTOMER_REQUIRED_HEADERS.map(header => header.key)
 
 function parseTaxRateInput(value: string): number | null {
   const trimmed = value.trim()
@@ -137,6 +174,7 @@ function getRowValue(row: string[], headerIndex: CsvHeaderIndex, key: string) {
 
 export default function DataTransfer() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [headerValidation, setHeaderValidation] = useState<CsvHeaderValidation | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const { storeId: activeStoreId, isLoading: isStoreLoading } = useActiveStore()
 
@@ -150,35 +188,10 @@ export default function DataTransfer() {
   const [isItemsCsvImporting, setIsItemsCsvImporting] = useState(false)
   const [isCustomersCsvImporting, setIsCustomersCsvImporting] = useState(false)
 
-  const itemRequired: HeaderSpec[] = [
-    { key: 'name', description: 'Item name as it appears on receipts.' },
-    { key: 'price', description: 'Selling price (number). Example: 25.5' },
-  ]
-  const itemOptional: HeaderSpec[] = [
-    { key: 'sku', description: 'SKU or internal code.' },
-    { key: 'barcode', description: 'Barcode for scanning (letters + digits are supported).' },
-    { key: 'stock_count', description: 'Current stock quantity.' },
-    { key: 'reorder_point', description: 'Restock alert level.' },
-    { key: 'item_type', description: 'product, service, or made_to_order.' },
-    { key: 'tax_rate', description: 'Tax rate as 7.5 or 0.075.' },
-    { key: 'expiry_date', description: 'Use YYYY-MM-DD.' },
-    { key: 'manufacturer_name', description: 'Brand or manufacturer name.' },
-    { key: 'production_date', description: 'Use YYYY-MM-DD.' },
-    { key: 'batch_number', description: 'Batch or lot code.' },
-    { key: 'show_on_receipt', description: 'true or false.' },
-  ]
-
-  const customerRequired: HeaderSpec[] = [
-    { key: 'name', description: 'Primary customer name.' },
-  ]
-  const customerOptional: HeaderSpec[] = [
-    { key: 'display_name', description: 'Preferred display name.' },
-    { key: 'phone', description: 'Phone number with country code if available.' },
-    { key: 'email', description: 'Customer email address.' },
-    { key: 'birthdate', description: 'Customer birthdate (YYYY-MM-DD).' },
-    { key: 'notes', description: 'Notes or preferences.' },
-    { key: 'tags', description: 'Comma-separated tags.' },
-  ]
+  const itemRequired = ITEM_REQUIRED_HEADERS
+  const itemOptional = ITEM_OPTIONAL_HEADERS
+  const customerRequired = CUSTOMER_REQUIRED_HEADERS
+  const customerOptional = CUSTOMER_OPTIONAL_HEADERS
 
   const itemTemplate = useMemo(
     () =>
@@ -218,6 +231,71 @@ export default function DataTransfer() {
       ),
     [],
   )
+
+  const validationSummary = useMemo(() => {
+    if (!headerValidation || headerValidation.error) return null
+    const itemsValid = headerValidation.itemsMissing.length === 0
+    const customersValid = headerValidation.customersMissing.length === 0
+    if (itemsValid && customersValid) {
+      return 'Headers look good for items and customers.'
+    }
+    if (itemsValid) {
+      return 'Headers look good for items.'
+    }
+    if (customersValid) {
+      return 'Headers look good for customers.'
+    }
+    return null
+  }, [headerValidation])
+
+  useEffect(() => {
+    if (!selectedFile) {
+      setHeaderValidation(null)
+      return
+    }
+
+    let isActive = true
+
+    const validateHeaders = async () => {
+      try {
+        const text = await selectedFile.text()
+        const rows = csvToRows(text)
+        if (!rows.length) {
+          if (isActive) {
+            setHeaderValidation({
+              itemsMissing: [...ITEM_REQUIRED_KEYS],
+              customersMissing: [...CUSTOMER_REQUIRED_KEYS],
+              error: 'No rows detected in the CSV file.',
+            })
+          }
+          return
+        }
+
+        const [headerRow] = rows
+        const headerIndex = buildHeaderIndex(headerRow)
+        const itemsMissing = ITEM_REQUIRED_KEYS.filter(key => headerIndex[key] === undefined)
+        const customersMissing = CUSTOMER_REQUIRED_KEYS.filter(key => headerIndex[key] === undefined)
+
+        if (isActive) {
+          setHeaderValidation({ itemsMissing, customersMissing })
+        }
+      } catch (error) {
+        if (isActive) {
+          setHeaderValidation({
+            itemsMissing: [],
+            customersMissing: [],
+            error: 'Unable to read CSV headers.',
+          })
+        }
+      }
+    }
+
+    validateHeaders()
+
+    return () => {
+      isActive = false
+    }
+  }, [selectedFile])
 
   const customerTemplate = useMemo(
     () =>
@@ -378,6 +456,7 @@ export default function DataTransfer() {
 
   function clearSelectedFile() {
     setSelectedFile(null)
+    setHeaderValidation(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -794,6 +873,27 @@ export default function DataTransfer() {
                 {selectedFile ? selectedFile.name : 'No file selected'}
               </span>
             </div>
+            {headerValidation && (
+              <div className="data-transfer__validation">
+                {headerValidation.error && (
+                  <p className="data-transfer__validation-error">{headerValidation.error}</p>
+                )}
+                {!headerValidation.error && headerValidation.itemsMissing.length > 0 && (
+                  <p className="data-transfer__validation-error">
+                    Missing required item headers: {headerValidation.itemsMissing.join(', ')}.
+                  </p>
+                )}
+                {!headerValidation.error && headerValidation.customersMissing.length > 0 && (
+                  <p className="data-transfer__validation-error">
+                    Missing required customer headers:{' '}
+                    {headerValidation.customersMissing.join(', ')}.
+                  </p>
+                )}
+                {!headerValidation.error && validationSummary && (
+                  <p className="data-transfer__validation-success">{validationSummary}</p>
+                )}
+              </div>
+            )}
             <div className="data-transfer__actions data-transfer__actions--stacked">
               <button
                 type="button"

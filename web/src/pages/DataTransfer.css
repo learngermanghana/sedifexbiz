@@ -76,6 +76,23 @@
   color: #4b5563;
 }
 
+.data-transfer__validation {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.data-transfer__validation-error {
+  color: #b91c1c;
+  margin: 0;
+}
+
+.data-transfer__validation-success {
+  color: #047857;
+  margin: 0;
+}
+
 .data-transfer__actions {
   display: flex;
   flex-wrap: wrap;
