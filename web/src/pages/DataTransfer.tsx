@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import React, { useMemo, useRef, useState } from 'react'
+import { addDoc, collection, getDocs, query, serverTimestamp, where } from 'firebase/firestore'
 import PageSection from '../layout/PageSection'
 import './DataTransfer.css'
 import { db } from '../firebase'
@@ -19,6 +19,16 @@ import {
 type HeaderSpec = {
   key: string
   description: string
+}
+
+type CsvHeaderIndex = Record<string, number>
+
+function parseTaxRateInput(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed < 0) return null
+  return parsed > 1 ? parsed / 100 : parsed
 }
 
 function buildCsvValue(value: string) {
@@ -100,8 +110,34 @@ function formatTaxRate(value: unknown): string {
   return `${(parsed * 100).toString()}`
 }
 
+function normalizeBirthdateInput(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Date.parse(trimmed)
+  if (Number.isNaN(parsed)) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed
+  }
+  const normalized = new Date(parsed)
+  return Number.isNaN(normalized.getTime()) ? null : normalized.toISOString().slice(0, 10)
+}
+
+function buildHeaderIndex(headers: string[]): CsvHeaderIndex {
+  return headers.reduce<CsvHeaderIndex>((acc, header, index) => {
+    acc[header.trim().toLowerCase()] = index
+    return acc
+  }, {})
+}
+
+function getRowValue(row: string[], headerIndex: CsvHeaderIndex, key: string) {
+  const index = headerIndex[key]
+  if (index === undefined) return ''
+  return row[index] ?? ''
+}
+
 export default function DataTransfer() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const { storeId: activeStoreId, isLoading: isStoreLoading } = useActiveStore()
 
   // NEW: loading flags for Excel exports
@@ -111,6 +147,8 @@ export default function DataTransfer() {
   const [isCustomersExcelImporting, setIsCustomersExcelImporting] = useState(false)
   const [isItemsCsvExporting, setIsItemsCsvExporting] = useState(false)
   const [isCustomersCsvExporting, setIsCustomersCsvExporting] = useState(false)
+  const [isItemsCsvImporting, setIsItemsCsvImporting] = useState(false)
+  const [isCustomersCsvImporting, setIsCustomersCsvImporting] = useState(false)
 
   const itemRequired: HeaderSpec[] = [
     { key: 'name', description: 'Item name as it appears on receipts.' },
@@ -338,6 +376,216 @@ export default function DataTransfer() {
     setSelectedFile(file)
   }
 
+  function clearSelectedFile() {
+    setSelectedFile(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  async function handleImportItemsFromCsv() {
+    if (!selectedFile) {
+      alert('Choose a CSV file before importing items.')
+      return
+    }
+    if (isStoreLoading) {
+      alert('Loading your store data. Please try again in a moment.')
+      return
+    }
+    if (!activeStoreId) {
+      alert('Select a store before importing items.')
+      return
+    }
+
+    try {
+      setIsItemsCsvImporting(true)
+      const text = await selectedFile.text()
+      const rows = csvToRows(text)
+      if (!rows.length) {
+        throw new Error('No rows detected in the CSV file.')
+      }
+
+      const [headerRow, ...dataRows] = rows
+      const headerIndex = buildHeaderIndex(headerRow)
+      const requiredHeaders = itemRequired.map(header => header.key)
+      const missingHeaders = requiredHeaders.filter(key => headerIndex[key] === undefined)
+      if (missingHeaders.length) {
+        throw new Error(`Missing required headers: ${missingHeaders.join(', ')}`)
+      }
+
+      let importedCount = 0
+      let skippedCount = 0
+
+      for (const row of dataRows) {
+        if (!row.length || row.every(cell => !cell.trim())) {
+          continue
+        }
+        const name = normalizeText(getRowValue(row, headerIndex, 'name'))
+        const priceInput = getRowValue(row, headerIndex, 'price')
+        const price = normalizeNumber(priceInput)
+        if (!name || price === null) {
+          skippedCount += 1
+          continue
+        }
+
+        const rawItemType = normalizeText(getRowValue(row, headerIndex, 'item_type')).toLowerCase()
+        const itemType =
+          rawItemType === 'service'
+            ? 'service'
+            : rawItemType === 'made_to_order'
+              ? 'made_to_order'
+              : 'product'
+        const sku = normalizeText(getRowValue(row, headerIndex, 'sku'))
+        const barcodeValue = normalizeText(getRowValue(row, headerIndex, 'barcode'))
+        const barcode = barcodeValue || sku
+        const stockCount = normalizeNumber(getRowValue(row, headerIndex, 'stock_count'))
+        const reorderPoint = normalizeNumber(getRowValue(row, headerIndex, 'reorder_point'))
+        const taxRate = parseTaxRateInput(getRowValue(row, headerIndex, 'tax_rate'))
+        const expiryDate = normalizeDate(getRowValue(row, headerIndex, 'expiry_date'))
+        const manufacturerName = normalizeText(getRowValue(row, headerIndex, 'manufacturer_name'))
+        const productionDate = normalizeDate(getRowValue(row, headerIndex, 'production_date'))
+        const batchNumber = normalizeText(getRowValue(row, headerIndex, 'batch_number'))
+        const showOnReceiptValue = normalizeText(
+          getRowValue(row, headerIndex, 'show_on_receipt'),
+        ).toLowerCase()
+        const showOnReceipt =
+          showOnReceiptValue === 'true'
+            ? true
+            : showOnReceiptValue === 'false'
+              ? false
+              : null
+
+        await addDoc(collection(db, 'products'), {
+          storeId: activeStoreId,
+          name,
+          itemType,
+          price,
+          sku: itemType === 'service' ? null : sku || null,
+          barcode: itemType === 'service' ? null : barcode || null,
+          stockCount: itemType === 'product' ? stockCount : null,
+          reorderPoint: itemType === 'product' ? reorderPoint : null,
+          taxRate,
+          expiryDate: itemType === 'product' ? expiryDate : null,
+          manufacturerName: itemType === 'service' ? null : manufacturerName || null,
+          productionDate: itemType === 'service' ? null : productionDate,
+          batchNumber: itemType === 'service' ? null : batchNumber || null,
+          showOnReceipt: itemType === 'service' ? false : showOnReceipt ?? false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+        importedCount += 1
+      }
+
+      if (!importedCount) {
+        throw new Error('No valid item rows were found in this file.')
+      }
+
+      alert(
+        `Imported ${importedCount} items${skippedCount ? ` (${skippedCount} skipped).` : '.'}`,
+      )
+      clearSelectedFile()
+    } catch (error) {
+      console.error('Failed to import items CSV', error)
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Failed to import items CSV. Please check the console for details.',
+      )
+    } finally {
+      setIsItemsCsvImporting(false)
+    }
+  }
+
+  async function handleImportCustomersFromCsv() {
+    if (!selectedFile) {
+      alert('Choose a CSV file before importing customers.')
+      return
+    }
+    if (isStoreLoading) {
+      alert('Loading your store data. Please try again in a moment.')
+      return
+    }
+    if (!activeStoreId) {
+      alert('Select a store before importing customers.')
+      return
+    }
+
+    try {
+      setIsCustomersCsvImporting(true)
+      const text = await selectedFile.text()
+      const rows = csvToRows(text)
+      if (!rows.length) {
+        throw new Error('No rows detected in the CSV file.')
+      }
+
+      const [headerRow, ...dataRows] = rows
+      const headerIndex = buildHeaderIndex(headerRow)
+      if (headerIndex.name === undefined) {
+        throw new Error('Missing required header: name')
+      }
+
+      let importedCount = 0
+      let skippedCount = 0
+
+      for (const row of dataRows) {
+        if (!row.length || row.every(cell => !cell.trim())) {
+          continue
+        }
+        const name = normalizeText(getRowValue(row, headerIndex, 'name'))
+        if (!name) {
+          skippedCount += 1
+          continue
+        }
+        const displayName = normalizeText(getRowValue(row, headerIndex, 'display_name'))
+        const phone = normalizeText(getRowValue(row, headerIndex, 'phone'))
+        const email = normalizeText(getRowValue(row, headerIndex, 'email'))
+        const birthdate = normalizeBirthdateInput(getRowValue(row, headerIndex, 'birthdate'))
+        const notes = normalizeText(getRowValue(row, headerIndex, 'notes'))
+        const tagsRaw = getRowValue(row, headerIndex, 'tags')
+        const tags = tagsRaw
+          ? tagsRaw
+              .split(',')
+              .map(tag => tag.trim())
+              .filter(Boolean)
+          : []
+
+        await addDoc(collection(db, 'customers'), {
+          name: displayName || name,
+          displayName: displayName || null,
+          storeId: activeStoreId,
+          ...(phone ? { phone } : {}),
+          ...(email ? { email } : {}),
+          ...(notes ? { notes } : {}),
+          ...(birthdate ? { birthdate } : {}),
+          ...(tags.length ? { tags } : {}),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+        importedCount += 1
+      }
+
+      if (!importedCount) {
+        throw new Error('No valid customer rows were found in this file.')
+      }
+
+      alert(
+        `Imported ${importedCount} customers${
+          skippedCount ? ` (${skippedCount} skipped).` : '.'
+        }`,
+      )
+      clearSelectedFile()
+    } catch (error) {
+      console.error('Failed to import customers CSV', error)
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Failed to import customers CSV. Please check the console for details.',
+      )
+    } finally {
+      setIsCustomersCsvImporting(false)
+    }
+  }
+
   // NEW: Export items template → Excel (OneDrive)
   async function handleExportItemsToExcel() {
     try {
@@ -503,6 +751,7 @@ export default function DataTransfer() {
               type="file"
               accept=".csv,text/csv"
               onChange={handleFileChange}
+              ref={fileInputRef}
             />
             <label className="button button--outline" htmlFor="data-transfer-upload">
               Choose CSV file
@@ -527,6 +776,24 @@ export default function DataTransfer() {
               }
             >
               Download customers template
+            </button>
+          </div>
+          <div className="data-transfer__actions data-transfer__actions--stacked">
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={handleImportItemsFromCsv}
+              disabled={!selectedFile || isItemsCsvImporting}
+            >
+              {isItemsCsvImporting ? 'Importing items…' : 'Import items from CSV'}
+            </button>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={handleImportCustomersFromCsv}
+              disabled={!selectedFile || isCustomersCsvImporting}
+            >
+              {isCustomersCsvImporting ? 'Importing customers…' : 'Import customers from CSV'}
             </button>
           </div>
           <div className="data-transfer__actions data-transfer__actions--stacked">
