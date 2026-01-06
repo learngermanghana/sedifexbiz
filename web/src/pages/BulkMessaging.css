@@ -140,6 +140,12 @@
   font-size: 14px;
 }
 
+.bulk-messaging-page__recipient-context {
+  margin: 12px 0 4px;
+  font-size: 13px;
+  color: #64748b;
+}
+
 .bulk-messaging-page__recipient-list {
   display: grid;
   gap: 10px;

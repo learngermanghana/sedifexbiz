@@ -595,6 +595,10 @@ export default function BulkMessaging() {
               </select>
             </label>
           </div>
+          <p className="bulk-messaging-page__recipient-context">
+            Showing {formatNumber(filteredCustomers.length)} of {formatNumber(customers.length)}{' '}
+            customers · {formatNumber(selectedCustomers.length)} selected
+          </p>
 
           <div className="bulk-messaging-page__recipient-list" role="list">
             {filteredCustomers.length ? (
