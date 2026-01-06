@@ -268,7 +268,7 @@ export default function BulkMessaging() {
 
   const messageLength = message.length
   const messageSegments = Math.max(1, Math.ceil(messageLength / SMS_SEGMENT_SIZE))
-  const creditsNeeded = selectableCustomers.length
+  const creditsNeeded = selectableCustomers.length * messageSegments * CREDITS_PER_SMS
   const hasEnoughCredits = creditBalance >= creditsNeeded
 
   const allVisibleSelected =
@@ -493,7 +493,9 @@ export default function BulkMessaging() {
               {creditLoading
                 ? 'Checking available credits'
                 : creditsNeeded > 0
-                ? `${creditsNeeded} credit(s) required to send`
+                ? `${formatNumber(creditsNeeded)} credits required (${formatNumber(
+                    selectableCustomers.length,
+                  )} recipient(s) × ${messageSegments} segment(s) × ${CREDITS_PER_SMS} credits)`
                 : 'Select recipients to see required credits'}
             </span>
             <a className="button button--ghost button--small" href="#buy-credits">
