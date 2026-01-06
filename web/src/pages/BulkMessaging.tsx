@@ -268,6 +268,8 @@ export default function BulkMessaging() {
 
   const messageLength = message.length
   const messageSegments = Math.max(1, Math.ceil(messageLength / SMS_SEGMENT_SIZE))
+  const messageCreditsPerRecipient = messageSegments * CREDITS_PER_SMS
+  const messageCostEstimate = messageSegments * SMS_PRICE_ESTIMATE_GHS
   const creditsNeeded = selectableCustomers.length * messageSegments * CREDITS_PER_SMS
   const hasEnoughCredits = creditBalance >= creditsNeeded
 
@@ -528,6 +530,9 @@ export default function BulkMessaging() {
               />
               <span className="bulk-messaging-page__hint">
                 {MESSAGE_LIMIT - messageLength} characters remaining
+                {` · ${messageSegments} segment(s) · ${formatNumber(
+                  messageCreditsPerRecipient,
+                )} credits required · ~GHS ${formatPrice(messageCostEstimate)}`}
               </span>
             </label>
 
