@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { addDoc, collection, getDocs, query, serverTimestamp, where } from 'firebase/firestore'
+import { addDoc, collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore'
 import PageSection from '../layout/PageSection'
 import './DataTransfer.css'
 import { db } from '../firebase'
@@ -66,6 +66,25 @@ const CUSTOMER_OPTIONAL_HEADERS: HeaderSpec[] = [
 ]
 const ITEM_REQUIRED_KEYS = ITEM_REQUIRED_HEADERS.map(header => header.key)
 const CUSTOMER_REQUIRED_KEYS = CUSTOMER_REQUIRED_HEADERS.map(header => header.key)
+const AFRICAN_COUNTRY_CODES = [
+  '233',
+  '234',
+  '225',
+  '221',
+  '237',
+  '254',
+  '255',
+  '256',
+  '250',
+  '251',
+  '260',
+  '263',
+  '27',
+  '20',
+  '212',
+  '213',
+  '216',
+]
 
 function parseTaxRateInput(value: string): number | null {
   const trimmed = value.trim()
@@ -113,6 +132,42 @@ function buildCsvFromRows(headers: string[], rows: string[][]) {
 function normalizeText(value: unknown): string {
   if (typeof value !== 'string') return ''
   return value.trim()
+}
+
+function normalizeKey(value: unknown): string {
+  return normalizeText(value).toLowerCase()
+}
+
+function normalizePhoneNumber(input: string): string {
+  const trimmed = input.trim()
+  if (!trimmed) return ''
+
+  const hasPlusPrefix = trimmed.startsWith('+')
+  const digits = trimmed.replace(/\D/g, '')
+
+  if (!digits) return ''
+
+  if (hasPlusPrefix) return `+${digits}`
+
+  if (trimmed.startsWith('00')) {
+    return `+${digits.replace(/^00/, '')}`
+  }
+
+  if (trimmed.startsWith('0')) {
+    return `+233${digits.replace(/^0/, '')}`
+  }
+
+  const matchesAfricanCode = AFRICAN_COUNTRY_CODES.some(code => digits.startsWith(code))
+  if (matchesAfricanCode) {
+    return `+${digits}`
+  }
+
+  return `+${digits}`
+}
+
+function buildPhoneKey(value: string): string {
+  if (!value) return ''
+  return normalizePhoneNumber(value).replace(/\D/g, '')
 }
 
 function normalizeNumber(value: unknown): number | null {
@@ -539,8 +594,51 @@ export default function DataTransfer() {
         throw new Error(`Missing required headers: ${missingHeaders.join(', ')}`)
       }
 
+      const existingItemsSnapshot = await getDocs(
+        query(collection(db, 'products'), where('storeId', '==', activeStoreId)),
+      )
+      const existingItemsByBarcode = new Map<string, string>()
+      const existingItemsBySku = new Map<string, string>()
+      const existingItemsByName = new Map<string, string>()
+
+      const trackItemKeys = (id: string, values: { name?: string; barcode?: string; sku?: string }) => {
+        const nameKey = normalizeKey(values.name)
+        const barcodeKey = normalizeKey(values.barcode)
+        const skuKey = normalizeKey(values.sku)
+        if (nameKey) {
+          existingItemsByName.set(nameKey, id)
+        }
+        if (barcodeKey) {
+          existingItemsByBarcode.set(barcodeKey, id)
+        }
+        if (skuKey) {
+          existingItemsBySku.set(skuKey, id)
+        }
+      }
+
+      existingItemsSnapshot.forEach(docSnap => {
+        const data = docSnap.data() as Record<string, unknown>
+        trackItemKeys(docSnap.id, {
+          name: normalizeText(data.name),
+          barcode: normalizeText(data.barcode),
+          sku: normalizeText(data.sku),
+        })
+      })
+
+      const shouldSetSku = headerIndex.sku !== undefined
+      const shouldSetBarcode = headerIndex.barcode !== undefined
+      const shouldSetStockCount = headerIndex.stock_count !== undefined
+      const shouldSetReorderPoint = headerIndex.reorder_point !== undefined
+      const shouldSetTaxRate = headerIndex.tax_rate !== undefined
+      const shouldSetExpiryDate = headerIndex.expiry_date !== undefined
+      const shouldSetManufacturerName = headerIndex.manufacturer_name !== undefined
+      const shouldSetProductionDate = headerIndex.production_date !== undefined
+      const shouldSetBatchNumber = headerIndex.batch_number !== undefined
+      const shouldSetShowOnReceipt = headerIndex.show_on_receipt !== undefined
+
       let importedCount = 0
       let skippedCount = 0
+      let updatedCount = 0
 
       for (const row of dataRows) {
         if (!row.length || row.every(cell => !cell.trim())) {
@@ -581,35 +679,81 @@ export default function DataTransfer() {
               ? false
               : null
 
-        await addDoc(collection(db, 'products'), {
+        const itemLookupKeys = {
+          name: normalizeKey(name),
+          barcode: normalizeKey(barcode),
+          sku: normalizeKey(sku),
+        }
+        const existingId =
+          (itemLookupKeys.barcode && existingItemsByBarcode.get(itemLookupKeys.barcode)) ||
+          (itemLookupKeys.sku && existingItemsBySku.get(itemLookupKeys.sku)) ||
+          (itemLookupKeys.name && existingItemsByName.get(itemLookupKeys.name))
+
+        const payload: Record<string, unknown> = {
           storeId: activeStoreId,
           name,
           itemType,
           price,
-          sku: itemType === 'service' ? null : sku || null,
-          barcode: itemType === 'service' ? null : barcode || null,
-          stockCount: itemType === 'product' ? stockCount : null,
-          reorderPoint: itemType === 'product' ? reorderPoint : null,
-          taxRate,
-          expiryDate: itemType === 'product' ? expiryDate : null,
-          manufacturerName: itemType === 'service' ? null : manufacturerName || null,
-          productionDate: itemType === 'service' ? null : productionDate,
-          batchNumber: itemType === 'service' ? null : batchNumber || null,
-          showOnReceipt: itemType === 'service' ? false : showOnReceipt ?? false,
-          createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        })
-        importedCount += 1
+        }
+        const isNewItem = !existingId
+
+        if (isNewItem) {
+          payload.createdAt = serverTimestamp()
+        }
+
+        const setField = (shouldSet: boolean, key: string, value: unknown) => {
+          if (isNewItem || shouldSet) {
+            payload[key] = value
+          }
+        }
+
+        setField(shouldSetSku, 'sku', itemType === 'service' ? null : sku || null)
+        setField(shouldSetBarcode, 'barcode', itemType === 'service' ? null : barcode || null)
+        setField(shouldSetStockCount, 'stockCount', itemType === 'product' ? stockCount : null)
+        setField(shouldSetReorderPoint, 'reorderPoint', itemType === 'product' ? reorderPoint : null)
+        setField(shouldSetTaxRate, 'taxRate', taxRate)
+        setField(shouldSetExpiryDate, 'expiryDate', itemType === 'product' ? expiryDate : null)
+        setField(
+          shouldSetManufacturerName,
+          'manufacturerName',
+          itemType === 'service' ? null : manufacturerName || null,
+        )
+        setField(
+          shouldSetProductionDate,
+          'productionDate',
+          itemType === 'service' ? null : productionDate,
+        )
+        setField(
+          shouldSetBatchNumber,
+          'batchNumber',
+          itemType === 'service' ? null : batchNumber || null,
+        )
+        setField(
+          shouldSetShowOnReceipt,
+          'showOnReceipt',
+          itemType === 'service' ? false : showOnReceipt ?? false,
+        )
+
+        if (existingId) {
+          await updateDoc(doc(db, 'products', existingId), payload)
+          updatedCount += 1
+          trackItemKeys(existingId, { name, barcode, sku })
+        } else {
+          const docRef = await addDoc(collection(db, 'products'), payload)
+          importedCount += 1
+          trackItemKeys(docRef.id, { name, barcode, sku })
+        }
       }
 
-      if (!importedCount) {
+      if (!importedCount && !updatedCount) {
         throw new Error('No valid item rows were found in this file.')
       }
 
       setItemsCsvImportStatus({
         tone: 'success',
-        message: `Imported ${importedCount} items${
-          skippedCount ? ` (${skippedCount} skipped).` : '.'
+        message: `Imported ${importedCount + updatedCount} items (${importedCount} new, ${updatedCount} updated)${
+          skippedCount ? `, ${skippedCount} skipped.` : '.'
         }`,
       })
       clearSelectedFile()
@@ -665,8 +809,41 @@ export default function DataTransfer() {
         throw new Error('Missing required header: name')
       }
 
+      const existingCustomersSnapshot = await getDocs(
+        query(collection(db, 'customers'), where('storeId', '==', activeStoreId)),
+      )
+      const existingByEmail = new Map<string, string>()
+      const existingByPhone = new Map<string, string>()
+
+      const trackCustomerKeys = (id: string, values: { email?: string; phone?: string }) => {
+        const emailKey = normalizeKey(values.email)
+        const phoneKey = buildPhoneKey(values.phone ?? '')
+        if (emailKey) {
+          existingByEmail.set(emailKey, id)
+        }
+        if (phoneKey) {
+          existingByPhone.set(phoneKey, id)
+        }
+      }
+
+      existingCustomersSnapshot.forEach(docSnap => {
+        const data = docSnap.data() as Record<string, unknown>
+        trackCustomerKeys(docSnap.id, {
+          email: normalizeText(data.email),
+          phone: normalizeText(data.phone),
+        })
+      })
+
+      const shouldSetDisplayName = headerIndex.display_name !== undefined
+      const shouldSetPhone = headerIndex.phone !== undefined
+      const shouldSetEmail = headerIndex.email !== undefined
+      const shouldSetBirthdate = headerIndex.birthdate !== undefined
+      const shouldSetNotes = headerIndex.notes !== undefined
+      const shouldSetTags = headerIndex.tags !== undefined
+
       let importedCount = 0
       let skippedCount = 0
+      let updatedCount = 0
 
       for (const row of dataRows) {
         if (!row.length || row.every(cell => !cell.trim())) {
@@ -690,29 +867,55 @@ export default function DataTransfer() {
               .filter(Boolean)
           : []
 
-        await addDoc(collection(db, 'customers'), {
+        const normalizedPhone = normalizePhoneNumber(phone)
+        const emailKey = normalizeKey(email)
+        const phoneKey = buildPhoneKey(normalizedPhone)
+        const existingId =
+          (emailKey && existingByEmail.get(emailKey)) ||
+          (phoneKey && existingByPhone.get(phoneKey))
+
+        const payload: Record<string, unknown> = {
           name: displayName || name,
-          displayName: displayName || null,
           storeId: activeStoreId,
-          ...(phone ? { phone } : {}),
-          ...(email ? { email } : {}),
-          ...(notes ? { notes } : {}),
-          ...(birthdate ? { birthdate } : {}),
-          ...(tags.length ? { tags } : {}),
-          createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        })
-        importedCount += 1
+        }
+        const isNewCustomer = !existingId
+        if (isNewCustomer) {
+          payload.createdAt = serverTimestamp()
+        }
+
+        const setCustomerField = (shouldSet: boolean, key: string, value: unknown) => {
+          if (isNewCustomer || shouldSet) {
+            payload[key] = value
+          }
+        }
+
+        setCustomerField(shouldSetDisplayName, 'displayName', displayName || null)
+        setCustomerField(shouldSetPhone, 'phone', normalizedPhone || null)
+        setCustomerField(shouldSetEmail, 'email', email || null)
+        setCustomerField(shouldSetNotes, 'notes', notes || null)
+        setCustomerField(shouldSetBirthdate, 'birthdate', birthdate || null)
+        setCustomerField(shouldSetTags, 'tags', tags.length ? tags : [])
+
+        if (existingId) {
+          await updateDoc(doc(db, 'customers', existingId), payload)
+          updatedCount += 1
+          trackCustomerKeys(existingId, { email, phone: normalizedPhone })
+        } else {
+          const docRef = await addDoc(collection(db, 'customers'), payload)
+          importedCount += 1
+          trackCustomerKeys(docRef.id, { email, phone: normalizedPhone })
+        }
       }
 
-      if (!importedCount) {
+      if (!importedCount && !updatedCount) {
         throw new Error('No valid customer rows were found in this file.')
       }
 
       setCustomersCsvImportStatus({
         tone: 'success',
-        message: `Imported ${importedCount} customers${
-          skippedCount ? ` (${skippedCount} skipped).` : '.'
+        message: `Imported ${importedCount + updatedCount} customers (${importedCount} new, ${updatedCount} updated)${
+          skippedCount ? `, ${skippedCount} skipped.` : '.'
         }`,
       })
       clearSelectedFile()
