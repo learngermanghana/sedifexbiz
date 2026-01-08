@@ -297,6 +297,7 @@ export default function Products() {
   // edit state
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
+  const [editItemType, setEditItemType] = useState<ItemType>('product')
   const [editSku, setEditSku] = useState('')
   const [editPriceInput, setEditPriceInput] = useState('')
   const [editTaxRateInput, setEditTaxRateInput] = useState('')
@@ -801,6 +802,7 @@ export default function Products() {
 
     setEditingId(product.id)
     setEditName(product.name)
+    setEditItemType(product.itemType)
     setEditSku(product.sku ?? '')
     setEditPriceInput(
       typeof product.price === 'number' && Number.isFinite(product.price)
@@ -846,7 +848,7 @@ export default function Products() {
       return
     }
 
-    const isStockTracked = product.itemType === 'product'
+    const isStockTracked = editItemType === 'product'
     const priceNumber = editPriceInput ? Number(editPriceInput) : NaN
     const reorderPointNumber = editReorderPointInput
       ? Number(editReorderPointInput)
@@ -890,6 +892,7 @@ export default function Products() {
       const ref = doc(db, 'products', product.id)
       await updateDoc(ref, {
         name: trimmedName,
+        itemType: editItemType,
         sku: isStockTracked ? trimmedSku || null : null,
         barcode: isStockTracked ? normalizeBarcode(trimmedSku) || null : null,
         price: finalPrice,
@@ -1350,7 +1353,7 @@ export default function Products() {
           </p>
 
           {editingProduct ? (
-            editingProduct.itemType === 'service' ? (
+            editItemType !== 'product' ? (
               <section className="card products-page__edit-card" aria-live="polite">
                 <p className="field__hint">
                   Receipt and batch details only apply to products. Switch this item back to a
@@ -1426,7 +1429,8 @@ export default function Products() {
             <div className="products-page__list" aria-live="polite">
               {visibleProducts.map(product => {
                 const isEditing = editingId === product.id
-                const isStockTracked = product.itemType === 'product'
+                const displayItemType = isEditing ? editItemType : product.itemType
+                const isStockTracked = displayItemType === 'product'
 
                 return (
                   <article
@@ -1437,9 +1441,9 @@ export default function Products() {
                       <div className="products-page__list-title">
                         <h4>{product.name}</h4>
                         <span className="products-page__badge products-page__badge--muted">
-                          {product.itemType === 'service'
+                          {displayItemType === 'service'
                             ? 'Service'
-                            : product.itemType === 'made_to_order'
+                            : displayItemType === 'made_to_order'
                               ? 'Made-to-order'
                               : 'Product'}
                         </span>
@@ -1468,7 +1472,29 @@ export default function Products() {
                         )}
                       </div>
 
-                      {product.itemType !== 'service' && (
+                      <div className="products-page__list-field">
+                        <label className="field__label">Item type</label>
+                        {isEditing ? (
+                          <select
+                            value={editItemType}
+                            onChange={event => setEditItemType(event.target.value as ItemType)}
+                          >
+                            <option value="product">Physical product</option>
+                            <option value="service">Service</option>
+                            <option value="made_to_order">Made-to-order</option>
+                          </select>
+                        ) : (
+                          <p className="products-page__list-value">
+                            {product.itemType === 'service'
+                              ? 'Service'
+                              : product.itemType === 'made_to_order'
+                                ? 'Made-to-order'
+                                : 'Physical product'}
+                          </p>
+                        )}
+                      </div>
+
+                      {displayItemType !== 'service' && (
                         <div className="products-page__list-field">
                           <label className="field__label">SKU / Barcode</label>
                           {isEditing ? (
