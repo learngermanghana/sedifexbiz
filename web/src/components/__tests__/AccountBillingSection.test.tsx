@@ -88,6 +88,36 @@ vi.mock('../../lib/paystackClient', () => ({
     expect(assignSpy).toHaveBeenCalledWith('https://paystack.example/checkout')
   })
 
+  it('supports the biannual plan cadence', async () => {
+    const assignSpy = mockWindowAssign()
+
+    mockStartPaystackCheckout.mockResolvedValue({
+      ok: true,
+      authorizationUrl: 'https://paystack.example/checkout',
+      reference: 'ref-789',
+      publicKey: 'pk_test',
+    })
+
+    const user = userEvent.setup()
+    render(<AccountBillingSection storeId="store-123" ownerEmail="owner@example.com" isOwner />)
+
+    await user.selectOptions(screen.getByRole('combobox'), 'starter-biannual')
+    await user.click(screen.getByRole('button', { name: /pay with paystack/i }))
+
+    await waitFor(() => {
+      expect(mockStartPaystackCheckout).toHaveBeenCalledWith({
+        email: 'owner@example.com',
+        storeId: 'store-123',
+        amount: 600,
+        plan: 'starter-biannual',
+        redirectUrl: expect.stringContaining('/billing/verify'),
+        metadata: { source: 'account-contract-billing' },
+      })
+    })
+
+    expect(assignSpy).toHaveBeenCalledWith('https://paystack.example/checkout')
+  })
+
   it('surfaces backend errors when checkout fails', async () => {
     mockStartPaystackCheckout.mockResolvedValue({ ok: false, authorizationUrl: null, reference: null })
 
