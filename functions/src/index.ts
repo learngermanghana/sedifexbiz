@@ -1807,11 +1807,12 @@ const PAYSTACK_STANDARD_PLAN_CODE = defineString('PAYSTACK_STANDARD_PLAN_CODE')
 
 // New: map frontend plan keys -> Paystack plan codes (optional).
 const PAYSTACK_STARTER_MONTHLY_PLAN_CODE = defineString('PAYSTACK_STARTER_MONTHLY_PLAN_CODE')
+const PAYSTACK_STARTER_BIANNUAL_PLAN_CODE = defineString('PAYSTACK_STARTER_BIANNUAL_PLAN_CODE')
 const PAYSTACK_STARTER_YEARLY_PLAN_CODE = defineString('PAYSTACK_STARTER_YEARLY_PLAN_CODE')
 
 const PAYSTACK_CURRENCY = defineString('PAYSTACK_CURRENCY')
 
-type PaystackPlanKey = 'starter-monthly' | 'starter-yearly' | string
+type PaystackPlanKey = 'starter-monthly' | 'starter-biannual' | 'starter-yearly' | string
 
 // Fixed packages (GHS)
 const BULK_CREDITS_PACKAGES: Record<string, { credits: number; amount: number }> = {
@@ -1828,6 +1829,7 @@ function getPaystackConfig() {
 
   const starterMonthly =
     PAYSTACK_STARTER_MONTHLY_PLAN_CODE.value() || PAYSTACK_STANDARD_PLAN_CODE.value()
+  const starterBiannual = PAYSTACK_STARTER_BIANNUAL_PLAN_CODE.value()
   const starterYearly = PAYSTACK_STARTER_YEARLY_PLAN_CODE.value()
 
   if (!paystackConfigLogged) {
@@ -1836,6 +1838,7 @@ function getPaystackConfig() {
       hasPublicKey: !!publicKey,
       currency,
       hasStarterMonthlyPlan: !!starterMonthly,
+      hasStarterBiannualPlan: !!starterBiannual,
       hasStarterYearlyPlan: !!starterYearly,
     })
     paystackConfigLogged = true
@@ -1847,6 +1850,7 @@ function getPaystackConfig() {
     currency,
     plans: {
       'starter-monthly': starterMonthly,
+      'starter-biannual': starterBiannual,
       'starter-yearly': starterYearly,
     } as Record<string, string | undefined>,
   }
@@ -1890,8 +1894,22 @@ function resolvePlanMonths(planKey: string | null): number {
   const lower = planKey.toLowerCase()
   if (lower.includes('year')) return 12
   if (lower.includes('annual')) return 12
+  if (lower.includes('biannual')) return 6
+  if (lower.includes('semiannual')) return 6
+  if (lower.includes('semi-annual')) return 6
   if (lower.includes('month')) return 1
   return 1
+}
+
+function resolvePlanDefaultAmount(planKey: string | null): number {
+  if (!planKey) return 100
+  const lower = planKey.toLowerCase()
+  if (lower.includes('year')) return 1100
+  if (lower.includes('annual')) return 1100
+  if (lower.includes('biannual')) return 600
+  if (lower.includes('semiannual')) return 600
+  if (lower.includes('semi-annual')) return 600
+  return 100
 }
 
 function addMonths(base: Date, months: number) {
@@ -1968,9 +1986,7 @@ export const createPaystackCheckout = functions.https.onCall(
     const amountGhs =
       Number.isFinite(amountInput) && amountInput > 0
         ? amountInput
-        : planKey.toLowerCase().includes('year')
-          ? 1100
-          : 100
+        : resolvePlanDefaultAmount(planKey)
 
     const amountMinorUnits = toMinorUnits(amountGhs)
     const reference = `${storeId}_${Date.now()}`

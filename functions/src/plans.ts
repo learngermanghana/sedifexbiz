@@ -3,6 +3,7 @@
 // The IDs you’ll store in Firestore and send to Paystack
 export type PlanId =
   | 'starter-monthly'
+  | 'starter-biannual'
   | 'starter-annual'
   | 'pro-monthly'
   | 'pro-annual'
@@ -30,6 +31,14 @@ const PLAN_CATALOG: Record<PlanId, Plan> = {
     totalPriceUsd: 9,
     discountPercent: null,
     isDefault: true,
+  },
+  'starter-biannual': {
+    id: 'starter-biannual',
+    label: 'Starter Biannual',
+    months: 6,
+    monthlyPriceUsd: 9,
+    totalPriceUsd: 54,
+    discountPercent: null,
   },
   'starter-annual': {
     id: 'starter-annual',
@@ -72,7 +81,9 @@ const PLAN_ALIAS_MAP: Record<string, PlanId> = {
   // Starter
   starter: 'starter-monthly',
   'starter-monthly': 'starter-monthly',
+  'starter-biannual': 'starter-biannual',
   'starter-annual': 'starter-annual',
+  'starter-yearly': 'starter-annual',
 
   // Pro
   pro: 'pro-monthly',

@@ -16,11 +16,13 @@ type PlanOption = {
   id: string
   label: string
   amountGhs: number
+  months: number
 }
 
 const PLANS: PlanOption[] = [
-  { id: 'starter-monthly', label: 'Starter – Monthly', amountGhs: 100 },
-  { id: 'starter-yearly', label: 'Starter – Yearly', amountGhs: 1100 },
+  { id: 'starter-monthly', label: 'Starter – Monthly', amountGhs: 100, months: 1 },
+  { id: 'starter-biannual', label: 'Starter – Biannual', amountGhs: 600, months: 6 },
+  { id: 'starter-yearly', label: 'Starter – Yearly', amountGhs: 1100, months: 12 },
 ]
 
 export const AccountBillingSection: React.FC<Props> = ({
@@ -43,12 +45,22 @@ export const AccountBillingSection: React.FC<Props> = ({
   const [cancelSuccess, setCancelSuccess] = useState(false)
 
   const selectedPlan = PLANS.find(plan => plan.id === selectedPlanId) ?? null
-  const isSelectedYearlyPlan = selectedPlan?.id.includes('year') ?? false
-  const selectedCadenceLabel = isSelectedYearlyPlan ? 'Yearly' : 'Monthly'
-  const selectedCadenceDescription = isSelectedYearlyPlan
-    ? 'Billed once per year.'
-    : 'Billed every month.'
-  const renewalIntervalMonths = isSelectedYearlyPlan ? 12 : 1
+  const selectedCadenceLabel = (() => {
+    if (selectedPlan?.months === 12) return 'Yearly'
+    if (selectedPlan?.months === 6) return 'Biannual'
+    return 'Monthly'
+  })()
+  const selectedCadenceDescription = (() => {
+    if (selectedPlan?.months === 12) return 'Billed once per year.'
+    if (selectedPlan?.months === 6) return 'Billed every 6 months.'
+    return 'Billed every month.'
+  })()
+  const renewalIntervalMonths = selectedPlan?.months ?? 1
+  const renewalCadenceLabel = (() => {
+    if (selectedPlan?.months === 12) return 'year'
+    if (selectedPlan?.months === 6) return '6 months'
+    return 'month'
+  })()
   const nextChargeDate = (() => {
     const base = new Date()
     const nextDate = new Date(base)
@@ -385,7 +397,7 @@ export const AccountBillingSection: React.FC<Props> = ({
                 </p>
                 <p>Billing cadence: {selectedCadenceDescription}</p>
                 <p>
-                  Renews automatically every {selectedCadenceLabel.toLowerCase()}.
+                  Renews automatically every {renewalCadenceLabel}.
                 </p>
                 <p>
                   Estimated next charge:{' '}
