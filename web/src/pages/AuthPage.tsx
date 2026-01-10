@@ -1261,9 +1261,10 @@ export default function AuthPage() {
         <article className="info-card">
           <h3>About Sedifex</h3>
           <p>
-            Sedifex is the smart AI inventory system for modern small businesses. We unite
-            store execution, warehouse visibility, and merchandising insights so every
-            location can act on the same live source of truth.
+            Sedifex is the smart AI inventory system and customer relationship platform for
+            modern small businesses. We unite store execution, warehouse visibility, and
+            merchandising insights so every location can act on the same live source of
+            truth.
           </p>
           <p>
             Connect your POS, ecommerce, and supplier systems in minutes to orchestrate
