@@ -16,7 +16,7 @@ const FEATURE_LIST = [
   {
     title: 'Fast barcode sales',
     description:
-      'Sell faster with quick search, barcode scanning, and mobile-friendly checkout built for busy Ghanaian shops.',
+      'Sell faster with quick search, barcode scanning, and mobile-friendly checkout built for busy Ghanaian shops and retail stores in Accra.',
   },
   {
     title: 'Low stock alerts',
@@ -177,6 +177,10 @@ export default function InventorySystemGhana() {
             sales, and finance in one smart workspace. Know what to reorder, prevent stock
             losses, share data with Excel for better projections, and keep every branch aligned.
           </p>
+          <p>
+            Sedifex is used by shops in Accra and across Ghana to manage inventory, sales,
+            and customer communication efficiently.
+          </p>
           <div className="seo-page__hero-actions">
             <Link className="seo-page__cta" to="/">
               Start free demo
@@ -289,7 +293,8 @@ export default function InventorySystemGhana() {
         <div className="seo-page__section-header">
           <h2>Who Sedifex helps</h2>
           <p>
-            Sedifex supports every industry that needs reliable inventory tracking in Ghana.
+            Sedifex supports every industry that needs reliable inventory tracking in Ghana,
+            from shops in Ghana to small businesses in Ghana growing beyond a single location.
           </p>
         </div>
         <div className="seo-page__grid seo-page__grid--compact">
