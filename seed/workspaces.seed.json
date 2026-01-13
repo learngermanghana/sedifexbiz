@@ -11,6 +11,10 @@
       "billingCycle": "annual",
       "plan": "Growth",
       "contactEmail": "owner@demo-store.test",
+      "services": {
+        "PIERCING": ["Ear piercing", "Facial piercing", "Oral piercing", "Body piercing"],
+        "BROWS": ["Brow lamination", "Micro blading", "Tint"]
+      },
       "notes": "Default workspace used for staging and QA reviewers."
     },
     "sedifex-labs": {
