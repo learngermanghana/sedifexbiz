@@ -243,6 +243,21 @@ export default function ActivityFeed() {
   const [loading, setLoading] = useState(false)
   const [receiptError, setReceiptError] = useState<string | null>(null)
   const [canNotify, setCanNotify] = useState(false)
+  const [isNarrow, setIsNarrow] = useState(false)
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 640px)')
+    const handleChange = () => setIsNarrow(mediaQuery.matches)
+
+    handleChange()
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange)
+      return () => mediaQuery.removeEventListener('change', handleChange)
+    }
+
+    mediaQuery.addListener(handleChange)
+    return () => mediaQuery.removeListener(handleChange)
+  }, [])
 
   const hasLoadedRef = useRef(false)
   const canNotifyRef = useRef(false)
@@ -384,8 +399,8 @@ export default function ActivityFeed() {
     )
   }, [activities])
 
-  const shouldVirtualizeFeed = filteredActivities.length > 80
-  const feedRowHeight = 128
+  const shouldVirtualizeFeed = filteredActivities.length > 80 && !isNarrow
+  const feedRowHeight = isNarrow ? 180 : 128
   const feedViewportHeight = Math.min(
     Math.max(feedRowHeight * 3, filteredActivities.length * feedRowHeight),
     720,
