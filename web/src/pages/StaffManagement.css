@@ -67,6 +67,15 @@
   overflow: hidden;
 }
 
+.staff-table--roster .staff-table__row {
+  grid-template-columns: minmax(220px, 2.5fr) repeat(3, minmax(0, 1fr)) 240px;
+}
+
+.staff-table--roster .staff-table__email {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .staff-table__row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr)) 240px;

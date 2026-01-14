@@ -413,9 +413,9 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
           </button>
         </div>
 
-        <div className="staff-table" role="table" aria-label="Staff list">
+        <div className="staff-table staff-table--roster" role="table" aria-label="Staff list">
           <div className="staff-table__row staff-table__header" role="row">
-            <span role="columnheader">Email</span>
+            <span role="columnheader" className="staff-table__email">Email</span>
             <span role="columnheader">Role</span>
             <span role="columnheader">Status</span>
             <span role="columnheader">Updated</span>
@@ -436,7 +436,7 @@ export default function StaffManagement({ headingLevel = 'h1' }: StaffManagement
                 key={member.id}
                 data-testid={`staff-member-${member.id}`}
               >
-                <span role="cell">{member.email ?? '—'}</span>
+                <span role="cell" className="staff-table__email">{member.email ?? '—'}</span>
                 <span role="cell">{member.role === 'owner' ? 'Owner' : 'Staff'}</span>
                 <span role="cell">
                   {member.status ? (
