@@ -217,6 +217,8 @@
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
+  line-height: 1.2;
 }
 
 .activity-type__dot {
@@ -241,11 +243,13 @@
 .activity-detail {
   margin: 6px 0;
   color: #475569;
+  word-break: break-word;
 }
 
 .activity-meta {
   color: #0f172a;
   font-weight: 600;
+  word-break: break-word;
 }
 
 .activity-sale-meta {
@@ -256,11 +260,13 @@
   align-items: center;
   color: #475569;
   font-size: 13px;
+  word-break: break-word;
 }
 
 .activity-sale-meta__item {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .activity-sale-meta__item + .activity-sale-meta__item::before {
@@ -358,5 +364,22 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
+  }
+
+  .activity-item {
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .activity-type {
+    font-size: 14px;
+  }
+
+  .activity-body h4 {
+    font-size: 15px;
+  }
+
+  .activity-detail {
+    font-size: 14px;
   }
 }
