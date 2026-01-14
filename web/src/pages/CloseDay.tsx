@@ -16,6 +16,7 @@ import {
 import { db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useActiveStore } from '../hooks/useActiveStore'
+import './CloseDay.css'
 
 const DENOMINATIONS = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1] as const
 
@@ -844,8 +845,8 @@ export default function CloseDay() {
         )}
 
         {!isLoadingCloseouts && !closeoutsError && recentCloseouts.length > 0 && (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+          <div className="close-day__closeouts">
+            <table className="close-day__table">
               <thead>
                 <tr>
                   <th
@@ -969,6 +970,76 @@ export default function CloseDay() {
                 })}
               </tbody>
             </table>
+            <div className="close-day__cards">
+              {recentCloseouts.map(close => {
+                const diffLabel =
+                  Math.abs(close.variance) < 0.01
+                    ? 'Matches'
+                    : close.variance < 0
+                      ? 'Short'
+                      : 'Over'
+                const diffColor =
+                  Math.abs(close.variance) < 0.01
+                    ? '#047857'
+                    : Math.abs(close.variance) > LARGE_DIFFERENCE_THRESHOLD
+                      ? '#b91c1c'
+                      : '#92400e'
+
+                const isSelected = selectedCloseout?.id === close.id
+
+                return (
+                  <button
+                    key={close.id}
+                    type="button"
+                    onClick={() => setSelectedCloseout(close)}
+                    className="close-day__card"
+                    style={{
+                      borderColor: isSelected ? 'rgba(67,56,202,0.6)' : '#e5e7eb',
+                      backgroundColor: isSelected
+                        ? 'rgba(67,56,202,0.06)'
+                        : 'white',
+                    }}
+                  >
+                    <div className="close-day__card-row">
+                      <span>Business day</span>
+                      <strong>
+                        {close.businessDay
+                          ? close.businessDay.toLocaleDateString()
+                          : 'Unknown'}
+                      </strong>
+                    </div>
+                    <div className="close-day__card-row">
+                      <span>Sales total</span>
+                      <strong>GHS {close.salesTotal.toFixed(2)}</strong>
+                    </div>
+                    <div className="close-day__card-row">
+                      <span>Expected cash</span>
+                      <strong>GHS {close.expectedCash.toFixed(2)}</strong>
+                    </div>
+                    <div className="close-day__card-row">
+                      <span>Counted cash</span>
+                      <strong>GHS {close.countedCash.toFixed(2)}</strong>
+                    </div>
+                    <div className="close-day__card-row">
+                      <span>Difference</span>
+                      <strong style={{ color: diffColor }}>
+                        GHS {close.variance.toFixed(2)} · {diffLabel}
+                      </strong>
+                    </div>
+                    <div className="close-day__card-row">
+                      <span>Closed by</span>
+                      <strong>{close.closedByName}</strong>
+                    </div>
+                    <div className="close-day__card-row">
+                      <span>Closed at</span>
+                      <strong>
+                        {close.closedAt ? close.closedAt.toLocaleString() : '—'}
+                      </strong>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
       </section>
