@@ -77,6 +77,8 @@
   font-family: inherit;
   font-size: 14px;
   line-height: 1.5;
+  color: #0f172a;
+  background: #ffffff;
 }
 
 .bulk-messaging-page__textarea:focus {
@@ -84,9 +86,13 @@
   border-color: transparent;
 }
 
+.bulk-messaging-page__textarea::placeholder {
+  color: #94a3b8;
+}
+
 .bulk-messaging-page__hint {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .bulk-messaging-page__status {
@@ -123,7 +129,7 @@
 
 .bulk-messaging-page__actions-meta {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .bulk-messaging-page__filters {
@@ -143,7 +149,7 @@
 .bulk-messaging-page__recipient-context {
   margin: 12px 0 4px;
   font-size: 13px;
-  color: #64748b;
+  color: #475569;
 }
 
 .bulk-messaging-page__recipient-list {
