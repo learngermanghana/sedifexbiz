@@ -1,7 +1,7 @@
 {
   "name": "Sedifex — Inventory & POS",
   "short_name": "Sedifex",
-  "description": "Sell faster. Count smarter. Offline-first inventory & POS for shops.",
+  "description": "Sell faster. Count smarter. AI inventory and customer relationship platform for shops.",
   "start_url": "/?source=pwa",
   "display": "standalone",
   "background_color": "#ffffff",
