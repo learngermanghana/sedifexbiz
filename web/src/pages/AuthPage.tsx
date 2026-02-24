@@ -268,6 +268,7 @@ export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const [confirmPassword, setConfirmPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [businessName, setBusinessName] = useState('')
@@ -347,6 +348,12 @@ export default function AuthPage() {
 
   useEffect(() => {
     document.title = mode === 'login' ? 'Sedifex — Log in' : 'Sedifex — Sign up'
+  }, [mode])
+
+  useEffect(() => {
+    if (mode !== 'login') {
+      setIsPasswordVisible(false)
+    }
   }, [mode])
 
   useEffect(() => {
@@ -912,7 +919,7 @@ export default function AuthPage() {
                 value={password}
                 onChange={event => setPassword(event.target.value)}
                 onBlur={() => setPassword(current => current.trim())}
-                type="password"
+                type={mode === 'login' && isPasswordVisible ? 'text' : 'password'}
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 placeholder="Use a strong password"
                 required
@@ -924,6 +931,17 @@ export default function AuthPage() {
                 }
                 aria-describedby={mode === 'signup' ? 'password-guidelines' : undefined}
               />
+              {mode === 'login' && (
+                <label className="form__hint" style={{ display: 'inline-flex', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={isPasswordVisible}
+                    onChange={event => setIsPasswordVisible(event.target.checked)}
+                    disabled={isLoading}
+                  />
+                  Show password
+                </label>
+              )}
               {mode === 'signup' && (
                 <ul className="form__hint-list" id="password-guidelines">
                   {passwordChecklist.map(item => (
