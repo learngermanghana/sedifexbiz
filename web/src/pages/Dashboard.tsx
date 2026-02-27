@@ -49,6 +49,8 @@ type DashboardExpense = {
   date: string // yyyy-mm-dd
 }
 
+type FinanceRangeKey = 'month' | '30d' | '7d' | 'all'
+
 type ExpiringProduct = {
   id: string
   name: string
@@ -365,6 +367,7 @@ export default function Dashboard() {
     lastContextKey: null,
   })
   const [metricFilter, setMetricFilter] = useState<'all' | 'sales' | 'inventory'>('all')
+  const [financeRange, setFinanceRange] = useState<FinanceRangeKey>('month')
 
   const now = new Date()
   const todayKey = useMemo(
@@ -491,7 +494,7 @@ export default function Dashboard() {
     return unsubscribe
   }, [storeId])
 
-  // ---- Load sales for snapshot (last ~500 records for this store) ----
+  // ---- Load sales for snapshot ----
   useEffect(() => {
     if (!storeId) {
       setSales([])
@@ -505,7 +508,6 @@ export default function Dashboard() {
       collection(db, 'sales'),
       where('storeId', '==', storeId),
       orderBy('createdAt', 'desc'),
-      limit(500),
     )
 
     const unsubscribe = onSnapshot(
@@ -513,10 +515,7 @@ export default function Dashboard() {
       snap => {
         const rows: DashboardSale[] = snap.docs.map(docSnap => {
           const data = docSnap.data() as any
-          const createdAt =
-            data.createdAt && typeof data.createdAt.toDate === 'function'
-              ? (data.createdAt.toDate() as Date)
-              : null
+          const createdAt = toDate(data.createdAt)
 
           // total: prefer structured totals.total, then top-level total
           const total =
@@ -601,7 +600,6 @@ export default function Dashboard() {
       where('storeId', '==', storeId),
       orderBy('date', 'desc'),
       orderBy('createdAt', 'desc'),
-      limit(500),
     )
 
     const unsubscribe = onSnapshot(q, snap => {
@@ -692,6 +690,56 @@ export default function Dashboard() {
       .filter(exp => exp.date?.startsWith(currentMonth))
       .reduce((sum, exp) => sum + exp.amount, 0)
   }, [expenses, now])
+
+
+  const isFinanceDateInRange = (date: Date | null, range: FinanceRangeKey): boolean => {
+    if (!date) return false
+    if (range === 'all') return true
+    const diffDays = (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
+    if (range === '7d') return diffDays <= 7 && diffDays >= 0
+    if (range === '30d') return diffDays <= 30 && diffDays >= 0
+    return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()
+  }
+
+  const rangedSales = useMemo(
+    () => sales.filter(sale => isFinanceDateInRange(sale.createdAt, financeRange)),
+    [financeRange, sales],
+  )
+
+  const rangedExpenses = useMemo(
+    () =>
+      expenses.filter(expense => {
+        const expenseDate = expense.date ? new Date(`${expense.date}T00:00:00`) : null
+        const fallbackDate = Number.isNaN(expenseDate?.getTime()) ? null : expenseDate
+        return isFinanceDateInRange(fallbackDate, financeRange)
+      }),
+    [expenses, financeRange],
+  )
+
+  const financeGrossSales = useMemo(
+    () => rangedSales.reduce((sum, sale) => sum + sale.total, 0),
+    [rangedSales],
+  )
+  const financeTotalVat = useMemo(
+    () => rangedSales.reduce((sum, sale) => sum + (sale.vatTotal || 0), 0),
+    [rangedSales],
+  )
+  const financeTotalExpenses = useMemo(
+    () => rangedExpenses.reduce((sum, expense) => sum + expense.amount, 0),
+    [rangedExpenses],
+  )
+  const financeAllTimeExpenses = useMemo(
+    () => expenses.reduce((sum, expense) => sum + expense.amount, 0),
+    [expenses],
+  )
+  const financeNetProfit = financeGrossSales - financeTotalExpenses
+
+  const financeRangeLabel = (range: FinanceRangeKey): string => {
+    if (range === 'month') return 'This month'
+    if (range === '30d') return 'Last 30 days'
+    if (range === '7d') return 'Last 7 days'
+    return 'All time'
+  }
 
   const aiContext = useMemo(
     () => ({
@@ -1316,6 +1364,140 @@ export default function Dashboard() {
             </article>
           </div>
         )}
+      </section>
+
+
+      <section
+        style={{
+          background: '#FFFFFF',
+          borderRadius: 20,
+          border: '1px solid #E2E8F0',
+          padding: '20px 22px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+          marginBottom: 24,
+        }}
+        aria-label="Finance overview"
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0F172A' }}>Finance overview</h3>
+            <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+              Sales, VAT, debt, expenses, and net profit have been moved from Finance to home.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {(['month', '30d', '7d', 'all'] as FinanceRangeKey[]).map(key => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFinanceRange(key)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  border: financeRange === key ? '1px solid #4338CA' : '1px solid #E2E8F0',
+                  background: financeRange === key ? '#4338CA' : '#F8FAFC',
+                  color: financeRange === key ? '#FFFFFF' : '#1E293B',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                {financeRangeLabel(key)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: 16,
+          }}
+        >
+          <article style={{ background: '#F8FAFC', borderRadius: 14, padding: '14px 16px', border: '1px solid #E2E8F0' }}>
+            <p style={{ margin: 0, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.6, color: '#64748B', fontWeight: 600 }}>
+              Sales + VAT
+            </p>
+            <p style={{ margin: '6px 0 2px', fontSize: 24, fontWeight: 700, color: '#0F172A' }}>
+              GHS {financeGrossSales.toFixed(2)}
+            </p>
+            <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>VAT included: GHS {financeTotalVat.toFixed(2)}</p>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748B' }}>
+              Gross sales total (VAT included) for the selected range.
+            </p>
+          </article>
+
+          <article style={{ background: '#F8FAFC', borderRadius: 14, padding: '14px 16px', border: '1px solid #E2E8F0' }}>
+            <p style={{ margin: 0, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.6, color: '#64748B', fontWeight: 600 }}>
+              Outstanding customer debt
+            </p>
+            {debtError ? (
+              <p style={{ margin: '8px 0 0', color: '#DC2626', fontSize: 13 }}>{debtError}</p>
+            ) : isLoadingDebt ? (
+              <p style={{ margin: '8px 0 0', color: '#475569', fontSize: 13 }}>Loading customer balances…</p>
+            ) : (
+              <>
+                <p style={{ margin: '6px 0 2px', fontSize: 24, fontWeight: 700, color: '#0F172A' }}>
+                  {formatGhsFromCents(debtSummary?.totalOutstandingCents ?? 0)}
+                </p>
+                <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+                  {debtSummary?.debtorCount
+                    ? `${debtSummary.debtorCount} customer${debtSummary.debtorCount === 1 ? '' : 's'} owe you`
+                    : 'No unpaid balances recorded right now.'}
+                </p>
+                <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748B' }}>
+                  {debtSummary?.overdueCount
+                    ? `Overdue: ${formatGhsFromCents(debtSummary.overdueCents)} (${debtSummary.overdueCount} customer${
+                        debtSummary.overdueCount === 1 ? '' : 's'
+                      })`
+                    : 'No overdue debt at the moment.'}
+                </p>
+              </>
+            )}
+          </article>
+
+          <article style={{ background: '#F8FAFC', borderRadius: 14, padding: '14px 16px', border: '1px solid #E2E8F0' }}>
+            <p style={{ margin: 0, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.6, color: '#64748B', fontWeight: 600 }}>
+              Expenses
+            </p>
+            <p style={{ margin: '6px 0 2px', fontSize: 24, fontWeight: 700, color: '#0F172A' }}>
+              GHS {financeTotalExpenses.toFixed(2)}
+            </p>
+            <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+              This month: GHS {monthExpensesTotal.toFixed(2)} · All time: GHS {financeAllTimeExpenses.toFixed(2)}
+            </p>
+          </article>
+
+          <article style={{ background: '#F8FAFC', borderRadius: 14, padding: '14px 16px', border: '1px solid #E2E8F0' }}>
+            <p style={{ margin: 0, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.6, color: '#64748B', fontWeight: 600 }}>
+              Net profit
+            </p>
+            <p
+              style={{
+                margin: '6px 0 2px',
+                fontSize: 24,
+                fontWeight: 700,
+                color: financeNetProfit >= 0 ? '#16A34A' : '#DC2626',
+              }}
+            >
+              GHS {financeNetProfit.toFixed(2)}
+            </p>
+            <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
+              Gross sales minus expenses. (VAT is shown separately above.)
+            </p>
+          </article>
+        </div>
       </section>
 
       {/* Existing time range + analytics sections */}
