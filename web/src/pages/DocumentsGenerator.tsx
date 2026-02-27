@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { buildReceiptPdf, type PaymentMethod, type ReceiptLine } from '../utils/receipt'
 import { buildInvoicePdf, type InvoiceLine } from '../utils/invoice'
 import './DocumentsGenerator.css'
@@ -46,7 +47,13 @@ function formatCurrency(amount: number): string {
 }
 
 export default function DocumentsGenerator() {
-  const [docType, setDocType] = useState<DocumentType>('invoice')
+  const [searchParams] = useSearchParams()
+  const initialType = searchParams.get('type')
+  const [docType, setDocType] = useState<DocumentType>(initialType === 'receipt' ? 'receipt' : 'invoice')
+
+  useEffect(() => {
+    setDocType(initialType === 'receipt' ? 'receipt' : 'invoice')
+  }, [initialType])
   const [companyName, setCompanyName] = useState('')
   const [companyEmail, setCompanyEmail] = useState('')
   const [companyAddress, setCompanyAddress] = useState('')
