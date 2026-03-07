@@ -181,7 +181,7 @@ export default function InventorySystemGhana() {
             <Link className="seo-page__cta" to="/">
               Start free demo
             </Link>
-            <a className="seo-page__secondary" href="mailto:sedifexbiz@gmail.com">
+            <a className="seo-page__secondary" href="mailto:info@sedifex.com">
               Talk to sales
             </a>
           </div>
@@ -349,7 +349,7 @@ export default function InventorySystemGhana() {
           <Link className="seo-page__cta" to="/">
             Book a free walkthrough
           </Link>
-          <a className="seo-page__secondary" href="mailto:sedifexbiz@gmail.com">
+          <a className="seo-page__secondary" href="mailto:info@sedifex.com">
             Contact the team
           </a>
         </div>

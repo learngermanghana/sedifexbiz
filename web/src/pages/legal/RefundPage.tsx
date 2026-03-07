@@ -149,7 +149,7 @@ export default function RefundPage() {
 
         <p>
           If you believe there has been a billing error, please contact us as
-          soon as possible at <strong>sedifexbiz@gmail.com</strong> with:
+          soon as possible at <strong>info@sedifex.com</strong> with:
         </p>
 
         <ul>
@@ -173,7 +173,7 @@ export default function RefundPage() {
           </li>
           <li>
             You can request cancellation at any time by emailing{" "}
-            <strong>sedifexbiz@gmail.com</strong> or using any cancellation
+            <strong>info@sedifex.com</strong> or using any cancellation
             option provided inside the app.
           </li>
           <li>
@@ -196,7 +196,7 @@ export default function RefundPage() {
 
         <p>
           If you want to completely close your account and request deletion of
-          your data, you can email <strong>sedifexbiz@gmail.com</strong>.
+          your data, you can email <strong>info@sedifex.com</strong>.
         </p>
 
         <ul>
@@ -237,7 +237,7 @@ export default function RefundPage() {
 
         <ul>
           <li>
-            <strong>Email:</strong> sedifexbiz@gmail.com
+            <strong>Email:</strong> info@sedifex.com
           </li>
           <li>
             <strong>Address:</strong> Kofo Abayomi Street 101233, Victoria

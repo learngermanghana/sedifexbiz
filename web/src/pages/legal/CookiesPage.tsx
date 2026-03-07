@@ -177,7 +177,7 @@ export default function CookiesPage() {
 
         <ul>
           <li>
-            <strong>Email:</strong> sedifexbiz@gmail.com
+            <strong>Email:</strong> info@sedifex.com
           </li>
           <li>
             <strong>Address:</strong> Kofo Abayomi Street 101233, Victoria

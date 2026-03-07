@@ -197,7 +197,7 @@ export default function PrivacyPage() {
         <ul>
           <li>
             <strong>Email:</strong>{" "}
-            <a href="mailto:sedifexbiz@gmail.com">sedifexbiz@gmail.com</a>
+            <a href="mailto:info@sedifex.com">info@sedifex.com</a>
           </li>
           <li>
             <strong>Business name:</strong> Learn Language Education Academy

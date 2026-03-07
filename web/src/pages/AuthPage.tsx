@@ -1230,8 +1230,8 @@ export default function AuthPage() {
             </p>
           </div>
 
-          <a className="app__partners-link" href="mailto:sedifexbiz@gmail.com">
-            Book a Sedifex demo: sedifexbiz@gmail.com
+          <a className="app__partners-link" href="mailto:info@sedifex.com">
+            Book a Sedifex demo: info@sedifex.com
           </a>
         </div>
 
@@ -1327,7 +1327,7 @@ export default function AuthPage() {
             Book a 30-minute consultation
           </a>
           <p className="info-card__caption">
-            Prefer email? Reach us at sedifexbiz@gmail.com.
+            Prefer email? Reach us at info@sedifex.com.
           </p>
         </article>
       </section>
