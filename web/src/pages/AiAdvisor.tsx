@@ -15,7 +15,6 @@ type AdvisorFormState = {
   loading: boolean
   error: string | null
   turns: AdvisorTurn[]
-  editingTurnIndex: number | null
 }
 
 function buildJsonContext(storeId: string | null, billing: ReturnType<typeof useStoreBilling>['billing']) {
@@ -41,7 +40,6 @@ export default function AiAdvisor() {
     loading: false,
     error: null,
     turns: [],
-    editingTurnIndex: null,
   })
 
   const jsonContext = useMemo(
@@ -73,15 +71,7 @@ export default function AiAdvisor() {
       setState(prev => ({
         ...prev,
         loading: false,
-        turns:
-          prev.editingTurnIndex === null
-            ? [...prev.turns, { question: trimmedQuestion, response: result }]
-            : prev.turns.map((turn, index) =>
-                index === prev.editingTurnIndex
-                  ? { question: trimmedQuestion, response: result }
-                  : turn,
-              ),
-        editingTurnIndex: null,
+        turns: [...prev.turns, { question: trimmedQuestion, response: result }],
       }))
     } catch (error: unknown) {
       console.error('[AiAdvisor] Unable to fetch advice', error)
@@ -91,15 +81,6 @@ export default function AiAdvisor() {
           : 'We could not fetch advice right now. Please try again.'
       setState(prev => ({ ...prev, error: message, loading: false }))
     }
-  }
-
-  function handleEditTurn(turnIndex: number) {
-    setState(prev => ({
-      ...prev,
-      question: prev.turns[turnIndex]?.question ?? prev.question,
-      error: null,
-      editingTurnIndex: turnIndex,
-    }))
   }
 
   return (
@@ -125,11 +106,7 @@ export default function AiAdvisor() {
 
           <div className="advisor__actions">
             <button type="submit" className="button" disabled={state.loading}>
-              {state.loading
-                ? 'Generating…'
-                : state.editingTurnIndex === null
-                  ? 'Generate advice'
-                  : 'Update answer'}
+              {state.loading ? 'Generating…' : 'Generate advice'}
             </button>
             {state.error ? <span className="advisor__error">{state.error}</span> : null}
           </div>
@@ -143,9 +120,9 @@ export default function AiAdvisor() {
                 Ask a question above and follow the conversation like a chat thread.
               </p>
             </div>
-            {state.editingTurnIndex !== null ? (
-              <span className="advisor__badge advisor__badge--success">Editing message</span>
-            ) : null}
+            <span className="advisor__badge advisor__badge--success">
+              {state.loading ? 'Responding…' : 'Live'}
+            </span>
           </div>
 
           {state.turns.length ? (
@@ -158,14 +135,6 @@ export default function AiAdvisor() {
                       <span className="advisor__meta">Workspace: {turn.response.storeId}</span>
                     </div>
                     <p className="advisor__message-content">{turn.question}</p>
-                    <button
-                      type="button"
-                      className="button button--ghost button--small"
-                      onClick={() => handleEditTurn(index)}
-                      disabled={state.loading}
-                    >
-                      Edit & resend
-                    </button>
                   </div>
 
                   <div className="advisor__message advisor__message--ai">
