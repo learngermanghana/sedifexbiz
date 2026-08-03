@@ -821,7 +821,7 @@ export default function Products() {
     const unsubscribe = onSnapshot(
       q,
       snapshot => {
-        const rows: SaleRecord[] = snapshot.docs.map(docSnap => {
+        const rows: SaleRecord[] = snapshot.docs.filter(docSnap => docSnap.data().status !== 'voided').map(docSnap => {
           const data = docSnap.data() as Record<string, unknown>
           return {
             id: docSnap.id,

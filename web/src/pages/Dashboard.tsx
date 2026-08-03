@@ -194,7 +194,7 @@ export default function Dashboard() {
     return () => unsubscribers.forEach(unsubscribe => unsubscribe())
   }, [storeId])
 
-  const todaySales = sales.filter(item => isToday(item.createdAt))
+  const todaySales = sales.filter(item => item.status !== 'voided' && isToday(item.createdAt))
   const todayOrders = orders.filter(item => isToday(item.createdAtServer ?? item.createdAt))
   const todayBookings = bookings.filter(item => isToday(item.createdAtServer ?? item.createdAt))
   const todayVolunteers = volunteers.filter(item => isToday(item.createdAtServer ?? item.createdAt))
