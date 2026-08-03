@@ -8,6 +8,7 @@ import { useMemberships } from '../../hooks/useMemberships'
 import { useToast } from '../../components/ToastProvider'
 import ReportDataTable, { type ReportColumn } from './ReportDataTable'
 import { asNumber, asText, downloadCsv, exportReportPdf, formatDate, formatMoney, getNestedObject, toDate } from './reportUtils'
+import './PosSalesReport.css'
 
 type SaleRow = {
   id: string
@@ -18,13 +19,14 @@ type SaleRow = {
   cardTotal: number
   momoTotal: number
   unitsSold: number
+  itemsSummary: string
   paymentSummary: string
   createdAt: Date | null
   status: 'completed' | 'voided'
   voidReason: string
 }
 
-function mapSale(id: string, data: Record<string, unknown>): SaleRow {
+export function mapSale(id: string, data: Record<string, unknown>): SaleRow {
   const tenders = getNestedObject(data, 'tenders')
   const customer = getNestedObject(data, 'customer')
   const items = Array.isArray(data.items) ? data.items as Array<Record<string, unknown>> : []
@@ -32,6 +34,11 @@ function mapSale(id: string, data: Record<string, unknown>): SaleRow {
   const cardTotal = asNumber(tenders.card, 0)
   const momoTotal = asNumber(tenders.momo ?? tenders.mobileMoney ?? tenders.mobile_money, 0)
   const unitsSold = items.reduce((sum, item) => sum + asNumber(item.qty ?? item.quantity, 0), 0)
+  const itemsSummary = items.map(item => {
+    const name = asText(item.name ?? item.productName, 'Unnamed item')
+    const quantity = asNumber(item.qty ?? item.quantity, 0)
+    return quantity > 0 ? `${name} × ${quantity}` : name
+  }).join(', ')
   const paymentParts = [
     cashTotal > 0 ? `Cash ${formatMoney(cashTotal)}` : '',
     cardTotal > 0 ? `Card ${formatMoney(cardTotal)}` : '',
@@ -47,6 +54,7 @@ function mapSale(id: string, data: Record<string, unknown>): SaleRow {
     cardTotal,
     momoTotal,
     unitsSold,
+    itemsSummary: itemsSummary || 'No item details',
     paymentSummary: paymentParts.join(' · ') || 'Not specified',
     createdAt: toDate(data.createdAt),
     status: asText(data.status, '').toLowerCase() === 'voided' ? 'voided' : 'completed',
@@ -60,6 +68,7 @@ export default function PosSalesReport() {
   const { publish } = useToast()
   const [sales, setSales] = useState<SaleRow[]>([])
   const [range, setRange] = useState('all')
+  const [loadError, setLoadError] = useState('')
   const [voidingId, setVoidingId] = useState<string | null>(null)
   const isOwner = memberships.some(membership => membership.storeId === storeId && membership.role === 'owner')
 
@@ -69,9 +78,19 @@ export default function PosSalesReport() {
       return undefined
     }
 
-    const unsubscribe = onSnapshot(query(collection(db, 'sales'), where('storeId', '==', storeId)), snapshot => {
-      setSales(snapshot.docs.map(docSnap => mapSale(docSnap.id, docSnap.data() as Record<string, unknown>)).sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)))
-    })
+    setLoadError('')
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'sales'), where('storeId', '==', storeId)),
+      snapshot => {
+        setLoadError('')
+        setSales(snapshot.docs.map(docSnap => mapSale(docSnap.id, docSnap.data() as Record<string, unknown>)).sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)))
+      },
+      error => {
+        console.error('[pos-sales-report] Failed to load sales', error)
+        setSales([])
+        setLoadError('Sales could not be loaded. Check your connection and try again.')
+      },
+    )
 
     return unsubscribe
   }, [storeId])
@@ -97,6 +116,7 @@ export default function PosSalesReport() {
   const columns: ReportColumn<SaleRow>[] = [
     { key: 'receiptNo', label: 'Receipt', sortable: true, value: row => row.receiptNo },
     { key: 'customer', label: 'Customer', sortable: true, value: row => row.customerName },
+    { key: 'items', label: 'Items sold', value: row => row.itemsSummary, render: row => <span className="pos-sales-report__items">{row.itemsSummary}</span> },
     { key: 'total', label: 'Total', sortable: true, align: 'right', value: row => row.total, render: row => formatMoney(row.total) },
     { key: 'payment', label: 'Payment', sortable: true, value: row => row.paymentSummary },
     { key: 'units', label: 'Units', sortable: true, align: 'right', value: row => row.unitsSold },
@@ -132,6 +152,7 @@ export default function PosSalesReport() {
     downloadCsv('sedifex-pos-sales-report.csv', filtered.map(sale => ({
       receiptNo: sale.receiptNo,
       customer: sale.customerName,
+      itemsSold: sale.itemsSummary,
       total: sale.total,
       cash: sale.cashTotal,
       card: sale.cardTotal,
@@ -156,6 +177,7 @@ export default function PosSalesReport() {
       rows: filtered.map(sale => ({
         receiptNo: sale.receiptNo,
         customer: sale.customerName,
+        itemsSold: sale.itemsSummary,
         total: sale.total,
         cash: sale.cashTotal,
         card: sale.cardTotal,
@@ -170,11 +192,11 @@ export default function PosSalesReport() {
   }
 
   return (
-    <div className="workspace-page">
+    <div className="workspace-page pos-sales-report">
       <section className="workspace-card">
         <p className="workspace-eyebrow">Reports / POS sales</p>
-        <h1>Internal sales report</h1>
-        <p className="workspace-muted">Review completed sales, void mistakes with owner approval, restore inventory, and export an audit-friendly history.</p>
+        <h1>Sales history</h1>
+        <p className="workspace-muted">See every sale and the items sold. Owners can also void mistakes and restore inventory.</p>
       </section>
       <section className="workspace-grid workspace-grid--four">
         <article className="workspace-card"><strong>{totals.count}</strong><span>Sales</span></article>
@@ -183,6 +205,7 @@ export default function PosSalesReport() {
         <article className="workspace-card"><strong>{formatMoney(totals.cash)}</strong><span>Cash collected</span></article>
       </section>
       <section className="workspace-card">
+        {loadError && <p className="products__message products__message--error" role="alert">{loadError}</p>}
         <div className="workspace-section-header">
           <div><h2>Sale details</h2><p className="workspace-muted">Owners can void an incorrect sale, then record the corrected sale in Sell. Payment refunds must be completed separately with the payment provider.</p></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -198,7 +221,7 @@ export default function PosSalesReport() {
             <option value="30">Last 30 days</option>
           </select>
         </div>
-        <ReportDataTable rows={filtered} columns={columns} getRowKey={row => row.id} searchPlaceholder="Search receipt, customer, payment…" />
+        <ReportDataTable rows={filtered} columns={columns} getRowKey={row => row.id} searchPlaceholder="Search receipt, item, customer, payment…" />
       </section>
     </div>
   )
