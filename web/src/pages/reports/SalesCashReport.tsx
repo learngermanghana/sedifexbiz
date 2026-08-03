@@ -85,7 +85,8 @@ function inRange(date: Date | null, range: string) {
 function mapPosSale(id: string, data: Record<string, unknown>): BusinessSaleRow {
   const customer = getNestedObject(data, 'customer')
   const first = firstItem(data)
-  const amount = asNumber(data.total ?? data.grandTotal ?? data.amount, readAmount(data))
+  const isVoided = asText(data.status).toLowerCase() === 'voided'
+  const amount = isVoided ? 0 : asNumber(data.total ?? data.grandTotal ?? data.amount, readAmount(data))
   return {
     id: `pos-${id}`,
     type: 'pos',

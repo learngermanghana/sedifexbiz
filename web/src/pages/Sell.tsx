@@ -1495,7 +1495,7 @@ export default function Sell() {
     const unsubscribe = onSnapshot(
       q,
       snapshot => {
-        setDailySalesCount(snapshot.docs.length)
+        setDailySalesCount(snapshot.docs.filter(sale => sale.data().status !== 'voided').length)
       },
       () => {
         setDailySalesCount(0)

@@ -537,6 +537,7 @@ export default function Customers() {
 
     records.forEach(record => {
       if (!record) return
+      if (String(record.status ?? '').toLowerCase() === 'voided') return
       const customer =
         record.customer && typeof record.customer === 'object'
           ? (record.customer as { id?: string | null; name?: string | null; phone?: string | null })

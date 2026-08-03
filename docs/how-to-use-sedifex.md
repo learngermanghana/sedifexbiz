@@ -266,6 +266,18 @@ Use:
 5. Track **Marketplace Orders**, customers, receipts, expenses, settlement, and reports.
 6. Build a website with **Website Builder** and connect it from **Integrations**.
 
+#### Correcting a completed POS sale
+
+If a mistake is found before checkout, change the quantity or remove the item in **Sell** before selecting **Record sale**. After a sale has been recorded:
+
+1. A workspace owner opens **Reports → POS Sales Report**.
+2. Find the incorrect receipt and select **Void sale**.
+3. Enter a clear reason and confirm the action. Sedifex preserves the original sale for audit history and restores inventory with reversing ledger entries.
+4. Complete any customer refund separately through the original cash, card, or Mobile Money channel.
+5. Return to **Sell** and record the corrected sale when required.
+
+Only owners can void completed sales. A void cannot itself be undone, and attempting it again will not restore inventory twice.
+
 ### Travel workflow
 
 1. Select **Travel** in navigation settings.

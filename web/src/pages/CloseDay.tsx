@@ -126,6 +126,7 @@ export default function CloseDay() {
 
       snap.forEach(d => {
         const data = d.data() as any
+        if (String(data.status ?? '').toLowerCase() === 'voided') return
 
         // Total
         const saleTotal =
