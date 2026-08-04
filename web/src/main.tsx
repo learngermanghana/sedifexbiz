@@ -114,6 +114,7 @@ const router = createBrowserRouter([
       { path: 'reports', element: <ReportsHome /> },
       { path: 'reports/sales-cash', element: <LazyPage><SalesCashReport /></LazyPage> },
       { path: 'reports/inventory', element: <InventoryReport /> },
+      { path: 'reports/sales', element: <Navigate to="/reports/pos-sales" replace /> },
       { path: 'reports/pos-sales', element: <PosSalesReport /> },
       { path: 'reports/website-sales', element: <WebsiteSalesReport /> },
       { path: 'reports/settlement', element: <SettlementReport /> },
