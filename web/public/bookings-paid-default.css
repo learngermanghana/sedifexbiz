@@ -1,0 +1,17 @@
+.bookings-paid-default-notice {
+  margin: -4px 0 2px;
+  padding: 10px 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 12px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .bookings-paid-default-notice {
+    margin-top: 0;
+    font-size: 13px;
+  }
+}
