@@ -37,12 +37,7 @@ type BookingRow = {
   updatedAt: Date | null
 }
 
-type SummaryCard = {
-  label: string
-  value: string | number
-  helper: string
-  tone: string
-}
+type SummaryCard = { label: string; value: string | number; helper: string; tone: string }
 
 function sourceLabel(sourceChannel: string) {
   if (sourceChannel === 'client_website') return 'Client website'
@@ -60,11 +55,12 @@ function normalizeStatus(value: unknown, fallback = 'pending') {
 }
 
 function readReminderStatus(data: Record<string, unknown>) {
-  const reminder3 = data.reminder_3d_sent_at || data.reminder3dSentAt
-  const reminder2 = data.reminder_2d_sent_at || data.reminder2dSentAt
-  const reminder1 = data.reminder_1d_sent_at || data.reminder1dSentAt
-  const thankYou = data.thank_you_sent_at || data.thankYouSentAt
-  const sent = [reminder3 ? '3d' : '', reminder2 ? '2d' : '', reminder1 ? '1d' : '', thankYou ? 'thanks' : ''].filter(Boolean)
+  const sent = [
+    data.reminder_3d_sent_at || data.reminder3dSentAt ? '3d' : '',
+    data.reminder_2d_sent_at || data.reminder2dSentAt ? '2d' : '',
+    data.reminder_1d_sent_at || data.reminder1dSentAt ? '1d' : '',
+    data.thank_you_sent_at || data.thankYouSentAt ? 'thanks' : '',
+  ].filter(Boolean)
   return sent.length ? sent.join(', ') : 'Not sent'
 }
 
@@ -74,7 +70,6 @@ function mapBooking(id: string, data: Record<string, unknown>, sourcePath: 'root
   const payment = getNestedObject(data, 'payment')
   const sourceChannel = normalizeSourceChannel(data.sourceChannel ?? data.source_channel ?? data.source)
   const reportFields = deriveReportPaymentFields(data)
-  const paymentStatus = reportFields.paymentStatus
   return {
     id,
     reference: asText(data.reference ?? data.paymentReference ?? data.payment_reference ?? payment.reference, id),
@@ -88,7 +83,7 @@ function mapBooking(id: string, data: Record<string, unknown>, sourcePath: 'root
     sourcePath,
     bookingDate: asText(data.bookingDate ?? data.date ?? booking.preferredDate ?? booking.date, '—'),
     bookingTime: asText(data.bookingTime ?? data.time ?? booking.preferredTime ?? booking.time, '—'),
-    paymentStatus,
+    paymentStatus: reportFields.paymentStatus,
     bookingStatus: normalizeBookingStatusFromRecord(data),
     syncStatus: normalizeStatus(data.syncStatus ?? data.sync_status, 'not_ready'),
     syncReason: asText(data.syncReason ?? data.sync_reason, '—'),
@@ -111,42 +106,25 @@ function startForRange(range: string) {
   const now = new Date()
   const start = new Date(now)
   if (range === 'today') start.setHours(0, 0, 0, 0)
-  if (range === 'yesterday') {
-    start.setDate(now.getDate() - 1)
-    start.setHours(0, 0, 0, 0)
-  }
+  if (range === 'yesterday') { start.setDate(now.getDate() - 1); start.setHours(0, 0, 0, 0) }
   if (range === '7d') start.setDate(now.getDate() - 7)
   if (range === '30d') start.setDate(now.getDate() - 30)
-  if (range === 'month') {
-    start.setDate(1)
-    start.setHours(0, 0, 0, 0)
-  }
-  if (range === 'last_month') {
-    start.setMonth(now.getMonth() - 1, 1)
-    start.setHours(0, 0, 0, 0)
-  }
+  if (range === 'month') { start.setDate(1); start.setHours(0, 0, 0, 0) }
+  if (range === 'last_month') { start.setMonth(now.getMonth() - 1, 1); start.setHours(0, 0, 0, 0) }
   return start
 }
 
 function endForRange(range: string) {
   const now = new Date()
-  if (range === 'yesterday') {
-    const end = new Date(now)
-    end.setHours(0, 0, 0, 0)
-    return end
-  }
-  if (range === 'last_month') {
-    return new Date(now.getFullYear(), now.getMonth(), 1)
-  }
+  if (range === 'yesterday') { const end = new Date(now); end.setHours(0, 0, 0, 0); return end }
+  if (range === 'last_month') return new Date(now.getFullYear(), now.getMonth(), 1)
   return now
 }
 
 function inDateRange(date: Date | null, range: string) {
   if (range === 'all') return true
   if (!date) return false
-  const start = startForRange(range)
-  const end = endForRange(range)
-  return date >= start && date <= end
+  return date >= startForRange(range) && date <= endForRange(range)
 }
 
 function isPaidLike(status: string) {
@@ -163,95 +141,18 @@ function badgeClass(status: string, type: 'booking' | 'payment' | 'sync' = 'book
   return 'border-slate-200 bg-slate-100 text-slate-600'
 }
 
-function formatLabel(value: string) {
-  return value.replace(/_/g, ' ')
-}
-
-function bookingSlotLabel(booking: BookingRow) {
-  if (booking.slotStartAt !== '—') return `${booking.slotStartAt} - ${booking.slotEndAt}`
-  return 'No slot'
-}
+function formatLabel(value: string) { return value.replace(/_/g, ' ') }
 
 function SummaryMetric({ item }: { item: SummaryCard }) {
-  return (
-    <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" style={{ borderLeft: `6px solid ${item.tone}` }}>
-      <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: item.tone }}>{item.label}</p>
-      <strong className="mt-3 block text-3xl font-semibold tracking-tight text-slate-950">{item.value}</strong>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{item.helper}</p>
-    </article>
-  )
+  return <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" style={{ borderLeft: `6px solid ${item.tone}` }}>
+    <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: item.tone }}>{item.label}</p>
+    <strong className="mt-3 block text-3xl font-semibold tracking-tight text-slate-950">{item.value}</strong>
+    <p className="mt-2 text-sm leading-6 text-slate-500">{item.helper}</p>
+  </article>
 }
 
 function StatusPill({ label, type = 'booking' }: { label: string; type?: 'booking' | 'payment' | 'sync' }) {
-  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold capitalize ${badgeClass(label, type)}`}>{formatLabel(label)}</span>
-}
-
-function BookingCard({ booking, checked, deleting, onSelect, onDelete }: { booking: BookingRow; checked: boolean; deleting: boolean; onSelect: (checked: boolean) => void; onDelete: () => void }) {
-  return (
-    <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-        <label className="inline-flex items-center gap-2 text-sm font-bold text-slate-700">
-          <input type="checkbox" className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" checked={checked} onChange={event => onSelect(event.target.checked)} />
-          Select booking
-        </label>
-        <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50" onClick={onDelete} disabled={deleting}>
-          {deleting ? 'Deleting…' : 'Delete'}
-        </button>
-      </div>
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(260px,0.95fr)_minmax(220px,0.7fr)] xl:items-start">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-indigo-700">{booking.sourceLabel}</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{booking.sourcePath === 'root' ? 'Root record' : 'Store record'}</span>
-          </div>
-          <h3 className="mt-3 text-xl font-bold leading-snug text-slate-950">{booking.serviceName}</h3>
-          <p className="mt-1 text-sm text-slate-500">{booking.recordType}</p>
-          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Reference</p>
-            <p className="mt-1 break-all font-mono text-sm font-semibold text-slate-900">{booking.reference}</p>
-            <p className="mt-1 text-xs text-slate-500">Created: {formatDate(booking.createdAt)}</p>
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Customer</p>
-            <p className="mt-1 text-base font-bold text-slate-950">{booking.customerName}</p>
-            <p className="mt-1 break-all text-sm text-slate-600">{booking.customerPhone || 'No contact'}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Schedule</p>
-            <p className="mt-1 text-base font-bold text-slate-950">{booking.bookingDate}</p>
-            <p className="mt-1 text-sm text-slate-600">{booking.bookingTime}</p>
-            <p className="mt-1 text-xs text-slate-500">{bookingSlotLabel(booking)}</p>
-          </div>
-        </div>
-
-        <div className="rounded-2xl bg-slate-50 p-4">
-          <div className="flex flex-wrap gap-2">
-            <StatusPill label={booking.bookingStatus} />
-            <StatusPill label={booking.paymentStatus} type="payment" />
-            <StatusPill label={booking.syncStatus} type="sync" />
-          </div>
-          <div className="mt-4 space-y-2 text-sm text-slate-600">
-            <p><span className="font-semibold text-slate-900">Reminder:</span> {booking.reminderStatus}</p>
-            <p><span className="font-semibold text-slate-900">Sync reason:</span> {booking.syncReason}</p>
-            <p><span className="font-semibold text-slate-900">Registration:</span> {booking.registrationStatus}</p>
-          </div>
-          <div className="mt-5 flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Received / Outstanding</p>
-              <p className="text-xl font-bold text-slate-950">{formatMoney(booking.amountReceived)}</p>
-              <p className="text-xs text-slate-500">Balance: {formatMoney(booking.amountOutstanding)}</p>
-            </div>
-            <Link className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5" to={`/bookings/${booking.id}`}>
-              Open
-            </Link>
-          </div>
-        </div>
-      </div>
-    </article>
-  )
+  return <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-bold capitalize ${badgeClass(label, type)}`}>{formatLabel(label)}</span>
 }
 
 export default function BookingsReport() {
@@ -262,29 +163,23 @@ export default function BookingsReport() {
   const [source, setSource] = useState('all')
   const [sync, setSync] = useState('all')
   const [range, setRange] = useState('30d')
+  const [search, setSearch] = useState('')
+  const [rowsPerPage, setRowsPerPage] = useState(25)
+  const [page, setPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [deletingIds, setDeletingIds] = useState<string[]>([])
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!storeId) {
-      setRootBookings([])
-      setStoreBookings([])
-      setSelectedIds([])
-      setDeletingIds([])
-      return undefined
-    }
+    if (!storeId) { setRootBookings([]); setStoreBookings([]); setSelectedIds([]); setDeletingIds([]); return undefined }
     const unsubRoot = onSnapshot(query(collection(db, 'integrationBookings'), where('storeId', '==', storeId)), snapshot => {
       setRootBookings(snapshot.docs.map(docSnap => mapBooking(docSnap.id, docSnap.data() as Record<string, unknown>, 'root')))
     })
     const unsubStore = onSnapshot(collection(db, 'stores', storeId, 'integrationBookings'), snapshot => {
       setStoreBookings(snapshot.docs.map(docSnap => mapBooking(docSnap.id, docSnap.data() as Record<string, unknown>, 'store')))
     })
-    return () => {
-      unsubRoot()
-      unsubStore()
-    }
+    return () => { unsubRoot(); unsubStore() }
   }, [storeId])
 
   const bookings = useMemo(() => {
@@ -298,251 +193,112 @@ export default function BookingsReport() {
   }, [rootBookings, storeBookings])
 
   const filtered = useMemo(() => bookings.filter(booking => {
-    const statusOk = status === 'all' || booking.bookingStatus === status || booking.paymentStatus === status
-    const sourceOk = source === 'all' || booking.sourceChannel === source
-    const syncOk = sync === 'all' || booking.syncStatus === sync
-    const dateOk = inDateRange(booking.createdAt, range)
-    return statusOk && sourceOk && syncOk && dateOk
-  }), [bookings, range, source, status, sync])
+    const queryText = search.trim().toLowerCase()
+    const searchOk = !queryText || [booking.reference, booking.serviceName, booking.customerName, booking.customerPhone, booking.sourceLabel, booking.bookingDate, booking.paymentStatus, booking.bookingStatus].some(value => value.toLowerCase().includes(queryText))
+    return searchOk && (status === 'all' || booking.bookingStatus === status || booking.paymentStatus === status) && (source === 'all' || booking.sourceChannel === source) && (sync === 'all' || booking.syncStatus === sync) && inDateRange(booking.createdAt, range)
+  }), [bookings, range, search, source, status, sync])
 
+  useEffect(() => { setPage(1) }, [range, rowsPerPage, search, source, status, sync])
+  useEffect(() => { setSelectedIds(current => current.filter(id => filtered.some(booking => booking.id === id))) }, [filtered])
 
-  useEffect(() => {
-    setSelectedIds(current => current.filter(id => filtered.some(booking => booking.id === id)))
-  }, [filtered])
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
+  const safePage = Math.min(page, totalPages)
+  const pageRows = filtered.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage)
+  const firstRow = filtered.length ? (safePage - 1) * rowsPerPage + 1 : 0
+  const lastRow = Math.min(safePage * rowsPerPage, filtered.length)
 
   async function deleteBookingRecords(booking: BookingRow) {
     if (!storeId) return
-    await Promise.all([
-      deleteDoc(doc(db, 'stores', storeId, 'integrationBookings', booking.id)),
-      deleteDoc(doc(db, 'integrationBookings', booking.id)),
-    ])
+    await Promise.all([deleteDoc(doc(db, 'stores', storeId, 'integrationBookings', booking.id)), deleteDoc(doc(db, 'integrationBookings', booking.id))])
   }
 
   async function deleteOneBooking(booking: BookingRow) {
-    const label = booking.serviceName || booking.reference || 'this booking'
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
-
+    if (!window.confirm(`Delete ${booking.serviceName || booking.reference || 'this booking'}? This cannot be undone.`)) return
     setDeletingIds(current => Array.from(new Set([...current, booking.id])))
-    setSuccessMessage(null)
-    setErrorMessage(null)
-    try {
-      await deleteBookingRecords(booking)
-      setSelectedIds(current => current.filter(id => id !== booking.id))
-      setSuccessMessage('Booking deleted successfully.')
-    } catch (error) {
-      console.error(error)
-      setErrorMessage('Unable to delete booking right now. Please try again.')
-    } finally {
-      setDeletingIds(current => current.filter(id => id !== booking.id))
-    }
+    setSuccessMessage(null); setErrorMessage(null)
+    try { await deleteBookingRecords(booking); setSelectedIds(current => current.filter(id => id !== booking.id)); setSuccessMessage('Booking deleted successfully.') }
+    catch (error) { console.error(error); setErrorMessage('Unable to delete booking right now. Please try again.') }
+    finally { setDeletingIds(current => current.filter(id => id !== booking.id)) }
   }
 
   async function deleteSelectedBookings() {
     const selected = filtered.filter(booking => selectedIds.includes(booking.id))
-    if (!selected.length) return
-    if (!window.confirm(`Delete ${selected.length} selected booking${selected.length === 1 ? '' : 's'}? This cannot be undone.`)) return
-
+    if (!selected.length || !window.confirm(`Delete ${selected.length} selected booking${selected.length === 1 ? '' : 's'}? This cannot be undone.`)) return
     setDeletingIds(current => Array.from(new Set([...current, ...selected.map(booking => booking.id)])))
-    setSuccessMessage(null)
-    setErrorMessage(null)
-    try {
-      await Promise.all(selected.map(booking => deleteBookingRecords(booking)))
-      setSelectedIds([])
-      setSuccessMessage(`${selected.length} booking${selected.length === 1 ? '' : 's'} deleted successfully.`)
-    } catch (error) {
-      console.error(error)
-      setErrorMessage('Unable to delete selected bookings right now. Please try again.')
-    } finally {
-      setDeletingIds(current => current.filter(id => !selected.some(booking => booking.id === id)))
-    }
-  }
-
-  function setBookingSelected(bookingId: string, checked: boolean) {
-    setSelectedIds(current => checked ? Array.from(new Set([...current, bookingId])) : current.filter(id => id !== bookingId))
+    setSuccessMessage(null); setErrorMessage(null)
+    try { await Promise.all(selected.map(deleteBookingRecords)); setSelectedIds([]); setSuccessMessage(`${selected.length} booking${selected.length === 1 ? '' : 's'} deleted successfully.`) }
+    catch (error) { console.error(error); setErrorMessage('Unable to delete selected bookings right now. Please try again.') }
+    finally { setDeletingIds(current => current.filter(id => !selected.some(booking => booking.id === id))) }
   }
 
   const totals = useMemo(() => ({
     count: filtered.length,
-    paid: filtered.filter(booking => isPaidLike(booking.paymentStatus)).length,
     pending: filtered.filter(booking => booking.paymentStatus.includes('pending') || booking.bookingStatus.includes('pending')).length,
     confirmed: filtered.filter(booking => booking.bookingStatus === 'confirmed').length,
     cancelled: filtered.filter(booking => booking.bookingStatus === 'cancelled').length,
     completed: filtered.filter(booking => booking.bookingStatus === 'completed').length,
     syncPending: filtered.filter(booking => booking.syncStatus === 'pending').length,
-    synced: filtered.filter(booking => booking.syncStatus === 'synced').length,
     value: filtered.reduce((sum, booking) => sum + booking.amount, 0),
     received: filtered.reduce((sum, booking) => sum + booking.amountReceived, 0),
-    outstanding: filtered.reduce((sum, booking) => sum + booking.amountOutstanding, 0),
   }), [filtered])
 
   const summaryCards: SummaryCard[] = [
-    { label: 'Total bookings', value: totals.count, helper: 'All bookings in the selected range', tone: '#4f46e5' },
+    { label: 'Total bookings', value: totals.count, helper: 'Bookings in the selected range', tone: '#4f46e5' },
     { label: 'Confirmed', value: totals.confirmed, helper: 'Approved booking records', tone: '#16a34a' },
     { label: 'Sync pending', value: totals.syncPending, helper: 'Waiting for App Script sync', tone: '#a855f7' },
-    { label: 'Booking value', value: formatMoney(totals.value), helper: 'Total value from filtered rows', tone: '#0f766e' },
-    { label: 'Pending', value: totals.pending, helper: 'Needs confirmation or payment review', tone: '#f97316' },
-    { label: 'Received', value: formatMoney(totals.received), helper: 'Paid revenue received; partial bookings only count deposits', tone: '#059669' },
+    { label: 'Booking value', value: formatMoney(totals.value), helper: 'Value from filtered rows', tone: '#0f766e' },
+    { label: 'Pending', value: totals.pending, helper: 'Needs payment or confirmation review', tone: '#f97316' },
+    { label: 'Received', value: formatMoney(totals.received), helper: 'Revenue already received', tone: '#059669' },
     { label: 'Cancelled', value: totals.cancelled, helper: 'Cancelled booking records', tone: '#ef4444' },
     { label: 'Completed', value: totals.completed, helper: 'Finished booking records', tone: '#2563eb' },
   ]
 
   function exportRows() {
-    downloadCsv('sedifex-bookings-report.csv', filtered.map(booking => ({
-      reference: booking.reference,
-      serviceName: booking.serviceName,
-      recordType: booking.recordType,
-      customer: booking.customerName,
-      contact: booking.customerPhone,
-      source: booking.sourceLabel,
-      sourcePath: booking.sourcePath,
-      bookingDate: booking.bookingDate,
-      bookingTime: booking.bookingTime,
-      paymentStatus: booking.paymentStatus,
-      bookingStatus: booking.bookingStatus,
-      syncStatus: booking.syncStatus,
-      syncReason: booking.syncReason,
-      reminderStatus: booking.reminderStatus,
-      confirmedAt: formatDate(booking.confirmedAt),
-      cancelledAt: formatDate(booking.cancelledAt),
-      completedAt: formatDate(booking.completedAt),
-      amount: booking.amount,
-      amountReceived: booking.amountReceived,
-      amountOutstanding: booking.amountOutstanding,
-      createdAt: formatDate(booking.createdAt),
-    })))
+    downloadCsv('sedifex-bookings-report.csv', filtered.map(booking => ({ reference: booking.reference, serviceName: booking.serviceName, recordType: booking.recordType, customer: booking.customerName, contact: booking.customerPhone, source: booking.sourceLabel, sourcePath: booking.sourcePath, bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, paymentStatus: booking.paymentStatus, bookingStatus: booking.bookingStatus, syncStatus: booking.syncStatus, syncReason: booking.syncReason, reminderStatus: booking.reminderStatus, confirmedAt: formatDate(booking.confirmedAt), cancelledAt: formatDate(booking.cancelledAt), completedAt: formatDate(booking.completedAt), amount: booking.amount, amountReceived: booking.amountReceived, amountOutstanding: booking.amountOutstanding, createdAt: formatDate(booking.createdAt) })))
   }
 
   function exportPdf() {
-    exportReportPdf({
-      title: 'Bookings report',
-      subtitle: 'Service, class, appointment, and website bookings with payment, source, sync, and reminder status.',
-      summary: [
-        { label: 'Total bookings', value: totals.count },
-        { label: 'Confirmed', value: totals.confirmed },
-        { label: 'Sync pending', value: totals.syncPending },
-        { label: 'Booking value', value: formatMoney(totals.value) },
-      ],
-      rows: filtered.map(booking => ({
-        reference: booking.reference,
-        serviceName: `${booking.serviceName} (${booking.recordType})`,
-        customer: booking.customerName,
-        source: booking.sourceLabel,
-        bookingDate: booking.bookingDate,
-        bookingTime: booking.bookingTime,
-        paymentStatus: booking.paymentStatus,
-        bookingStatus: booking.bookingStatus,
-        syncStatus: booking.syncStatus,
-        reminderStatus: booking.reminderStatus,
-        amount: booking.amount,
-        amountReceived: booking.amountReceived,
-        amountOutstanding: booking.amountOutstanding,
-        createdAt: formatDate(booking.createdAt),
-      })),
-    })
+    exportReportPdf({ title: 'Bookings report', subtitle: 'Service, class, appointment, and website bookings with payment, source, sync, and reminder status.', summary: [{ label: 'Total bookings', value: totals.count }, { label: 'Confirmed', value: totals.confirmed }, { label: 'Sync pending', value: totals.syncPending }, { label: 'Booking value', value: formatMoney(totals.value) }], rows: filtered.map(booking => ({ reference: booking.reference, serviceName: `${booking.serviceName} (${booking.recordType})`, customer: booking.customerName, source: booking.sourceLabel, bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, paymentStatus: booking.paymentStatus, bookingStatus: booking.bookingStatus, syncStatus: booking.syncStatus, reminderStatus: booking.reminderStatus, amount: booking.amount, amountReceived: booking.amountReceived, amountOutstanding: booking.amountOutstanding, createdAt: formatDate(booking.createdAt) })) })
   }
 
-  return (
-    <div className="space-y-6">
-      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Reports / Bookings</p>
-            <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">Bookings report</h1>
-            <p className="mt-4 max-w-4xl text-lg leading-8 text-slate-600">Track Sedifex Market, website, and manual bookings with payment, confirmation, App Script sync, and reminder status.</p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button type="button" className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50" onClick={exportPdf} disabled={!filtered.length}>Export PDF</button>
-            <button type="button" className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" onClick={exportRows} disabled={!filtered.length}>Export CSV</button>
-          </div>
-        </div>
-      </section>
+  return <div className="space-y-6">
+    <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div><p className="text-sm font-medium text-slate-500">Reports / Bookings</p><h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">Bookings report</h1><p className="mt-4 max-w-4xl text-lg leading-8 text-slate-600">Review bookings in a compact table with payment, confirmation, source, schedule, sync, and reminder details.</p></div>
+        <div className="flex flex-wrap gap-3"><button type="button" className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm disabled:opacity-50" onClick={exportPdf} disabled={!filtered.length}>Export PDF</button><button type="button" className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm disabled:opacity-50" onClick={exportRows} disabled={!filtered.length}>Export CSV</button></div>
+      </div>
+    </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {summaryCards.map(item => <SummaryMetric key={item.label} item={item} />)}
-      </section>
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{summaryCards.map(item => <SummaryMetric key={item.label} item={item} />)}</section>
 
-      <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight text-slate-950">Booking details</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Filter by date, source, status, and sync state. Each booking is shown as a readable card so customer, schedule, payment, sync, and reminders do not squeeze together.</p>
-          </div>
-          <span className="w-fit rounded-full bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700">{filtered.length} showing</span>
-        </div>
+    <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-2xl font-semibold tracking-tight text-slate-950">Booking details</h2><p className="mt-2 text-sm leading-6 text-slate-500">Use the filters and search, then review all records in the table below.</p></div><span className="w-fit rounded-full bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700">{filtered.length} showing</span></div>
 
-        <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <span className="text-sm font-bold text-slate-700">{selectedIds.length} selected</span>
-          <button type="button" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-900 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setSelectedIds(filtered.map(booking => booking.id))} disabled={!filtered.length}>Select all filtered</button>
-          <button type="button" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-900 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setSelectedIds([])} disabled={!selectedIds.length}>Clear selection</button>
-          <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => void deleteSelectedBookings()} disabled={!selectedIds.length || deletingIds.length > 0}>{deletingIds.length ? 'Deleting…' : 'Delete selected'}</button>
-        </div>
-        {successMessage ? <p className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{successMessage}</p> : null}
-        {errorMessage ? <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{errorMessage}</p> : null}
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <label className="block text-sm font-semibold text-slate-700">Date range<select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3" value={range} onChange={event => setRange(event.target.value)}><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="month">This month</option><option value="last_month">Last month</option><option value="all">All time</option></select></label>
+        <label className="block text-sm font-semibold text-slate-700">Source<select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3" value={source} onChange={event => setSource(event.target.value)}><option value="all">All sources</option><option value="sedifex_market">Sedifex Market</option><option value="client_website">Client website</option><option value="sedifex_custom_page">Sedifex public page</option><option value="manual_admin">Manual/admin</option></select></label>
+        <label className="block text-sm font-semibold text-slate-700">Status<select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3" value={status} onChange={event => setStatus(event.target.value)}><option value="all">All statuses</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="paid">Paid</option><option value="cancelled">Cancelled</option><option value="completed">Completed</option></select></label>
+        <label className="block text-sm font-semibold text-slate-700">Sync state<select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3" value={sync} onChange={event => setSync(event.target.value)}><option value="all">All sync states</option><option value="pending">Sync pending</option><option value="synced">Synced</option><option value="not_ready">Not ready / not configured</option></select></label>
+      </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <label className="block text-sm font-semibold text-slate-700">
-            Date range
-            <select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50" value={range} onChange={event => setRange(event.target.value)}>
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="month">This month</option>
-              <option value="last_month">Last month</option>
-              <option value="all">All time</option>
-            </select>
-          </label>
-          <label className="block text-sm font-semibold text-slate-700">
-            Source
-            <select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50" value={source} onChange={event => setSource(event.target.value)}>
-              <option value="all">All sources</option>
-              <option value="sedifex_market">Sedifex Market</option>
-              <option value="client_website">Client website</option>
-              <option value="sedifex_custom_page">Sedifex public page</option>
-              <option value="manual_admin">Manual/admin</option>
-            </select>
-          </label>
-          <label className="block text-sm font-semibold text-slate-700">
-            Status
-            <select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50" value={status} onChange={event => setStatus(event.target.value)}>
-              <option value="all">All statuses</option>
-              <option value="pending">Pending</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="paid">Paid</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="completed">Completed</option>
-            </select>
-          </label>
-          <label className="block text-sm font-semibold text-slate-700">
-            Sync state
-            <select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-50" value={sync} onChange={event => setSync(event.target.value)}>
-              <option value="all">All sync states</option>
-              <option value="pending">Sync pending</option>
-              <option value="synced">Synced</option>
-              <option value="not_ready">Not ready / not configured</option>
-            </select>
-          </label>
-        </div>
-      </section>
+      <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <input className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 lg:max-w-xl" type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search reference, service, customer, phone, source or status…" />
+        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">Rows per page<select className="rounded-xl border border-slate-300 bg-white px-3 py-2" value={rowsPerPage} onChange={event => setRowsPerPage(Number(event.target.value))}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>
+      </div>
 
-      <section className="space-y-4">
-        {filtered.map(booking => (
-          <BookingCard
-            key={booking.id}
-            booking={booking}
-            checked={selectedIds.includes(booking.id)}
-            deleting={deletingIds.includes(booking.id)}
-            onSelect={checked => setBookingSelected(booking.id, checked)}
-            onDelete={() => void deleteOneBooking(booking)}
-          />
-        ))}
-        {!filtered.length ? (
-          <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
-            <h3 className="text-xl font-semibold text-slate-950">No booking records found</h3>
-            <p className="mt-2 text-slate-500">Change the date range or filters to see more booking records.</p>
-          </div>
-        ) : null}
-      </section>
-    </div>
-  )
+      <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"><span className="text-sm font-bold text-slate-700">{selectedIds.length} selected</span><button type="button" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold disabled:opacity-50" onClick={() => setSelectedIds(pageRows.map(booking => booking.id))} disabled={!pageRows.length}>Select page</button><button type="button" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold disabled:opacity-50" onClick={() => setSelectedIds([])} disabled={!selectedIds.length}>Clear selection</button><button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50" onClick={() => void deleteSelectedBookings()} disabled={!selectedIds.length || deletingIds.length > 0}>{deletingIds.length ? 'Deleting…' : 'Delete selected'}</button></div>
+      {successMessage ? <p className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{successMessage}</p> : null}
+      {errorMessage ? <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{errorMessage}</p> : null}
+
+      <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
+          <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-4 py-3"><input type="checkbox" aria-label="Select all rows on this page" checked={pageRows.length > 0 && pageRows.every(row => selectedIds.includes(row.id))} onChange={event => setSelectedIds(event.target.checked ? Array.from(new Set([...selectedIds, ...pageRows.map(row => row.id)])) : selectedIds.filter(id => !pageRows.some(row => row.id === id)))} /></th><th className="px-4 py-3">Booking</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Schedule</th><th className="px-4 py-3">Source</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Sync / reminder</th><th className="px-4 py-3">Actions</th></tr></thead>
+          <tbody className="divide-y divide-slate-200 bg-white">{pageRows.map(booking => <tr key={booking.id} className="align-top hover:bg-slate-50"><td className="px-4 py-4"><input type="checkbox" checked={selectedIds.includes(booking.id)} onChange={event => setSelectedIds(current => event.target.checked ? Array.from(new Set([...current, booking.id])) : current.filter(id => id !== booking.id))} /></td><td className="px-4 py-4"><strong className="block max-w-[220px] text-slate-950">{booking.serviceName}</strong><span className="mt-1 block text-xs capitalize text-slate-500">{formatLabel(booking.recordType)}</span><span className="mt-2 block max-w-[220px] break-all font-mono text-xs text-slate-500">{booking.reference}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{booking.customerName}</strong><span className="mt-1 block max-w-[170px] break-all text-xs text-slate-500">{booking.customerPhone || 'No contact'}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{booking.bookingDate}</strong><span className="mt-1 block text-xs text-slate-500">{booking.bookingTime}</span><span className="mt-1 block max-w-[150px] text-xs text-slate-400">Created {formatDate(booking.createdAt)}</span></td><td className="px-4 py-4"><span className="inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{booking.sourceLabel}</span><span className="mt-2 block text-xs capitalize text-slate-500">{booking.sourcePath} record</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{formatMoney(booking.amount)}</strong><span className="mt-1 block text-xs text-emerald-700">Received {formatMoney(booking.amountReceived)}</span><span className="mt-1 block text-xs text-slate-500">Balance {formatMoney(booking.amountOutstanding)}</span></td><td className="px-4 py-4"><div className="flex max-w-[170px] flex-wrap gap-1"><StatusPill label={booking.bookingStatus} /><StatusPill label={booking.paymentStatus} type="payment" /></div></td><td className="px-4 py-4"><StatusPill label={booking.syncStatus} type="sync" /><span className="mt-2 block max-w-[180px] text-xs text-slate-500">Reminder: {booking.reminderStatus}</span><span className="mt-1 block max-w-[180px] text-xs text-slate-400">{booking.syncReason}</span></td><td className="px-4 py-4"><div className="flex flex-col gap-2"><Link className="rounded-xl bg-slate-950 px-3 py-2 text-center text-xs font-bold text-white" to={`/bookings/${booking.id}`}>Open</Link><button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 disabled:opacity-50" onClick={() => void deleteOneBooking(booking)} disabled={deletingIds.includes(booking.id)}>{deletingIds.includes(booking.id) ? 'Deleting…' : 'Delete'}</button></div></td></tr>)}</tbody>
+        </table>
+        {!pageRows.length ? <div className="p-10 text-center"><h3 className="text-xl font-semibold text-slate-950">No booking records found</h3><p className="mt-2 text-slate-500">Change the date range, search, or filters to see more records.</p></div> : null}
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between"><span>Showing {firstRow}–{lastRow} of {filtered.length} rows</span><div className="flex gap-2"><button type="button" className="rounded-xl border border-slate-200 bg-white px-4 py-2 font-bold text-slate-700 disabled:opacity-40" onClick={() => setPage(current => Math.max(1, current - 1))} disabled={safePage <= 1}>Prev</button><span className="rounded-xl bg-slate-100 px-4 py-2 font-semibold text-slate-700">Page {safePage} of {totalPages}</span><button type="button" className="rounded-xl bg-indigo-600 px-4 py-2 font-bold text-white disabled:opacity-40" onClick={() => setPage(current => Math.min(totalPages, current + 1))} disabled={safePage >= totalPages}>Next</button></div></div>
+    </section>
+  </div>
 }
