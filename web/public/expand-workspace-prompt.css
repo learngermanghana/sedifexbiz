@@ -1,0 +1,51 @@
+.shell-expand-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+  border: 1px solid #c7d2fe;
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #eef2ff 0%, #ffffff 100%);
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.08);
+}
+
+.shell-expand-prompt__copy {
+  display: grid;
+  gap: 3px;
+  color: #1e293b;
+}
+
+.shell-expand-prompt__copy strong {
+  color: #312e81;
+  font-size: 15px;
+}
+
+.shell-expand-prompt__copy span {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.shell-expand-prompt__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.shell__nav-collapse-button[data-sedifex-expand-enhanced] {
+  border-color: #a5b4fc;
+  background: #eef2ff;
+  color: #3730a3;
+  font-weight: 700;
+}
+
+.shell__nav-collapse-button[data-sedifex-expand-enhanced]:hover {
+  background: #e0e7ff;
+}
+
+@media (max-width: 900px) {
+  .shell-expand-prompt {
+    display: none;
+  }
+}
