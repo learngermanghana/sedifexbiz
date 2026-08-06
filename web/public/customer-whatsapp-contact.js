@@ -14,8 +14,8 @@
 
   function parseContact(text) {
     const parts = String(text || '').split('•').map(part => part.trim()).filter(Boolean)
-    const phone = parts.find(part => /\d/.test(part)) || ''
     const email = parts.find(part => part.includes('@')) || ''
+    const phone = parts.find(part => part !== email && !part.includes('@') && /\d/.test(part)) || ''
     return { phone, email }
   }
 
