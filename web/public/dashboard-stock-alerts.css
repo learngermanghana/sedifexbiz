@@ -1,0 +1,59 @@
+/* Keep dashboard stock alerts useful without letting long lists take over the homepage. */
+section[aria-label="Stock alerts"] > div:nth-of-type(2) > a:nth-of-type(n + 6) {
+  display: none !important;
+}
+
+section[aria-label="Stock alerts"] > div:nth-of-type(2)::after {
+  content: "Showing the 5 most urgent products. Use Manage inventory to view every stock alert.";
+  display: block;
+  margin-top: 2px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #667085;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+section[aria-label="Stock alerts"] > div:nth-of-type(2) > a {
+  min-width: 0;
+}
+
+section[aria-label="Stock alerts"] > div:nth-of-type(2) > a > span:first-child,
+section[aria-label="Stock alerts"] > div:nth-of-type(2) > a > span:first-child strong,
+section[aria-label="Stock alerts"] > div:nth-of-type(2) > a > span:first-child small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  section[aria-label="Stock alerts"] .dashboard-panel__header {
+    align-items: stretch;
+  }
+
+  section[aria-label="Stock alerts"] .dashboard-panel__actions,
+  section[aria-label="Stock alerts"] .dashboard-panel__actions .button {
+    width: 100%;
+  }
+
+  section[aria-label="Stock alerts"] .dashboard-panel__actions .button {
+    justify-content: center;
+  }
+
+  section[aria-label="Stock alerts"] > div:nth-of-type(2) > a {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+    align-items: start !important;
+    padding: 14px !important;
+  }
+
+  section[aria-label="Stock alerts"] > div:nth-of-type(2) > a > span:last-child {
+    text-align: left !important;
+  }
+
+  section[aria-label="Stock alerts"] > div:nth-of-type(2)::after {
+    text-align: left;
+  }
+}
