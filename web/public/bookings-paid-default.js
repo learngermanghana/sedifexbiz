@@ -17,7 +17,7 @@
     notice.className = 'bookings-paid-default-notice'
     notice.setAttribute('data-sedifex-paid-bookings-notice', 'true')
     notice.innerHTML =
-      '<strong>Showing paid bookings.</strong> Pending or unsuccessful payment attempts are available under <strong>Awaiting payment</strong> or <strong>All</strong>.'
+      '<strong>Paid bookings are shown by default when this page opens.</strong> Use <strong>Awaiting payment</strong> to review pending or unsuccessful payment attempts, or <strong>All</strong> to see every booking.'
     tabs.insertAdjacentElement('afterend', notice)
   }
 
