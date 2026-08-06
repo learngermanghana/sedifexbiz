@@ -1,0 +1,39 @@
+.customer-new-tracking__badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.customer-new-tracking__filter--active {
+  background: #dcfce7 !important;
+  border-color: #86efac !important;
+  color: #166534 !important;
+}
+
+[data-sedifex-date-added-cell] {
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+
+.customers-page__row[data-sedifex-added-at]:not([data-sedifex-added-at='0']) {
+  box-shadow: inset 3px 0 0 #22c55e;
+}
+
+@media (max-width: 760px) {
+  [data-sedifex-date-added-header],
+  [data-sedifex-date-added-cell] {
+    min-width: 8.5rem;
+  }
+
+  .customer-new-tracking__filter {
+    width: 100%;
+  }
+}
