@@ -69,10 +69,14 @@
   }
 
   .shell--nav-collapsed .workspace-card,
-  .shell--nav-collapsed .report-table-wrap,
-  .shell--nav-collapsed .report-data-table {
+  .shell--nav-collapsed .report-table-wrap {
     max-width: 100%;
     min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .shell--nav-collapsed .report-data-table {
+    max-width: 100%;
     box-sizing: border-box;
   }
 
