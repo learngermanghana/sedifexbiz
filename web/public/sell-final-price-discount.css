@@ -1,0 +1,99 @@
+.sell-final-price {
+  margin-top: 10px;
+  min-width: min(100%, 280px);
+}
+
+.sell-final-price__modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.sell-final-price__modes button {
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sell-final-price__modes button.is-active {
+  background: #fff;
+  color: #312e81;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.sell-final-price__panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 12px;
+  background: #eef2ff;
+  text-align: left;
+}
+
+.sell-final-price__panel label {
+  display: grid;
+  gap: 6px;
+  color: #312e81;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sell-final-price__panel input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 42px;
+  border: 1px solid #a5b4fc;
+  border-radius: 10px;
+  background: #fff;
+  padding: 9px 11px;
+  font-size: 16px;
+}
+
+.sell-final-price__result,
+.sell-final-price__error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.sell-final-price__result {
+  color: #3730a3;
+}
+
+.sell-final-price__error {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .sell-page__totals-row:has(#sedifex-final-price-discount) {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .sell-page__totals-row:has(#sedifex-final-price-discount) > div {
+    width: 100%;
+    text-align: left !important;
+  }
+
+  .sell-final-price {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .sell-final-price__modes {
+    grid-template-columns: 1fr;
+  }
+}
