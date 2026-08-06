@@ -32,6 +32,14 @@ type QuickAction = {
   industries?: Industry[]
 }
 
+type LowStockItem = {
+  id: string
+  name: string
+  sku: string
+  stock: number
+  reorderPoint: number
+}
+
 const DEFAULT_KPI_IDS_BY_INDUSTRY: Record<Industry, string[]> = {
   shop: ['inventory', 'online-orders', 'online-value', 'internal-sales', 'pending-delivery', 'manual-payments'],
   travel: ['bookings', 'confirmed-bookings', 'paid-bookings', 'booking-value', 'customers', 'manual-payments'],
@@ -53,6 +61,10 @@ const DEFAULT_QUICK_ACTIONS: QuickAction[] = [
 function asNumber(value: unknown, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function asText(value: unknown, fallback = '') {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback
 }
 
 function toDate(value: unknown): Date | null {
@@ -100,39 +112,17 @@ function normalizeSelectedKpis(value: unknown, availableIds: string[], fallbackI
 
 function groupLabel(group: MetricGroup) {
   const labels: Record<MetricGroup, string> = {
-    sales: 'Sales',
-    inventory: 'Inventory',
-    orders: 'Orders',
-    customers: 'Customers',
-    content: 'Content',
-    ngo: 'NGO',
-    school: 'School',
+    sales: 'Sales', inventory: 'Inventory', orders: 'Orders', customers: 'Customers', content: 'Content', ngo: 'NGO', school: 'School',
   }
   return labels[group]
 }
 
 function dashboardIntro(industry: Industry) {
   const copy: Record<Industry, { eyebrow: string; title: string; subtitle: string }> = {
-    shop: {
-      eyebrow: 'Business overview',
-      title: 'Quick business overview',
-      subtitle: 'A clean KPI board for daily decisions. Orders, sales, inventory, and alerts stay visible while deeper exports stay inside Reports.',
-    },
-    travel: {
-      eyebrow: 'Service overview',
-      title: 'Booking and client overview',
-      subtitle: 'Track bookings, paid requests, pending verification, and client follow-up without mixing in unrelated modules.',
-    },
-    ngo: {
-      eyebrow: 'Impact overview',
-      title: 'Donor and volunteer overview',
-      subtitle: 'See donor activity, volunteer requests, campaign records, and important follow-ups in one clean workspace.',
-    },
-    school: {
-      eyebrow: 'School overview',
-      title: 'Student and admissions overview',
-      subtitle: 'Monitor registrations, confirmed students, payment follow-ups, classes, and school records from one focused dashboard.',
-    },
+    shop: { eyebrow: 'Business overview', title: 'Quick business overview', subtitle: 'A clean KPI board for daily decisions. Orders, sales, inventory, and alerts stay visible while deeper exports stay inside Reports.' },
+    travel: { eyebrow: 'Service overview', title: 'Booking and client overview', subtitle: 'Track bookings, paid requests, pending verification, and client follow-up without mixing in unrelated modules.' },
+    ngo: { eyebrow: 'Impact overview', title: 'Donor and volunteer overview', subtitle: 'See donor activity, volunteer requests, campaign records, and important follow-ups in one clean workspace.' },
+    school: { eyebrow: 'School overview', title: 'Student and admissions overview', subtitle: 'Monitor registrations, confirmed students, payment follow-ups, classes, and school records from one focused dashboard.' },
   }
   return copy[industry]
 }
@@ -143,8 +133,7 @@ function kpiStyle(tone: string) {
 
 function metricIsAllowed(metric: Metric, industry: Industry, enabledModules: Set<string>) {
   if (metric.industries && !metric.industries.includes(industry)) return false
-  if (metric.moduleIds.length === 0) return true
-  return metric.moduleIds.some(moduleId => enabledModules.has(moduleId))
+  return metric.moduleIds.length === 0 || metric.moduleIds.some(moduleId => enabledModules.has(moduleId))
 }
 
 function actionIsAllowed(action: QuickAction, industry: Industry, enabledModules: Set<string>) {
@@ -178,7 +167,6 @@ export default function Dashboard() {
       setProducts([]); setSales([]); setOrders([]); setBookings([]); setStudents([]); setVolunteers([]); setDonors([]); setRegistrations([]); setBlogPosts([]); setCustomers([])
       return undefined
     }
-
     const unsubscribers = [
       onSnapshot(query(collection(db, 'products'), where('storeId', '==', storeId)), snapshot => setProducts(snapshot.docs.map(itemDoc => ({ id: itemDoc.id, ...itemDoc.data() })))),
       onSnapshot(query(collection(db, 'sales'), where('storeId', '==', storeId)), snapshot => setSales(snapshot.docs.map(itemDoc => ({ id: itemDoc.id, ...itemDoc.data() })))),
@@ -206,20 +194,25 @@ export default function Dashboard() {
   const inventory = useMemo(() => {
     const inventoryItems = products.filter(item => item.itemType === 'product')
     const totalStock = inventoryItems.reduce((sum, item) => sum + asNumber(item.stockCount, 0), 0)
-    const stockValue = inventoryItems.reduce((sum, item) => sum + (asNumber(item.stockCount, 0) * asNumber(item.price, 0)), 0)
-    const lowStock = inventoryItems.filter(item => {
-      const stock = asNumber(item.stockCount, 0)
-      const reorder = asNumber(item.reorderPoint, 0)
-      return stock <= 0 || (reorder > 0 && stock <= reorder)
-    }).length
-    return { inventoryItems, totalStock, stockValue, lowStock }
+    const stockValue = inventoryItems.reduce((sum, item) => sum + asNumber(item.stockCount, 0) * asNumber(item.price, 0), 0)
+    const lowStockItems: LowStockItem[] = inventoryItems
+      .map(item => ({
+        id: asText(item.id),
+        name: asText(item.name ?? item.productName ?? item.title, 'Unnamed product'),
+        sku: asText(item.sku ?? item.barcode),
+        stock: asNumber(item.stockCount, 0),
+        reorderPoint: asNumber(item.reorderPoint, 0),
+      }))
+      .filter(item => item.stock <= 0 || (item.reorderPoint > 0 && item.stock <= item.reorderPoint))
+      .sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name))
+    return { inventoryItems, totalStock, stockValue, lowStockItems, lowStock: lowStockItems.length }
   }, [products])
 
-  const onlineRevenueToday = todayOrders.reduce((sum, item) => {
-    const amountMinor = asNumber(item.amountMinor, 0)
-    if (amountMinor > 0) return sum + amountMinor / 100
-    return sum + asNumber(item.amount ?? item.total, 0)
-  }, 0)
+  const stockAlertHint = inventory.lowStockItems.length
+    ? `${inventory.lowStockItems.slice(0, 3).map(item => `${item.name} (${item.stock})`).join(' · ')}${inventory.lowStockItems.length > 3 ? ` · +${inventory.lowStockItems.length - 3} more` : ''}`
+    : 'No low-stock products'
+
+  const onlineRevenueToday = todayOrders.reduce((sum, item) => asNumber(item.amountMinor, 0) > 0 ? sum + asNumber(item.amountMinor, 0) / 100 : sum + asNumber(item.amount ?? item.total, 0), 0)
   const bookingRevenueToday = todayBookings.reduce((sum, item) => sum + asNumber(item.paymentAmount ?? item.amount ?? item.total, 0), 0)
   const donorLifetimeGiving = donors.reduce((sum, item) => sum + asNumber(item.lifetimeGiving, 0), 0)
   const websiteOrdersToday = todayOrders.filter(item => normalizeSourceChannel(item.sourceChannel ?? item.source_channel ?? item.source) === 'client_website').length
@@ -230,15 +223,12 @@ export default function Dashboard() {
   const confirmedBookings = bookings.filter(item => ['confirmed', 'paid'].includes(normalizedStatus(item.bookingStatus ?? item.status))).length
   const completedBookings = bookings.filter(item => normalizedStatus(item.bookingStatus ?? item.status) === 'completed').length
   const activeStudents = students.filter(item => ['active', 'confirmed'].includes(normalizedStatus(item.studentStatus ?? item.status))).length
-  const paidStudents = students.filter(item => {
-    const payment = item.payment && typeof item.payment === 'object' ? item.payment as Record<string, unknown> : {}
-    return ['paid', 'success', 'confirmed', 'captured'].includes(normalizedStatus(item.paymentStatus ?? payment.status))
-  }).length
+  const paidStudents = students.filter(item => ['paid', 'success', 'confirmed', 'captured'].includes(normalizedStatus(item.paymentStatus ?? (item.payment as Record<string, unknown> | undefined)?.status))).length
   const pendingStudents = students.filter(item => ['pending', 'new', 'manual_review'].includes(normalizedStatus(item.studentStatus ?? item.status))).length
 
   const allMetrics: Metric[] = [
     { id: 'inventory', label: 'Total inventory', value: String(inventory.totalStock), hint: `${inventory.inventoryItems.length} stock-tracked items · ${formatMoney(inventory.stockValue)} estimated value`, tone: '#4f46e5', group: 'inventory', moduleIds: ['products'], priority: 10, industries: ['shop'] },
-    { id: 'stock-alerts', label: 'Stock alerts', value: String(inventory.lowStock), hint: 'Low-stock or out-of-stock items', tone: '#ef4444', group: 'inventory', moduleIds: ['products'], priority: 70, industries: ['shop'] },
+    { id: 'stock-alerts', label: 'Stock alerts', value: String(inventory.lowStock), hint: stockAlertHint, tone: '#ef4444', group: 'inventory', moduleIds: ['products'], priority: 70, industries: ['shop'] },
     { id: 'internal-sales', label: 'Internal sales today', value: String(todaySales.length), hint: 'Recorded in Sell (POS)', tone: '#0f766e', group: 'sales', moduleIds: ['sell'], priority: 40, industries: ['shop'] },
     { id: 'online-orders', label: 'Online orders today', value: String(todayOrders.length), hint: `${websiteOrdersToday} website · ${marketOrdersToday} marketplace`, tone: '#2563eb', group: 'orders', moduleIds: ['online-orders', 'marketplace-orders'], priority: 20 },
     { id: 'online-value', label: 'Online order value today', value: formatMoney(onlineRevenueToday), hint: 'From connected websites and Sedifex Market', tone: '#2563eb', group: 'orders', moduleIds: ['online-orders', 'marketplace-orders'], priority: 30, highlight: true },
@@ -247,7 +237,7 @@ export default function Dashboard() {
     { id: 'bookings', label: industry === 'school' ? 'Classes/bookings today' : 'Bookings today', value: String(todayBookings.length), hint: 'New booking entries', tone: '#d97706', group: 'orders', moduleIds: ['bookings'], priority: 15, industries: ['shop', 'travel', 'school'] },
     { id: 'pending-bookings', label: 'Pending bookings', value: String(pendingBookings), hint: 'Need confirmation or follow-up', tone: '#f97316', group: 'orders', moduleIds: ['bookings'], priority: 35, industries: ['travel', 'school', 'shop'] },
     { id: 'confirmed-bookings', label: 'Confirmed bookings', value: String(confirmedBookings), hint: `${completedBookings} completed bookings`, tone: '#059669', group: 'orders', moduleIds: ['bookings'], priority: 45, industries: ['travel', 'school', 'shop'] },
-    { id: 'paid-bookings', label: 'Paid bookings', value: String(bookings.filter(item => normalizedStatus(item.paymentStatus ?? (recordPayment(item).status)) === 'paid').length), hint: 'Bookings with confirmed payment', tone: '#0f766e', group: 'orders', moduleIds: ['bookings'], priority: 55, industries: ['travel', 'school', 'shop'] },
+    { id: 'paid-bookings', label: 'Paid bookings', value: String(bookings.filter(item => normalizedStatus(item.paymentStatus ?? (item.payment as Record<string, unknown> | undefined)?.status) === 'paid').length), hint: 'Bookings with confirmed payment', tone: '#0f766e', group: 'orders', moduleIds: ['bookings'], priority: 55, industries: ['travel', 'school', 'shop'] },
     { id: 'booking-value', label: 'Booking value today', value: formatMoney(bookingRevenueToday), hint: 'From bookings created today', tone: '#0f766e', group: 'orders', moduleIds: ['bookings'], priority: 65, industries: ['travel', 'school', 'shop'] },
     { id: 'all-orders', label: 'All online orders', value: String(orders.length), hint: 'Full history for this workspace', tone: '#1d4ed8', group: 'orders', moduleIds: ['online-orders', 'marketplace-orders'], priority: 80 },
     { id: 'all-products', label: industry === 'school' ? 'Course/catalog records' : 'Catalog records', value: String(products.length), hint: 'Products, services, courses, and made-to-order records', tone: '#9333ea', group: 'inventory', moduleIds: ['products'], priority: 75 },
@@ -264,13 +254,7 @@ export default function Dashboard() {
     { id: 'blog-posts', label: 'New blog posts today', value: String(todayBlogPosts.length), hint: 'Published or drafted today', tone: '#0891b2', group: 'content', moduleIds: ['blog'], priority: 100 },
   ]
 
-  function recordPayment(item: Record<string, unknown>) {
-    return item.payment && typeof item.payment === 'object' ? item.payment as Record<string, unknown> : {}
-  }
-
-  const enabledMetrics = allMetrics
-    .filter(metric => metricIsAllowed(metric, industry, enabledModules))
-    .sort((a, b) => a.priority - b.priority)
+  const enabledMetrics = allMetrics.filter(metric => metricIsAllowed(metric, industry, enabledModules)).sort((a, b) => a.priority - b.priority)
   const availableMetricIds = enabledMetrics.map(metric => metric.id)
   const defaultKpiIds = DEFAULT_KPI_IDS_BY_INDUSTRY[industry].filter(id => availableMetricIds.includes(id))
   const fallbackKpiIds = defaultKpiIds.length > 0 ? defaultKpiIds : enabledMetrics.slice(0, 6).map(metric => metric.id)
@@ -297,13 +281,7 @@ export default function Dashboard() {
 
   function toggleKpi(metricId: string) {
     setKpiMessage('')
-    setSelectedKpiIds(current => {
-      if (current.includes(metricId)) {
-        const next = current.filter(id => id !== metricId)
-        return next.length > 0 ? next : current
-      }
-      return [...current, metricId]
-    })
+    setSelectedKpiIds(current => current.includes(metricId) ? (current.length > 1 ? current.filter(id => id !== metricId) : current) : [...current, metricId])
   }
 
   async function saveKpiPreferences() {
@@ -321,11 +299,6 @@ export default function Dashboard() {
     }
   }
 
-  function resetKpiPreferences() {
-    setSelectedKpiIds(fallbackKpiIds)
-    setKpiMessage('Default KPI selection restored. Save to keep it for this store.')
-  }
-
   return (
     <div className="workspace-page dashboard-page">
       <section className="dashboard-hero dashboard-hero--minimal">
@@ -333,9 +306,7 @@ export default function Dashboard() {
         <h1>{intro.title}</h1>
         <p>{intro.subtitle}</p>
         <div className="dashboard-hero__actions">
-          <button type="button" className="button button--secondary" onClick={() => setIsCustomizing(value => !value)}>
-            {isCustomizing ? 'Close KPI picker' : 'Customize KPIs'}
-          </button>
+          <button type="button" className="button button--secondary" onClick={() => setIsCustomizing(value => !value)}>{isCustomizing ? 'Close KPI picker' : 'Customize KPIs'}</button>
           <Link className="button button--primary" to="/reports">Open Reports</Link>
         </div>
         {kpiMessage ? <p className={`dashboard-kpi-message${kpiMessage.includes('Unable') ? ' is-error' : ''}`}>{kpiMessage}</p> : null}
@@ -344,25 +315,19 @@ export default function Dashboard() {
       {isCustomizing ? (
         <section className="dashboard-panel" aria-label="Customize dashboard KPIs">
           <div className="dashboard-panel__header">
-            <div>
-              <h2>Choose dashboard KPIs</h2>
-              <p>Selected KPIs show first on this store dashboard. At least one KPI must remain selected.</p>
-            </div>
+            <div><h2>Choose dashboard KPIs</h2><p>Selected KPIs show first on this store dashboard. At least one KPI must remain selected.</p></div>
             <div className="dashboard-panel__actions">
-              <button type="button" className="button button--secondary" onClick={resetKpiPreferences}>Reset default</button>
+              <button type="button" className="button button--secondary" onClick={() => setSelectedKpiIds(fallbackKpiIds)}>Reset default</button>
               <button type="button" className="button button--primary" disabled={isSavingKpis} onClick={() => void saveKpiPreferences()}>{isSavingKpis ? 'Saving…' : 'Save KPIs'}</button>
             </div>
           </div>
           <div className="dashboard-kpi-picker-grid">
-            {enabledMetrics.map(metric => {
-              const isChecked = selectedKpiIds.includes(metric.id)
-              return (
-                <label key={metric.id} className={`dashboard-kpi-picker-option${isChecked ? ' is-selected' : ''}`} style={kpiStyle(metric.tone)}>
-                  <span><input type="checkbox" checked={isChecked} onChange={() => toggleKpi(metric.id)} /><strong>{metric.label}</strong></span>
-                  <small>{groupLabel(metric.group)} · {metric.hint}</small>
-                </label>
-              )
-            })}
+            {enabledMetrics.map(metric => (
+              <label key={metric.id} className={`dashboard-kpi-picker-option${selectedKpiIds.includes(metric.id) ? ' is-selected' : ''}`} style={kpiStyle(metric.tone)}>
+                <span><input type="checkbox" checked={selectedKpiIds.includes(metric.id)} onChange={() => toggleKpi(metric.id)} /><strong>{metric.label}</strong></span>
+                <small>{groupLabel(metric.group)} · {metric.hint}</small>
+              </label>
+            ))}
           </div>
         </section>
       ) : null}
@@ -378,43 +343,48 @@ export default function Dashboard() {
         ))}
       </section>
 
-      <section className="dashboard-panel">
-        <div className="dashboard-panel__header dashboard-panel__header--centered">
-          <div>
-            <h2>Quick actions</h2>
-            <p>Open the module you need without turning the dashboard into a full report page.</p>
+      {industry === 'shop' && enabledModules.has('products') ? (
+        <section className="dashboard-panel" aria-label="Stock alerts">
+          <div className="dashboard-panel__header">
+            <div>
+              <h2>Products needing stock attention</h2>
+              <p>{inventory.lowStock ? `${inventory.lowStock} product${inventory.lowStock === 1 ? '' : 's'} are low or out of stock.` : 'All tracked products are above their reorder levels.'}</p>
+            </div>
+            <div className="dashboard-panel__actions"><Link className="button button--primary" to="/products">Manage inventory</Link></div>
           </div>
-        </div>
+          {inventory.lowStockItems.length ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {inventory.lowStockItems.map(item => (
+                <Link key={item.id || item.name} to="/products" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 16, alignItems: 'center', padding: 14, border: '1px solid #e2e8f0', borderRadius: 16, color: 'inherit', textDecoration: 'none' }}>
+                  <span style={{ minWidth: 0 }}>
+                    <strong style={{ display: 'block' }}>{item.name}</strong>
+                    <small style={{ color: '#667085' }}>{item.sku ? `SKU: ${item.sku} · ` : ''}Reorder at {item.reorderPoint || 'not set'}</small>
+                  </span>
+                  <span style={{ textAlign: 'right' }}>
+                    <strong style={{ display: 'block', color: item.stock <= 0 ? '#b91c1c' : '#b45309' }}>{item.stock <= 0 ? 'Out of stock' : `${item.stock} left`}</strong>
+                    <small style={{ color: '#667085' }}>Update product</small>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : <p className="dashboard-empty-note">No stock alerts right now.</p>}
+        </section>
+      ) : null}
+
+      <section className="dashboard-panel">
+        <div className="dashboard-panel__header dashboard-panel__header--centered"><div><h2>Quick actions</h2><p>Open the module you need without turning the dashboard into a full report page.</p></div></div>
         <div className="dashboard-action-grid">
-          {quickActions.map(action => (
-            <Link key={action.id} to={action.to} className="dashboard-action-card">
-              <strong>{action.label}</strong>
-              <span>{action.hint}</span>
-            </Link>
-          ))}
+          {quickActions.map(action => <Link key={action.id} to={action.to} className="dashboard-action-card"><strong>{action.label}</strong><span>{action.hint}</span></Link>)}
         </div>
       </section>
 
       <section className="dashboard-panel dashboard-panel--muted">
         <div className="dashboard-panel__header">
-          <div>
-            <h2>More numbers</h2>
-            <p>Dashboard stays focused. Deeper exports and full histories stay inside Reports.</p>
-          </div>
-          <div className="dashboard-panel__actions">
-            <Link className="button button--secondary" to="/online-orders">Online Orders</Link>
-            <Link className="button button--primary" to="/reports">Reports</Link>
-          </div>
+          <div><h2>More numbers</h2><p>Dashboard stays focused. Deeper exports and full histories stay inside Reports.</p></div>
+          <div className="dashboard-panel__actions"><Link className="button button--secondary" to="/online-orders">Online Orders</Link><Link className="button button--primary" to="/reports">Reports</Link></div>
         </div>
         <div className="dashboard-report-strip">
-          {secondaryMetrics.map(metric => (
-            <article key={metric.id} className="dashboard-report-mini-card">
-              <span>{groupLabel(metric.group)}</span>
-              <strong>{metric.value}</strong>
-              <p>{metric.label}</p>
-              <small>{metric.hint}</small>
-            </article>
-          ))}
+          {secondaryMetrics.map(metric => <article key={metric.id} className="dashboard-report-mini-card"><span>{groupLabel(metric.group)}</span><strong>{metric.value}</strong><p>{metric.label}</p><small>{metric.hint}</small></article>)}
           {secondaryMetrics.length === 0 ? <p className="dashboard-empty-note">No extra dashboard metrics are enabled for this store.</p> : null}
         </div>
       </section>

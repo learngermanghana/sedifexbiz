@@ -26,6 +26,11 @@ type SaleRow = {
   voidReason: string
 }
 
+type SalesMetric = {
+  count: number
+  revenue: number
+}
+
 export function mapSale(id: string, data: Record<string, unknown>): SaleRow {
   const tenders = getNestedObject(data, 'tenders')
   const customer = getNestedObject(data, 'customer')
@@ -62,12 +67,36 @@ export function mapSale(id: string, data: Record<string, unknown>): SaleRow {
   }
 }
 
+function startOfDay(date: Date) {
+  const result = new Date(date)
+  result.setHours(0, 0, 0, 0)
+  return result
+}
+
+function endOfDay(date: Date) {
+  const result = new Date(date)
+  result.setHours(23, 59, 59, 999)
+  return result
+}
+
+function metricForRange(sales: SaleRow[], start: Date, end: Date): SalesMetric {
+  return sales.reduce<SalesMetric>((metric, sale) => {
+    if (sale.status === 'voided' || !sale.createdAt || sale.createdAt < start || sale.createdAt > end) return metric
+    return {
+      count: metric.count + 1,
+      revenue: metric.revenue + sale.total,
+    }
+  }, { count: 0, revenue: 0 })
+}
+
 export default function PosSalesReport() {
   const { storeId } = useActiveStore()
   const { memberships } = useMemberships()
   const { publish } = useToast()
   const [sales, setSales] = useState<SaleRow[]>([])
   const [range, setRange] = useState('all')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
   const [loadError, setLoadError] = useState('')
   const [voidingId, setVoidingId] = useState<string | null>(null)
   const isOwner = memberships.some(membership => membership.storeId === storeId && membership.role === 'owner')
@@ -95,15 +124,47 @@ export default function PosSalesReport() {
     return unsubscribe
   }, [storeId])
 
+  const dashboardMetrics = useMemo(() => {
+    const now = new Date()
+    const todayStart = startOfDay(now)
+    const todayEnd = endOfDay(now)
+    const yesterday = new Date(now)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const sevenDaysStart = startOfDay(new Date(now))
+    sevenDaysStart.setDate(sevenDaysStart.getDate() - 6)
+    const thirtyDaysStart = startOfDay(new Date(now))
+    thirtyDaysStart.setDate(thirtyDaysStart.getDate() - 29)
+
+    return {
+      today: metricForRange(sales, todayStart, todayEnd),
+      yesterday: metricForRange(sales, startOfDay(yesterday), endOfDay(yesterday)),
+      sevenDays: metricForRange(sales, sevenDaysStart, todayEnd),
+      thirtyDays: metricForRange(sales, thirtyDaysStart, todayEnd),
+    }
+  }, [sales])
+
   const filtered = useMemo(() => {
     if (range === 'all') return sales
+
     const now = new Date()
-    const start = new Date(now)
-    if (range === 'today') start.setHours(0, 0, 0, 0)
-    if (range === '7') start.setDate(start.getDate() - 7)
-    if (range === '30') start.setDate(start.getDate() - 30)
-    return sales.filter(sale => sale.createdAt && sale.createdAt >= start)
-  }, [range, sales])
+    let start = startOfDay(now)
+    let end = endOfDay(now)
+
+    if (range === 'yesterday') {
+      start.setDate(start.getDate() - 1)
+      end.setDate(end.getDate() - 1)
+    }
+    if (range === '7') start.setDate(start.getDate() - 6)
+    if (range === '30') start.setDate(start.getDate() - 29)
+    if (range === 'this-month') start = new Date(now.getFullYear(), now.getMonth(), 1)
+    if (range === 'custom') {
+      if (!customStart && !customEnd) return sales
+      start = customStart ? startOfDay(new Date(`${customStart}T00:00:00`)) : new Date(0)
+      end = customEnd ? endOfDay(new Date(`${customEnd}T00:00:00`)) : endOfDay(now)
+    }
+
+    return sales.filter(sale => sale.createdAt && sale.createdAt >= start && sale.createdAt <= end)
+  }, [customEnd, customStart, range, sales])
 
   const totals = useMemo(() => ({
     count: filtered.filter(sale => sale.status !== 'voided').length,
@@ -111,7 +172,6 @@ export default function PosSalesReport() {
     units: filtered.reduce((sum, sale) => sum + (sale.status === 'voided' ? 0 : sale.unitsSold), 0),
     cash: filtered.reduce((sum, sale) => sum + (sale.status === 'voided' ? 0 : sale.cashTotal), 0),
   }), [filtered])
-
 
   const columns: ReportColumn<SaleRow>[] = [
     { key: 'receiptNo', label: 'Receipt', sortable: true, value: row => row.receiptNo },
@@ -196,30 +256,54 @@ export default function PosSalesReport() {
       <section className="workspace-card">
         <p className="workspace-eyebrow">Reports / POS sales</p>
         <h1>Sales history</h1>
-        <p className="workspace-muted">See every sale and the items sold. Owners can also void mistakes and restore inventory.</p>
+        <p className="workspace-muted">Track daily performance, filter sales by date, and review every transaction.</p>
       </section>
       <section className="workspace-grid workspace-grid--four">
-        <article className="workspace-card"><strong>{totals.count}</strong><span>Sales</span></article>
-        <article className="workspace-card"><strong>{formatMoney(totals.revenue)}</strong><span>Total sales value</span></article>
-        <article className="workspace-card"><strong>{totals.units}</strong><span>Units sold</span></article>
-        <article className="workspace-card"><strong>{formatMoney(totals.cash)}</strong><span>Cash collected</span></article>
+        <article className="workspace-card"><strong>{formatMoney(dashboardMetrics.today.revenue)}</strong><span>Sales today · {dashboardMetrics.today.count} transaction{dashboardMetrics.today.count === 1 ? '' : 's'}</span></article>
+        <article className="workspace-card"><strong>{formatMoney(dashboardMetrics.yesterday.revenue)}</strong><span>Sales yesterday · {dashboardMetrics.yesterday.count} transaction{dashboardMetrics.yesterday.count === 1 ? '' : 's'}</span></article>
+        <article className="workspace-card"><strong>{formatMoney(dashboardMetrics.sevenDays.revenue)}</strong><span>Last 7 days · {dashboardMetrics.sevenDays.count} transaction{dashboardMetrics.sevenDays.count === 1 ? '' : 's'}</span></article>
+        <article className="workspace-card"><strong>{formatMoney(dashboardMetrics.thirtyDays.revenue)}</strong><span>Last 30 days · {dashboardMetrics.thirtyDays.count} transaction{dashboardMetrics.thirtyDays.count === 1 ? '' : 's'}</span></article>
       </section>
       <section className="workspace-card">
         {loadError && <p className="products__message products__message--error" role="alert">{loadError}</p>}
         <div className="workspace-section-header">
-          <div><h2>Sale details</h2><p className="workspace-muted">Owners can void an incorrect sale, then record the corrected sale in Sell. Payment refunds must be completed separately with the payment provider.</p></div>
+          <div><h2>Sale details</h2><p className="workspace-muted">The totals and exports below follow the selected date filter.</p></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" className="button button--secondary" onClick={exportPdf} disabled={!filtered.length}>Export PDF</button>
             <button type="button" className="button button--primary" onClick={exportRows} disabled={!filtered.length}>Export CSV</button>
           </div>
         </div>
-        <div className="workspace-toolbar">
-          <select value={range} onChange={event => setRange(event.target.value)}>
-            <option value="all">All time</option>
-            <option value="today">Today</option>
-            <option value="7">Last 7 days</option>
-            <option value="30">Last 30 days</option>
-          </select>
+        <div className="workspace-grid workspace-grid--four">
+          <article><strong>{totals.count}</strong><span>Filtered sales</span></article>
+          <article><strong>{formatMoney(totals.revenue)}</strong><span>Filtered sales value</span></article>
+          <article><strong>{totals.units}</strong><span>Filtered units sold</span></article>
+          <article><strong>{formatMoney(totals.cash)}</strong><span>Filtered cash collected</span></article>
+        </div>
+        <div className="workspace-toolbar" style={{ alignItems: 'end', gap: 12, flexWrap: 'wrap' }}>
+          <label>
+            <span className="workspace-muted">Date range</span>
+            <select value={range} onChange={event => setRange(event.target.value)}>
+              <option value="all">All time</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="this-month">This month</option>
+              <option value="custom">Custom range</option>
+            </select>
+          </label>
+          {range === 'custom' && (
+            <>
+              <label>
+                <span className="workspace-muted">From</span>
+                <input type="date" value={customStart} max={customEnd || undefined} onChange={event => setCustomStart(event.target.value)} />
+              </label>
+              <label>
+                <span className="workspace-muted">To</span>
+                <input type="date" value={customEnd} min={customStart || undefined} onChange={event => setCustomEnd(event.target.value)} />
+              </label>
+            </>
+          )}
         </div>
         <ReportDataTable rows={filtered} columns={columns} getRowKey={row => row.id} searchPlaceholder="Search receipt, item, customer, payment…" />
       </section>
