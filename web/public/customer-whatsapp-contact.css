@@ -1,0 +1,29 @@
+.customer-contact-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-right: 6px;
+}
+
+.customer-contact-actions__whatsapp {
+  border-color: #16a34a;
+  color: #166534;
+}
+
+.customer-contact-actions__whatsapp:hover:not(:disabled) {
+  background: #f0fdf4;
+}
+
+@media (max-width: 720px) {
+  .customer-contact-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    margin: 0 0 8px;
+  }
+
+  .customer-contact-actions .button {
+    width: 100%;
+    min-height: 40px;
+  }
+}
