@@ -4,7 +4,7 @@
   let applying = false
 
   function isDesktop() {
-    return window.matchMedia('(min-width: 901px)').matches
+    return window.matchMedia('(min-width: 961px)').matches
   }
 
   function isCollapsed() {
@@ -47,9 +47,9 @@
 
     const showButton = document.querySelector('.shell__nav-rail-button')
     if (showButton && !showButton.hasAttribute(ENHANCED_ATTR)) {
-      const label = showButton.querySelector('span:last-child')
-      if (label) label.textContent = 'Show navigation'
+      showButton.innerHTML = '<span class="shell__nav-restore-icon" aria-hidden="true">☰</span><span class="shell__nav-restore-label">Show navigation</span>'
       showButton.setAttribute('title', 'Restore the navigation sidebar')
+      showButton.setAttribute('aria-label', 'Show navigation sidebar')
       showButton.setAttribute(ENHANCED_ATTR, 'true')
     }
   }
