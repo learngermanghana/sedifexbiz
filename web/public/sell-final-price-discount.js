@@ -89,6 +89,11 @@
       setReactInputValue(paidInput, primaryAmount.toFixed(2))
     }
 
+    function resetDerivedDiscount(gross) {
+      setReactInputValue(discountInput, '')
+      syncPayment(gross)
+    }
+
     function calculate() {
       if (!finalMode) return
       const finalPrice = Number(finalInput.value)
@@ -96,17 +101,20 @@
       lastGross = gross
 
       if (!finalInput.value.trim()) {
+        resetDerivedDiscount(gross)
         error.hidden = true
         result.textContent = 'Enter the agreed price to calculate the discount automatically.'
         return
       }
       if (!Number.isFinite(finalPrice) || finalPrice < 0) {
+        resetDerivedDiscount(gross)
         error.textContent = 'Enter a valid final selling price.'
         error.hidden = false
+        result.textContent = 'No discount has been applied.'
         return
       }
       if (finalPrice > gross) {
-        setReactInputValue(discountInput, '')
+        resetDerivedDiscount(gross)
         error.textContent = `Final price cannot be more than the original total of ${money(gross)}.`
         error.hidden = false
         result.textContent = 'No discount has been applied.'
