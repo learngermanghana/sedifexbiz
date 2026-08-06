@@ -1,10 +1,11 @@
 (() => {
   const STORAGE_KEY = 'sedifex.customerAddedAt.v1'
   const NEW_DAYS = 7
-  const INITIALIZED_ATTR = 'data-sedifex-new-tracking-ready'
   let applying = false
   let initialized = false
   let recentOnly = false
+  let timer = null
+  const knownKeys = new Set()
 
   function loadAddedAt() {
     try {
@@ -53,6 +54,7 @@
     button.type = 'button'
     button.className = 'button button--ghost button--small customer-new-tracking__filter'
     button.setAttribute('data-sedifex-recently-added', 'true')
+    button.setAttribute('aria-pressed', 'false')
     button.textContent = 'Recently added'
     button.addEventListener('click', () => {
       recentOnly = !recentOnly
@@ -91,18 +93,14 @@
       const addedAt = loadAddedAt()
       const now = Date.now()
 
-      if (!initialized) {
-        initialized = document.documentElement.hasAttribute(INITIALIZED_ATTR)
-        document.documentElement.setAttribute(INITIALIZED_ATTR, 'true')
-      }
-
       rows.forEach(row => {
         const key = rowKey(row)
         if (!key || key === '|') return
 
-        if (initialized && !Object.prototype.hasOwnProperty.call(addedAt, key)) {
+        if (initialized && !knownKeys.has(key) && !Object.prototype.hasOwnProperty.call(addedAt, key)) {
           addedAt[key] = now
         }
+        knownKeys.add(key)
 
         const timestamp = addedAt[key]
         const cells = row.querySelectorAll('td')
@@ -140,7 +138,7 @@
 
       const trackedThisWeek = rows.filter(row => {
         const timestamp = Number(row.dataset.sedifexAddedAt || 0)
-        return timestamp && isNew(timestamp)
+        return Boolean(timestamp && isNew(timestamp))
       }).length
       const badge = document.querySelector('.customers-page__badge')
       if (badge && !badge.querySelector('[data-sedifex-new-count]')) {
@@ -160,8 +158,8 @@
   }
 
   const observer = new MutationObserver(() => {
-    window.clearTimeout(observer.timer)
-    observer.timer = window.setTimeout(applyTracking, 80)
+    window.clearTimeout(timer)
+    timer = window.setTimeout(applyTracking, 80)
   })
   observer.observe(document.documentElement, { childList: true, subtree: true })
   window.addEventListener('popstate', applyTracking)
