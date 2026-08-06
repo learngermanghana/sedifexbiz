@@ -4,7 +4,7 @@
   let applying = false
 
   function isDesktop() {
-    return window.matchMedia('(min-width: 901px)').matches
+    return window.matchMedia('(min-width: 961px)').matches
   }
 
   function isCollapsed() {
