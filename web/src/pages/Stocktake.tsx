@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, doc, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore'
+import { collection, doc, onSnapshot, query, runTransaction, serverTimestamp, where } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { useMemberships } from '../hooks/useMemberships'
 import './Stocktake.css'
 
 type StockItem = {
@@ -21,6 +22,7 @@ function numberOrZero(value: unknown) {
 
 export default function Stocktake() {
   const { storeId, isLoading: storeLoading } = useActiveStore()
+  const { memberships, loading: membershipsLoading } = useMemberships()
   const [items, setItems] = useState<StockItem[]>([])
   const [counts, setCounts] = useState<CountMap>({})
   const [search, setSearch] = useState('')
@@ -29,9 +31,20 @@ export default function Stocktake() {
   const [message, setMessage] = useState('')
   const [showDifferencesOnly, setShowDifferencesOnly] = useState(false)
 
+  const activeMembership = useMemo(
+    () => memberships.find(member => member.storeId === storeId) ?? null,
+    [memberships, storeId],
+  )
+  const canManage = activeMembership?.role === 'owner'
+
   useEffect(() => {
+    setItems([])
+    setCounts({})
+    setSearch('')
+    setShowDifferencesOnly(false)
+    setMessage('')
+
     if (!storeId) {
-      setItems([])
       setLoading(false)
       return
     }
@@ -60,6 +73,7 @@ export default function Stocktake() {
       },
       () => {
         setItems([])
+        setCounts({})
         setLoading(false)
         setMessage('We could not load the inventory list. Please try again.')
       },
@@ -94,7 +108,12 @@ export default function Stocktake() {
   }, [counts, items, search, showDifferencesOnly])
 
   const saveReviewedCounts = async () => {
-    if (!storeId || saving) return
+    if (!storeId || saving || loading || storeLoading || membershipsLoading) return
+    if (!canManage) {
+      setMessage('Only the workspace owner can update stock from a stocktake.')
+      return
+    }
+
     const reviewed = items.filter(item => counts[item.id]?.trim() !== '')
     if (!reviewed.length) {
       setMessage('Enter at least one counted quantity first.')
@@ -115,27 +134,59 @@ export default function Stocktake() {
     setSaving(true)
     setMessage('')
     try {
-      for (let index = 0; index < reviewed.length; index += 450) {
-        const batch = writeBatch(db)
-        reviewed.slice(index, index + 450).forEach(item => {
-          batch.update(doc(db, 'products', item.id), {
-            stockCount: Number(counts[item.id]),
+      await runTransaction(db, async transaction => {
+        const pendingUpdates: Array<{
+          ref: ReturnType<typeof doc>
+          nextStock: number
+        }> = []
+
+        for (const item of reviewed) {
+          const ref = doc(db, 'products', item.id)
+          const snapshot = await transaction.get(ref)
+          if (!snapshot.exists()) {
+            throw new Error(`${item.name} no longer exists. Refresh and try again.`)
+          }
+
+          const data = snapshot.data() as Record<string, unknown>
+          const currentStoreId = typeof data.storeId === 'string' ? data.storeId : null
+          if (currentStoreId !== storeId) {
+            throw new Error(`${item.name} belongs to a different workspace. Refresh and try again.`)
+          }
+
+          const currentStock = numberOrZero(data.stockCount)
+          const countedStock = Number(counts[item.id])
+          const stocktakeAdjustment = countedStock - item.stockCount
+          const nextStock = currentStock + stocktakeAdjustment
+
+          if (!Number.isFinite(nextStock) || nextStock < 0) {
+            throw new Error(`${item.name} changed while you were counting. Refresh the stocktake and recount this item.`)
+          }
+
+          pendingUpdates.push({ ref, nextStock })
+        }
+
+        pendingUpdates.forEach(({ ref, nextStock }) => {
+          transaction.update(ref, {
+            stockCount: nextStock,
             stocktakeUpdatedAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           })
         })
-        await batch.commit()
-      }
+      })
+
       setCounts({})
       setShowDifferencesOnly(false)
       setMessage(`Stock updated for ${reviewed.length} product${reviewed.length === 1 ? '' : 's'}.`)
     } catch (error) {
       console.error('[stocktake] Failed to update stock', error)
-      setMessage('We could not update the stock. Please try again.')
+      setMessage(error instanceof Error && error.message ? error.message : 'We could not update the stock. Please try again.')
     } finally {
       setSaving(false)
     }
   }
+
+  const saveDisabled =
+    saving || loading || storeLoading || membershipsLoading || reviewedCount === 0 || !canManage
 
   return (
     <main className="page stocktake-page">
@@ -145,7 +196,7 @@ export default function Stocktake() {
           <h2 className="page__title">Stocktake</h2>
           <p className="page__subtitle">Count what is physically in the shop, then update only the products you reviewed.</p>
         </div>
-        <button type="button" className="button button--primary" onClick={saveReviewedCounts} disabled={saving || reviewedCount === 0}>
+        <button type="button" className="button button--primary" onClick={saveReviewedCounts} disabled={saveDisabled}>
           {saving ? 'Saving…' : `Save reviewed (${reviewedCount})`}
         </button>
       </header>
@@ -156,6 +207,9 @@ export default function Stocktake() {
         <div><strong>{differenceCount}</strong><span>Differences</span></div>
       </section>
 
+      {!membershipsLoading && storeId && !canManage ? (
+        <p className="stocktake-page__message">Only the workspace owner can save stocktake changes.</p>
+      ) : null}
       {message ? <p className="stocktake-page__message">{message}</p> : null}
 
       <section className="card stocktake-page__card">
@@ -210,6 +264,7 @@ export default function Stocktake() {
                           step="1"
                           inputMode="numeric"
                           value={input}
+                          disabled={!canManage || loading || storeLoading || membershipsLoading || saving}
                           onChange={event => setCounts(current => ({ ...current, [item.id]: event.target.value }))}
                           aria-label={`Counted stock for ${item.name}`}
                         />
