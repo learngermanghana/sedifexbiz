@@ -50,6 +50,48 @@
   color: #fff;
 }
 
+/* The global auth/form styles use dark number and date inputs. Keep the product
+   workspace consistently light so values stay readable while typing. */
+.products-workspace .products-page .form input[type="text"],
+.products-workspace .products-page .form input[type="number"],
+.products-workspace .products-page .form input[type="date"],
+.products-workspace .products-page .form input[type="url"],
+.products-workspace .products-page .form select,
+.products-workspace .products-page .form textarea {
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid #9ca3af;
+  color-scheme: light;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.products-workspace .products-page .form input[type="text"]:focus,
+.products-workspace .products-page .form input[type="number"]:focus,
+.products-workspace .products-page .form input[type="date"]:focus,
+.products-workspace .products-page .form input[type="url"]:focus,
+.products-workspace .products-page .form select:focus,
+.products-workspace .products-page .form textarea:focus,
+.products-workspace .products-page .form input[type="text"]:focus-visible,
+.products-workspace .products-page .form input[type="number"]:focus-visible,
+.products-workspace .products-page .form input[type="date"]:focus-visible,
+.products-workspace .products-page .form input[type="url"]:focus-visible,
+.products-workspace .products-page .form select:focus-visible,
+.products-workspace .products-page .form textarea:focus-visible {
+  background: #ffffff;
+  color: #111827;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14);
+  outline: none;
+  transform: none;
+}
+
+.products-workspace .products-page .form input::placeholder,
+.products-workspace .products-page .form textarea::placeholder {
+  color: #6b7280;
+  opacity: 1;
+}
+
 /* Keep the existing product logic in one component, but present it as two focused pages. */
 .products-workspace--list .products-page > .products-page__grid > .products-page__add-card {
   display: none;
