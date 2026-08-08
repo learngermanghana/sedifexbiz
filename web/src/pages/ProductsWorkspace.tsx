@@ -16,6 +16,11 @@ export default function ProductsWorkspace() {
         >
           All items
         </Link>
+        {!isAddPage ? (
+          <Link to="/products/stocktake" className="products-workspace__nav-link">
+            Stocktake
+          </Link>
+        ) : null}
         <Link
           to="/products/new"
           className={`products-workspace__nav-link products-workspace__nav-link--primary ${isAddPage ? 'is-active' : ''}`}
