@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore'
+import { collection, doc, onSnapshot, query, serverTimestamp, where, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './Stocktake.css'
@@ -115,15 +115,17 @@ export default function Stocktake() {
     setSaving(true)
     setMessage('')
     try {
-      const batch = writeBatch(db)
-      reviewed.forEach(item => {
-        batch.update(doc(db, 'products', item.id), {
-          stockCount: Number(counts[item.id]),
-          stocktakeUpdatedAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+      for (let index = 0; index < reviewed.length; index += 450) {
+        const batch = writeBatch(db)
+        reviewed.slice(index, index + 450).forEach(item => {
+          batch.update(doc(db, 'products', item.id), {
+            stockCount: Number(counts[item.id]),
+            stocktakeUpdatedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
         })
-      })
-      await batch.commit()
+        await batch.commit()
+      }
       setCounts({})
       setShowDifferencesOnly(false)
       setMessage(`Stock updated for ${reviewed.length} product${reviewed.length === 1 ? '' : 's'}.`)
