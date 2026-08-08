@@ -30,7 +30,7 @@ export default function ProductsWorkspace() {
         </Link>
       </nav>
 
-      <ProductsServiceFirst />
+      <ProductsServiceFirst key={isAddPage ? 'products-add' : 'products-list'} />
     </div>
   )
 }
