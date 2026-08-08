@@ -6,7 +6,7 @@ import ShellLayout from './layout/ShellLayout'
 import Dashboard from './pages/Dashboard'
 import MarketplaceOrders from './pages/MarketplaceOrdersV2'
 import DashboardHub from './pages/DashboardHub'
-import Products from './pages/ProductsServiceFirst'
+import Products from './pages/ProductsWorkspace'
 import Sell from './pages/Sell'
 import QuickPay from './pages/QuickPay'
 import QuickPayPrint from './pages/QuickPayPrint'
@@ -125,6 +125,7 @@ const router = createBrowserRouter([
       { path: 'reports/funds', element: <FundsReport /> },
       { path: 'reports/blog', element: <BlogReport /> },
       { path: 'products', element: <Products /> },
+      { path: 'products/new', element: <Products /> },
       { path: 'sell', element: <Sell /> },
       { path: 'quick-pay', element: <QuickPay /> },
       { path: 'quick-pay/print', element: <QuickPayPrint /> },
