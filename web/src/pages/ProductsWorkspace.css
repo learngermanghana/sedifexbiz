@@ -50,7 +50,7 @@
   color: #fff;
 }
 
-/* Keep the existing product logic in one component, but present it as two focused pages. */
+/* Keep add and catalogue work separate. */
 .products-workspace--list .products-page > .products-page__grid > .products-page__add-card {
   display: none;
 }
@@ -59,14 +59,195 @@
   display: none;
 }
 
-/* Editing still works from the list. When the existing component enters edit mode,
-   temporarily show the form and hide the list until the user saves or cancels. */
+/* Editing still uses the full existing form. */
 .products-workspace--list .products-page > .products-page__grid > .products-page__add-card:has(.products-page__list-actions button:nth-child(2)) {
   display: block;
 }
 
 .products-workspace--list .products-page > .products-page__grid:has(> .products-page__add-card .products-page__list-actions button:nth-child(2)) > .products-page__list-card {
   display: none;
+}
+
+/* Compact table-style catalogue. */
+.products-workspace--list .products-page > .products-page__grid > .products-page__list-card {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.products-workspace--list .products-page__list-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.products-workspace--list .products-page__list {
+  display: block;
+}
+
+.products-workspace--list .products-page__list > article.products-page__list-card {
+  margin: 0;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 0;
+  box-shadow: none;
+  background: #fff;
+}
+
+.products-workspace--list .products-page__list > article.products-page__list-card:last-child {
+  border-bottom: 0;
+}
+
+.products-workspace--list .products-page__list > article.products-page__list-card:hover {
+  background: #fbfdff;
+}
+
+.products-workspace--list .products-page__list-card__header {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.products-workspace--list .products-page__thumb-wrap {
+  width: 48px;
+  height: 48px;
+}
+
+.products-workspace--list .products-page__list-title {
+  min-width: 0;
+  gap: 6px;
+}
+
+.products-workspace--list .products-page__list-title h4 {
+  flex-basis: 100%;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.products-workspace--list .products-page__badge {
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
+.products-workspace--list .products-page__list-meta {
+  min-width: 92px;
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  text-align: right;
+}
+
+.products-workspace--list .products-page__list-meta .products-page__meta-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.products-workspace--list .products-page__list-meta span:last-child {
+  font-size: 14px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.products-workspace--list .products-page__list-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 12px 0 0 60px;
+}
+
+.products-workspace--list .products-page__list-field {
+  min-width: 0;
+  gap: 2px;
+}
+
+.products-workspace--list .products-page__list-field .field__label {
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.035em;
+}
+
+.products-workspace--list .products-page__list-field .products-page__list-value {
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* Description is useful, but it should never make the catalogue unnecessarily tall. */
+.products-workspace--list .products-workspace__description-field {
+  grid-column: 1 / -1;
+  position: relative;
+  margin-top: 2px;
+  padding: 9px 34px 9px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #f8fafc;
+  cursor: pointer;
+  outline: none;
+}
+
+.products-workspace--list .products-workspace__description-field:hover,
+.products-workspace--list .products-workspace__description-field:focus-visible {
+  border-color: #a5b4fc;
+  background: #f5f7ff;
+}
+
+.products-workspace--list .products-workspace__description-field::after {
+  content: 'Show description';
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #4f46e5;
+  white-space: nowrap;
+}
+
+.products-workspace--list .products-workspace__description-field > .products-page__list-value {
+  max-width: calc(100% - 110px);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  color: #475569;
+}
+
+.products-workspace--list .products-workspace__description-field.is-expanded::after {
+  content: 'Hide description';
+}
+
+.products-workspace--list .products-workspace__description-field.is-expanded > .products-page__list-value {
+  max-width: 100%;
+  display: block;
+  overflow: visible;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.products-workspace--list .products-page__list-actions {
+  margin: 10px 0 0 60px;
+  padding-top: 8px;
+  gap: 6px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.products-workspace--list .products-page__list-actions .button {
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .products-workspace--list .products-page__list-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -76,5 +257,51 @@
 
   .products-workspace__nav-link {
     flex: 1 1 0;
+  }
+
+  .products-workspace--list .products-page__list > article.products-page__list-card {
+    padding: 12px;
+  }
+
+  .products-workspace--list .products-page__list-card__header {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .products-workspace--list .products-page__thumb-wrap {
+    width: 42px;
+    height: 42px;
+  }
+
+  .products-workspace--list .products-page__list-meta {
+    grid-column: 2;
+    justify-items: start;
+    text-align: left;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .products-workspace--list .products-page__list-grid,
+  .products-workspace--list .products-page__list-actions {
+    margin-left: 54px;
+  }
+
+  .products-workspace--list .products-page__list-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 10px;
+  }
+
+  .products-workspace--list .products-workspace__description-field {
+    padding-right: 10px;
+  }
+
+  .products-workspace--list .products-workspace__description-field::after {
+    position: static;
+    display: block;
+    margin-top: 6px;
+  }
+
+  .products-workspace--list .products-workspace__description-field > .products-page__list-value {
+    max-width: 100%;
   }
 }
