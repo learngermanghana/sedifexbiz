@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
-import { auth } from '../firebase'
+import { doc, getDoc } from 'firebase/firestore'
+import { auth, db } from '../firebase'
 import { useAuthUser } from '../hooks/useAuthUser'
 import { useConnectivityStatus } from '../hooks/useConnectivityStatus'
 import { useStoreBilling } from '../hooks/useStoreBilling'
@@ -99,6 +100,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [dismissedResumePath, setDismissedResumePath] = useState<string | null>(null)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isDesktopNavCollapsed, setIsDesktopNavCollapsed] = useState(false)
+  const [workspaceNames, setWorkspaceNames] = useState<Record<string, string>>({})
   const shouldSkipInitialPathPersist = useRef(true)
 
   const trialEndsAt = billing?.trialEndsAt?.toDate?.() ?? null
@@ -385,6 +387,37 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     return Array.from(byStore.values())
   }, [memberships, user?.uid])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadWorkspaceNames() {
+      const entries = await Promise.all(
+        selectableMemberships.map(async membership => {
+          const currentStoreId = membership.storeId?.trim() ?? ''
+          if (!currentStoreId) return null
+
+          const [storeSnapshot, workspaceSnapshot] = await Promise.all([
+            getDoc(doc(db, 'stores', currentStoreId)).catch(() => null),
+            getDoc(doc(db, 'workspaces', currentStoreId)).catch(() => null),
+          ])
+          const data = storeSnapshot?.data() ?? workspaceSnapshot?.data() ?? {}
+          const candidates = [data.company, data.name, data.companyName, data.storeName, data.businessName]
+          const name = candidates.find(value => typeof value === 'string' && value.trim())
+          return [currentStoreId, typeof name === 'string' ? name.trim() : 'Store workspace'] as const
+        }),
+      )
+
+      if (!cancelled) {
+        setWorkspaceNames(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)))
+      }
+    }
+
+    void loadWorkspaceNames()
+    return () => {
+      cancelled = true
+    }
+  }, [selectableMemberships])
+
   const navSection = (
     <div className="shell__nav-group">
       <nav
@@ -438,12 +471,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             onChange={event => setActiveStoreId(event.target.value)}
             aria-label="Select workspace"
           >
-            {selectableMemberships.map(membership => (
+            {selectableMemberships.map((membership, index) => (
               <option
                 key={membership.id}
                 value={membership.storeId ?? ''}
               >
-                {membership.storeId}
+                {workspaceNames[membership.storeId ?? ''] || `Store ${index + 1}`}
                 {membership.role === 'owner' ? ' (Owner)' : ''}
               </option>
             ))}
