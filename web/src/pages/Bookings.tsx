@@ -110,6 +110,13 @@ const paymentLabel = (status: string) =>
     paid: "Paid",
   })[status] ?? "Payment pending";
 
+const isDirectPaymentBooking = (booking: BookingRecord) => {
+  const paymentMethod = (booking.paymentMethod || "").toLowerCase();
+  return ["pay_later", "momo", "mobile_money", "bank", "bank_transfer", "manual"].some((method) =>
+    paymentMethod.includes(method),
+  );
+};
+
 export default function Bookings() {
   const { storeId } = useActiveStore();
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
@@ -119,10 +126,8 @@ export default function Bookings() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<"paid_sedifex" | "direct_needs_approval">("paid_sedifex");
-  const [search, setSearch] = useState("");
-  const [dateRange, setDateRange] = useState("30d");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [branchFilter, setBranchFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const hydrateBooking = useCallback(
     (
@@ -418,56 +423,31 @@ export default function Bookings() {
   const summary = {
     newToday: bookings.filter((b) => b.createdAt?.toDateString() === todayStr)
       .length,
-    pending: bookings.filter(
-      (b) =>
-        ["pending", "pending_approval", "manual_review"].includes(b.status) ||
-        b.bookingStatus === "pending_approval",
-    ).length,
-    paymentPending: bookings.filter((b) =>
+    paidSedifex: bookings.filter((b) => b.paymentStatus === "paid" && !isDirectPaymentBooking(b)).length,
+    directNeedsApproval: bookings.filter((b) =>
+      isDirectPaymentBooking(b) &&
+      !["cancelled", "deleted"].includes(b.status) &&
       ["pending", "payment_pending", "manual_review"].includes(b.paymentStatus),
     ).length,
-    paid: bookings.filter((b) => b.paymentStatus === "paid").length,
-    confirmed: bookings.filter((b) => b.status === "confirmed").length,
-    completed: bookings.filter((b) => b.status === "completed").length,
-    cancelled: bookings.filter((b) =>
-      ["cancelled", "deleted"].includes(b.status),
-    ).length,
+    confirmedAppointments: bookings.filter((b) => b.status === "confirmed" || b.bookingStatus === "confirmed").length,
   };
 
   const visible = useMemo(
     () =>
       bookings.filter((b) => {
-        const paymentMethod = (b.paymentMethod || "").toLowerCase();
-        const isDirectPayment = ["pay_later", "momo", "mobile_money", "bank", "bank_transfer", "manual"].some((method) =>
-          paymentMethod.includes(method),
-        );
+        const isDirectPayment = isDirectPaymentBooking(b);
         const matchesPaymentView = activeTab === "paid_sedifex"
           ? b.paymentStatus === "paid" && !isDirectPayment
           : isDirectPayment &&
             !["cancelled", "deleted"].includes(b.status) &&
             ["pending", "payment_pending", "manual_review"].includes(b.paymentStatus);
 
-        const queryText = search.trim().toLowerCase();
-        const matchesSearch = !queryText || [b.reference, b.bookingId, b.serviceName, b.customerName, b.customerPhone, b.customerEmail, b.preferredBranch]
-          .some((value) => (value || "").toLowerCase().includes(queryText));
-        const matchesStatus = statusFilter === "all" || b.status === statusFilter || b.bookingStatus === statusFilter || b.paymentStatus === statusFilter;
-        const matchesBranch = branchFilter === "all" || b.preferredBranch === branchFilter;
+        const appointmentDate = (b.bookingDate || "").slice(0, 10);
+        const matchesDate = (!dateFrom || appointmentDate >= dateFrom) && (!dateTo || appointmentDate <= dateTo);
 
-        const createdAt = b.createdAt?.getTime() ?? 0;
-        const now = Date.now();
-        const matchesDate = dateRange === "all" ||
-          (dateRange === "today" && b.createdAt?.toDateString() === todayStr) ||
-          (dateRange === "7d" && createdAt >= now - 7 * 24 * 60 * 60 * 1000) ||
-          (dateRange === "30d" && createdAt >= now - 30 * 24 * 60 * 60 * 1000);
-
-        return matchesPaymentView && matchesSearch && matchesStatus && matchesBranch && matchesDate;
+        return matchesPaymentView && matchesDate;
       }),
-    [activeTab, bookings, branchFilter, dateRange, search, statusFilter, todayStr],
-  );
-
-  const branchOptions = useMemo(
-    () => Array.from(new Set(bookings.map((booking) => booking.preferredBranch).filter((branch): branch is string => Boolean(branch)))).sort(),
-    [bookings],
+    [activeTab, bookings, dateFrom, dateTo],
   );
 
   const deleteBookingRecords = useCallback(
@@ -582,12 +562,9 @@ export default function Bookings() {
         <div className="bookings-page__summary-grid">
           {[
             ["New today", summary.newToday],
-            ["Pending approval", summary.pending],
-            ["Payment pending", summary.paymentPending],
-            ["Paid", summary.paid],
-            ["Confirmed", summary.confirmed],
-            ["Completed", summary.completed],
-            ["Cancelled", summary.cancelled],
+            ["Paid through Sedifex", summary.paidSedifex],
+            ["Direct payment needs approval", summary.directNeedsApproval],
+            ["Confirmed appointments", summary.confirmedAppointments],
           ].map(([label, value]) => (
             <article
               key={label as string}
@@ -617,35 +594,12 @@ export default function Bookings() {
 
         <div className="bookings-page__filters">
           <label>
-            Date range
-            <select value={dateRange} onChange={(event) => setDateRange(event.target.value)}>
-              <option value="today">Today</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="all">All time</option>
-            </select>
+            From
+            <input type="date" value={dateFrom} max={dateTo || undefined} onChange={(event) => setDateFrom(event.target.value)} />
           </label>
           <label>
-            Branch
-            <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-              <option value="all">All branches</option>
-              {branchOptions.map((branch) => <option key={branch} value={branch}>{branch}</option>)}
-            </select>
-          </label>
-          <label>
-            Status
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-              <option value="all">All statuses</option>
-              <option value="pending">Pending</option>
-              <option value="pending_approval">Needs approval</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </label>
-          <label>
-            Search
-            <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Customer, phone, service or reference…" />
+            To
+            <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} />
           </label>
         </div>
 
