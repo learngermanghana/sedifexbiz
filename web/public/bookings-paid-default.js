@@ -6,7 +6,7 @@
 
   function findPaidTab(tabs) {
     return Array.from(tabs.querySelectorAll('button')).find(
-      button => button.textContent?.trim().toLowerCase() === 'paid',
+      button => button.textContent?.trim().toLowerCase() === 'paid through sedifex',
     )
   }
 
@@ -17,7 +17,7 @@
     notice.className = 'bookings-paid-default-notice'
     notice.setAttribute('data-sedifex-paid-bookings-notice', 'true')
     notice.innerHTML =
-      '<strong>Paid bookings are shown by default when this page opens.</strong> Use <strong>Awaiting payment</strong> to review pending or unsuccessful payment attempts, or <strong>All</strong> to see every booking.'
+      '<strong>Paid through Sedifex</strong> shows Paystack-confirmed bookings. Use <strong>Direct payment — needs approval</strong> for store MoMo or bank payments that staff still need to verify.'
     tabs.insertAdjacentElement('afterend', notice)
   }
 
