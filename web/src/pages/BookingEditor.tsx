@@ -545,7 +545,7 @@ export default function BookingEditor() {
           </p>
           <h1>{isCreateMode ? 'Add booking' : 'Edit booking'}</h1>
           <p className="form__hint">
-            Update the booking status in this form, then click <strong>Save changes</strong>. Sedifex will save the update and send the customer email when notifications are enabled.
+            Update the appointment status in this form, then click <strong>Save changes</strong>. Sedifex will save the update and send the customer email when notifications are enabled.
           </p>
         </header>
 
@@ -571,12 +571,11 @@ export default function BookingEditor() {
             <label><span>Preferred branch</span><input value={form.preferredBranch} onChange={event => setForm(prev => ({ ...prev, preferredBranch: event.target.value }))} /></label>
             <label><span>Preferred contact method</span><input value={form.preferredContactMethod} onChange={event => setForm(prev => ({ ...prev, preferredContactMethod: event.target.value }))} /></label>
             <label>
-              <span>Status</span>
+              <span>Appointment status</span>
               <select value={form.status} onChange={event => setForm(prev => ({ ...prev, status: event.target.value }))}>
                 <option value="pending">Pending approval</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="rescheduled">Rescheduled</option>
-                <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
               </select>
             </label>
