@@ -220,8 +220,9 @@ export default function Bookings() {
         preferredBranch: pickString(data, [
           "preferredBranch",
           "branch",
+          "branchLocationName",
           "location",
-        ]),
+        ]) ?? pickString(metadata, ["preferredBranch", "branchLocationName"]),
         paymentAmount:
           pickString(data, ["paymentAmount", "amount", "total", "price"]) ??
           pickString(payment, ["amount"]),
