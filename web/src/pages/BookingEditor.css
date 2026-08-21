@@ -14,6 +14,19 @@
   gap: 0.35rem;
 }
 
+.booking-editor-page__form select[size] {
+  min-height: 148px;
+  padding: 6px;
+  border: 1px solid #c7d2fe;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.booking-editor-page__form select[size] option {
+  padding: 9px 10px;
+  border-radius: 8px;
+}
+
 .booking-editor-page__notes {
   grid-column: 1 / -1;
 }
