@@ -6,6 +6,8 @@ import { useActiveStore } from '../../hooks/useActiveStore'
 import { asNumber, asText, downloadCsv, exportReportPdf, formatDate, formatMoney, getNestedObject, normalizeSourceChannel, toDate } from './reportUtils'
 import { canonicalBookingOrderKey, chooseMoreCompleteRecord, deriveReportPaymentFields, normalizeBookingStatusFromRecord } from '../../lib/bookingStatus'
 
+type BookingSourcePath = 'root' | 'store' | 'order-root' | 'order-store'
+
 type BookingRow = {
   id: string
   reference: string
@@ -16,7 +18,7 @@ type BookingRow = {
   customerPhone: string
   sourceChannel: string
   sourceLabel: string
-  sourcePath: 'root' | 'store'
+  sourcePath: BookingSourcePath
   bookingDate: string
   bookingTime: string
   paymentStatus: string
@@ -70,6 +72,23 @@ function isDirectPaymentRecord(data: Record<string, unknown>, payment: Record<st
   return DIRECT_PAYMENT_METHODS.has(method) || DIRECT_PAYMENT_COLLECTION_MODES.has(collectionMode)
 }
 
+function isBookingOrderRecord(data: Record<string, unknown>) {
+  const metadata = getNestedObject(data, 'metadata')
+  const recordType = normalizeStatus(data.recordType ?? data.orderType ?? data.order_type, '')
+  const accountingType = normalizeStatus(data.accountingType ?? data.accounting_type ?? metadata.accountingType, '')
+  const quickPayType = asText(metadata.quickPayType ?? metadata.itemType).trim().toLowerCase()
+  return recordType === 'service_booking' || accountingType === 'booking' || quickPayType === 'booking'
+}
+
+function isOrderSource(sourcePath: BookingSourcePath) {
+  return sourcePath === 'order-root' || sourcePath === 'order-store'
+}
+
+function sourcePathLabel(sourcePath: BookingSourcePath) {
+  if (isOrderSource(sourcePath)) return 'Payment order'
+  return sourcePath === 'root' ? 'Root booking' : 'Store booking'
+}
+
 function readReminderStatus(data: Record<string, unknown>) {
   const sent = [
     data.reminder_3d_sent_at || data.reminder3dSentAt ? '3d' : '',
@@ -80,25 +99,30 @@ function readReminderStatus(data: Record<string, unknown>) {
   return sent.length ? sent.join(', ') : 'Not sent'
 }
 
-function mapBooking(id: string, data: Record<string, unknown>, sourcePath: 'root' | 'store'): BookingRow {
+function mapBooking(id: string, data: Record<string, unknown>, sourcePath: BookingSourcePath): BookingRow {
   const customer = getNestedObject(data, 'customer')
   const booking = getNestedObject(data, 'booking')
   const payment = getNestedObject(data, 'payment')
-  const sourceChannel = normalizeSourceChannel(data.sourceChannel ?? data.source_channel ?? data.source)
+  const nestedData = getNestedObject(data, 'data')
+  const metadata = getNestedObject(data, 'metadata')
+  const firstItem = Array.isArray(data.items) && data.items[0] && typeof data.items[0] === 'object'
+    ? data.items[0] as Record<string, unknown>
+    : {}
+  const sourceChannel = normalizeSourceChannel(data.sourceChannel ?? data.source_channel ?? data.source ?? data.channel)
   const reportFields = deriveReportPaymentFields(data)
   return {
     id,
     reference: asText(data.reference ?? data.paymentReference ?? data.payment_reference ?? payment.reference, id),
-    bookingId: asText(data.booking_id ?? data.bookingId, id),
-    serviceName: asText(data.serviceName ?? data.internalServiceName ?? booking.serviceName ?? data.itemName ?? data.productName, 'Service booking'),
-    recordType: asText(data.recordType ?? data.listingType, 'booking'),
+    bookingId: asText(data.booking_id ?? data.bookingId ?? metadata.booking_id ?? metadata.bookingId, ''),
+    serviceName: asText(data.serviceName ?? data.internalServiceName ?? booking.serviceName ?? nestedData.serviceName ?? data.itemName ?? data.productName ?? firstItem.serviceName ?? firstItem.name ?? metadata.serviceName ?? metadata.itemName, 'Service booking'),
+    recordType: asText(data.recordType ?? data.listingType, isOrderSource(sourcePath) ? 'service_booking' : 'booking'),
     customerName: asText(customer.name ?? data.customerName ?? data.name ?? data.fullName, 'Customer'),
     customerPhone: asText(customer.phone ?? customer.email ?? data.customerPhone ?? data.phone ?? data.email, ''),
     sourceChannel,
     sourceLabel: sourceLabel(sourceChannel),
     sourcePath,
-    bookingDate: asText(data.bookingDate ?? data.date ?? booking.preferredDate ?? booking.date, '—'),
-    bookingTime: asText(data.bookingTime ?? data.time ?? booking.preferredTime ?? booking.time, '—'),
+    bookingDate: asText(data.bookingDate ?? data.date ?? booking.preferredDate ?? booking.date ?? metadata.bookingDate, '—'),
+    bookingTime: asText(data.bookingTime ?? data.time ?? booking.preferredTime ?? booking.time ?? metadata.bookingTime, '—'),
     paymentStatus: reportFields.paymentStatus,
     directPayment: isDirectPaymentRecord(data, payment),
     bookingStatus: normalizeBookingStatusFromRecord(data),
@@ -180,6 +204,8 @@ export default function BookingsReport() {
   const { storeId } = useActiveStore()
   const [rootBookings, setRootBookings] = useState<BookingRow[]>([])
   const [storeBookings, setStoreBookings] = useState<BookingRow[]>([])
+  const [rootOrders, setRootOrders] = useState<BookingRow[]>([])
+  const [storeOrders, setStoreOrders] = useState<BookingRow[]>([])
   const [status, setStatus] = useState('all')
   const [source, setSource] = useState('all')
   const [sync, setSync] = useState('all')
@@ -193,25 +219,43 @@ export default function BookingsReport() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!storeId) { setRootBookings([]); setStoreBookings([]); setSelectedIds([]); setDeletingIds([]); return undefined }
+    if (!storeId) {
+      setRootBookings([])
+      setStoreBookings([])
+      setRootOrders([])
+      setStoreOrders([])
+      setSelectedIds([])
+      setDeletingIds([])
+      return undefined
+    }
     const unsubRoot = onSnapshot(query(collection(db, 'integrationBookings'), where('storeId', '==', storeId)), snapshot => {
       setRootBookings(snapshot.docs.map(docSnap => mapBooking(docSnap.id, docSnap.data() as Record<string, unknown>, 'root')))
     })
     const unsubStore = onSnapshot(collection(db, 'stores', storeId, 'integrationBookings'), snapshot => {
       setStoreBookings(snapshot.docs.map(docSnap => mapBooking(docSnap.id, docSnap.data() as Record<string, unknown>, 'store')))
     })
-    return () => { unsubRoot(); unsubStore() }
+    const unsubRootOrders = onSnapshot(query(collection(db, 'integrationOrders'), where('storeId', '==', storeId)), snapshot => {
+      setRootOrders(snapshot.docs
+        .filter(docSnap => isBookingOrderRecord(docSnap.data() as Record<string, unknown>))
+        .map(docSnap => mapBooking(docSnap.id, docSnap.data() as Record<string, unknown>, 'order-root')))
+    })
+    const unsubStoreOrders = onSnapshot(collection(db, 'stores', storeId, 'integrationOrders'), snapshot => {
+      setStoreOrders(snapshot.docs
+        .filter(docSnap => isBookingOrderRecord(docSnap.data() as Record<string, unknown>))
+        .map(docSnap => mapBooking(docSnap.id, docSnap.data() as Record<string, unknown>, 'order-store')))
+    })
+    return () => { unsubRoot(); unsubStore(); unsubRootOrders(); unsubStoreOrders() }
   }, [storeId])
 
   const bookings = useMemo(() => {
     const merged = new Map<string, BookingRow>()
-    ;[...rootBookings, ...storeBookings].forEach(row => {
-      const key = canonicalBookingOrderKey({ booking_id: row.bookingId, payment_reference: row.reference }, row.id)
+    ;[...rootBookings, ...storeBookings, ...rootOrders, ...storeOrders].forEach(row => {
+      const key = canonicalBookingOrderKey({ booking_id: row.bookingId || row.id, payment_reference: row.reference }, row.id)
       const existing = merged.get(key)
       merged.set(key, existing ? chooseMoreCompleteRecord(existing, { ...existing, ...row, sourcePath: row.sourcePath }) : row)
     })
     return Array.from(merged.values()).sort((a, b) => ((b.updatedAt ?? b.createdAt)?.getTime() ?? 0) - ((a.updatedAt ?? a.createdAt)?.getTime() ?? 0))
-  }, [rootBookings, storeBookings])
+  }, [rootBookings, rootOrders, storeBookings, storeOrders])
 
   const filtered = useMemo(() => bookings.filter(booking => {
     const queryText = search.trim().toLowerCase()
@@ -223,7 +267,7 @@ export default function BookingsReport() {
   }), [bookings, range, search, source, status, sync])
 
   useEffect(() => { setPage(1) }, [range, rowsPerPage, search, source, status, sync])
-  useEffect(() => { setSelectedIds(current => current.filter(id => filtered.some(booking => booking.id === id))) }, [filtered])
+  useEffect(() => { setSelectedIds(current => current.filter(id => filtered.some(booking => booking.id === id && !isOrderSource(booking.sourcePath)))) }, [filtered])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage))
   const safePage = Math.min(page, totalPages)
@@ -233,15 +277,18 @@ export default function BookingsReport() {
   }, [totalPages])
 
   const pageRows = filtered.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage)
+  const selectablePageRows = pageRows.filter(booking => !isOrderSource(booking.sourcePath))
   const firstRow = filtered.length ? (safePage - 1) * rowsPerPage + 1 : 0
   const lastRow = Math.min(safePage * rowsPerPage, filtered.length)
 
   async function deleteBookingRecords(booking: BookingRow) {
-    if (!storeId) return
-    await Promise.all([deleteDoc(doc(db, 'stores', storeId, 'integrationBookings', booking.id)), deleteDoc(doc(db, 'integrationBookings', booking.id))])
+    if (!storeId || isOrderSource(booking.sourcePath)) return
+    const targetId = booking.bookingId || booking.id
+    await Promise.all([deleteDoc(doc(db, 'stores', storeId, 'integrationBookings', targetId)), deleteDoc(doc(db, 'integrationBookings', targetId))])
   }
 
   async function deleteOneBooking(booking: BookingRow) {
+    if (isOrderSource(booking.sourcePath)) return
     if (!window.confirm(`Delete ${booking.serviceName || booking.reference || 'this booking'}? This cannot be undone.`)) return
     setDeletingIds(current => Array.from(new Set([...current, booking.id])))
     setSuccessMessage(null); setErrorMessage(null)
@@ -251,7 +298,7 @@ export default function BookingsReport() {
   }
 
   async function deleteSelectedBookings() {
-    const selected = filtered.filter(booking => selectedIds.includes(booking.id))
+    const selected = filtered.filter(booking => selectedIds.includes(booking.id) && !isOrderSource(booking.sourcePath))
     if (!selected.length || !window.confirm(`Delete ${selected.length} selected booking${selected.length === 1 ? '' : 's'}? This cannot be undone.`)) return
     setDeletingIds(current => Array.from(new Set([...current, ...selected.map(booking => booking.id)])))
     setSuccessMessage(null); setErrorMessage(null)
@@ -285,17 +332,17 @@ export default function BookingsReport() {
   ]
 
   function exportRows() {
-    downloadCsv('sedifex-bookings-report.csv', filtered.map(booking => ({ reference: booking.reference, serviceName: booking.serviceName, recordType: booking.recordType, customer: booking.customerName, contact: booking.customerPhone, source: booking.sourceLabel, sourcePath: booking.sourcePath, bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, paymentStatus: reportPaymentLabel(booking), bookingStatus: booking.bookingStatus, syncStatus: booking.syncStatus, syncReason: booking.syncReason, reminderStatus: booking.reminderStatus, confirmedAt: formatDate(booking.confirmedAt), cancelledAt: formatDate(booking.cancelledAt), completedAt: formatDate(booking.completedAt), amount: booking.amount, amountReceived: booking.amountReceived, amountOutstanding: booking.amountOutstanding, createdAt: formatDate(booking.createdAt) })))
+    downloadCsv('sedifex-bookings-report.csv', filtered.map(booking => ({ reference: booking.reference, serviceName: booking.serviceName, recordType: booking.recordType, customer: booking.customerName, contact: booking.customerPhone, source: booking.sourceLabel, sourcePath: sourcePathLabel(booking.sourcePath), bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, paymentStatus: reportPaymentLabel(booking), bookingStatus: booking.bookingStatus, syncStatus: booking.syncStatus, syncReason: booking.syncReason, reminderStatus: booking.reminderStatus, confirmedAt: formatDate(booking.confirmedAt), cancelledAt: formatDate(booking.cancelledAt), completedAt: formatDate(booking.completedAt), amount: booking.amount, amountReceived: booking.amountReceived, amountOutstanding: booking.amountOutstanding, createdAt: formatDate(booking.createdAt) })))
   }
 
   function exportPdf() {
-    exportReportPdf({ title: 'Bookings report', subtitle: 'Service, class, appointment, and website bookings with payment, source, sync, and reminder status.', summary: [{ label: 'Total bookings', value: totals.count }, { label: 'Confirmed', value: totals.confirmed }, { label: 'Sync pending', value: totals.syncPending }, { label: 'Booking value', value: formatMoney(totals.value) }], rows: filtered.map(booking => ({ reference: booking.reference, serviceName: `${booking.serviceName} (${booking.recordType})`, customer: booking.customerName, source: booking.sourceLabel, bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, paymentStatus: reportPaymentLabel(booking), bookingStatus: booking.bookingStatus, syncStatus: booking.syncStatus, reminderStatus: booking.reminderStatus, amount: booking.amount, amountReceived: booking.amountReceived, amountOutstanding: booking.amountOutstanding, createdAt: formatDate(booking.createdAt) })) })
+    exportReportPdf({ title: 'Bookings report', subtitle: 'Service, class, appointment, website bookings, and order-backed checkouts with payment, source, sync, and reminder status.', summary: [{ label: 'Total bookings', value: totals.count }, { label: 'Confirmed', value: totals.confirmed }, { label: 'Sync pending', value: totals.syncPending }, { label: 'Booking value', value: formatMoney(totals.value) }], rows: filtered.map(booking => ({ reference: booking.reference, serviceName: `${booking.serviceName} (${booking.recordType})`, customer: booking.customerName, source: booking.sourceLabel, bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, paymentStatus: reportPaymentLabel(booking), bookingStatus: booking.bookingStatus, syncStatus: booking.syncStatus, reminderStatus: booking.reminderStatus, amount: booking.amount, amountReceived: booking.amountReceived, amountOutstanding: booking.amountOutstanding, createdAt: formatDate(booking.createdAt) })) })
   }
 
   return <div className="space-y-6">
     <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-        <div><p className="text-sm font-medium text-slate-500">Reports / Bookings</p><h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">Bookings report</h1><p className="mt-4 max-w-4xl text-lg leading-8 text-slate-600">Review bookings in a compact table with payment, confirmation, source, schedule, sync, and reminder details.</p></div>
+        <div><p className="text-sm font-medium text-slate-500">Reports / Bookings</p><h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950">Bookings report</h1><p className="mt-4 max-w-4xl text-lg leading-8 text-slate-600">Review bookings and order-backed service checkouts in a compact table with payment, confirmation, source, schedule, sync, and reminder details.</p></div>
         <div className="flex flex-wrap gap-3"><button type="button" className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-sm disabled:opacity-50" onClick={exportPdf} disabled={!filtered.length}>Export PDF</button><button type="button" className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-900 shadow-sm disabled:opacity-50" onClick={exportRows} disabled={!filtered.length}>Export CSV</button></div>
       </div>
     </section>
@@ -303,7 +350,7 @@ export default function BookingsReport() {
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{summaryCards.map(item => <SummaryMetric key={item.label} item={item} />)}</section>
 
     <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-2xl font-semibold tracking-tight text-slate-950">Booking details</h2><p className="mt-2 text-sm leading-6 text-slate-500">Use the filters and search, then review all records in the table below.</p></div><span className="w-fit rounded-full bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700">{filtered.length} showing</span></div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-2xl font-semibold tracking-tight text-slate-950">Booking details</h2><p className="mt-2 text-sm leading-6 text-slate-500">Use the filters and search, then review all booking and service-checkout records below.</p></div><span className="w-fit rounded-full bg-indigo-50 px-4 py-2 text-sm font-bold text-indigo-700">{filtered.length} showing</span></div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <label className="block text-sm font-semibold text-slate-700">Date range<select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3" value={range} onChange={event => setRange(event.target.value)}><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="month">This month</option><option value="last_month">Last month</option><option value="all">All time</option></select></label>
@@ -317,14 +364,18 @@ export default function BookingsReport() {
         <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">Rows per page<select className="rounded-xl border border-slate-300 bg-white px-3 py-2" value={rowsPerPage} onChange={event => setRowsPerPage(Number(event.target.value))}><option value={10}>10</option><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"><span className="text-sm font-bold text-slate-700">{selectedIds.length} selected</span><button type="button" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold disabled:opacity-50" onClick={() => setSelectedIds(pageRows.map(booking => booking.id))} disabled={!pageRows.length}>Select page</button><button type="button" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold disabled:opacity-50" onClick={() => setSelectedIds([])} disabled={!selectedIds.length}>Clear selection</button><button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50" onClick={() => void deleteSelectedBookings()} disabled={!selectedIds.length || deletingIds.length > 0}>{deletingIds.length ? 'Deleting…' : 'Delete selected'}</button></div>
+      <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3"><span className="text-sm font-bold text-slate-700">{selectedIds.length} selected</span><button type="button" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold disabled:opacity-50" onClick={() => setSelectedIds(selectablePageRows.map(booking => booking.id))} disabled={!selectablePageRows.length}>Select page</button><button type="button" className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold disabled:opacity-50" onClick={() => setSelectedIds([])} disabled={!selectedIds.length}>Clear selection</button><button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50" onClick={() => void deleteSelectedBookings()} disabled={!selectedIds.length || deletingIds.length > 0}>{deletingIds.length ? 'Deleting…' : 'Delete selected'}</button></div>
       {successMessage ? <p className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{successMessage}</p> : null}
       {errorMessage ? <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{errorMessage}</p> : null}
 
       <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
         <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
-          <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-4 py-3"><input type="checkbox" aria-label="Select all rows on this page" checked={pageRows.length > 0 && pageRows.every(row => selectedIds.includes(row.id))} onChange={event => setSelectedIds(event.target.checked ? Array.from(new Set([...selectedIds, ...pageRows.map(row => row.id)])) : selectedIds.filter(id => !pageRows.some(row => row.id === id)))} /></th><th className="px-4 py-3">Booking</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Schedule</th><th className="px-4 py-3">Source</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Sync / reminder</th><th className="px-4 py-3">Actions</th></tr></thead>
-          <tbody className="divide-y divide-slate-200 bg-white">{pageRows.map(booking => <tr key={booking.id} className="align-top hover:bg-slate-50"><td className="px-4 py-4"><input type="checkbox" checked={selectedIds.includes(booking.id)} onChange={event => setSelectedIds(current => event.target.checked ? Array.from(new Set([...current, booking.id])) : current.filter(id => id !== booking.id))} /></td><td className="px-4 py-4"><strong className="block max-w-[220px] text-slate-950">{booking.serviceName}</strong><span className="mt-1 block text-xs capitalize text-slate-500">{formatLabel(booking.recordType)}</span><span className="mt-2 block max-w-[220px] break-all font-mono text-xs text-slate-500">{booking.reference}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{booking.customerName}</strong><span className="mt-1 block max-w-[170px] break-all text-xs text-slate-500">{booking.customerPhone || 'No contact'}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{booking.bookingDate}</strong><span className="mt-1 block text-xs text-slate-500">{booking.bookingTime}</span>{booking.slotStartAt !== '—' ? <span className="mt-1 block max-w-[180px] text-xs font-semibold text-indigo-700">Slot: {booking.slotStartAt}{booking.slotEndAt !== '—' ? ` – ${booking.slotEndAt}` : ''}</span> : null}<span className="mt-1 block max-w-[150px] text-xs text-slate-400">Created {formatDate(booking.createdAt)}</span></td><td className="px-4 py-4"><span className="inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{booking.sourceLabel}</span><span className="mt-2 block text-xs capitalize text-slate-500">{booking.sourcePath} record</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{formatMoney(booking.amount)}</strong><span className="mt-1 block text-xs text-emerald-700">Received {formatMoney(booking.amountReceived)}</span><span className="mt-1 block text-xs text-slate-500">Balance {formatMoney(booking.amountOutstanding)}</span></td><td className="px-4 py-4"><div className="flex max-w-[170px] flex-wrap gap-1"><StatusPill label={booking.bookingStatus} /><StatusPill label={reportPaymentLabel(booking)} type="payment" /></div></td><td className="px-4 py-4"><StatusPill label={booking.syncStatus} type="sync" /><span className="mt-2 block max-w-[180px] text-xs text-slate-500">Reminder: {booking.reminderStatus}</span><span className="mt-1 block max-w-[180px] text-xs text-slate-400">{booking.syncReason}</span></td><td className="px-4 py-4"><div className="flex flex-col gap-2"><Link className="rounded-xl bg-slate-950 px-3 py-2 text-center text-xs font-bold text-white" to={`/bookings/${booking.id}`}>Open</Link><button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 disabled:opacity-50" onClick={() => void deleteOneBooking(booking)} disabled={deletingIds.includes(booking.id)}>{deletingIds.includes(booking.id) ? 'Deleting…' : 'Delete'}</button></div></td></tr>)}</tbody>
+          <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-4 py-3"><input type="checkbox" aria-label="Select all rows on this page" checked={selectablePageRows.length > 0 && selectablePageRows.every(row => selectedIds.includes(row.id))} onChange={event => setSelectedIds(event.target.checked ? Array.from(new Set([...selectedIds, ...selectablePageRows.map(row => row.id)])) : selectedIds.filter(id => !selectablePageRows.some(row => row.id === id)))} disabled={!selectablePageRows.length} /></th><th className="px-4 py-3">Booking</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Schedule</th><th className="px-4 py-3">Source</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Sync / reminder</th><th className="px-4 py-3">Actions</th></tr></thead>
+          <tbody className="divide-y divide-slate-200 bg-white">{pageRows.map(booking => {
+            const orderSource = isOrderSource(booking.sourcePath)
+            const openBookingId = booking.bookingId || (!orderSource ? booking.id : '')
+            return <tr key={`${booking.sourcePath}:${booking.id}`} className="align-top hover:bg-slate-50"><td className="px-4 py-4"><input type="checkbox" checked={selectedIds.includes(booking.id)} disabled={orderSource} onChange={event => setSelectedIds(current => event.target.checked ? Array.from(new Set([...current, booking.id])) : current.filter(id => id !== booking.id))} /></td><td className="px-4 py-4"><strong className="block max-w-[220px] text-slate-950">{booking.serviceName}</strong><span className="mt-1 block text-xs capitalize text-slate-500">{formatLabel(booking.recordType)}</span><span className="mt-2 block max-w-[220px] break-all font-mono text-xs text-slate-500">{booking.reference}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{booking.customerName}</strong><span className="mt-1 block max-w-[170px] break-all text-xs text-slate-500">{booking.customerPhone || 'No contact'}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{booking.bookingDate}</strong><span className="mt-1 block text-xs text-slate-500">{booking.bookingTime}</span>{booking.slotStartAt !== '—' ? <span className="mt-1 block max-w-[180px] text-xs font-semibold text-indigo-700">Slot: {booking.slotStartAt}{booking.slotEndAt !== '—' ? ` – ${booking.slotEndAt}` : ''}</span> : null}<span className="mt-1 block max-w-[150px] text-xs text-slate-400">Created {formatDate(booking.createdAt)}</span></td><td className="px-4 py-4"><span className="inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{booking.sourceLabel}</span><span className="mt-2 block text-xs text-slate-500">{sourcePathLabel(booking.sourcePath)}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{formatMoney(booking.amount)}</strong><span className="mt-1 block text-xs text-emerald-700">Received {formatMoney(booking.amountReceived)}</span><span className="mt-1 block text-xs text-slate-500">Balance {formatMoney(booking.amountOutstanding)}</span></td><td className="px-4 py-4"><div className="flex max-w-[170px] flex-wrap gap-1"><StatusPill label={booking.bookingStatus} /><StatusPill label={reportPaymentLabel(booking)} type="payment" /></div></td><td className="px-4 py-4"><StatusPill label={booking.syncStatus} type="sync" /><span className="mt-2 block max-w-[180px] text-xs text-slate-500">Reminder: {booking.reminderStatus}</span><span className="mt-1 block max-w-[180px] text-xs text-slate-400">{booking.syncReason}</span></td><td className="px-4 py-4"><div className="flex flex-col gap-2">{openBookingId ? <Link className="rounded-xl bg-slate-950 px-3 py-2 text-center text-xs font-bold text-white" to={`/bookings/${openBookingId}`}>Open</Link> : <span className="rounded-xl bg-slate-100 px-3 py-2 text-center text-xs font-bold text-slate-500">Order only</span>}{orderSource ? <span className="text-center text-xs font-semibold text-slate-400">Read-only payment record</span> : <button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 disabled:opacity-50" onClick={() => void deleteOneBooking(booking)} disabled={deletingIds.includes(booking.id)}>{deletingIds.includes(booking.id) ? 'Deleting…' : 'Delete'}</button>}</div></td></tr>
+          })}</tbody>
         </table>
         {!pageRows.length ? <div className="p-10 text-center"><h3 className="text-xl font-semibold text-slate-950">No booking records found</h3><p className="mt-2 text-slate-500">Change the date range, search, or filters to see more records.</p></div> : null}
       </div>
