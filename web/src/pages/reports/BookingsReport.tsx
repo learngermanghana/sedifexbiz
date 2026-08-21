@@ -63,8 +63,10 @@ function normalizePaymentClassifierValue(value: unknown) {
 }
 
 function isDirectPaymentRecord(data: Record<string, unknown>, payment: Record<string, unknown>) {
-  const method = normalizePaymentClassifierValue(data.paymentMethod ?? data.payment_method ?? payment.method)
-  const collectionMode = normalizePaymentClassifierValue(data.paymentCollectionMode ?? data.payment_collection_mode ?? payment.mode)
+  const nestedData = getNestedObject(data, 'data')
+  const metadata = getNestedObject(data, 'metadata')
+  const method = normalizePaymentClassifierValue(data.paymentMethod ?? data.payment_method ?? nestedData.paymentMethod ?? nestedData.payment_method ?? payment.method ?? metadata.paymentMethod)
+  const collectionMode = normalizePaymentClassifierValue(data.paymentCollectionMode ?? data.payment_collection_mode ?? nestedData.paymentCollectionMode ?? nestedData.payment_collection_mode ?? payment.mode ?? metadata.paymentCollectionMode)
   return DIRECT_PAYMENT_METHODS.has(method) || DIRECT_PAYMENT_COLLECTION_MODES.has(collectionMode)
 }
 
