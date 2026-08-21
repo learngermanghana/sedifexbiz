@@ -63,16 +63,20 @@ export function normalizePhoneE164(
 
   if (!withoutWhatsApp) return ''
 
-  const hasPlus = withoutWhatsApp.startsWith('+')
   const defaultCountryCode = options?.defaultCountryCode ?? DEFAULT_AFRICAN_COUNTRY_CODE
   const rawDigits = withoutWhatsApp.replace(/\D/g, '')
 
   if (!rawDigits) return ''
 
-  const digits =
-    defaultCountryCode === '233'
-      ? normalizeGhanaPhoneDigits(rawDigits)
-      : rawDigits
+  // Ghana numbers are normalized to country-code digits in one step. Returning
+  // immediately prevents a local 0XX number from receiving the 233 prefix twice.
+  if (defaultCountryCode === '233') {
+    const ghanaDigits = normalizeGhanaPhoneDigits(rawDigits)
+    return ghanaDigits ? `+${ghanaDigits}` : ''
+  }
+
+  const hasPlus = withoutWhatsApp.startsWith('+')
+  const digits = rawDigits
 
   if (hasPlus) {
     return `+${digits}`
@@ -84,8 +88,7 @@ export function normalizePhoneE164(
 
   if (withoutWhatsApp.startsWith('0')) {
     const rest = digits.replace(/^0/, '')
-    const countryCode = defaultCountryCode
-    return `+${countryCode}${rest}`
+    return `+${defaultCountryCode}${rest}`
   }
 
   const matchesAfricanCode = AFRICAN_COUNTRY_CODES.some(code =>
