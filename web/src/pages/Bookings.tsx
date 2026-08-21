@@ -495,7 +495,7 @@ export default function Bookings() {
       !["cancelled", "deleted"].includes(b.status) &&
       ["pending", "payment_pending", "manual_review"].includes(b.paymentStatus),
     ).length,
-    confirmedAppointments: bookings.filter((b) => b.status === "confirmed" || b.bookingStatus === "confirmed").length,
+    confirmedAppointments: bookings.filter((b) =>\n      (b.status === "confirmed" || b.bookingStatus === "confirmed") &&\n      !(isDirectPaymentBooking(b) && b.paymentStatus === "paid"),\n    ).length,
   };
 
   const visible = useMemo(
@@ -609,7 +609,7 @@ export default function Bookings() {
         <header className="stack gap-2">
           <h1>Bookings</h1>
           <p className="bookings-page__intro">
-            Manage today’s bookings, payments, confirmations, and follow-ups.
+            Manage active bookings, payments, confirmations, and follow-ups. Confirmed direct payments are kept in Reports.
           </p>
         </header>
 
