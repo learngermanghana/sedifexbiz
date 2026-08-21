@@ -20,6 +20,10 @@ export { cleanPendingReportData, onSaleReportingAggregate } from './reporting'
 export { v1IntegrationAvailability } from './integrationAvailability'
 export { v1IntegrationHeroSlides } from './integrationHeroSlides'
 export { v1IntegrationBookings } from './integrationBookings'
+export {
+  processBookingSmsNotifications,
+  queueBookingSmsOnWrite,
+} from './bookingSmsAutomation'
 export { v1IntegrationProducts } from './integrationProducts'
 export { v1IntegrationSocialSettings } from './integrationSocialSettings'
 export { v1IntegrationStudentRegistrations } from './integrationStudentRegistrations'
