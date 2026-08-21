@@ -18,8 +18,15 @@ type BookingRequestBody = {
   bookingTime?: unknown
   branchLocationId?: unknown
   branchLocationName?: unknown
+  preferredBranch?: unknown
   paymentMethod?: unknown
   paymentAmount?: unknown
+  paymentStatus?: unknown
+  payment_status?: unknown
+  paymentCollectionMode?: unknown
+  paymentOption?: unknown
+  depositAmount?: unknown
+  amountOutstanding?: unknown
   serviceName?: unknown
   attributes?: unknown
   status?: unknown
@@ -221,13 +228,18 @@ export const v1IntegrationBookings = functions.https.onRequest(async (req, res):
     const bookingTime = clean(body.bookingTime, 80)
     const branchLocationId = clean(body.branchLocationId, 220)
     const branchLocationName = clean(body.branchLocationName, 240)
+    const attributes = asObject(body.attributes)
+    const preferredBranch = clean(body.preferredBranch, 240) || branchLocationName || clean(attributes.preferred_branch, 240)
     const paymentMethod = clean(body.paymentMethod, 120)
+    const paymentStatus = clean(body.paymentStatus ?? body.payment_status, 80) || 'pending'
+    const paymentCollectionMode = clean(body.paymentCollectionMode ?? body.paymentOption, 120)
+    const depositAmount = toNumber(body.depositAmount, 0)
+    const amountOutstanding = toNumber(body.amountOutstanding, toNumber(body.paymentAmount, 0))
     const serviceName = clean(body.serviceName, 240)
     const requestedStatus = clean(body.status, 80).toLowerCase()
     const status = requestedStatus || 'pending'
     const paymentAmount = toNumber(body.paymentAmount, 0)
     const sourceChannel = clean(body.sourceChannel ?? body.source_channel ?? body.source, 120) || 'integration'
-    const attributes = asObject(body.attributes)
     const customer = asObject(body.customer)
     const customerName = clean(customer.name, 240)
     const customerPhone = clean(customer.phone, 80)
@@ -294,9 +306,24 @@ export const v1IntegrationBookings = functions.https.onRequest(async (req, res):
       bookingTime: bookingTime || null,
       branchLocationId: branchLocationId || null,
       branchLocationName: branchLocationName || null,
+      preferredBranch: preferredBranch || null,
+      branch: preferredBranch || null,
       paymentMethod: paymentMethod || null,
       paymentAmount,
-      paymentStatus: 'pending',
+      paymentStatus,
+      payment_status: paymentStatus,
+      paymentCollectionMode: paymentCollectionMode || null,
+      paymentOption: clean(body.paymentOption, 80) || null,
+      depositAmount,
+      amountOutstanding,
+      payment: {
+        method: paymentMethod || null,
+        status: paymentStatus,
+        amount: paymentAmount,
+        depositAmount,
+        amountOutstanding,
+        confirmed: paymentStatus === 'paid',
+      },
       attributes,
       bookingStatus: 'pending_approval',
       status: 'pending',
