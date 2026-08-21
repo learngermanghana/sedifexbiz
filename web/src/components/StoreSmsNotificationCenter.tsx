@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, writeBatch } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../firebase'
@@ -40,15 +41,50 @@ function relativeTime(value: unknown) {
   return `${days}d ago`
 }
 
+function providerAcceptedCopy(data: Record<string, unknown>) {
+  const stage = text(data.stageLabel) || 'Client'
+  const customer = text(data.customerName) || 'the client'
+  const phone = text(data.customerPhone)
+  return {
+    title: `${stage} SMS submitted`,
+    message: `${stage} SMS was accepted by the SMS provider for ${customer}${phone ? ` (${phone})` : ''}. Provider acceptance does not confirm delivery to the handset.`,
+  }
+}
+
 export function StoreSmsNotificationCenter() {
   const { storeId } = useActiveStore()
   const { publish } = useToast()
   const navigate = useNavigate()
   const [notifications, setNotifications] = useState<StoreSmsNotification[]>([])
   const [open, setOpen] = useState(false)
+  const [portalHost, setPortalHost] = useState<Element | null>(null)
   const initializedRef = useRef(false)
   const toastIdsRef = useRef(new Set<string>())
   const mountedAtRef = useRef(Date.now())
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return
+
+    const media = window.matchMedia('(max-width: 960px)')
+    let observer: MutationObserver | null = null
+
+    const findHost = () => {
+      const selector = media.matches
+        ? '.shell__brand'
+        : '.shell__header-controls .support-launcher--notification-slot'
+      setPortalHost(document.querySelector(selector))
+    }
+
+    findHost()
+    media.addEventListener('change', findHost)
+    observer = new MutationObserver(findHost)
+    observer.observe(document.body, { childList: true, subtree: true })
+
+    return () => {
+      media.removeEventListener('change', findHost)
+      observer?.disconnect()
+    }
+  }, [])
 
   useEffect(() => {
     initializedRef.current = false
@@ -71,14 +107,17 @@ export function StoreSmsNotificationCenter() {
             const data = notificationDoc.data() as Record<string, unknown>
             if (text(data.category) !== 'booking_sms') return null
             const severityRaw = text(data.severity)
-            const severity: StoreSmsNotification['severity'] =
-              severityRaw === 'error' || severityRaw === 'warning' || severityRaw === 'success'
+            const providerAccepted = text(data.status) === 'sent'
+            const acceptedCopy = providerAccepted ? providerAcceptedCopy(data) : null
+            const severity: StoreSmsNotification['severity'] = providerAccepted
+              ? 'info'
+              : severityRaw === 'error' || severityRaw === 'warning' || severityRaw === 'success'
                 ? severityRaw
                 : 'info'
             return {
               id: notificationDoc.id,
-              title: text(data.title) || 'Client SMS update',
-              message: text(data.message) || 'Sedifex updated a client SMS notification.',
+              title: acceptedCopy?.title || text(data.title) || 'Client SMS update',
+              message: acceptedCopy?.message || text(data.message) || 'Sedifex updated a client SMS notification.',
               bookingId: text(data.bookingId) || null,
               severity,
               unread: data.unread !== false,
@@ -98,9 +137,11 @@ export function StoreSmsNotificationCenter() {
           if (!isLive || toastIdsRef.current.has(change.doc.id)) continue
           toastIdsRef.current.add(change.doc.id)
           const severity = text(data.severity)
+          const providerAccepted = text(data.status) === 'sent'
+          const acceptedCopy = providerAccepted ? providerAcceptedCopy(data) : null
           publish({
-            tone: severity === 'error' ? 'error' : severity === 'success' ? 'success' : 'info',
-            message: text(data.message) || text(data.title) || 'Client SMS update',
+            tone: providerAccepted ? 'info' : severity === 'error' ? 'error' : severity === 'success' ? 'success' : 'info',
+            message: acceptedCopy?.message || text(data.message) || text(data.title) || 'Client SMS update',
             duration: severity === 'error' ? 9000 : 6500,
           })
         }
@@ -149,8 +190,8 @@ export function StoreSmsNotificationCenter() {
 
   if (!storeId) return null
 
-  return (
-    <div className="store-sms-notifications">
+  const center = (
+    <div className={`store-sms-notifications ${portalHost ? 'is-portaled' : 'is-floating'}`}>
       <button
         type="button"
         className="store-sms-notifications__bell"
@@ -176,6 +217,10 @@ export function StoreSmsNotificationCenter() {
             )}
           </header>
 
+          <div className="store-sms-notifications__delivery-note">
+            Submitted means the SMS provider accepted the request; it is not a handset delivery receipt.
+          </div>
+
           <div className="store-sms-notifications__list">
             {notifications.length === 0 ? (
               <p className="store-sms-notifications__empty">No client SMS activity yet.</p>
@@ -199,4 +244,6 @@ export function StoreSmsNotificationCenter() {
       )}
     </div>
   )
+
+  return portalHost ? createPortal(center, portalHost) : center
 }
