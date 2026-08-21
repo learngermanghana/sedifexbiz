@@ -20,6 +20,7 @@ type BookingRow = {
   bookingDate: string
   bookingTime: string
   paymentStatus: string
+  directPayment: boolean
   bookingStatus: string
   syncStatus: string
   syncReason: string
@@ -54,6 +55,21 @@ function normalizeStatus(value: unknown, fallback = 'pending') {
   return raw || fallback
 }
 
+const DIRECT_PAYMENT_METHODS = new Set(['pay_later', 'momo', 'mobile_money', 'cash', 'transfer', 'bank', 'bank_transfer', 'manual', 'direct', 'direct_payment', 'store_payment'])
+const DIRECT_PAYMENT_COLLECTION_MODES = new Set(['pay_later', 'momo', 'mobile_money', 'cash', 'transfer', 'bank_transfer', 'manual', 'direct', 'direct_payment', 'store', 'store_direct', 'store_payment', 'offline', 'offline_payment'])
+
+function normalizePaymentClassifierValue(value: unknown) {
+  return asText(value).trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function isDirectPaymentRecord(data: Record<string, unknown>, payment: Record<string, unknown>) {
+  const nestedData = getNestedObject(data, 'data')
+  const metadata = getNestedObject(data, 'metadata')
+  const method = normalizePaymentClassifierValue(data.paymentMethod ?? data.payment_method ?? nestedData.paymentMethod ?? nestedData.payment_method ?? payment.method ?? metadata.paymentMethod)
+  const collectionMode = normalizePaymentClassifierValue(data.paymentCollectionMode ?? data.payment_collection_mode ?? nestedData.paymentCollectionMode ?? nestedData.payment_collection_mode ?? payment.mode ?? metadata.paymentCollectionMode)
+  return DIRECT_PAYMENT_METHODS.has(method) || DIRECT_PAYMENT_COLLECTION_MODES.has(collectionMode)
+}
+
 function readReminderStatus(data: Record<string, unknown>) {
   const sent = [
     data.reminder_3d_sent_at || data.reminder3dSentAt ? '3d' : '',
@@ -84,6 +100,7 @@ function mapBooking(id: string, data: Record<string, unknown>, sourcePath: 'root
     bookingDate: asText(data.bookingDate ?? data.date ?? booking.preferredDate ?? booking.date, '—'),
     bookingTime: asText(data.bookingTime ?? data.time ?? booking.preferredTime ?? booking.time, '—'),
     paymentStatus: reportFields.paymentStatus,
+    directPayment: isDirectPaymentRecord(data, payment),
     bookingStatus: normalizeBookingStatusFromRecord(data),
     syncStatus: normalizeStatus(data.syncStatus ?? data.sync_status, 'not_ready'),
     syncReason: asText(data.syncReason ?? data.sync_reason, '—'),
@@ -143,6 +160,10 @@ function badgeClass(status: string, type: 'booking' | 'payment' | 'sync' = 'book
 
 function formatLabel(value: string) { return value.replace(/_/g, ' ') }
 
+function reportPaymentLabel(booking: BookingRow) {
+  return booking.directPayment && booking.paymentStatus === 'paid' ? 'Direct payment — confirmed' : booking.paymentStatus
+}
+
 function SummaryMetric({ item }: { item: SummaryCard }) {
   return <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" style={{ borderLeft: `6px solid ${item.tone}` }}>
     <p className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: item.tone }}>{item.label}</p>
@@ -194,8 +215,11 @@ export default function BookingsReport() {
 
   const filtered = useMemo(() => bookings.filter(booking => {
     const queryText = search.trim().toLowerCase()
-    const searchOk = !queryText || [booking.reference, booking.serviceName, booking.customerName, booking.customerPhone, booking.sourceLabel, booking.bookingDate, booking.paymentStatus, booking.bookingStatus].some(value => value.toLowerCase().includes(queryText))
-    return searchOk && (status === 'all' || booking.bookingStatus === status || booking.paymentStatus === status) && (source === 'all' || booking.sourceChannel === source) && (sync === 'all' || booking.syncStatus === sync) && inDateRange(booking.createdAt, range)
+    const paymentLabel = reportPaymentLabel(booking)
+    const searchOk = !queryText || [booking.reference, booking.serviceName, booking.customerName, booking.customerPhone, booking.sourceLabel, booking.bookingDate, paymentLabel, booking.bookingStatus].some(value => value.toLowerCase().includes(queryText))
+    const statusOk = status === 'all'
+      || (status === 'direct_confirmed' ? booking.directPayment && booking.paymentStatus === 'paid' : booking.bookingStatus === status || booking.paymentStatus === status)
+    return searchOk && statusOk && (source === 'all' || booking.sourceChannel === source) && (sync === 'all' || booking.syncStatus === sync) && inDateRange(booking.createdAt, range)
   }), [bookings, range, search, source, status, sync])
 
   useEffect(() => { setPage(1) }, [range, rowsPerPage, search, source, status, sync])
@@ -240,6 +264,7 @@ export default function BookingsReport() {
     count: filtered.length,
     pending: filtered.filter(booking => booking.paymentStatus.includes('pending') || booking.bookingStatus.includes('pending')).length,
     confirmed: filtered.filter(booking => booking.bookingStatus === 'confirmed').length,
+    directConfirmed: filtered.filter(booking => booking.directPayment && booking.paymentStatus === 'paid').length,
     cancelled: filtered.filter(booking => booking.bookingStatus === 'cancelled').length,
     completed: filtered.filter(booking => booking.bookingStatus === 'completed').length,
     syncPending: filtered.filter(booking => booking.syncStatus === 'pending').length,
@@ -250,6 +275,7 @@ export default function BookingsReport() {
   const summaryCards: SummaryCard[] = [
     { label: 'Total bookings', value: totals.count, helper: 'Bookings in the selected range', tone: '#4f46e5' },
     { label: 'Confirmed', value: totals.confirmed, helper: 'Approved booking records', tone: '#16a34a' },
+    { label: 'Direct payment confirmed', value: totals.directConfirmed, helper: 'Store payments approved and moved from the active queue', tone: '#0d9488' },
     { label: 'Sync pending', value: totals.syncPending, helper: 'Waiting for App Script sync', tone: '#a855f7' },
     { label: 'Booking value', value: formatMoney(totals.value), helper: 'Value from filtered rows', tone: '#0f766e' },
     { label: 'Pending', value: totals.pending, helper: 'Needs payment or confirmation review', tone: '#f97316' },
@@ -259,11 +285,11 @@ export default function BookingsReport() {
   ]
 
   function exportRows() {
-    downloadCsv('sedifex-bookings-report.csv', filtered.map(booking => ({ reference: booking.reference, serviceName: booking.serviceName, recordType: booking.recordType, customer: booking.customerName, contact: booking.customerPhone, source: booking.sourceLabel, sourcePath: booking.sourcePath, bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, paymentStatus: booking.paymentStatus, bookingStatus: booking.bookingStatus, syncStatus: booking.syncStatus, syncReason: booking.syncReason, reminderStatus: booking.reminderStatus, confirmedAt: formatDate(booking.confirmedAt), cancelledAt: formatDate(booking.cancelledAt), completedAt: formatDate(booking.completedAt), amount: booking.amount, amountReceived: booking.amountReceived, amountOutstanding: booking.amountOutstanding, createdAt: formatDate(booking.createdAt) })))
+    downloadCsv('sedifex-bookings-report.csv', filtered.map(booking => ({ reference: booking.reference, serviceName: booking.serviceName, recordType: booking.recordType, customer: booking.customerName, contact: booking.customerPhone, source: booking.sourceLabel, sourcePath: booking.sourcePath, bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, paymentStatus: reportPaymentLabel(booking), bookingStatus: booking.bookingStatus, syncStatus: booking.syncStatus, syncReason: booking.syncReason, reminderStatus: booking.reminderStatus, confirmedAt: formatDate(booking.confirmedAt), cancelledAt: formatDate(booking.cancelledAt), completedAt: formatDate(booking.completedAt), amount: booking.amount, amountReceived: booking.amountReceived, amountOutstanding: booking.amountOutstanding, createdAt: formatDate(booking.createdAt) })))
   }
 
   function exportPdf() {
-    exportReportPdf({ title: 'Bookings report', subtitle: 'Service, class, appointment, and website bookings with payment, source, sync, and reminder status.', summary: [{ label: 'Total bookings', value: totals.count }, { label: 'Confirmed', value: totals.confirmed }, { label: 'Sync pending', value: totals.syncPending }, { label: 'Booking value', value: formatMoney(totals.value) }], rows: filtered.map(booking => ({ reference: booking.reference, serviceName: `${booking.serviceName} (${booking.recordType})`, customer: booking.customerName, source: booking.sourceLabel, bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, paymentStatus: booking.paymentStatus, bookingStatus: booking.bookingStatus, syncStatus: booking.syncStatus, reminderStatus: booking.reminderStatus, amount: booking.amount, amountReceived: booking.amountReceived, amountOutstanding: booking.amountOutstanding, createdAt: formatDate(booking.createdAt) })) })
+    exportReportPdf({ title: 'Bookings report', subtitle: 'Service, class, appointment, and website bookings with payment, source, sync, and reminder status.', summary: [{ label: 'Total bookings', value: totals.count }, { label: 'Confirmed', value: totals.confirmed }, { label: 'Sync pending', value: totals.syncPending }, { label: 'Booking value', value: formatMoney(totals.value) }], rows: filtered.map(booking => ({ reference: booking.reference, serviceName: `${booking.serviceName} (${booking.recordType})`, customer: booking.customerName, source: booking.sourceLabel, bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, paymentStatus: reportPaymentLabel(booking), bookingStatus: booking.bookingStatus, syncStatus: booking.syncStatus, reminderStatus: booking.reminderStatus, amount: booking.amount, amountReceived: booking.amountReceived, amountOutstanding: booking.amountOutstanding, createdAt: formatDate(booking.createdAt) })) })
   }
 
   return <div className="space-y-6">
@@ -282,7 +308,7 @@ export default function BookingsReport() {
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <label className="block text-sm font-semibold text-slate-700">Date range<select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3" value={range} onChange={event => setRange(event.target.value)}><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="month">This month</option><option value="last_month">Last month</option><option value="all">All time</option></select></label>
         <label className="block text-sm font-semibold text-slate-700">Source<select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3" value={source} onChange={event => setSource(event.target.value)}><option value="all">All sources</option><option value="sedifex_market">Sedifex Market</option><option value="client_website">Client website</option><option value="sedifex_custom_page">Sedifex public page</option><option value="manual_admin">Manual/admin</option></select></label>
-        <label className="block text-sm font-semibold text-slate-700">Status<select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3" value={status} onChange={event => setStatus(event.target.value)}><option value="all">All statuses</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="paid">Paid</option><option value="cancelled">Cancelled</option><option value="completed">Completed</option></select></label>
+        <label className="block text-sm font-semibold text-slate-700">Status<select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3" value={status} onChange={event => setStatus(event.target.value)}><option value="all">All statuses</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="paid">Paid</option><option value="direct_confirmed">Direct payment — confirmed</option><option value="cancelled">Cancelled</option><option value="completed">Completed</option></select></label>
         <label className="block text-sm font-semibold text-slate-700">Sync state<select className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3" value={sync} onChange={event => setSync(event.target.value)}><option value="all">All sync states</option><option value="pending">Sync pending</option><option value="synced">Synced</option><option value="not_ready">Not ready / not configured</option></select></label>
       </div>
 
@@ -298,7 +324,7 @@ export default function BookingsReport() {
       <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
         <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
           <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-4 py-3"><input type="checkbox" aria-label="Select all rows on this page" checked={pageRows.length > 0 && pageRows.every(row => selectedIds.includes(row.id))} onChange={event => setSelectedIds(event.target.checked ? Array.from(new Set([...selectedIds, ...pageRows.map(row => row.id)])) : selectedIds.filter(id => !pageRows.some(row => row.id === id)))} /></th><th className="px-4 py-3">Booking</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Schedule</th><th className="px-4 py-3">Source</th><th className="px-4 py-3">Payment</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Sync / reminder</th><th className="px-4 py-3">Actions</th></tr></thead>
-          <tbody className="divide-y divide-slate-200 bg-white">{pageRows.map(booking => <tr key={booking.id} className="align-top hover:bg-slate-50"><td className="px-4 py-4"><input type="checkbox" checked={selectedIds.includes(booking.id)} onChange={event => setSelectedIds(current => event.target.checked ? Array.from(new Set([...current, booking.id])) : current.filter(id => id !== booking.id))} /></td><td className="px-4 py-4"><strong className="block max-w-[220px] text-slate-950">{booking.serviceName}</strong><span className="mt-1 block text-xs capitalize text-slate-500">{formatLabel(booking.recordType)}</span><span className="mt-2 block max-w-[220px] break-all font-mono text-xs text-slate-500">{booking.reference}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{booking.customerName}</strong><span className="mt-1 block max-w-[170px] break-all text-xs text-slate-500">{booking.customerPhone || 'No contact'}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{booking.bookingDate}</strong><span className="mt-1 block text-xs text-slate-500">{booking.bookingTime}</span>{booking.slotStartAt !== '—' ? <span className="mt-1 block max-w-[180px] text-xs font-semibold text-indigo-700">Slot: {booking.slotStartAt}{booking.slotEndAt !== '—' ? ` – ${booking.slotEndAt}` : ''}</span> : null}<span className="mt-1 block max-w-[150px] text-xs text-slate-400">Created {formatDate(booking.createdAt)}</span></td><td className="px-4 py-4"><span className="inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{booking.sourceLabel}</span><span className="mt-2 block text-xs capitalize text-slate-500">{booking.sourcePath} record</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{formatMoney(booking.amount)}</strong><span className="mt-1 block text-xs text-emerald-700">Received {formatMoney(booking.amountReceived)}</span><span className="mt-1 block text-xs text-slate-500">Balance {formatMoney(booking.amountOutstanding)}</span></td><td className="px-4 py-4"><div className="flex max-w-[170px] flex-wrap gap-1"><StatusPill label={booking.bookingStatus} /><StatusPill label={booking.paymentStatus} type="payment" /></div></td><td className="px-4 py-4"><StatusPill label={booking.syncStatus} type="sync" /><span className="mt-2 block max-w-[180px] text-xs text-slate-500">Reminder: {booking.reminderStatus}</span><span className="mt-1 block max-w-[180px] text-xs text-slate-400">{booking.syncReason}</span></td><td className="px-4 py-4"><div className="flex flex-col gap-2"><Link className="rounded-xl bg-slate-950 px-3 py-2 text-center text-xs font-bold text-white" to={`/bookings/${booking.id}`}>Open</Link><button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 disabled:opacity-50" onClick={() => void deleteOneBooking(booking)} disabled={deletingIds.includes(booking.id)}>{deletingIds.includes(booking.id) ? 'Deleting…' : 'Delete'}</button></div></td></tr>)}</tbody>
+          <tbody className="divide-y divide-slate-200 bg-white">{pageRows.map(booking => <tr key={booking.id} className="align-top hover:bg-slate-50"><td className="px-4 py-4"><input type="checkbox" checked={selectedIds.includes(booking.id)} onChange={event => setSelectedIds(current => event.target.checked ? Array.from(new Set([...current, booking.id])) : current.filter(id => id !== booking.id))} /></td><td className="px-4 py-4"><strong className="block max-w-[220px] text-slate-950">{booking.serviceName}</strong><span className="mt-1 block text-xs capitalize text-slate-500">{formatLabel(booking.recordType)}</span><span className="mt-2 block max-w-[220px] break-all font-mono text-xs text-slate-500">{booking.reference}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{booking.customerName}</strong><span className="mt-1 block max-w-[170px] break-all text-xs text-slate-500">{booking.customerPhone || 'No contact'}</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{booking.bookingDate}</strong><span className="mt-1 block text-xs text-slate-500">{booking.bookingTime}</span>{booking.slotStartAt !== '—' ? <span className="mt-1 block max-w-[180px] text-xs font-semibold text-indigo-700">Slot: {booking.slotStartAt}{booking.slotEndAt !== '—' ? ` – ${booking.slotEndAt}` : ''}</span> : null}<span className="mt-1 block max-w-[150px] text-xs text-slate-400">Created {formatDate(booking.createdAt)}</span></td><td className="px-4 py-4"><span className="inline-flex rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{booking.sourceLabel}</span><span className="mt-2 block text-xs capitalize text-slate-500">{booking.sourcePath} record</span></td><td className="px-4 py-4"><strong className="block text-slate-950">{formatMoney(booking.amount)}</strong><span className="mt-1 block text-xs text-emerald-700">Received {formatMoney(booking.amountReceived)}</span><span className="mt-1 block text-xs text-slate-500">Balance {formatMoney(booking.amountOutstanding)}</span></td><td className="px-4 py-4"><div className="flex max-w-[170px] flex-wrap gap-1"><StatusPill label={booking.bookingStatus} /><StatusPill label={reportPaymentLabel(booking)} type="payment" /></div></td><td className="px-4 py-4"><StatusPill label={booking.syncStatus} type="sync" /><span className="mt-2 block max-w-[180px] text-xs text-slate-500">Reminder: {booking.reminderStatus}</span><span className="mt-1 block max-w-[180px] text-xs text-slate-400">{booking.syncReason}</span></td><td className="px-4 py-4"><div className="flex flex-col gap-2"><Link className="rounded-xl bg-slate-950 px-3 py-2 text-center text-xs font-bold text-white" to={`/bookings/${booking.id}`}>Open</Link><button type="button" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 disabled:opacity-50" onClick={() => void deleteOneBooking(booking)} disabled={deletingIds.includes(booking.id)}>{deletingIds.includes(booking.id) ? 'Deleting…' : 'Delete'}</button></div></td></tr>)}</tbody>
         </table>
         {!pageRows.length ? <div className="p-10 text-center"><h3 className="text-xl font-semibold text-slate-950">No booking records found</h3><p className="mt-2 text-slate-500">Change the date range, search, or filters to see more records.</p></div> : null}
       </div>
