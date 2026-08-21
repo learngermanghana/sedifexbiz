@@ -495,7 +495,10 @@ export default function Bookings() {
       !["cancelled", "deleted"].includes(b.status) &&
       ["pending", "payment_pending", "manual_review"].includes(b.paymentStatus),
     ).length,
-    confirmedAppointments: bookings.filter((b) =>\n      (b.status === "confirmed" || b.bookingStatus === "confirmed") &&\n      !(isDirectPaymentBooking(b) && b.paymentStatus === "paid"),\n    ).length,
+    confirmedAppointments: bookings.filter((b) =>
+      (b.status === "confirmed" || b.bookingStatus === "confirmed") &&
+      !(isDirectPaymentBooking(b) && b.paymentStatus === "paid"),
+    ).length,
   };
 
   const visible = useMemo(
