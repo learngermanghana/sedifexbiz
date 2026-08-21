@@ -160,7 +160,7 @@ const isDirectPaymentBooking = (booking: BookingRecord) => {
   );
 };
 
-type BookingView = "all" | "paid_sedifex" | "direct_needs_approval" | "direct_paid";
+type BookingView = "all" | "paid_sedifex" | "direct_needs_approval";
 
 export default function Bookings() {
   const { storeId } = useActiveStore();
@@ -495,7 +495,6 @@ export default function Bookings() {
       !["cancelled", "deleted"].includes(b.status) &&
       ["pending", "payment_pending", "manual_review"].includes(b.paymentStatus),
     ).length,
-    directPaid: bookings.filter((b) => isDirectPaymentBooking(b) && b.paymentStatus === "paid").length,
     confirmedAppointments: bookings.filter((b) => b.status === "confirmed" || b.bookingStatus === "confirmed").length,
   };
 
@@ -504,14 +503,12 @@ export default function Bookings() {
       bookings.filter((b) => {
         const isDirectPayment = isDirectPaymentBooking(b);
         const matchesPaymentView = activeTab === "all"
-          ? true
+          ? !(isDirectPayment && b.paymentStatus === "paid")
           : activeTab === "paid_sedifex"
             ? b.paymentStatus === "paid" && !isDirectPayment
-            : activeTab === "direct_paid"
-              ? isDirectPayment && b.paymentStatus === "paid"
-              : isDirectPayment &&
-                !["cancelled", "deleted"].includes(b.status) &&
-                ["pending", "payment_pending", "manual_review"].includes(b.paymentStatus);
+            : isDirectPayment &&
+              !["cancelled", "deleted"].includes(b.status) &&
+              ["pending", "payment_pending", "manual_review"].includes(b.paymentStatus);
 
         const appointmentDate = (b.bookingDate || "").slice(0, 10);
         const matchesDate = (!dateFrom || appointmentDate >= dateFrom) && (!dateTo || appointmentDate <= dateTo);
@@ -621,7 +618,6 @@ export default function Bookings() {
             ["New today", summary.newToday],
             ["Paid through Sedifex", summary.paidSedifex],
             ["Direct payment needs approval", summary.directNeedsApproval],
-            ["Direct payment paid", summary.directPaid],
             ["Confirmed appointments", summary.confirmedAppointments],
           ].map(([label, value]) => (
             <article
@@ -636,10 +632,9 @@ export default function Bookings() {
 
         <div className="bookings-page__tabs">
           {[
-            ["all", "All bookings"],
+            ["all", "Active bookings"],
             ["paid_sedifex", "Paid through Sedifex"],
             ["direct_needs_approval", "Direct payment — needs approval"],
-            ["direct_paid", "Direct payment — paid"],
           ].map(([id, label]) => (
             <button
               key={id}
