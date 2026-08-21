@@ -24,6 +24,10 @@ export {
   processBookingSmsNotifications,
   queueBookingSmsOnWrite,
 } from './bookingSmsAutomation'
+export {
+  notifyUnpaidBookingCreated,
+  processUnpaidBookingEmailNotifications,
+} from './bookingEmailNotifications'
 export { v1IntegrationProducts } from './integrationProducts'
 export { v1IntegrationSocialSettings } from './integrationSocialSettings'
 export { v1IntegrationStudentRegistrations } from './integrationStudentRegistrations'
