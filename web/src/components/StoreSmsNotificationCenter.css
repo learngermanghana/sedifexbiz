@@ -1,0 +1,171 @@
+.store-sms-notifications {
+  position: fixed;
+  top: 84px;
+  right: 18px;
+  z-index: 1400;
+}
+
+.store-sms-notifications__bell {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #dbe2ea;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.store-sms-notifications__badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 20px;
+  text-align: center;
+}
+
+.store-sms-notifications__panel {
+  position: absolute;
+  top: 54px;
+  right: 0;
+  width: min(390px, calc(100vw - 32px));
+  max-height: min(560px, calc(100vh - 150px));
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.2);
+}
+
+.store-sms-notifications__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.store-sms-notifications__header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.store-sms-notifications__header strong {
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.store-sms-notifications__header span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.store-sms-notifications__header button {
+  border: 0;
+  background: transparent;
+  color: #4f46e5;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.store-sms-notifications__list {
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.store-sms-notifications__item {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid #eef2f7;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.store-sms-notifications__item:hover,
+.store-sms-notifications__item.is-unread {
+  background: #f8fafc;
+}
+
+.store-sms-notifications__status {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.store-sms-notifications__item--success .store-sms-notifications__status {
+  background: #16a34a;
+}
+
+.store-sms-notifications__item--error .store-sms-notifications__status {
+  background: #dc2626;
+}
+
+.store-sms-notifications__item--warning .store-sms-notifications__status {
+  background: #d97706;
+}
+
+.store-sms-notifications__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.store-sms-notifications__copy strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.store-sms-notifications__copy span {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.store-sms-notifications__copy small {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.store-sms-notifications__empty {
+  margin: 0;
+  padding: 24px 16px;
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 700px) {
+  .store-sms-notifications {
+    top: 72px;
+    right: 12px;
+  }
+
+  .store-sms-notifications__panel {
+    position: fixed;
+    top: 124px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100vh - 150px);
+  }
+}

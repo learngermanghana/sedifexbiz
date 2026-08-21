@@ -25,6 +25,11 @@ export {
   queueBookingSmsOnWrite,
 } from './bookingSmsAutomation'
 export {
+  notifyStoreBookingSmsSent,
+  notifyStoreBookingSmsQueueState,
+  processBookingSmsStoreAlertChecks,
+} from './bookingSmsStoreAlerts'
+export {
   notifyUnpaidBookingCreated,
   processUnpaidBookingEmailNotifications,
 } from './bookingEmailNotifications'
