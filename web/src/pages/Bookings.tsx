@@ -117,6 +117,8 @@ const isDirectPaymentBooking = (booking: BookingRecord) => {
   );
 };
 
+type BookingView = "all" | "paid_sedifex" | "direct_needs_approval" | "direct_paid";
+
 export default function Bookings() {
   const { storeId } = useActiveStore();
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
@@ -125,7 +127,7 @@ export default function Bookings() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<"paid_sedifex" | "direct_needs_approval">("paid_sedifex");
+  const [activeTab, setActiveTab] = useState<BookingView>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -430,6 +432,7 @@ export default function Bookings() {
       !["cancelled", "deleted"].includes(b.status) &&
       ["pending", "payment_pending", "manual_review"].includes(b.paymentStatus),
     ).length,
+    directPaid: bookings.filter((b) => isDirectPaymentBooking(b) && b.paymentStatus === "paid").length,
     confirmedAppointments: bookings.filter((b) => b.status === "confirmed" || b.bookingStatus === "confirmed").length,
   };
 
@@ -437,11 +440,15 @@ export default function Bookings() {
     () =>
       bookings.filter((b) => {
         const isDirectPayment = isDirectPaymentBooking(b);
-        const matchesPaymentView = activeTab === "paid_sedifex"
-          ? b.paymentStatus === "paid" && !isDirectPayment
-          : isDirectPayment &&
-            !["cancelled", "deleted"].includes(b.status) &&
-            ["pending", "payment_pending", "manual_review"].includes(b.paymentStatus);
+        const matchesPaymentView = activeTab === "all"
+          ? true
+          : activeTab === "paid_sedifex"
+            ? b.paymentStatus === "paid" && !isDirectPayment
+            : activeTab === "direct_paid"
+              ? isDirectPayment && b.paymentStatus === "paid"
+              : isDirectPayment &&
+                !["cancelled", "deleted"].includes(b.status) &&
+                ["pending", "payment_pending", "manual_review"].includes(b.paymentStatus);
 
         const appointmentDate = (b.bookingDate || "").slice(0, 10);
         const matchesDate = (!dateFrom || appointmentDate >= dateFrom) && (!dateTo || appointmentDate <= dateTo);
@@ -544,20 +551,6 @@ export default function Bookings() {
           <p className="bookings-page__intro">
             Manage today’s bookings, payments, confirmations, and follow-ups.
           </p>
-          <div className="bookings-page__row-actions">
-            <Link to="/bookings/new" className="btn btn-secondary">
-              Add booking
-            </Link>
-            <Link to="/bookings/availability" className="btn btn-secondary">
-              Manage availability
-            </Link>
-            <Link to="/reports/bookings" className="btn btn-secondary">
-              Open reports
-            </Link>
-          </div>
-          <Link to="/reports/bookings" className="bookings-page__report-link">
-            Need export/audit? Open bookings report
-          </Link>
         </header>
 
         <div className="bookings-page__summary-grid">
@@ -565,6 +558,7 @@ export default function Bookings() {
             ["New today", summary.newToday],
             ["Paid through Sedifex", summary.paidSedifex],
             ["Direct payment needs approval", summary.directNeedsApproval],
+            ["Direct payment paid", summary.directPaid],
             ["Confirmed appointments", summary.confirmedAppointments],
           ].map(([label, value]) => (
             <article
@@ -579,18 +573,29 @@ export default function Bookings() {
 
         <div className="bookings-page__tabs">
           {[
+            ["all", "All bookings"],
             ["paid_sedifex", "Paid through Sedifex"],
             ["direct_needs_approval", "Direct payment — needs approval"],
+            ["direct_paid", "Direct payment — paid"],
           ].map(([id, label]) => (
             <button
               key={id}
               type="button"
               className={`bookings-page__tab ${activeTab === id ? "is-active" : ""}`}
-              onClick={() => setActiveTab(id as typeof activeTab)}
+              onClick={() => setActiveTab(id as BookingView)}
             >
               {label}
             </button>
           ))}
+        </div>
+
+        <div className="bookings-page__workflow-actions">
+          <Link to="/reports/bookings" className="btn btn-secondary">
+            Open report
+          </Link>
+          <Link to="/bookings/new" className="btn btn-secondary">
+            Add booking manually
+          </Link>
         </div>
 
         <div className="bookings-page__filters">

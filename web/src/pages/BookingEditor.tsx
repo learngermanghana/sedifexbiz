@@ -572,7 +572,7 @@ export default function BookingEditor() {
             <label><span>Preferred contact method</span><input value={form.preferredContactMethod} onChange={event => setForm(prev => ({ ...prev, preferredContactMethod: event.target.value }))} /></label>
             <label>
               <span>Appointment status</span>
-              <select value={form.status} onChange={event => setForm(prev => ({ ...prev, status: event.target.value }))}>
+              <select size={4} value={form.status} onChange={event => setForm(prev => ({ ...prev, status: event.target.value }))}>
                 <option value="pending">Pending approval</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="rescheduled">Rescheduled</option>
@@ -586,7 +586,7 @@ export default function BookingEditor() {
             <label><span>Payment reference</span><input value={form.paymentReference} onChange={event => setForm(prev => ({ ...prev, paymentReference: event.target.value }))} /></label>
             <label>
               <span>Payment status</span>
-              <select value={form.paymentStatus} onChange={event => setForm(prev => ({ ...prev, paymentStatus: event.target.value }))}>
+              <select size={4} value={form.paymentStatus} onChange={event => setForm(prev => ({ ...prev, paymentStatus: event.target.value }))}>
                 <option value="pending">Payment pending</option>
                 <option value="paid">Paid</option>
                 <option value="partial">Partially paid</option>

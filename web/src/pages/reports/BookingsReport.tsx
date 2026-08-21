@@ -162,7 +162,7 @@ export default function BookingsReport() {
   const [status, setStatus] = useState('all')
   const [source, setSource] = useState('all')
   const [sync, setSync] = useState('all')
-  const [range, setRange] = useState('30d')
+  const [range, setRange] = useState('all')
   const [search, setSearch] = useState('')
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [page, setPage] = useState(1)
