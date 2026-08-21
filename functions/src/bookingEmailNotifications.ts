@@ -100,7 +100,6 @@ function hasPaymentConfirmation(data: RecordMap) {
       data.payment_confirmed_at ||
       data.paymentVerifiedAt ||
       data.payment_verified_at ||
-      payment.confirmed === true ||
       payment.confirmedAt ||
       payment.confirmed_at ||
       payment.verifiedAt ||
@@ -109,8 +108,9 @@ function hasPaymentConfirmation(data: RecordMap) {
 }
 
 function isPaymentSettled(data: RecordMap) {
-  const settled = new Set(['paid', 'success', 'succeeded', 'confirmed', 'captured', 'complete', 'completed'])
-  return settled.has(paymentStatus(data)) || hasPaymentConfirmation(data)
+  // A caller-supplied paid-like status is not sufficient. Only a Sedifex/provider
+  // confirmation timestamp suppresses the payment-pending notification.
+  return hasPaymentConfirmation(data)
 }
 
 function isUnpaidBooking(data: RecordMap) {
@@ -118,14 +118,26 @@ function isUnpaidBooking(data: RecordMap) {
   if (['cancelled', 'canceled', 'completed', 'complete'].includes(status)) return false
   if (isPaymentSettled(data)) return false
 
-  const unpaidStatuses = new Set(['', 'pending', 'payment_pending', 'pending_payment', 'unpaid', 'not_paid'])
-  return unpaidStatuses.has(paymentStatus(data))
+  const rawPaymentStatus = paymentStatus(data)
+  const unpaidStatuses = new Set([
+    '',
+    'pending',
+    'payment_pending',
+    'pending_payment',
+    'unpaid',
+    'not_paid',
+    'paid',
+    'success',
+    'succeeded',
+    'confirmed',
+  ])
+  return unpaidStatuses.has(rawPaymentStatus)
 }
 
 function paymentFromBooking(data: RecordMap) {
   const payment = record(data.payment)
   return {
-    status: paymentStatus(data) || 'pending',
+    status: 'pending',
     amount: numberValue(
       data.paymentAmount ?? data.amount ?? data.total ?? payment.amount ?? payment.total,
     ),
