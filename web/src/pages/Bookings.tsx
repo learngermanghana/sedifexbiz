@@ -22,6 +22,7 @@ type BookingRecord = {
   preferredBranch: string | null;
   paymentAmount: string | null;
   paymentMethod: string | null;
+  paymentCollectionMode: string | null;
   status: string;
   bookingStatus: string;
   syncStatus: string;
@@ -110,10 +111,52 @@ const paymentLabel = (status: string) =>
     paid: "Paid",
   })[status] ?? "Payment pending";
 
+const normalizePaymentClassifierValue = (value: string | null) =>
+  (value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+const DIRECT_PAYMENT_METHODS = new Set([
+  "pay_later",
+  "momo",
+  "mobile_money",
+  "cash",
+  "transfer",
+  "bank",
+  "bank_transfer",
+  "manual",
+  "direct",
+  "direct_payment",
+  "store_payment",
+]);
+
+const DIRECT_PAYMENT_COLLECTION_MODES = new Set([
+  "pay_later",
+  "momo",
+  "mobile_money",
+  "cash",
+  "transfer",
+  "bank_transfer",
+  "manual",
+  "direct",
+  "direct_payment",
+  "store",
+  "store_direct",
+  "store_payment",
+  "offline",
+  "offline_payment",
+]);
+
 const isDirectPaymentBooking = (booking: BookingRecord) => {
-  const paymentMethod = (booking.paymentMethod || "").toLowerCase();
-  return ["pay_later", "momo", "mobile_money", "bank", "bank_transfer", "manual"].some((method) =>
-    paymentMethod.includes(method),
+  const paymentMethod = normalizePaymentClassifierValue(booking.paymentMethod);
+  const paymentCollectionMode = normalizePaymentClassifierValue(
+    booking.paymentCollectionMode,
+  );
+
+  return (
+    DIRECT_PAYMENT_METHODS.has(paymentMethod) ||
+    DIRECT_PAYMENT_COLLECTION_MODES.has(paymentCollectionMode)
   );
 };
 
@@ -229,8 +272,28 @@ export default function Bookings() {
           pickString(data, ["paymentAmount", "amount", "total", "price"]) ??
           pickString(payment, ["amount"]),
         paymentMethod:
-          pickString(data, ["paymentMethod"]) ??
-          pickString(payment, ["method"]),
+          pickString(data, ["paymentMethod", "payment_method"]) ??
+          pickString(payment, ["method", "paymentMethod", "payment_method"]) ??
+          pickString(metadata, ["paymentMethod", "payment_method"]),
+        paymentCollectionMode:
+          pickString(data, [
+            "paymentCollectionMode",
+            "payment_collection_mode",
+            "paymentOption",
+            "payment_option",
+          ]) ??
+          pickString(payment, [
+            "collectionMode",
+            "collection_mode",
+            "paymentCollectionMode",
+            "payment_collection_mode",
+          ]) ??
+          pickString(metadata, [
+            "paymentCollectionMode",
+            "payment_collection_mode",
+            "paymentOption",
+            "payment_option",
+          ]),
         bookingStatus: normalizeStatus(data.bookingStatus ?? data.status),
         status: normalizeStatus(data.status),
         syncStatus: normalizeStatus(
@@ -748,7 +811,7 @@ export default function Bookings() {
                       <td>
                         <strong>{b.paymentAmount || "—"}</strong>
                         <small>{paymentLabel(b.paymentStatus)}</small>
-                        <small>{b.paymentMethod || "Method not set"}</small>
+                        <small>{b.paymentMethod || b.paymentCollectionMode || "Method not set"}</small>
                       </td>
                       <td>
                         <span
