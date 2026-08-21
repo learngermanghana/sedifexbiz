@@ -270,7 +270,7 @@ async function queueUnpaidBookingEmails(storeId: string, bookingId: string, data
   })
 
   if (result.ok) {
-    await markNotificationQueued(storeId, bookingId, result.deliveries)
+    await markNotificationQueued(storeId, bookingId, result.deliveries ?? 0)
     return true
   }
 
