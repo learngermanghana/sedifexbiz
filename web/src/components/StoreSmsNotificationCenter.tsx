@@ -71,7 +71,7 @@ export function StoreSmsNotificationCenter() {
     const findHost = () => {
       const selector = media.matches
         ? '.shell__brand'
-        : '.shell__header-controls .shell__controls'
+        : '.shell__header-controls .support-launcher--notification-slot'
       setPortalHost(document.querySelector(selector))
     }
 
