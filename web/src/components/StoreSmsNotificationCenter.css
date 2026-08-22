@@ -1,8 +1,9 @@
 .store-sms-notifications {
   --store-sms-mobile-panel-top: 124px;
-  position: fixed;
-  top: 84px;
-  right: 18px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
   z-index: 1400;
 }
 
@@ -17,10 +18,15 @@
   border: 1px solid #dbe2ea;
   border-radius: 999px;
   background: #fff;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
+}
+
+.store-sms-notifications__bell:hover {
+  border-color: #c7d2fe;
+  background: #f8fafc;
 }
 
 .store-sms-notifications__badge {
@@ -160,12 +166,7 @@
   text-align: center;
 }
 
-@media (max-width: 700px) {
-  .store-sms-notifications {
-    top: 12px;
-    right: 104px;
-  }
-
+@media (max-width: 960px) {
   .store-sms-notifications__panel {
     position: fixed;
     top: var(--store-sms-mobile-panel-top);
