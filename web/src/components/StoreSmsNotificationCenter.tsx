@@ -46,6 +46,7 @@ export function StoreSmsNotificationCenter() {
   const navigate = useNavigate()
   const [notifications, setNotifications] = useState<StoreSmsNotification[]>([])
   const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
   const initializedRef = useRef(false)
   const toastIdsRef = useRef(new Set<string>())
   const mountedAtRef = useRef(Date.now())
@@ -112,6 +113,34 @@ export function StoreSmsNotificationCenter() {
     )
   }, [publish, storeId])
 
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root || typeof document === 'undefined' || typeof window === 'undefined') return
+
+    const shellHeader = document.querySelector<HTMLElement>('.shell__header')
+    if (!shellHeader) return
+
+    const updatePanelOffset = () => {
+      const headerBottom = Math.max(0, shellHeader.getBoundingClientRect().bottom)
+      root.style.setProperty('--store-sms-mobile-panel-top', `${Math.ceil(headerBottom + 8)}px`)
+    }
+
+    updatePanelOffset()
+    window.addEventListener('resize', updatePanelOffset)
+
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => updatePanelOffset())
+        : null
+    resizeObserver?.observe(shellHeader)
+
+    return () => {
+      window.removeEventListener('resize', updatePanelOffset)
+      resizeObserver?.disconnect()
+      root.style.removeProperty('--store-sms-mobile-panel-top')
+    }
+  }, [])
+
   const unreadCount = useMemo(
     () => notifications.filter(notification => notification.unread).length,
     [notifications],
@@ -150,7 +179,7 @@ export function StoreSmsNotificationCenter() {
   if (!storeId) return null
 
   return (
-    <div className="store-sms-notifications">
+    <div ref={rootRef} className="store-sms-notifications">
       <button
         type="button"
         className="store-sms-notifications__bell"
