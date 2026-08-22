@@ -7,13 +7,18 @@
 
 .store-sms-notifications__bell {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 44px;
   height: 44px;
+  padding: 0;
   border: 1px solid #dbe2ea;
   border-radius: 999px;
   background: #fff;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
   font-size: 20px;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -156,16 +161,16 @@
 
 @media (max-width: 700px) {
   .store-sms-notifications {
-    top: 72px;
-    right: 12px;
+    top: 12px;
+    right: 104px;
   }
 
   .store-sms-notifications__panel {
     position: fixed;
-    top: 124px;
+    top: 68px;
     right: 12px;
     left: 12px;
     width: auto;
-    max-height: calc(100vh - 150px);
+    max-height: calc(100vh - 94px);
   }
 }
