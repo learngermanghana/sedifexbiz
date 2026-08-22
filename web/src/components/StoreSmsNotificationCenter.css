@@ -1,4 +1,5 @@
 .store-sms-notifications {
+  --store-sms-mobile-panel-top: 124px;
   position: fixed;
   top: 84px;
   right: 18px;
@@ -167,10 +168,10 @@
 
   .store-sms-notifications__panel {
     position: fixed;
-    top: 68px;
+    top: var(--store-sms-mobile-panel-top);
     right: 12px;
     left: 12px;
     width: auto;
-    max-height: calc(100vh - 94px);
+    max-height: calc(100vh - var(--store-sms-mobile-panel-top) - 24px);
   }
 }
