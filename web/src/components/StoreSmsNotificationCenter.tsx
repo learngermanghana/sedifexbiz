@@ -46,17 +46,40 @@ export function StoreSmsNotificationCenter() {
   const navigate = useNavigate()
   const [notifications, setNotifications] = useState<StoreSmsNotification[]>([])
   const [open, setOpen] = useState(false)
+  const [isActivePlacement, setIsActivePlacement] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const initializedRef = useRef(false)
   const toastIdsRef = useRef(new Set<string>())
   const mountedAtRef = useRef(Date.now())
 
   useEffect(() => {
+    const root = rootRef.current
+    if (!root || typeof window === 'undefined') return
+
+    const mediaQuery = window.matchMedia('(max-width: 960px)')
+    const isMobileSlot = Boolean(root.closest('.shell__toolbar'))
+    const updateActivePlacement = () => {
+      setIsActivePlacement(isMobileSlot ? mediaQuery.matches : !mediaQuery.matches)
+    }
+
+    updateActivePlacement()
+    mediaQuery.addEventListener?.('change', updateActivePlacement)
+
+    return () => {
+      mediaQuery.removeEventListener?.('change', updateActivePlacement)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isActivePlacement) setOpen(false)
+  }, [isActivePlacement])
+
+  useEffect(() => {
     initializedRef.current = false
     toastIdsRef.current.clear()
     mountedAtRef.current = Date.now()
     setNotifications([])
-    if (!storeId) return
+    if (!storeId || !isActivePlacement) return
 
     const notificationsQuery = query(
       collection(db, 'stores', storeId, 'storeNotifications'),
@@ -111,9 +134,11 @@ export function StoreSmsNotificationCenter() {
         console.warn('[store-sms-notifications] Unable to load notifications', error)
       },
     )
-  }, [publish, storeId])
+  }, [isActivePlacement, publish, storeId])
 
   useEffect(() => {
+    if (!isActivePlacement) return
+
     const root = rootRef.current
     if (!root || typeof document === 'undefined' || typeof window === 'undefined') return
 
@@ -139,7 +164,7 @@ export function StoreSmsNotificationCenter() {
       resizeObserver?.disconnect()
       root.style.removeProperty('--store-sms-mobile-panel-top')
     }
-  }, [])
+  }, [isActivePlacement])
 
   const unreadCount = useMemo(
     () => notifications.filter(notification => notification.unread).length,
