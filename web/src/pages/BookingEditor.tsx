@@ -545,7 +545,7 @@ export default function BookingEditor() {
           </p>
           <h1>{isCreateMode ? 'Add booking' : 'Edit booking'}</h1>
           <p className="form__hint">
-            Update the appointment status in this form, then click <strong>Save changes</strong>. Sedifex will save the update and send the customer email when notifications are enabled.
+            Update the appointment and payment statuses in this form, then click <strong>Save changes</strong>. Sedifex will save the update and send the customer email when notifications are enabled.
           </p>
         </header>
 
@@ -579,11 +579,6 @@ export default function BookingEditor() {
                 <option value="cancelled">Cancelled</option>
               </select>
             </label>
-            <label><span>Quantity</span><input type="number" min={1} value={form.quantity} onChange={event => setForm(prev => ({ ...prev, quantity: event.target.value }))} /></label>
-            <label><span>Payment amount</span><input value={form.paymentAmount} onChange={event => setForm(prev => ({ ...prev, paymentAmount: event.target.value }))} /></label>
-            <label><span>Deposit amount</span><input value={form.depositAmount} onChange={event => setForm(prev => ({ ...prev, depositAmount: event.target.value }))} /></label>
-            <label><span>Payment method</span><input value={form.paymentMethod} onChange={event => setForm(prev => ({ ...prev, paymentMethod: event.target.value }))} /></label>
-            <label><span>Payment reference</span><input value={form.paymentReference} onChange={event => setForm(prev => ({ ...prev, paymentReference: event.target.value }))} /></label>
             <label>
               <span>Payment status</span>
               <select size={4} value={form.paymentStatus} onChange={event => setForm(prev => ({ ...prev, paymentStatus: event.target.value }))}>
@@ -593,6 +588,11 @@ export default function BookingEditor() {
                 <option value="awaiting_verification">Awaiting verification</option>
               </select>
             </label>
+            <label><span>Quantity</span><input type="number" min={1} value={form.quantity} onChange={event => setForm(prev => ({ ...prev, quantity: event.target.value }))} /></label>
+            <label><span>Payment amount</span><input value={form.paymentAmount} onChange={event => setForm(prev => ({ ...prev, paymentAmount: event.target.value }))} /></label>
+            <label><span>Deposit amount</span><input value={form.depositAmount} onChange={event => setForm(prev => ({ ...prev, depositAmount: event.target.value }))} /></label>
+            <label><span>Payment method</span><input value={form.paymentMethod} onChange={event => setForm(prev => ({ ...prev, paymentMethod: event.target.value }))} /></label>
+            <label><span>Payment reference</span><input value={form.paymentReference} onChange={event => setForm(prev => ({ ...prev, paymentReference: event.target.value }))} /></label>
             <label className="booking-editor-page__notes"><span>Notes</span><textarea value={form.notes} onChange={event => setForm(prev => ({ ...prev, notes: event.target.value }))} rows={4} /></label>
 
             <div className="booking-editor-page__actions">
