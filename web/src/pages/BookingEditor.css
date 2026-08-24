@@ -20,6 +20,7 @@
   border: 1px solid #c7d2fe;
   border-radius: 12px;
   background: #fff;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
 .booking-editor-page__form select[size] option {
@@ -67,8 +68,145 @@
   background: #fff8ec;
 }
 
+.booking-editor-page__status-select--pending {
+  border-color: #d97706 !important;
+  background: #fffbeb !important;
+  box-shadow: inset 4px 0 0 #d97706;
+}
+
+.booking-editor-page__status-select--confirmed,
+.booking-editor-page__status-select--paid {
+  border-color: #16a34a !important;
+  background: #f0fdf4 !important;
+  box-shadow: inset 4px 0 0 #16a34a;
+}
+
+.booking-editor-page__status-select--partial {
+  border-color: #ea580c !important;
+  background: #fff7ed !important;
+  box-shadow: inset 4px 0 0 #ea580c;
+}
+
+.booking-editor-page__status-select--awaiting_verification,
+.booking-editor-page__status-select--rescheduled {
+  border-color: #2563eb !important;
+  background: #eff6ff !important;
+  box-shadow: inset 4px 0 0 #2563eb;
+}
+
+.booking-editor-page__status-select--completed {
+  border-color: #15803d !important;
+  background: #f0fdf4 !important;
+  box-shadow: inset 4px 0 0 #15803d;
+}
+
+.booking-editor-page__status-select--cancelled {
+  border-color: #dc2626 !important;
+  background: #fef2f2 !important;
+  box-shadow: inset 4px 0 0 #dc2626;
+}
+
+.booking-editor-page__payment-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+  font-size: 0.9rem;
+}
+
+.booking-editor-page__suggestion-button {
+  min-height: 36px;
+  padding: 0.4rem 0.7rem;
+}
+
 .booking-editor-page__notes {
   grid-column: 1 / -1;
+}
+
+.booking-editor-page__save-summary {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #dbe4f0;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.booking-editor-page__save-summary-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+}
+
+.booking-editor-page__save-summary-heading span {
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.booking-editor-page__summary-statuses,
+.booking-editor-page__summary-amounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.booking-editor-page__summary-amounts span {
+  padding: 0.45rem 0.65rem;
+  border-radius: 9px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+}
+
+.booking-editor-page__status-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.42rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.booking-editor-page__status-badge--pending {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.booking-editor-page__status-badge--confirmed,
+.booking-editor-page__status-badge--paid,
+.booking-editor-page__status-badge--completed {
+  border-color: #22c55e;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.booking-editor-page__status-badge--partial {
+  border-color: #fb923c;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.booking-editor-page__status-badge--awaiting_verification,
+.booking-editor-page__status-badge--rescheduled {
+  border-color: #60a5fa;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.booking-editor-page__status-badge--cancelled {
+  border-color: #f87171;
+  background: #fef2f2;
+  color: #991b1b;
 }
 
 .booking-editor-page__actions {
@@ -86,5 +224,10 @@
 @media (max-width: 640px) {
   .booking-editor-page__status-grid {
     grid-template-columns: 1fr;
+  }
+
+  .booking-editor-page__save-summary-heading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
