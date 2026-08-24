@@ -150,7 +150,6 @@ function normalizeTimeInput(value: unknown): string {
   return ''
 }
 
-
 const bookingAppsScriptUrl = 'https://script.google.com/macros/s/AKfycbxl0IdT746Z_yL2LJbAOKi0wsn3iNct4H1omFYWaxq8nzzI7rc_cebfxXcMxMydtvO4Eg/exec'
 
 type BookingSheetPayload = Record<string, string>
@@ -193,6 +192,34 @@ function syncReasonForStatus(status: string, paymentStatus: string) {
 function numberValue(value: unknown, fallback = 0): number {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function suggestPaymentStatus(paymentAmount: unknown, depositAmount: unknown): string | null {
+  const total = numberValue(paymentAmount, 0)
+  const received = numberValue(depositAmount, 0)
+  if (total <= 0) return null
+  if (received >= total) return 'paid'
+  if (received > 0) return 'partial'
+  return 'pending'
+}
+
+function paymentStatusLabel(status: string): string {
+  if (status === 'paid') return 'Paid'
+  if (status === 'partial') return 'Partially paid'
+  if (status === 'awaiting_verification') return 'Awaiting verification'
+  return 'Payment pending'
+}
+
+function bookingStatusLabel(status: string): string {
+  if (status === 'confirmed') return 'Confirmed'
+  if (status === 'rescheduled') return 'Rescheduled'
+  if (status === 'completed') return 'Completed'
+  if (status === 'cancelled') return 'Cancelled'
+  return 'Pending approval'
+}
+
+function formatMoneyValue(value: number): string {
+  return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
@@ -285,6 +312,39 @@ export default function BookingEditor() {
   const normalizedFormPaymentStatus = normalizePaymentStatusValue(form.paymentStatus, 'pending')
   const paymentReviewRequired = ['confirmed', 'completed'].includes(normalizedFormStatus)
   const pendingPaymentConflict = paymentReviewRequired && normalizedFormPaymentStatus === 'pending'
+  const suggestedPaymentStatus = useMemo(
+    () => suggestPaymentStatus(form.paymentAmount, form.depositAmount),
+    [form.depositAmount, form.paymentAmount],
+  )
+  const paymentAmountValue = Math.max(numberValue(form.paymentAmount, 0), 0)
+  const depositAmountValue = Math.max(numberValue(form.depositAmount, 0), 0)
+  const summaryAmountReceived = normalizedFormPaymentStatus === 'paid'
+    ? paymentAmountValue
+    : Math.min(depositAmountValue, paymentAmountValue || depositAmountValue)
+  const summaryBalance = Math.max(paymentAmountValue - summaryAmountReceived, 0)
+  const suggestionDiffers = suggestedPaymentStatus !== null && suggestedPaymentStatus !== normalizedFormPaymentStatus
+
+  function updatePaymentAmount(nextPaymentAmount: string) {
+    setForm(prev => {
+      const suggestion = suggestPaymentStatus(nextPaymentAmount, prev.depositAmount)
+      return {
+        ...prev,
+        paymentAmount: nextPaymentAmount,
+        ...(!paymentStatusReviewed && suggestion ? { paymentStatus: suggestion } : {}),
+      }
+    })
+  }
+
+  function updateDepositAmount(nextDepositAmount: string) {
+    setForm(prev => {
+      const suggestion = suggestPaymentStatus(prev.paymentAmount, nextDepositAmount)
+      return {
+        ...prev,
+        depositAmount: nextDepositAmount,
+        ...(!paymentStatusReviewed && suggestion ? { paymentStatus: suggestion } : {}),
+      }
+    })
+  }
 
   async function handleSave() {
     if (!storeId) {
@@ -600,7 +660,12 @@ export default function BookingEditor() {
               <div className="booking-editor-page__status-grid">
                 <label>
                   <span>Appointment status</span>
-                  <select size={5} value={form.status} onChange={event => setForm(prev => ({ ...prev, status: event.target.value }))}>
+                  <select
+                    className={`booking-editor-page__status-select booking-editor-page__status-select--${normalizedFormStatus}`}
+                    size={5}
+                    value={form.status}
+                    onChange={event => setForm(prev => ({ ...prev, status: event.target.value }))}
+                  >
                     <option value="pending">Pending approval</option>
                     <option value="confirmed">Confirmed</option>
                     <option value="rescheduled">Rescheduled</option>
@@ -611,6 +676,7 @@ export default function BookingEditor() {
                 <label>
                   <span>Payment status</span>
                   <select
+                    className={`booking-editor-page__status-select booking-editor-page__status-select--${normalizedFormPaymentStatus}`}
                     size={4}
                     value={form.paymentStatus}
                     onClick={() => setPaymentStatusReviewed(true)}
@@ -626,6 +692,26 @@ export default function BookingEditor() {
                   </select>
                 </label>
               </div>
+              {suggestedPaymentStatus && (
+                <div className="booking-editor-page__payment-suggestion">
+                  <span>
+                    Amounts suggest <strong>{paymentStatusLabel(suggestedPaymentStatus)}</strong>
+                    {suggestionDiffers ? `, but ${paymentStatusLabel(normalizedFormPaymentStatus)} is selected.` : '.'}
+                  </span>
+                  {suggestionDiffers && (
+                    <button
+                      type="button"
+                      className="button button--outline booking-editor-page__suggestion-button"
+                      onClick={() => {
+                        setForm(prev => ({ ...prev, paymentStatus: suggestedPaymentStatus }))
+                        setPaymentStatusReviewed(true)
+                      }}
+                    >
+                      Use suggestion
+                    </button>
+                  )}
+                </div>
+              )}
               {paymentReviewRequired && !paymentStatusReviewed && (
                 <p className="booking-editor-page__status-review">Payment status must be reviewed before saving a confirmed or completed appointment.</p>
               )}
@@ -635,11 +721,31 @@ export default function BookingEditor() {
             </fieldset>
 
             <label><span>Quantity</span><input type="number" min={1} value={form.quantity} onChange={event => setForm(prev => ({ ...prev, quantity: event.target.value }))} /></label>
-            <label><span>Payment amount</span><input value={form.paymentAmount} onChange={event => setForm(prev => ({ ...prev, paymentAmount: event.target.value }))} /></label>
-            <label><span>Deposit amount</span><input value={form.depositAmount} onChange={event => setForm(prev => ({ ...prev, depositAmount: event.target.value }))} /></label>
+            <label><span>Payment amount</span><input inputMode="decimal" value={form.paymentAmount} onChange={event => updatePaymentAmount(event.target.value)} /></label>
+            <label><span>Deposit amount</span><input inputMode="decimal" value={form.depositAmount} onChange={event => updateDepositAmount(event.target.value)} /></label>
             <label><span>Payment method</span><input value={form.paymentMethod} onChange={event => setForm(prev => ({ ...prev, paymentMethod: event.target.value }))} /></label>
             <label><span>Payment reference</span><input value={form.paymentReference} onChange={event => setForm(prev => ({ ...prev, paymentReference: event.target.value }))} /></label>
             <label className="booking-editor-page__notes"><span>Notes</span><textarea value={form.notes} onChange={event => setForm(prev => ({ ...prev, notes: event.target.value }))} rows={4} /></label>
+
+            <section className="booking-editor-page__save-summary" aria-label="Booking summary before save">
+              <div className="booking-editor-page__save-summary-heading">
+                <strong>Before you save</strong>
+                <span>Check the appointment and payment details.</span>
+              </div>
+              <div className="booking-editor-page__summary-statuses">
+                <span className={`booking-editor-page__status-badge booking-editor-page__status-badge--${normalizedFormStatus}`}>
+                  Appointment: {bookingStatusLabel(normalizedFormStatus)}
+                </span>
+                <span className={`booking-editor-page__status-badge booking-editor-page__status-badge--${normalizedFormPaymentStatus}`}>
+                  Payment: {paymentStatusLabel(normalizedFormPaymentStatus)}
+                </span>
+              </div>
+              <div className="booking-editor-page__summary-amounts">
+                <span>Total: <strong>{formatMoneyValue(paymentAmountValue)}</strong></span>
+                <span>Received: <strong>{formatMoneyValue(summaryAmountReceived)}</strong></span>
+                <span>Balance: <strong>{formatMoneyValue(summaryBalance)}</strong></span>
+              </div>
+            </section>
 
             <div className="booking-editor-page__actions">
               {!isCreateMode && (
