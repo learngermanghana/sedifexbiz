@@ -219,11 +219,13 @@ export default function BookingEditor() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [existingPaymentConfirmedAt, setExistingPaymentConfirmedAt] = useState<unknown>(null)
+  const [paymentStatusReviewed, setPaymentStatusReviewed] = useState(false)
   const { publish } = useToast()
 
   useEffect(() => {
     if (!storeId || isCreateMode) {
       setExistingPaymentConfirmedAt(null)
+      setPaymentStatusReviewed(false)
       setLoading(false)
       return
     }
@@ -258,6 +260,7 @@ export default function BookingEditor() {
         if (cancelled) return
         setForm(normalizeBookingForm(data))
         setExistingPaymentConfirmedAt(data.paymentConfirmedAt ?? data.payment_confirmed_at ?? null)
+        setPaymentStatusReviewed(false)
       } catch (error) {
         console.error('[booking-editor] Failed to load booking', error)
         if (!cancelled) {
@@ -278,6 +281,11 @@ export default function BookingEditor() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
   }, [form.quantity])
 
+  const normalizedFormStatus = normalizeBookingStatusValue(form.status, 'pending')
+  const normalizedFormPaymentStatus = normalizePaymentStatusValue(form.paymentStatus, 'pending')
+  const paymentReviewRequired = ['confirmed', 'completed'].includes(normalizedFormStatus)
+  const pendingPaymentConflict = paymentReviewRequired && normalizedFormPaymentStatus === 'pending'
+
   async function handleSave() {
     if (!storeId) {
       setErrorMessage('Select a workspace before editing bookings.')
@@ -288,14 +296,29 @@ export default function BookingEditor() {
       return
     }
 
+    const normalizedStatus = normalizeBookingStatusValue(form.status, 'pending')
+    const normalizedPaymentStatus = normalizePaymentStatusValue(form.paymentStatus, 'pending')
+    const requiresPaymentReview = ['confirmed', 'completed'].includes(normalizedStatus)
+
+    if (requiresPaymentReview && !paymentStatusReviewed) {
+      setErrorMessage('Review and select Payment status before saving a confirmed or completed appointment.')
+      return
+    }
+
+    if (requiresPaymentReview && normalizedPaymentStatus === 'pending') {
+      const statusLabel = normalizedStatus === 'completed' ? 'Completed' : 'Confirmed'
+      const continueWithPendingPayment = window.confirm(
+        `${statusLabel} appointment with Payment pending. Are you sure you want to save it this way?`,
+      )
+      if (!continueWithPendingPayment) return
+    }
+
     setSaving(true)
     setErrorMessage(null)
     setSuccessMessage(null)
     const targetId = isCreateMode ? doc(db, 'stores', storeId, 'integrationBookings').id : bookingId
 
     try {
-      const normalizedStatus = normalizeBookingStatusValue(form.status, 'pending')
-      const normalizedPaymentStatus = normalizePaymentStatusValue(form.paymentStatus, 'pending')
       const paymentAmount = numberValue(form.paymentAmount, 0)
       const rawDepositAmount = numberValue(form.depositAmount, 0)
       const isPaid = normalizedPaymentStatus === 'paid'
@@ -570,24 +593,47 @@ export default function BookingEditor() {
             <label><span>Booking time</span><input type="time" value={form.bookingTime} onChange={event => setForm(prev => ({ ...prev, bookingTime: event.target.value }))} /></label>
             <label><span>Preferred branch</span><input value={form.preferredBranch} onChange={event => setForm(prev => ({ ...prev, preferredBranch: event.target.value }))} /></label>
             <label><span>Preferred contact method</span><input value={form.preferredContactMethod} onChange={event => setForm(prev => ({ ...prev, preferredContactMethod: event.target.value }))} /></label>
-            <label>
-              <span>Appointment status</span>
-              <select size={4} value={form.status} onChange={event => setForm(prev => ({ ...prev, status: event.target.value }))}>
-                <option value="pending">Pending approval</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="rescheduled">Rescheduled</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </label>
-            <label>
-              <span>Payment status</span>
-              <select size={4} value={form.paymentStatus} onChange={event => setForm(prev => ({ ...prev, paymentStatus: event.target.value }))}>
-                <option value="pending">Payment pending</option>
-                <option value="paid">Paid</option>
-                <option value="partial">Partially paid</option>
-                <option value="awaiting_verification">Awaiting verification</option>
-              </select>
-            </label>
+
+            <fieldset className="booking-editor-page__status-group">
+              <legend>Booking status</legend>
+              <p className="booking-editor-page__status-intro">Review both statuses before saving this booking.</p>
+              <div className="booking-editor-page__status-grid">
+                <label>
+                  <span>Appointment status</span>
+                  <select size={5} value={form.status} onChange={event => setForm(prev => ({ ...prev, status: event.target.value }))}>
+                    <option value="pending">Pending approval</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="rescheduled">Rescheduled</option>
+                    <option value="completed">Completed</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Payment status</span>
+                  <select
+                    size={4}
+                    value={form.paymentStatus}
+                    onClick={() => setPaymentStatusReviewed(true)}
+                    onChange={event => {
+                      setForm(prev => ({ ...prev, paymentStatus: event.target.value }))
+                      setPaymentStatusReviewed(true)
+                    }}
+                  >
+                    <option value="pending">Payment pending</option>
+                    <option value="paid">Paid</option>
+                    <option value="partial">Partially paid</option>
+                    <option value="awaiting_verification">Awaiting verification</option>
+                  </select>
+                </label>
+              </div>
+              {paymentReviewRequired && !paymentStatusReviewed && (
+                <p className="booking-editor-page__status-review">Payment status must be reviewed before saving a confirmed or completed appointment.</p>
+              )}
+              {pendingPaymentConflict && (
+                <p className="booking-editor-page__status-warning">Payment is still pending. Sedifex will ask for confirmation before saving this appointment.</p>
+              )}
+            </fieldset>
+
             <label><span>Quantity</span><input type="number" min={1} value={form.quantity} onChange={event => setForm(prev => ({ ...prev, quantity: event.target.value }))} /></label>
             <label><span>Payment amount</span><input value={form.paymentAmount} onChange={event => setForm(prev => ({ ...prev, paymentAmount: event.target.value }))} /></label>
             <label><span>Deposit amount</span><input value={form.depositAmount} onChange={event => setForm(prev => ({ ...prev, depositAmount: event.target.value }))} /></label>

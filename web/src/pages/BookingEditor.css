@@ -27,6 +27,46 @@
   border-radius: 8px;
 }
 
+.booking-editor-page__status-group {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid #c7d2fe;
+  border-radius: 14px;
+  background: #f8faff;
+}
+
+.booking-editor-page__status-group legend {
+  padding: 0 0.35rem;
+  font-weight: 700;
+}
+
+.booking-editor-page__status-intro,
+.booking-editor-page__status-review,
+.booking-editor-page__status-warning {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.booking-editor-page__status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.booking-editor-page__status-review {
+  font-weight: 600;
+}
+
+.booking-editor-page__status-warning {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #f3c98b;
+  border-radius: 10px;
+  background: #fff8ec;
+}
+
 .booking-editor-page__notes {
   grid-column: 1 / -1;
 }
@@ -41,4 +81,10 @@
 
 .booking-editor-page__actions .button--primary {
   min-width: 170px;
+}
+
+@media (max-width: 640px) {
+  .booking-editor-page__status-grid {
+    grid-template-columns: 1fr;
+  }
 }
