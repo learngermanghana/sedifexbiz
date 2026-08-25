@@ -374,7 +374,7 @@ async function finalizeSuccess(item: QueueItem, booking: BookingCtx, claimResult
     notification.set({
       storeId: item.storeId, bookingId: item.bookingId, stage: item.stage, appointmentDate: item.appointmentDate || null,
       status: 'sent', phone, senderId: claimResult.gateway.senderId, creditsDebited: claimResult.credits, provider: 'hubtel',
-      providerMessageId: first([providerData.messageId, providerData.message_id, rec(providerData.data).messageId], 160) || null,
+      providerMessageId: first([providerData.messageId], 160),
       sentAt: admin.firestore.FieldValue.serverTimestamp(), createdAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true }),
     booking.ref.set(successPatch(item, booking, today), { merge: true }),

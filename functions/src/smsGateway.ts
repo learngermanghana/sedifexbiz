@@ -215,6 +215,50 @@ export function formatSmsAddress(phone: string) {
   return normalizePhoneE164(phone) ?? ''
 }
 
+export type HubtelSendReceipt = {
+  messageId: string
+  raw: Record<string, unknown>
+}
+
+/**
+ * Hubtel can return HTTP 200 for a request that it did not accept. Only an
+ * explicit provider success response with a message ID is safe to record as
+ * sent; otherwise callers must retain/refund the queue item as a failure.
+ */
+export function validateHubtelSendResponse(value: unknown): HubtelSendReceipt {
+  const root = asRecord(value)
+  const data = asRecord(root.data)
+  const messageId = firstText([
+    root.messageId,
+    root.messageID,
+    root.MessageId,
+    root.MessageID,
+    data.messageId,
+    data.messageID,
+    data.MessageId,
+    data.MessageID,
+  ])
+  const rawStatus = root.status ?? root.Status ?? data.status ?? data.Status
+  const rawCode = root.responseCode ?? root.ResponseCode ?? root.code ?? root.Code
+  const status = typeof rawStatus === 'number' ? rawStatus : text(rawStatus).toLowerCase()
+  const code = typeof rawCode === 'number' ? String(rawCode) : text(rawCode).toLowerCase()
+  const explicitSuccess = status === 0 || status === '0' || status === 'success' ||
+    code === '0000' || code === '0' || code === 'success'
+
+  if (explicitSuccess && messageId) return { messageId, raw: root }
+
+  const detail = firstText([
+    root.message,
+    root.Message,
+    root.description,
+    root.error,
+    data.message,
+    data.description,
+    data.error,
+  ])
+  throw new Error(`Hubtel did not confirm SMS acceptance${detail ? `: ${detail}` : ''}`)
+}
+
 export async function sendSmsViaHubtel(options: {
   gateway: StoreSmsGatewayConfig
   to: string
@@ -237,10 +281,13 @@ export async function sendSmsViaHubtel(options: {
     throw new Error(`Hubtel error ${response.status}: ${details}`)
   }
 
-  if (!responseText) return { ok: true }
+  if (!responseText) throw new Error('Hubtel returned an empty SMS response')
   try {
-    return JSON.parse(responseText) as unknown
+    return validateHubtelSendResponse(JSON.parse(responseText) as unknown)
   } catch (_error) {
-    return { ok: true, response: responseText.slice(0, 500) }
+    if (_error instanceof SyntaxError) {
+      throw new Error(`Hubtel returned an invalid SMS response: ${responseText.slice(0, 200)}`)
+    }
+    throw _error
   }
 }
