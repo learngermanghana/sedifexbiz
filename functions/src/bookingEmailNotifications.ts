@@ -38,6 +38,10 @@ function normalizeStatus(value: unknown) {
   return text(value, 100).toLowerCase().replace(/[\s-]+/g, '_')
 }
 
+function bookingStoreId(data: RecordMap) {
+  return firstText([data.storeId, data.store_id], 180)
+}
+
 function asDate(value: unknown): Date | null {
   if (!value) return null
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value
@@ -245,19 +249,54 @@ async function markNotificationQueued(
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }
 
-  await Promise.allSettled([
-    defaultDb
-      .collection('stores')
-      .doc(storeId)
-      .collection('integrationBookings')
-      .doc(bookingId)
-      .set(patch, { merge: true }),
-    defaultDb.collection('integrationBookings').doc(bookingId).set(patch, { merge: true }),
-  ])
+  const storeBookingRef = defaultDb
+    .collection('stores')
+    .doc(storeId)
+    .collection('integrationBookings')
+    .doc(bookingId)
+
+  await storeBookingRef.set(patch, { merge: true })
+
+  // The root integrationBookings collection is only a mirror. Never mutate a root
+  // booking unless its embedded storeId proves it belongs to the same store.
+  const rootBookingRef = defaultDb.collection('integrationBookings').doc(bookingId)
+  try {
+    const rootSnapshot = await rootBookingRef.get()
+    if (!rootSnapshot.exists) return
+
+    const rootData = rootSnapshot.data() as RecordMap
+    const rootStoreId = bookingStoreId(rootData)
+    if (rootStoreId !== storeId) {
+      functions.logger.error('Blocked cross-store booking email marker write', {
+        bookingId,
+        expectedStoreId: storeId,
+        rootStoreId: rootStoreId || null,
+      })
+      return
+    }
+
+    await rootBookingRef.set(patch, { merge: true })
+  } catch (error) {
+    functions.logger.warn('Could not mirror booking email notification marker', {
+      bookingId,
+      storeId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 async function queueUnpaidBookingEmails(storeId: string, bookingId: string, data: RecordMap) {
   if (!storeId || !bookingId || !isUnpaidBooking(data)) return false
+
+  const embeddedStoreId = bookingStoreId(data)
+  if (embeddedStoreId && embeddedStoreId !== storeId) {
+    functions.logger.error('Blocked cross-store booking email', {
+      bookingId,
+      expectedStoreId: storeId,
+      embeddedStoreId,
+    })
+    return false
+  }
 
   const result = await queueBrandedNotification({
     eventType: UNPAID_BOOKING_EVENT,
@@ -289,6 +328,36 @@ export const notifyUnpaidBookingCreated = functions.firestore
     return null
   })
 
+async function loadStoreScopedBooking(storeId: string, bookingId: string) {
+  const snapshot = await defaultDb
+    .collection('stores')
+    .doc(storeId)
+    .collection('integrationBookings')
+    .doc(bookingId)
+    .get()
+
+  if (!snapshot.exists) {
+    functions.logger.error('Blocked fallback booking email without store-scoped booking', {
+      bookingId,
+      storeId,
+    })
+    return null
+  }
+
+  const data = snapshot.data() as RecordMap
+  const embeddedStoreId = bookingStoreId(data)
+  if (embeddedStoreId && embeddedStoreId !== storeId) {
+    functions.logger.error('Blocked fallback booking email with store mismatch', {
+      bookingId,
+      expectedStoreId: storeId,
+      embeddedStoreId,
+    })
+    return null
+  }
+
+  return data
+}
+
 async function runWithConcurrency<T>(items: T[], worker: (item: T) => Promise<void>) {
   let cursor = 0
   const workers = Array.from(
@@ -317,25 +386,38 @@ export const processUnpaidBookingEmailNotifications = functions.pubsub
     const results = { checked: snapshot.size, queued: 0, skipped: 0, errors: 0 }
 
     await runWithConcurrency(snapshot.docs, async doc => {
-      const data = doc.data() as RecordMap
-      if (data.pendingBookingEmailNotificationQueuedAt) {
-        results.skipped += 1
-        return
-      }
-
-      const createdAt = asDate(data.createdAt)
-      if (createdAt && createdAt.getTime() < cutoff) {
-        results.skipped += 1
-        return
-      }
-
-      const storeId = firstText([data.storeId, data.store_id], 180)
-      if (!storeId || !isUnpaidBooking(data)) {
+      const rootData = doc.data() as RecordMap
+      const storeId = bookingStoreId(rootData)
+      if (!storeId) {
         results.skipped += 1
         return
       }
 
       try {
+        // The store-scoped record is authoritative. The root collection is a mirror
+        // and must never be trusted by itself to decide who receives a booking email.
+        const data = await loadStoreScopedBooking(storeId, doc.id)
+        if (!data) {
+          results.skipped += 1
+          return
+        }
+
+        if (data.pendingBookingEmailNotificationQueuedAt) {
+          results.skipped += 1
+          return
+        }
+
+        const createdAt = asDate(data.createdAt) ?? asDate(rootData.createdAt)
+        if (createdAt && createdAt.getTime() < cutoff) {
+          results.skipped += 1
+          return
+        }
+
+        if (!isUnpaidBooking(data)) {
+          results.skipped += 1
+          return
+        }
+
         const queued = await queueUnpaidBookingEmails(storeId, doc.id, data)
         if (queued) results.queued += 1
         else results.skipped += 1
