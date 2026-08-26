@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged } from 'firebase/auth'
 import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Analytics } from '@vercel/analytics/react'
 import './App.css'
 import './pwa'
 import { auth } from './firebase'
@@ -187,6 +188,7 @@ export default function App() {
     <PwaProvider isPwaApp={isPwaApp}>
       <CanonicalLink />
       {content}
+      <Analytics />
     </PwaProvider>
   )
 }
