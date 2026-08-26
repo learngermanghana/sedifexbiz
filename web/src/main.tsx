@@ -18,6 +18,7 @@ import Customers from './pages/Customers'
 import Students from './pages/Students'
 import Bookings from './pages/Bookings'
 import EventPlanning from './pages/EventPlanning'
+import EventWorkspace from './pages/EventWorkspace'
 import BookingEditor from './pages/BookingEditor'
 import BookingsAvailability from './pages/BookingsAvailability'
 import StudentRegistration from './pages/StudentRegistration'
@@ -134,6 +135,7 @@ const router = createBrowserRouter([
       { path: 'students', element: <Students /> },
       { path: 'bookings', element: <Bookings /> },
       { path: 'event-planning', element: <EventPlanning /> },
+      { path: 'event-planning/:eventId', element: <EventWorkspace /> },
       { path: 'bookings/new', element: <BookingEditor /> },
       { path: 'bookings/availability', element: <Navigate to="/upcoming-events" replace /> },
       { path: 'upcoming-events', element: <BookingsAvailability /> },
