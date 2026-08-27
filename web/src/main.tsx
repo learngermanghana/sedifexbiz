@@ -13,6 +13,7 @@ import QuickPayPrint from './pages/QuickPayPrint'
 import PublicQuickPayCheckout from './pages/PublicQuickPayCheckout'
 import PublicQuickPayReceipt from './pages/PublicQuickPayReceipt'
 import PublicWebsiteEngine from './pages/PublicWebsiteEngine'
+import PublicEventContractPage from './pages/PublicEventContract'
 import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
 import Students from './pages/Students'
@@ -97,6 +98,7 @@ function LazyPage({ children }: { children: React.ReactNode }) {
 const router = createBrowserRouter([
   { path: '/receipt/:saleId', element: <ReceiptView /> },
   { path: '/quick-pay/receipt/:storeId/:reference', element: <PublicQuickPayReceipt /> },
+  { path: '/event-contract/:token', element: <PublicEventContractPage /> },
   { path: '/promo/:slug', element: <PromoLandingPage /> },
   { path: '/login', element: <Navigate to="/" replace /> },
   { path: '/s/:storeId', element: <PublicQuickPayCheckout /> },
