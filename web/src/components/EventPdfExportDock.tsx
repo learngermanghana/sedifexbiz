@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { matchPath, useLocation } from 'react-router-dom'
 import { db } from '../firebase'
@@ -43,6 +44,7 @@ export default function EventPdfExportDock() {
   const routeEventId = eventRouteMatch?.params.eventId || ''
   const [eventOptions, setEventOptions] = useState<EventOption[]>([])
   const [selectedEventId, setSelectedEventId] = useState('')
+  const [inlineTarget, setInlineTarget] = useState<HTMLElement | null>(null)
   const eventId = routeEventId || selectedEventId
   const tab = eventRouteMatch ? new URLSearchParams(location.search).get('tab') || 'overview' : 'overview'
   const currentExport = TAB_EXPORTS[tab] ?? TAB_EXPORTS.overview
@@ -58,6 +60,29 @@ export default function EventPdfExportDock() {
     setMessage(null)
     setError(null)
   }, [location.pathname, routeEventId])
+
+  useEffect(() => {
+    if (!isListRoute) {
+      setInlineTarget(null)
+      return
+    }
+
+    const findTarget = () => document.querySelector<HTMLElement>('.event-planning__hero')
+    const existingTarget = findTarget()
+    if (existingTarget) {
+      setInlineTarget(existingTarget)
+      return
+    }
+
+    const observer = new MutationObserver(() => {
+      const target = findTarget()
+      if (!target) return
+      setInlineTarget(target)
+      observer.disconnect()
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [isListRoute, location.pathname])
 
   useEffect(() => {
     let active = true
@@ -156,21 +181,25 @@ export default function EventPdfExportDock() {
     }
   }
 
+  const trigger = (
+    <button
+      type="button"
+      className={`event-pdf-dock__trigger${isListRoute ? ' event-pdf-dock__trigger--inline' : ''}`}
+      onClick={() => setOpen(previous => !previous)}
+      aria-expanded={open}
+      aria-controls="event-pdf-export-panel"
+    >
+      <span className="event-pdf-dock__file-mark" aria-hidden="true">PDF</span>
+      PDF / Event Pack
+    </button>
+  )
+
   return (
     <>
-      <button
-        type="button"
-        className="event-pdf-dock__trigger"
-        onClick={() => setOpen(previous => !previous)}
-        aria-expanded={open}
-        aria-controls="event-pdf-export-panel"
-      >
-        <span className="event-pdf-dock__file-mark" aria-hidden="true">PDF</span>
-        PDF / Event Pack
-      </button>
+      {isListRoute ? (inlineTarget ? createPortal(trigger, inlineTarget) : null) : trigger}
 
       {open ? (
-        <section id="event-pdf-export-panel" className="event-pdf-dock__panel" role="dialog" aria-modal="false" aria-labelledby="event-pdf-export-title">
+        <section id="event-pdf-export-panel" className={`event-pdf-dock__panel${isListRoute ? ' event-pdf-dock__panel--list' : ''}`} role="dialog" aria-modal="false" aria-labelledby="event-pdf-export-title">
           <header className="event-pdf-dock__heading">
             <div>
               <p>Event documents</p>

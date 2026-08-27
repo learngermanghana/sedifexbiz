@@ -1,25 +1,27 @@
 @media (min-width: 961px) {
   .shell__nav-rail {
-    position: fixed !important;
+    position: static !important;
     top: auto !important;
     right: auto !important;
-    bottom: 24px !important;
-    left: 24px !important;
-    z-index: 60 !important;
-    margin: 0 !important;
+    bottom: auto !important;
+    left: auto !important;
+    grid-column: 1 / -1 !important;
+    justify-self: start !important;
+    z-index: auto !important;
+    margin: 0 0 2px !important;
   }
 
   .shell__nav-rail-button {
     width: auto !important;
     min-width: 0 !important;
-    min-height: 46px !important;
+    min-height: 42px !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
     gap: 9px !important;
-    padding: 11px 16px !important;
+    padding: 9px 14px !important;
     border: 1px solid rgba(67, 56, 202, 0.24) !important;
-    border-radius: 999px !important;
+    border-radius: 12px !important;
     background: #ffffff !important;
     color: #3730a3 !important;
     font-size: 13px !important;
@@ -27,7 +29,7 @@
     line-height: 1 !important;
     writing-mode: horizontal-tb !important;
     white-space: nowrap !important;
-    box-shadow: 0 16px 38px -16px rgba(15, 23, 42, 0.42) !important;
+    box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.42) !important;
   }
 
   .shell__nav-rail-button:hover {
