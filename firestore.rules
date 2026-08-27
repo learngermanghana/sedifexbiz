@@ -105,11 +105,20 @@ service cloud.firestore {
       allow read: if isSignedIn();
 
       allow create: if isSignedIn() && (
+        // Primary owner bootstrap.
         (
           request.resource.data.uid == request.auth.uid
           && request.resource.data.storeId == request.auth.uid
           && request.resource.data.role == 'owner'
         )
+        // Back-compatible alias document for an already-authorized member.
+        || (
+          request.resource.data.uid == request.auth.uid
+          && exists(/databases/$(database)/documents/teamMembers/$(request.auth.uid))
+          && get(/databases/$(database)/documents/teamMembers/$(request.auth.uid)).data.storeId == request.resource.data.storeId
+          && get(/databases/$(database)/documents/teamMembers/$(request.auth.uid)).data.role == request.resource.data.role
+        )
+        // Owner-managed team member.
         || (
           request.resource.data.storeId is string
           && ownerCanManageStore(request.resource.data.storeId)
@@ -193,12 +202,34 @@ service cloud.firestore {
       allow read, update, delete: if isSignedIn();
     }
 
-    // Preserve the legacy behavior for other store subcollections while
-    // excluding event planning, which has stricter multi-tenant rules above.
+    // Store identity/link fields are trusted by linked-store event access.
+    // Browser clients may maintain ordinary store settings, but they cannot
+    // re-parent an existing store or rewrite ownership identifiers to gain
+    // access to another store's event workspace. Server Admin SDK callables can
+    // still create/manage linked stores because Admin writes bypass rules.
     match /stores/{storeId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && storeId == request.auth.uid
+        && request.resource.data.storeId == storeId
+        && request.resource.data.ownerUid == request.auth.uid
+        && !('parentStoreId' in request.resource.data);
+
+      allow update: if isSignedIn()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'storeId',
+          'ownerUid',
+          'ownerId',
+          'parentStoreId'
+        ]);
+
+      allow delete: if hasDirectStoreAccess(storeId)
+        && memberData().role == 'owner';
     }
 
+    // Preserve the legacy behavior for other store subcollections while
+    // excluding event planning, which has stricter multi-tenant rules above.
     match /stores/{storeId}/{subCollection}/{document=**} {
       allow read, write: if isSignedIn()
         && subCollection != 'events'
