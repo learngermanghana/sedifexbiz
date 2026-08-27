@@ -166,6 +166,12 @@ service cloud.firestore {
       allow read, create, update, delete: if hasStoreAccess(storeId);
     }
 
+    // Reusable contract templates contain store-specific legal and commercial
+    // wording. Keep them inside the same membership boundary as event records.
+    match /stores/{storeId}/eventContractTemplates/{templateId} {
+      allow read, create, update, delete: if hasStoreAccess(storeId);
+    }
+
     // Audit entries are append-only from the Admin SDK Cloud Function. Store
     // members can read them, but browser clients cannot alter audit history.
     match /stores/{storeId}/eventActivity/{activityId} {
@@ -248,11 +254,13 @@ service cloud.firestore {
     }
 
     // Preserve the legacy behavior for other store subcollections while
-    // excluding event planning, which has stricter multi-tenant rules above.
+    // excluding event planning and event contract templates, which have
+    // stricter multi-tenant rules above.
     match /stores/{storeId}/{subCollection}/{document=**} {
       allow read, write: if isSignedIn()
         && subCollection != 'events'
-        && subCollection != 'eventActivity';
+        && subCollection != 'eventActivity'
+        && subCollection != 'eventContractTemplates';
     }
 
     // Legacy fallback for non-store-scoped collections. Store-scoped,
