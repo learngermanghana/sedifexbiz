@@ -18,6 +18,19 @@ export type CheckoutCustomerInput = {
   itemName?: string | null
 }
 
+export type EventPlanningCustomerInput = {
+  storeId: string
+  eventId: string
+  eventCode?: string | null
+  eventTitle?: string | null
+  eventDate?: string | null
+  customer: {
+    name?: string | null
+    email?: string | null
+    phone?: string | null
+  }
+}
+
 function clean(value: unknown, max = 500) {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
 }
@@ -111,6 +124,59 @@ export async function upsertStoreCustomerFromCheckout(input: CheckoutCustomerInp
 
   if (!existingRef) {
     patch.createdAt = now
+  }
+  if (name) {
+    patch.name = name
+    patch.displayName = name
+  }
+  if (phone) {
+    patch.phone = phone
+    patch.phoneKey = keyPhone
+  }
+  if (email) {
+    patch.email = email
+    patch.emailKey = keyEmail
+  }
+
+  await customerRef.set(patch, { merge: true })
+  return { customerId: customerRef.id, created: !existingRef }
+}
+
+export async function upsertStoreCustomerFromEvent(input: EventPlanningCustomerInput) {
+  const storeId = clean(input.storeId, 180)
+  const eventId = clean(input.eventId, 220)
+  if (!storeId || !eventId) return null
+
+  const name = clean(input.customer.name, 220)
+  const email = normalizeEmail(input.customer.email)
+  const phone = normalizePhone(input.customer.phone)
+  const keyPhone = phoneKey(phone)
+  const keyEmail = email.toLowerCase()
+
+  if (!name && !email && !phone) return null
+
+  const existingRef = await findExistingCustomer(storeId, phone, email)
+  const contactKey = keyPhone ? `phone-${keyPhone}` : keyEmail ? `email-${slug(keyEmail)}` : `name-${slug(name)}`
+  const customerRef = existingRef || defaultDb.collection('customers').doc(`${storeId}_${contactKey}`)
+  const now = admin.firestore.FieldValue.serverTimestamp()
+
+  const patch: Record<string, unknown> = {
+    storeId,
+    updatedAt: now,
+    lastActivityAt: now,
+    lastEventPlanningAt: now,
+    lastEventId: eventId,
+    lastEventCode: clean(input.eventCode, 100) || null,
+    lastEventTitle: clean(input.eventTitle, 260) || null,
+    lastEventDate: clean(input.eventDate, 40) || null,
+    tags: admin.firestore.FieldValue.arrayUnion('event-planning', 'auto-captured'),
+    sources: admin.firestore.FieldValue.arrayUnion('event_planning'),
+    autoCapturedFromEventPlanning: true,
+  }
+
+  if (!existingRef) {
+    patch.createdAt = now
+    patch.customerSource = 'event_planning'
   }
   if (name) {
     patch.name = name
