@@ -197,6 +197,7 @@ function errorMessage(error: unknown) {
   if (message === 'EVENT_NOT_FOUND') return 'This event is no longer available.'
   if (message === 'TASK_NOT_SHARED') return 'This task is no longer shared with you.'
   if (message === 'TASK_ALREADY_DONE') return 'This task has already been verified as done.'
+  if (message === 'TASK_NOT_STARTED') return 'Start this task before submitting it as completed.'
   return 'This client portal link is invalid or no longer available.'
 }
 
@@ -273,7 +274,7 @@ export const shareEventClientPortal = functions.https.onCall(async (data, contex
     to: recipientEmail,
     subject: `Your event planning checklist - ${text(brand.storeName, 180) || 'Event team'}`,
     title: 'Your event planning checklist is ready',
-    intro: `Hello ${recipientName}, your event team has shared planning tasks with you. Open the secure client portal to review your items, send updates and submit completed tasks for verification.`,
+    intro: `Hello ${recipientName}, your event team has shared planning tasks with you. Open the secure client portal to review your items, start work and submit completed tasks for verification.`,
     brand: {
       storeName: text(brand.storeName, 180) || 'Event team',
       email: email(brand.email),
@@ -284,6 +285,7 @@ export const shareEventClientPortal = functions.https.onCall(async (data, contex
     rows: [
       ['Event', text(eventData.title, 180) || text(eventData.eventType, 140) || 'Event'],
       ['Client tasks', String(visibleTasks.size)],
+      ['Workflow', 'To do > In progress > Submit > Event team verifies > Done'],
     ],
     primaryAction: { label: 'Open client checklist', url: portalUrl },
     footerNote: `Your event team verifies each submitted task before it is marked done. This secure link expires in ${LINK_LIFETIME_DAYS} days.`,
@@ -304,8 +306,8 @@ export const eventClientPortal = functions.https.onRequest(async (req, res) => {
       const action = text(req.body?.action, 40)
       const taskId = text(req.body?.taskId, 220)
       const note = text(req.body?.note, 3000)
-      if (action !== 'submit' || !taskId) {
-        res.status(400).json({ error: 'Choose a task to submit.' })
+      if (!['start', 'submit'].includes(action) || !taskId) {
+        res.status(400).json({ error: 'Choose a valid task action.' })
         return
       }
 
@@ -330,24 +332,45 @@ export const eventClientPortal = functions.https.onRequest(async (req, res) => {
         if (taskData.clientVisible !== true) throw new Error('TASK_NOT_SHARED')
         if (effectiveClientTaskState(taskData) === 'verified') throw new Error('TASK_ALREADY_DONE')
         const taskTitle = text(taskData.title, 240) || 'Event task'
+        const currentStatus = text(taskData.status, 40) || 'todo'
 
-        transaction.update(taskRef, {
-          status: text(taskData.status, 40) === 'todo' ? 'in_progress' : text(taskData.status, 40) || 'in_progress',
-          clientState: 'submitted',
-          clientSubmissionNote: note,
-          clientSubmittedAt: now,
-          clientStaffNote: '',
-          updatedAt: now,
-        })
-        transaction.set(activityRef, {
-          type: 'client_submitted',
-          taskId,
-          taskTitle,
-          note,
-          actor: link.recipientName || link.recipientEmail || 'Client',
-          at: now,
-          public: true,
-        })
+        if (action === 'start') {
+          if (effectiveClientTaskState(taskData) === 'submitted') return
+          transaction.update(taskRef, {
+            status: 'in_progress',
+            clientState: effectiveClientTaskState(taskData) === 'changes_requested' ? 'changes_requested' : 'open',
+            clientStartedAt: now,
+            updatedAt: now,
+          })
+          transaction.set(activityRef, {
+            type: 'client_started',
+            taskId,
+            taskTitle,
+            note: 'Client started this task.',
+            actor: link.recipientName || link.recipientEmail || 'Client',
+            at: now,
+            public: true,
+          })
+        } else {
+          if (currentStatus === 'todo') throw new Error('TASK_NOT_STARTED')
+          transaction.update(taskRef, {
+            status: 'in_progress',
+            clientState: 'submitted',
+            clientSubmissionNote: note,
+            clientSubmittedAt: now,
+            clientStaffNote: '',
+            updatedAt: now,
+          })
+          transaction.set(activityRef, {
+            type: 'client_submitted',
+            taskId,
+            taskTitle,
+            note,
+            actor: link.recipientName || link.recipientEmail || 'Client',
+            at: now,
+            public: true,
+          })
+        }
         transaction.update(loaded.eventRef, { updatedAt: now })
       })
 

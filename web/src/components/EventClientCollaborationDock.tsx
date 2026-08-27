@@ -50,13 +50,6 @@ type ActivityEntry = {
   at: Date | null
 }
 
-const STATE_LABELS: Record<ClientTaskState, string> = {
-  open: 'To do',
-  submitted: 'Client submitted',
-  changes_requested: 'Changes requested',
-  verified: 'Verified done',
-}
-
 function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -84,6 +77,21 @@ function clientState(value: unknown, status: TaskStatus): ClientTaskState {
   if (stored === 'verified') return 'open'
   if (status === 'todo' && stored === 'submitted') return 'open'
   return stored
+}
+
+function workflowLabel(task: ClientTask) {
+  if (task.status === 'done' || task.clientState === 'verified') return 'Done'
+  if (task.clientState === 'submitted') return 'Awaiting verification'
+  if (task.clientState === 'changes_requested') return 'Changes requested'
+  if (task.status === 'in_progress') return 'In progress'
+  return 'To do'
+}
+
+function workflowClass(task: ClientTask) {
+  if (task.status === 'done' || task.clientState === 'verified') return 'verified'
+  if (task.clientState === 'submitted') return 'submitted'
+  if (task.clientState === 'changes_requested') return 'changes_requested'
+  return 'open'
 }
 
 function mapTask(id: string, data: Record<string, unknown>): ClientTask {
@@ -329,7 +337,8 @@ export default function EventClientCollaborationDock() {
             <div>
               <span>Secure client portal</span>
               <strong>{visibleTasks.length} task{visibleTasks.length === 1 ? '' : 's'} shared</strong>
-              <p>The client submits completed items. Only your store can verify them as Done.</p>
+              <p>To do → In progress → Submitted by client → Awaiting verification → Done</p>
+              <p>The client can start and submit shared tasks. Only your store can verify them as Done.</p>
             </div>
             <div className="event-client-dock__share-actions">
               <button type="button" className="button button--primary" disabled={busy} onClick={() => void sharePortal()}>{busy ? 'Sharing…' : event?.publicUrl ? 'Reshare with client' : 'Share with client'}</button>
@@ -352,7 +361,7 @@ export default function EventClientCollaborationDock() {
                     <input type="checkbox" checked={task.clientVisible} onChange={() => void toggleClientVisible(task)} />
                     <span>Client visible</span>
                   </label>
-                  {task.clientVisible ? <span className={`event-client-dock__state event-client-dock__state--${task.clientState}`}>{STATE_LABELS[task.clientState]}</span> : <span className="event-client-dock__state">Internal</span>}
+                  {task.clientVisible ? <span className={`event-client-dock__state event-client-dock__state--${workflowClass(task)}`}>{workflowLabel(task)}</span> : <span className="event-client-dock__state">Internal</span>}
                 </div>
                 <strong>{task.title}</strong>
                 <p>{task.category}{task.dueDate ? ` · Due ${task.dueDate}` : ''}</p>
