@@ -70,7 +70,7 @@ const html = eventClientPortalHtml({
       title: 'Confirm guest list',
       category: 'Client',
       dueDate: '2026-08-30',
-      status: 'todo',
+      status: 'in_progress',
       clientState: 'open',
       clientSubmissionNote: '',
       clientStaffNote: '',
