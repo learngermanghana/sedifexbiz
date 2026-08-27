@@ -1,0 +1,35 @@
+name: Firebase Functions CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'functions/**'
+      - '.github/workflows/functions-ci.yml'
+
+jobs:
+  functions-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Functions dependencies
+        run: npm ci
+        working-directory: functions
+
+      - name: Build Functions
+        run: npm run build
+        working-directory: functions
+
+      - name: Run Functions tests
+        run: npm test
+        working-directory: functions
