@@ -213,12 +213,8 @@ export default function EventClientCollaborationDock() {
 
   async function sharePortal() {
     if (!storeId || !eventId) return
-    if (!visibleTasks.length) {
-      setError('Choose at least one task to share with the client first.')
-      return
-    }
     if (!event?.clientEmail) {
-      setError('Add the client email to the event before sharing the checklist.')
+      setError('Add the client email to the event before sharing the client portal.')
       return
     }
     setBusy(true)
@@ -230,9 +226,12 @@ export default function EventClientCollaborationDock() {
         { ok: boolean; portalUrl: string; expiresAt: string; deliveries: number }
       >(functions, 'shareEventClientPortal')
       const response = await share({ storeId, eventId })
+      const taskSummary = visibleTasks.length
+        ? ` It also includes ${visibleTasks.length} selected checklist task${visibleTasks.length === 1 ? '' : 's'}.`
+        : ''
       setMessage(response.data.deliveries > 0
-        ? `Client checklist emailed to ${event.clientEmail}.`
-        : 'Client portal created. Email delivery could not be confirmed, so copy the link and send it manually.')
+        ? `Client portal emailed to ${event.clientEmail}. The client can update the live brief.${taskSummary}`
+        : `Client portal created with the live brief.${taskSummary} Email delivery could not be confirmed, so copy the link and send it manually.`)
     } catch (shareError) {
       console.error('[event-client-collaboration] Unable to share portal', shareError)
       const raw = shareError && typeof shareError === 'object' && 'message' in shareError ? String((shareError as { message?: unknown }).message || '') : ''
@@ -315,7 +314,7 @@ export default function EventClientCollaborationDock() {
         aria-controls="event-client-collaboration-panel"
       >
         <span aria-hidden="true">Client</span>
-        Client tasks
+        Client portal
         {submittedCount ? <strong>{submittedCount}</strong> : null}
       </button>
 
@@ -324,7 +323,7 @@ export default function EventClientCollaborationDock() {
           <header className="event-client-dock__heading">
             <div>
               <p>Live collaboration</p>
-              <h2 id="event-client-collaboration-title">Client tasks</h2>
+              <h2 id="event-client-collaboration-title">Client portal</h2>
               <small>{event?.title || 'Event'} · {event?.clientName || 'Client'}</small>
             </div>
             <button type="button" onClick={() => setOpen(false)} aria-label="Close client collaboration">×</button>
@@ -336,9 +335,9 @@ export default function EventClientCollaborationDock() {
           <div className="event-client-dock__share">
             <div>
               <span>Secure client portal</span>
-              <strong>{visibleTasks.length} task{visibleTasks.length === 1 ? '' : 's'} shared</strong>
-              <p>To do → In progress → Submitted by client → Awaiting verification → Done</p>
-              <p>The client can start and submit shared tasks. Only your store can verify them as Done.</p>
+              <strong>Live client brief · {visibleTasks.length} task{visibleTasks.length === 1 ? '' : 's'} shared</strong>
+              <p>The client can update requirements, preferences and special instructions directly in the portal. Package and pricing items remain staff-controlled.</p>
+              <p>Shared tasks follow: To do → In progress → Submitted by client → Awaiting verification → Done.</p>
             </div>
             <div className="event-client-dock__share-actions">
               <button type="button" className="button button--primary" disabled={busy} onClick={() => void sharePortal()}>{busy ? 'Sharing…' : event?.publicUrl ? 'Reshare with client' : 'Share with client'}</button>
@@ -353,7 +352,7 @@ export default function EventClientCollaborationDock() {
           </div>
 
           <div className="event-client-dock__tasks">
-            {!tasks.length ? <div className="event-client-dock__empty">No checklist tasks yet. Add tasks in the Checklist workspace first.</div> : null}
+            {!tasks.length ? <div className="event-client-dock__empty">No checklist tasks yet. You can still share the live client brief now and add client-visible tasks later.</div> : null}
             {tasks.map(task => (
               <article key={task.id} className={`event-client-dock__task${task.clientState === 'submitted' ? ' is-submitted' : ''}`}>
                 <div className="event-client-dock__task-top">
