@@ -77,8 +77,13 @@ function taskStatus(value: unknown): TaskStatus {
 }
 
 function clientState(value: unknown, status: TaskStatus): ClientTaskState {
+  const stored = ['submitted', 'changes_requested', 'verified'].includes(String(value))
+    ? value as ClientTaskState
+    : 'open'
   if (status === 'done') return 'verified'
-  return ['submitted', 'changes_requested', 'verified'].includes(String(value)) ? value as ClientTaskState : 'open'
+  if (stored === 'verified') return 'open'
+  if (status === 'todo' && stored === 'submitted') return 'open'
+  return stored
 }
 
 function mapTask(id: string, data: Record<string, unknown>): ClientTask {

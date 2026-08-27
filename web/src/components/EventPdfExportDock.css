@@ -86,6 +86,19 @@
 .event-pdf-dock__pack-heading span { color: #64748b; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; }
 .event-pdf-dock__current > strong { font-size: 1rem; }
 .event-pdf-dock__current .button { justify-content: center; margin-top: 3px; }
+.event-pdf-dock__current select {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #17211d;
+  font: inherit;
+  font-size: .86rem;
+  font-weight: 700;
+}
+.event-pdf-dock__current > p { margin: 0; color: #64748b; font-size: .82rem; line-height: 1.55; }
 .event-pdf-dock__current--muted { border-color: #e2e8f0; background: #f8fafc; }
 .event-pdf-dock__current--muted p { margin: 0; color: #64748b; font-size: .82rem; line-height: 1.55; }
 
