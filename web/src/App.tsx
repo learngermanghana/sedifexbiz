@@ -16,6 +16,7 @@ import { useSessionHeartbeat } from './hooks/useSessionHeartbeat'
 import { useQueueMessageToasts } from './hooks/useQueueMessageToasts'
 import { PwaProvider } from './context/PwaContext'
 import { CanonicalLink } from './components/CanonicalLink'
+import EventPdfExportDock from './components/EventPdfExportDock'
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -179,6 +180,7 @@ export default function App() {
     content = (
       <AuthUserContext.Provider value={user}>
         <Outlet />
+        <EventPdfExportDock />
       </AuthUserContext.Provider>
     )
   }
