@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc,
   collection,
@@ -263,6 +263,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
   const [editingTimelineId, setEditingTimelineId] = useState<string | null>(null)
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null)
   const [approvalName, setApprovalName] = useState('')
+  const seedStartedRef = useRef(false)
 
   const [taskForm, setTaskForm] = useState({ title: '', category: 'General', owner: '', dueDate: '', priority: 'normal' as TaskPriority, status: 'todo' as TaskStatus, notes: '' })
   const [timelineForm, setTimelineForm] = useState({ startTime: '', endTime: '', title: '', owner: '', vendor: '', location: '', notes: '' })
@@ -304,8 +305,8 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
   useEffect(() => { void loadWorkspace() }, [loadWorkspace])
 
   useEffect(() => {
-    if (loading || !meta || tasks.length || meta.checklistSeeded || seeding) return
-    let active = true
+    if (loading || !meta || tasks.length || meta.checklistSeeded || seedStartedRef.current) return
+    seedStartedRef.current = true
     async function seedChecklist() {
       setSeeding(true)
       try {
@@ -333,21 +334,19 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
           updatedAt: serverTimestamp(),
         })
         await batch.commit()
-        if (active) {
-          setSuccess(`${templates.length} recommended checklist tasks were created for this event.`)
-          await loadWorkspace()
-          await onChanged?.()
-        }
+        setSuccess(`${templates.length} recommended checklist tasks were created for this event.`)
+        await loadWorkspace()
+        await onChanged?.()
       } catch (seedError) {
         console.error('[event-operations] Unable to create checklist', seedError)
-        if (active) setError('The recommended event checklist could not be created automatically.')
+        seedStartedRef.current = false
+        setError('The recommended event checklist could not be created automatically.')
       } finally {
-        if (active) setSeeding(false)
+        setSeeding(false)
       }
     }
     void seedChecklist()
-    return () => { active = false }
-  }, [eventRef, loadWorkspace, loading, meta, onChanged, seeding, tasks.length, tasksRef])
+  }, [eventRef, loadWorkspace, loading, meta, onChanged, tasks.length, tasksRef])
 
   const syncReadiness = useCallback(async (nextTasks: ChecklistTask[]) => {
     const nextReadiness = nextTasks.length
