@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { collection, doc, getDoc, getDocs, runTransaction, serverTimestamp, Timestamp } from 'firebase/firestore'
-import { db } from '../firebase'
+import { httpsCallable } from 'firebase/functions'
+import { db, functions } from '../firebase'
 import EventOperationsWorkspace from './EventOperationsWorkspace'
 
 type ApprovalStatus = 'draft' | 'sent' | 'approved' | 'changes_requested'
@@ -31,6 +32,8 @@ type ContractApproval = {
   approvedAt: Date | null
   changesRequestedAt: Date | null
   signedAt: Date | null
+  publicReviewUrl: string
+  publicPdfUrl: string
   history: ApprovalHistoryEntry[]
 }
 
@@ -65,6 +68,8 @@ const EMPTY_CONTRACT: ContractApproval = {
   approvedAt: null,
   changesRequestedAt: null,
   signedAt: null,
+  publicReviewUrl: '',
+  publicPdfUrl: '',
   history: [],
 }
 
@@ -138,6 +143,8 @@ function mapContract(value: unknown): ContractApproval {
     approvedAt: toDate(raw.approvedAt),
     changesRequestedAt: toDate(raw.changesRequestedAt),
     signedAt: toDate(raw.signedAt),
+    publicReviewUrl: text(raw.publicReviewUrl),
+    publicPdfUrl: text(raw.publicPdfUrl),
     history: mapHistory(raw.history),
   }
 }
@@ -177,6 +184,16 @@ function hasPersistedTerms(contract: ContractApproval) {
   )
 }
 
+function normalizeSignature(value: string) {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+}
+
 function contractFingerprint(contract: ContractApproval) {
   return JSON.stringify({
     status: contract.status,
@@ -194,6 +211,8 @@ function contractFingerprint(contract: ContractApproval) {
     approvedAt: contract.approvedAt?.toISOString() || null,
     changesRequestedAt: contract.changesRequestedAt?.toISOString() || null,
     signedAt: contract.signedAt?.toISOString() || null,
+    publicReviewUrl: contract.publicReviewUrl,
+    publicPdfUrl: contract.publicPdfUrl,
     history: contract.history.map(item => ({
       action: item.action,
       status: item.status,
@@ -213,6 +232,24 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  async function refreshContract() {
+    const snapshot = await getDoc(doc(db, 'stores', storeId, 'events', event.id))
+    const rawContract = snapshot.data()?.contractApproval
+    const mapped = mapContract(rawContract)
+    const historySnapshot = await getDocs(collection(db, 'stores', storeId, 'events', event.id, 'contractApprovalHistory'))
+    const serverHistory = historySnapshot.docs.flatMap(historyDoc => mapHistory([historyDoc.data()]))
+    const hydrated = {
+      ...mapped,
+      signerName: mapped.signerName || event.clientName,
+      signerEmail: mapped.signerEmail || event.clientEmail,
+      history: [...mapped.history, ...serverHistory].sort((a, b) => a.at.getTime() - b.at.getTime()),
+    }
+    setContract(hydrated)
+    setLoadedContract(mapped)
+    setLoadedHadPersistedApproval(isStoredContract(rawContract))
+    return hydrated
+  }
 
   useEffect(() => {
     let active = true
@@ -261,21 +298,25 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
     setSuccess(null)
   }
 
-  async function persist(action: ApprovalAction) {
+  async function persist(action: ApprovalAction): Promise<boolean> {
     if (!hasTerms) {
       setError('Add the agreement, scope, payment terms or cancellation policy before continuing.')
-      return
+      return false
     }
 
     if (!loadedContract) {
       setError('Reload this contract before saving so Sedifex can verify the current revision.')
-      return
+      return false
     }
 
     if (action === 'client_signed') {
       if (!contract.signerName.trim() || !contract.signatureText.trim() || !contract.signatureConsent) {
         setError('Enter the signer name and typed signature, then confirm the consent checkbox.')
-        return
+        return false
+      }
+      if (normalizeSignature(contract.signerName) !== normalizeSignature(contract.signatureText)) {
+        setError('The typed signature must match the signer full name.')
+        return false
       }
     }
 
@@ -391,23 +432,7 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         })
       })
 
-      const [refreshedSnapshot, refreshedHistorySnapshot] = await Promise.all([
-        getDoc(eventRef),
-        getDocs(collection(eventRef, 'contractApprovalHistory')),
-      ])
-      const refreshedRawContract = refreshedSnapshot.data()?.contractApproval
-      const refreshedMapped = mapContract(refreshedRawContract)
-      const refreshedServerHistory = refreshedHistorySnapshot.docs.flatMap(historyDoc => mapHistory([historyDoc.data()]))
-      const refreshed = {
-        ...refreshedMapped,
-        signerName: refreshedMapped.signerName || event.clientName,
-        signerEmail: refreshedMapped.signerEmail || event.clientEmail,
-        history: [...refreshedMapped.history, ...refreshedServerHistory].sort((a, b) => a.at.getTime() - b.at.getTime()),
-      }
-
-      setContract(refreshed)
-      setLoadedContract(refreshedMapped)
-      setLoadedHadPersistedApproval(isStoredContract(refreshedRawContract))
+      await refreshContract()
       setSuccess(
         action === 'client_signed'
           ? 'Client approval and signature recorded.'
@@ -418,6 +443,7 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
               : 'Contract draft saved.',
       )
       await onChanged?.()
+      return true
     } catch (saveError) {
       console.error('[event-contract] Unable to save approval record', saveError)
       if (saveError instanceof Error && saveError.message === CONTRACT_CONFLICT_ERROR) {
@@ -425,6 +451,49 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
       } else {
         setError('The contract approval record could not be saved. Please try again.')
       }
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function sendToClient() {
+    if (!hasTerms) {
+      setError('Add the contract terms before sending it to the client.')
+      return
+    }
+    if (!contract.signerEmail.trim() && !event.clientEmail.trim()) {
+      setError('Add the client email before sending the contract.')
+      return
+    }
+
+    if (termsChanged || !loadedHadPersistedApproval) {
+      const saved = await persist('draft_saved')
+      if (!saved) return
+    }
+
+    setSaving(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const sendContract = httpsCallable<
+        { storeId: string; eventId: string },
+        { ok: boolean; revision: number; reviewUrl: string; pdfUrl: string; deliveries: number }
+      >(functions, 'sendEventContractForSignature')
+      const response = await sendContract({ storeId, eventId: event.id })
+      await refreshContract()
+      setSuccess(
+        response.data.deliveries > 0
+          ? `Revision ${response.data.revision} was emailed to the client with a secure review link and PDF.`
+          : `Revision ${response.data.revision} was prepared, but Sedifex could not confirm email delivery. Use the client review link below as a fallback.`,
+      )
+      await onChanged?.()
+    } catch (sendError) {
+      console.error('[event-contract] Unable to send secure contract', sendError)
+      const message = sendError && typeof sendError === 'object' && 'message' in sendError
+        ? String((sendError as { message?: unknown }).message || '')
+        : ''
+      setError(message.replace(/^FirebaseError:\s*/i, '') || 'The contract could not be sent. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -497,9 +566,21 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
               </label>
             </div>
 
+            {contract.publicReviewUrl ? (
+              <div className="event-planning__workspace-preview" style={{ marginTop: 20 }}>
+                <h3>Client secure link</h3>
+                <p>The client can review the exact contract revision, request changes, download the PDF and sign from this link.</p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+                  <a className="button button--ghost" href={contract.publicReviewUrl} target="_blank" rel="noreferrer">Open client review page</a>
+                  {contract.publicPdfUrl ? <a className="button button--ghost" href={contract.publicPdfUrl} target="_blank" rel="noreferrer">Download contract PDF</a> : null}
+                  <button type="button" className="button button--ghost" onClick={() => void navigator.clipboard?.writeText(contract.publicReviewUrl)}>Copy review link</button>
+                </div>
+              </div>
+            ) : null}
+
             <div className="event-planning__workspace-preview" style={{ marginTop: 20 }}>
-              <h3>Client e-signature</h3>
-              <p>Use this when the client is ready to approve the current contract revision. The typed signature and consent are stored with the approval record.</p>
+              <h3>Manual e-signature fallback</h3>
+              <p>Normally, use “Send contract to client” below so the client signs through their secure link. Use this section only when you need to record an approval collected directly by staff.</p>
               <div className="event-planning__form-grid" style={{ marginTop: 12 }}>
                 <label>
                   Signer full name
@@ -511,7 +592,7 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
                 </label>
                 <label className="event-planning__field--wide">
                   Typed signature
-                  <input value={contract.signatureText} onChange={e => update('signatureText', e.target.value)} placeholder="Type the signer’s name as the signature" />
+                  <input value={contract.signatureText} onChange={e => update('signatureText', e.target.value)} placeholder="Type the signer’s full name exactly" />
                 </label>
                 <label className="event-planning__field--wide" style={{ display: 'flex', flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
                   <input type="checkbox" checked={contract.signatureConsent} onChange={e => update('signatureConsent', e.target.checked)} style={{ width: 18, height: 18, marginTop: 2 }} />
@@ -549,10 +630,10 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
               <button type="button" className="button button--ghost" onClick={onClose}>Close</button>
               <button type="button" className="button button--ghost" disabled={saving} onClick={() => void persist('draft_saved')}>Save draft</button>
               <button type="button" className="button button--ghost" disabled={saving} onClick={() => void persist('changes_requested')}>Mark changes requested</button>
-              <button type="button" className="button button--ghost" disabled={saving} onClick={() => void persist('sent_to_client')}>Mark sent to client</button>
-              <button type="button" className="button button--primary" disabled={saving} onClick={() => void persist('client_signed')}>
-                {saving ? 'Saving…' : 'Approve & record e-signature'}
+              <button type="button" className="button button--primary" disabled={saving} onClick={() => void sendToClient()}>
+                {saving ? 'Sending…' : contract.publicReviewUrl ? 'Resend contract to client' : 'Send contract to client'}
               </button>
+              <button type="button" className="button button--ghost" disabled={saving} onClick={() => void persist('client_signed')}>Record manual e-signature</button>
             </footer>
           </>
         )}
