@@ -323,6 +323,8 @@ export default function EventModuleIntegrations({
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([])
   const [integrations, setIntegrations] = useState<EventIntegrations>({ ...EMPTY_INTEGRATIONS })
   const [loading, setLoading] = useState(true)
+  const [integrationRecordLoaded, setIntegrationRecordLoaded] = useState(false)
+  const [connectedDataLoaded, setConnectedDataLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -347,29 +349,42 @@ export default function EventModuleIntegrations({
   const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
-    try {
-      const [eventSnapshot, customerSnapshot, staffSnapshot, invoiceSnapshot, receiptSnapshot, expenseSnapshot] = await Promise.all([
-        getDoc(eventRef),
-        getDocs(query(collection(db, 'customers'), where('storeId', '==', storeId))),
-        getDocs(query(collection(db, 'teamMembers'), where('storeId', '==', storeId))),
-        getDocs(collection(db, 'stores', storeId, 'invoices')),
-        getDocs(collection(db, 'stores', storeId, 'receipts')),
-        getDocs(query(collection(db, 'expenses'), where('storeId', '==', storeId))),
-      ])
+    setIntegrationRecordLoaded(false)
+    setConnectedDataLoaded(false)
 
-      const eventData = eventSnapshot.exists() ? eventSnapshot.data() as Record<string, unknown> : {}
+    try {
+      const eventSnapshot = await getDoc(eventRef)
+      if (!eventSnapshot.exists()) throw new Error('EVENT_NOT_FOUND')
+
+      const eventData = eventSnapshot.data() as Record<string, unknown>
       const nextIntegrations = mapIntegrations(eventData.integrations)
       setIntegrations(nextIntegrations)
       setClientCustomerId(nextIntegrations.clientCustomerId)
       setContractValueInput(nextIntegrations.contractValue === null ? '' : String(nextIntegrations.contractValue))
-      setCustomers(customerSnapshot.docs.map(item => mapCustomer(item.id, item.data())).sort((a, b) => a.name.localeCompare(b.name)))
-      setStaffMembers(staffSnapshot.docs.map(item => mapStaff(item.id, item.data())).sort((a, b) => a.email.localeCompare(b.email)))
-      setInvoices(invoiceSnapshot.docs.map(item => mapInvoice(item.id, item.data())))
-      setReceipts(receiptSnapshot.docs.map(item => mapReceipt(item.id, item.data())))
-      setExpenses(expenseSnapshot.docs.map(item => mapExpense(item.id, item.data())))
-    } catch (loadError) {
-      console.error('[event-integrations] Unable to load module data', loadError)
-      setError('Sedifex could not load the connected customer, finance or staff records for this event.')
+      setIntegrationRecordLoaded(true)
+
+      try {
+        const [customerSnapshot, staffSnapshot, invoiceSnapshot, receiptSnapshot, expenseSnapshot] = await Promise.all([
+          getDocs(query(collection(db, 'customers'), where('storeId', '==', storeId))),
+          getDocs(query(collection(db, 'teamMembers'), where('storeId', '==', storeId))),
+          getDocs(collection(db, 'stores', storeId, 'invoices')),
+          getDocs(collection(db, 'stores', storeId, 'receipts')),
+          getDocs(query(collection(db, 'expenses'), where('storeId', '==', storeId))),
+        ])
+
+        setCustomers(customerSnapshot.docs.map(item => mapCustomer(item.id, item.data())).sort((a, b) => a.name.localeCompare(b.name)))
+        setStaffMembers(staffSnapshot.docs.map(item => mapStaff(item.id, item.data())).sort((a, b) => a.email.localeCompare(b.email)))
+        setInvoices(invoiceSnapshot.docs.map(item => mapInvoice(item.id, item.data())))
+        setReceipts(receiptSnapshot.docs.map(item => mapReceipt(item.id, item.data())))
+        setExpenses(expenseSnapshot.docs.map(item => mapExpense(item.id, item.data())))
+        setConnectedDataLoaded(true)
+      } catch (connectedLoadError) {
+        console.error('[event-integrations] Unable to load connected module data', connectedLoadError)
+        setError('Some connected Sedifex records could not be loaded. Existing event links and finance values are preserved, but editing is disabled until you retry.')
+      }
+    } catch (eventLoadError) {
+      console.error('[event-integrations] Unable to load event integration record', eventLoadError)
+      setError('Sedifex could not load this event integration. Editing is disabled to protect existing links and finance values.')
     } finally {
       setLoading(false)
     }
@@ -412,8 +427,16 @@ export default function EventModuleIntegrations({
   const linkedClient = integrations.clientCustomerId ? customerById.get(integrations.clientCustomerId) ?? null : null
   const eventQuery = useMemo(() => queryString(event), [event])
   const quickPayUrl = `https://pay.sedifex.com/s/${encodeURIComponent(storeId)}?mode=store`
+  const writesDisabled = saving || !integrationRecordLoaded || !connectedDataLoaded
+
+  function ensureWritesReady() {
+    if (integrationRecordLoaded && connectedDataLoaded) return true
+    setError('Connected event data is incomplete. Retry loading before making any changes so existing links and finance values remain protected.')
+    return false
+  }
 
   async function persistField(path: string, value: unknown, successMessage: string) {
+    if (!ensureWritesReady()) return false
     setSaving(true)
     setError(null)
     setMessage(null)
@@ -423,21 +446,23 @@ export default function EventModuleIntegrations({
         updatedAt: serverTimestamp(),
       })
       setMessage(successMessage)
+      return true
     } catch (saveError) {
       console.error('[event-integrations] Unable to save integration', saveError)
       setError('The event integration could not be saved. Please try again.')
-      throw saveError
+      return false
     } finally {
       setSaving(false)
     }
   }
 
   async function saveClientLink() {
-    await persistField('clientCustomerId', clientCustomerId || null, clientCustomerId ? 'Client linked to the Sedifex customer record.' : 'Client customer link removed.')
-    setIntegrations(previous => ({ ...previous, clientCustomerId }))
+    const saved = await persistField('clientCustomerId', clientCustomerId || null, clientCustomerId ? 'Client linked to the Sedifex customer record.' : 'Client customer link removed.')
+    if (saved) setIntegrations(previous => ({ ...previous, clientCustomerId }))
   }
 
   async function addVendor() {
+    if (!ensureWritesReady()) return
     if (!newVendorCustomerId) {
       setError('Choose a customer/vendor contact first.')
       return
@@ -454,7 +479,8 @@ export default function EventModuleIntegrations({
       status: 'planned' as VendorStatus,
       notes: '',
     }]
-    await persistField('vendors', next, 'Vendor assigned to this event.')
+    const saved = await persistField('vendors', next, 'Vendor assigned to this event.')
+    if (!saved) return
     setIntegrations(previous => ({ ...previous, vendors: next }))
     setNewVendorCustomerId('')
     setNewVendorCategory('Vendor')
@@ -468,6 +494,7 @@ export default function EventModuleIntegrations({
   }
 
   async function saveVendors() {
+    if (!ensureWritesReady()) return
     const normalized = integrations.vendors.map(vendor => ({
       ...vendor,
       category: vendor.category.trim() || 'Vendor',
@@ -475,17 +502,19 @@ export default function EventModuleIntegrations({
       depositPaid: Math.max(0, Number(vendor.depositPaid) || 0),
       notes: vendor.notes.trim(),
     }))
-    await persistField('vendors', normalized, 'Vendor commitments saved.')
-    setIntegrations(previous => ({ ...previous, vendors: normalized }))
+    const saved = await persistField('vendors', normalized, 'Vendor commitments saved.')
+    if (saved) setIntegrations(previous => ({ ...previous, vendors: normalized }))
   }
 
   async function removeVendor(customerId: string) {
+    if (!ensureWritesReady()) return
     const next = integrations.vendors.filter(vendor => vendor.customerId !== customerId)
-    await persistField('vendors', next, 'Vendor removed from this event.')
-    setIntegrations(previous => ({ ...previous, vendors: next }))
+    const saved = await persistField('vendors', next, 'Vendor removed from this event.')
+    if (saved) setIntegrations(previous => ({ ...previous, vendors: next }))
   }
 
   async function addStaff() {
+    if (!ensureWritesReady()) return
     if (!newStaffMemberId) {
       setError('Choose a Sedifex staff member first.')
       return
@@ -500,7 +529,8 @@ export default function EventModuleIntegrations({
       callTime: newStaffCallTime,
       notes: '',
     }]
-    await persistField('staff', next, 'Staff member assigned to this event.')
+    const saved = await persistField('staff', next, 'Staff member assigned to this event.')
+    if (!saved) return
     setIntegrations(previous => ({ ...previous, staff: next }))
     setNewStaffMemberId('')
     setNewStaffRole('Event support')
@@ -515,35 +545,39 @@ export default function EventModuleIntegrations({
   }
 
   async function saveStaff() {
+    if (!ensureWritesReady()) return
     const normalized = integrations.staff.map(assignment => ({
       ...assignment,
       eventRole: assignment.eventRole.trim() || 'Event support',
       callTime: assignment.callTime.trim(),
       notes: assignment.notes.trim(),
     }))
-    await persistField('staff', normalized, 'Event staff assignments saved.')
-    setIntegrations(previous => ({ ...previous, staff: normalized }))
+    const saved = await persistField('staff', normalized, 'Event staff assignments saved.')
+    if (saved) setIntegrations(previous => ({ ...previous, staff: normalized }))
   }
 
   async function removeStaff(memberId: string) {
+    if (!ensureWritesReady()) return
     const next = integrations.staff.filter(assignment => assignment.memberId !== memberId)
-    await persistField('staff', next, 'Staff member removed from this event.')
-    setIntegrations(previous => ({ ...previous, staff: next }))
+    const saved = await persistField('staff', next, 'Staff member removed from this event.')
+    if (saved) setIntegrations(previous => ({ ...previous, staff: next }))
   }
 
   async function saveContractValue() {
+    if (!ensureWritesReady()) return
     const raw = contractValueInput.trim()
     const next = raw ? Number(raw) : null
     if (next !== null && (!Number.isFinite(next) || next < 0)) {
       setError('Enter a valid contract value.')
       return
     }
-    await persistField('finance.contractValue', next, 'Contract value saved.')
-    setIntegrations(previous => ({ ...previous, contractValue: next }))
+    const saved = await persistField('finance.contractValue', next, 'Contract value saved.')
+    if (saved) setIntegrations(previous => ({ ...previous, contractValue: next }))
   }
 
   async function recordExpense(eventSubmit: React.FormEvent) {
     eventSubmit.preventDefault()
+    if (!ensureWritesReady()) return
     const expenseAmount = Number(expenseForm.amount)
     if (!expenseForm.title.trim() || !expenseForm.category.trim()) {
       setError('Enter the expense title and category.')
@@ -598,6 +632,7 @@ export default function EventModuleIntegrations({
   }
 
   async function linkInvoice(invoiceId: string) {
+    if (!ensureWritesReady()) return
     setSaving(true)
     setError(null)
     try {
@@ -618,6 +653,7 @@ export default function EventModuleIntegrations({
   }
 
   async function linkReceipt(receiptId: string) {
+    if (!ensureWritesReady()) return
     setSaving(true)
     setError(null)
     try {
@@ -638,6 +674,7 @@ export default function EventModuleIntegrations({
   }
 
   async function linkExpense(expenseId: string) {
+    if (!ensureWritesReady()) return
     setSaving(true)
     setError(null)
     try {
@@ -677,6 +714,10 @@ export default function EventModuleIntegrations({
     return <section className="workspace-card event-integrations event-integrations__loading"><span className="event-integrations__spinner" /><p>Connecting Sedifex modules…</p></section>
   }
 
+  if (!integrationRecordLoaded) {
+    return <section className="workspace-card event-integrations event-integrations__loading"><div><p>{error || 'The event integration could not be loaded safely.'}</p><button type="button" className="button button--ghost" onClick={() => void loadData()}>Retry loading</button></div></section>
+  }
+
   const connectionBar = (
     <section className="workspace-card event-integrations__connection-card">
       <div>
@@ -687,12 +728,12 @@ export default function EventModuleIntegrations({
       <div className="event-integrations__client-link">
         <label>
           Client customer record
-          <select value={clientCustomerId} onChange={e => setClientCustomerId(e.target.value)}>
+          <select value={clientCustomerId} disabled={!connectedDataLoaded} onChange={e => setClientCustomerId(e.target.value)}>
             <option value="">Not linked</option>
             {customers.map(customer => <option value={customer.id} key={customer.id}>{customer.name}{customer.phone ? ` · ${customer.phone}` : ''}</option>)}
           </select>
         </label>
-        <button type="button" className="button button--ghost" disabled={saving} onClick={() => void saveClientLink()}>Save client link</button>
+        <button type="button" className="button button--ghost" disabled={writesDisabled} onClick={() => void saveClientLink()}>Save client link</button>
         <Link className="button button--ghost" to="/customers">Open Customers</Link>
       </div>
       {linkedClient ? <p className="event-integrations__linked-note">Linked client: <strong>{linkedClient.name}</strong>{linkedClient.phone ? ` · ${linkedClient.phone}` : ''}{linkedClient.email ? ` · ${linkedClient.email}` : ''}</p> : null}
@@ -701,7 +742,7 @@ export default function EventModuleIntegrations({
 
   return (
     <div className="event-integrations">
-      {error ? <p className="event-integrations__alert event-integrations__alert--error">{error}</p> : null}
+      {error ? <p className="event-integrations__alert event-integrations__alert--error">{error}{!connectedDataLoaded ? <button type="button" onClick={() => void loadData()} aria-label="Retry loading connected records">Retry</button> : null}</p> : null}
       {message ? <p className="event-integrations__alert event-integrations__alert--success">{message}<button type="button" onClick={() => setMessage(null)} aria-label="Dismiss">×</button></p> : null}
       {connectionBar}
 
@@ -719,28 +760,28 @@ export default function EventModuleIntegrations({
               <Link className="button button--ghost" to="/customers">Manage contacts</Link>
             </header>
             <div className="event-integrations__add-row">
-              <label>Vendor contact<select value={newVendorCustomerId} onChange={e => setNewVendorCustomerId(e.target.value)}><option value="">Choose contact</option>{customers.filter(customer => !integrations.vendors.some(vendor => vendor.customerId === customer.id)).map(customer => <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` · ${customer.phone}` : ''}</option>)}</select></label>
-              <label>Vendor category<input value={newVendorCategory} onChange={e => setNewVendorCategory(e.target.value)} placeholder="Catering, Decor, DJ…" /></label>
-              <button type="button" className="button button--primary" disabled={saving} onClick={() => void addVendor()}>Assign vendor</button>
+              <label>Vendor contact<select disabled={!connectedDataLoaded} value={newVendorCustomerId} onChange={e => setNewVendorCustomerId(e.target.value)}><option value="">Choose contact</option>{customers.filter(customer => !integrations.vendors.some(vendor => vendor.customerId === customer.id)).map(customer => <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` · ${customer.phone}` : ''}</option>)}</select></label>
+              <label>Vendor category<input disabled={!connectedDataLoaded} value={newVendorCategory} onChange={e => setNewVendorCategory(e.target.value)} placeholder="Catering, Decor, DJ…" /></label>
+              <button type="button" className="button button--primary" disabled={writesDisabled} onClick={() => void addVendor()}>Assign vendor</button>
             </div>
             {integrations.vendors.length === 0 ? <div className="event-integrations__empty"><strong>No vendors assigned</strong><p>Add the vendor to Customers once, then assign that existing contact here.</p></div> : (
               <div className="event-integrations__cards">
                 {integrations.vendors.map(vendor => {
                   const contact = customerById.get(vendor.customerId)
                   return <article className="event-integrations__assignment" key={vendor.customerId}>
-                    <header><div><strong>{contact?.name || 'Contact no longer available'}</strong><span>{contact?.phone || contact?.email || vendor.customerId}</span></div><button type="button" className="event-integrations__remove" onClick={() => void removeVendor(vendor.customerId)}>Remove</button></header>
+                    <header><div><strong>{contact?.name || 'Contact no longer available'}</strong><span>{contact?.phone || contact?.email || vendor.customerId}</span></div><button type="button" disabled={writesDisabled} className="event-integrations__remove" onClick={() => void removeVendor(vendor.customerId)}>Remove</button></header>
                     <div className="event-integrations__assignment-grid">
-                      <label>Category<input value={vendor.category} onChange={e => patchVendor(vendor.customerId, { category: e.target.value })} /></label>
-                      <label>Status<select value={vendor.status} onChange={e => patchVendor(vendor.customerId, { status: e.target.value as VendorStatus })}>{Object.entries(VENDOR_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                      <label>Quoted amount (GHS)<input type="number" min="0" step="0.01" value={vendor.quotedAmount || ''} onChange={e => patchVendor(vendor.customerId, { quotedAmount: Number(e.target.value) || 0 })} /></label>
-                      <label>Deposit / amount paid (GHS)<input type="number" min="0" step="0.01" value={vendor.depositPaid || ''} onChange={e => patchVendor(vendor.customerId, { depositPaid: Number(e.target.value) || 0 })} /></label>
-                      <label className="event-integrations__wide">Event notes<input value={vendor.notes} onChange={e => patchVendor(vendor.customerId, { notes: e.target.value })} placeholder="Delivery, balance due, contact instructions…" /></label>
+                      <label>Category<input disabled={!connectedDataLoaded} value={vendor.category} onChange={e => patchVendor(vendor.customerId, { category: e.target.value })} /></label>
+                      <label>Status<select disabled={!connectedDataLoaded} value={vendor.status} onChange={e => patchVendor(vendor.customerId, { status: e.target.value as VendorStatus })}>{Object.entries(VENDOR_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                      <label>Quoted amount (GHS)<input disabled={!connectedDataLoaded} type="number" min="0" step="0.01" value={vendor.quotedAmount || ''} onChange={e => patchVendor(vendor.customerId, { quotedAmount: Number(e.target.value) || 0 })} /></label>
+                      <label>Deposit / amount paid (GHS)<input disabled={!connectedDataLoaded} type="number" min="0" step="0.01" value={vendor.depositPaid || ''} onChange={e => patchVendor(vendor.customerId, { depositPaid: Number(e.target.value) || 0 })} /></label>
+                      <label className="event-integrations__wide">Event notes<input disabled={!connectedDataLoaded} value={vendor.notes} onChange={e => patchVendor(vendor.customerId, { notes: e.target.value })} placeholder="Delivery, balance due, contact instructions…" /></label>
                     </div>
                   </article>
                 })}
               </div>
             )}
-            {integrations.vendors.length ? <footer className="event-integrations__panel-actions"><button type="button" className="button button--primary" disabled={saving} onClick={() => void saveVendors()}>{saving ? 'Saving…' : 'Save vendor commitments'}</button></footer> : null}
+            {integrations.vendors.length ? <footer className="event-integrations__panel-actions"><button type="button" className="button button--primary" disabled={writesDisabled} onClick={() => void saveVendors()}>{saving ? 'Saving…' : 'Save vendor commitments'}</button></footer> : null}
           </section>
         </>
       ) : null}
@@ -752,27 +793,27 @@ export default function EventModuleIntegrations({
             <Link className="button button--ghost" to="/staff">Open Staff Management</Link>
           </header>
           <div className="event-integrations__add-row event-integrations__add-row--staff">
-            <label>Team member<select value={newStaffMemberId} onChange={e => setNewStaffMemberId(e.target.value)}><option value="">Choose staff</option>{staffMembers.filter(member => !integrations.staff.some(assignment => assignment.memberId === member.id)).map(member => <option value={member.id} key={member.id}>{member.email} · {member.role}</option>)}</select></label>
-            <label>Event role<input value={newStaffRole} onChange={e => setNewStaffRole(e.target.value)} placeholder="Lead coordinator" /></label>
-            <label>Call time<input type="time" value={newStaffCallTime} onChange={e => setNewStaffCallTime(e.target.value)} /></label>
-            <button type="button" className="button button--primary" disabled={saving} onClick={() => void addStaff()}>Assign staff</button>
+            <label>Team member<select disabled={!connectedDataLoaded} value={newStaffMemberId} onChange={e => setNewStaffMemberId(e.target.value)}><option value="">Choose staff</option>{staffMembers.filter(member => !integrations.staff.some(assignment => assignment.memberId === member.id)).map(member => <option value={member.id} key={member.id}>{member.email} · {member.role}</option>)}</select></label>
+            <label>Event role<input disabled={!connectedDataLoaded} value={newStaffRole} onChange={e => setNewStaffRole(e.target.value)} placeholder="Lead coordinator" /></label>
+            <label>Call time<input disabled={!connectedDataLoaded} type="time" value={newStaffCallTime} onChange={e => setNewStaffCallTime(e.target.value)} /></label>
+            <button type="button" className="button button--primary" disabled={writesDisabled} onClick={() => void addStaff()}>Assign staff</button>
           </div>
           {integrations.staff.length === 0 ? <div className="event-integrations__empty"><strong>No staff assigned</strong><p>Add staff in Sedifex Staff Management, then assign them to this event.</p></div> : (
             <div className="event-integrations__cards">
               {integrations.staff.map(assignment => {
                 const member = staffById.get(assignment.memberId)
                 return <article className="event-integrations__assignment" key={assignment.memberId}>
-                  <header><div><strong>{member?.email || 'Team member no longer available'}</strong><span>{member ? `${member.role} · ${member.status}` : assignment.memberId}</span></div><button type="button" className="event-integrations__remove" onClick={() => void removeStaff(assignment.memberId)}>Remove</button></header>
+                  <header><div><strong>{member?.email || 'Team member no longer available'}</strong><span>{member ? `${member.role} · ${member.status}` : assignment.memberId}</span></div><button type="button" disabled={writesDisabled} className="event-integrations__remove" onClick={() => void removeStaff(assignment.memberId)}>Remove</button></header>
                   <div className="event-integrations__assignment-grid">
-                    <label>Event role<input value={assignment.eventRole} onChange={e => patchStaff(assignment.memberId, { eventRole: e.target.value })} /></label>
-                    <label>Call time<input type="time" value={assignment.callTime} onChange={e => patchStaff(assignment.memberId, { callTime: e.target.value })} /></label>
-                    <label className="event-integrations__wide">Responsibility / handover notes<input value={assignment.notes} onChange={e => patchStaff(assignment.memberId, { notes: e.target.value })} /></label>
+                    <label>Event role<input disabled={!connectedDataLoaded} value={assignment.eventRole} onChange={e => patchStaff(assignment.memberId, { eventRole: e.target.value })} /></label>
+                    <label>Call time<input disabled={!connectedDataLoaded} type="time" value={assignment.callTime} onChange={e => patchStaff(assignment.memberId, { callTime: e.target.value })} /></label>
+                    <label className="event-integrations__wide">Responsibility / handover notes<input disabled={!connectedDataLoaded} value={assignment.notes} onChange={e => patchStaff(assignment.memberId, { notes: e.target.value })} /></label>
                   </div>
                 </article>
               })}
             </div>
           )}
-          {integrations.staff.length ? <footer className="event-integrations__panel-actions"><button type="button" className="button button--primary" disabled={saving} onClick={() => void saveStaff()}>{saving ? 'Saving…' : 'Save staff assignments'}</button></footer> : null}
+          {integrations.staff.length ? <footer className="event-integrations__panel-actions"><button type="button" className="button button--primary" disabled={writesDisabled} onClick={() => void saveStaff()}>{saving ? 'Saving…' : 'Save staff assignments'}</button></footer> : null}
         </section>
       ) : null}
 
@@ -791,8 +832,8 @@ export default function EventModuleIntegrations({
           <section className="workspace-card event-integrations__panel">
             <header className="event-integrations__panel-heading"><div><p className="event-workspace__eyebrow">Finance</p><h2>Event financial control</h2><p>Invoices and receipts stay in Documents. Costs stay in Expenses. Vendor balances come from the vendor assignments above.</p></div></header>
             <div className="event-integrations__contract-row">
-              <label>Contract value (GHS)<input type="number" min="0" step="0.01" value={contractValueInput} onChange={e => setContractValueInput(e.target.value)} placeholder="Agreed client contract total" /></label>
-              <button type="button" className="button button--primary" disabled={saving} onClick={() => void saveContractValue()}>Save contract value</button>
+              <label>Contract value (GHS)<input disabled={!connectedDataLoaded} type="number" min="0" step="0.01" value={contractValueInput} onChange={e => setContractValueInput(e.target.value)} placeholder="Agreed client contract total" /></label>
+              <button type="button" className="button button--primary" disabled={writesDisabled} onClick={() => void saveContractValue()}>Save contract value</button>
             </div>
             <div className="event-integrations__module-actions">
               <Link className="button button--ghost" to={`/invoices?${eventQuery}`}>Create / manage invoices</Link>
@@ -805,18 +846,18 @@ export default function EventModuleIntegrations({
           <section className="workspace-card event-integrations__panel">
             <header className="event-integrations__panel-heading"><div><p className="event-workspace__eyebrow">Expenses ledger</p><h2>Record an event expense</h2><p>This writes directly into the existing Sedifex Expenses collection with the event reference attached.</p></div><Link className="button button--ghost" to="/expenses">View all expenses</Link></header>
             <form className="event-integrations__expense-form" onSubmit={recordExpense}>
-              <label>Expense title<input value={expenseForm.title} onChange={e => setExpenseForm({ ...expenseForm, title: e.target.value })} placeholder="Decorator deposit" /></label>
-              <label>Category<input value={expenseForm.category} onChange={e => setExpenseForm({ ...expenseForm, category: e.target.value })} /></label>
-              <label>Amount (GHS)<input type="number" min="0.01" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm({ ...expenseForm, amount: e.target.value })} /></label>
-              <label>Date<input type="date" value={expenseForm.expenseDate} onChange={e => setExpenseForm({ ...expenseForm, expenseDate: e.target.value })} /></label>
-              <label>Payment source<select value={expenseForm.paymentSource} onChange={e => setExpenseForm({ ...expenseForm, paymentSource: e.target.value })}>{PAYMENT_SOURCES.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-              <button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save event expense'}</button>
+              <label>Expense title<input disabled={!connectedDataLoaded} value={expenseForm.title} onChange={e => setExpenseForm({ ...expenseForm, title: e.target.value })} placeholder="Decorator deposit" /></label>
+              <label>Category<input disabled={!connectedDataLoaded} value={expenseForm.category} onChange={e => setExpenseForm({ ...expenseForm, category: e.target.value })} /></label>
+              <label>Amount (GHS)<input disabled={!connectedDataLoaded} type="number" min="0.01" step="0.01" value={expenseForm.amount} onChange={e => setExpenseForm({ ...expenseForm, amount: e.target.value })} /></label>
+              <label>Date<input disabled={!connectedDataLoaded} type="date" value={expenseForm.expenseDate} onChange={e => setExpenseForm({ ...expenseForm, expenseDate: e.target.value })} /></label>
+              <label>Payment source<select disabled={!connectedDataLoaded} value={expenseForm.paymentSource} onChange={e => setExpenseForm({ ...expenseForm, paymentSource: e.target.value })}>{PAYMENT_SOURCES.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+              <button type="submit" className="button button--primary" disabled={writesDisabled}>{saving ? 'Saving…' : 'Save event expense'}</button>
             </form>
             <div className="event-integrations__records">
               <h3>Linked expenses</h3>
               {linkedExpenses.length === 0 ? <p>No expenses are linked to this event yet.</p> : linkedExpenses.map(expense => <div className="event-integrations__record-row" key={expense.id}><div><strong>{expense.title}</strong><span>{expense.expenseDate || 'No date'} · {expense.category}</span></div><strong>{money(expense.amount)}</strong></div>)}
             </div>
-            {expenseCandidates.length ? <details className="event-integrations__candidates"><summary>Link an existing expense</summary>{expenseCandidates.map(expense => <div className="event-integrations__record-row" key={expense.id}><div><strong>{expense.title}</strong><span>{expense.expenseDate || 'No date'} · {expense.category} · {money(expense.amount)}</span></div><button type="button" className="button button--ghost" disabled={saving} onClick={() => void linkExpense(expense.id)}>Link</button></div>)}</details> : null}
+            {expenseCandidates.length ? <details className="event-integrations__candidates"><summary>Link an existing expense</summary>{expenseCandidates.map(expense => <div className="event-integrations__record-row" key={expense.id}><div><strong>{expense.title}</strong><span>{expense.expenseDate || 'No date'} · {expense.category} · {money(expense.amount)}</span></div><button type="button" className="button button--ghost" disabled={writesDisabled} onClick={() => void linkExpense(expense.id)}>Link</button></div>)}</details> : null}
           </section>
         </>
       ) : null}
@@ -829,8 +870,8 @@ export default function EventModuleIntegrations({
             <div className="event-integrations__records"><h3>Linked receipts · {linkedReceipts.length}</h3>{linkedReceipts.length === 0 ? <p>No receipts linked yet.</p> : linkedReceipts.map(receipt => <div className="event-integrations__record-row" key={receipt.id}><div><strong>{receipt.number}</strong><span>{receipt.date || 'No date'} · {receipt.paymentMethod}</span></div><strong>{money(receipt.amountPaid)}</strong></div>)}</div>
           </div>
           {invoiceCandidates.length || receiptCandidates.length ? <div className="event-integrations__candidate-grid">
-            {invoiceCandidates.length ? <details className="event-integrations__candidates" open><summary>Unlinked invoices matching this client</summary>{invoiceCandidates.map(invoice => <div className="event-integrations__record-row" key={invoice.id}><div><strong>{invoice.number}</strong><span>{invoice.customerName} · {money(invoice.total)}</span></div><button type="button" className="button button--ghost" disabled={saving} onClick={() => void linkInvoice(invoice.id)}>Link</button></div>)}</details> : null}
-            {receiptCandidates.length ? <details className="event-integrations__candidates" open><summary>Unlinked receipts matching this client</summary>{receiptCandidates.map(receipt => <div className="event-integrations__record-row" key={receipt.id}><div><strong>{receipt.number}</strong><span>{receipt.customerName} · {money(receipt.amountPaid)}</span></div><button type="button" className="button button--ghost" disabled={saving} onClick={() => void linkReceipt(receipt.id)}>Link</button></div>)}</details> : null}
+            {invoiceCandidates.length ? <details className="event-integrations__candidates" open><summary>Unlinked invoices matching this client</summary>{invoiceCandidates.map(invoice => <div className="event-integrations__record-row" key={invoice.id}><div><strong>{invoice.number}</strong><span>{invoice.customerName} · {money(invoice.total)}</span></div><button type="button" className="button button--ghost" disabled={writesDisabled} onClick={() => void linkInvoice(invoice.id)}>Link</button></div>)}</details> : null}
+            {receiptCandidates.length ? <details className="event-integrations__candidates" open><summary>Unlinked receipts matching this client</summary>{receiptCandidates.map(receipt => <div className="event-integrations__record-row" key={receipt.id}><div><strong>{receipt.number}</strong><span>{receipt.customerName} · {money(receipt.amountPaid)}</span></div><button type="button" className="button button--ghost" disabled={writesDisabled} onClick={() => void linkReceipt(receipt.id)}>Link</button></div>)}</details> : null}
           </div> : null}
         </section>
       ) : null}
