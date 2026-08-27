@@ -181,6 +181,13 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    // Client collaboration links are bearer credentials too. Public clients
+    // only reach them through the Admin SDK HTTP/callable functions; browser
+    // Firestore clients must never be able to enumerate or forge them.
+    match /eventClientLinks/{linkId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /engagement_threads/{threadId} {
       allow read: if true;
       allow create, update: if isEngagementThreadWrite() || isSignedIn();
@@ -249,14 +256,15 @@ service cloud.firestore {
     }
 
     // Legacy fallback for non-store-scoped collections. Store-scoped,
-    // membership and secure contract-link paths are intentionally excluded so
+    // membership and secure bearer-link paths are intentionally excluded so
     // their stricter rules cannot be bypassed by an overlapping authenticated
     // wildcard.
     match /{topCollection}/{document=**} {
       allow read, write: if isSignedIn()
         && topCollection != 'stores'
         && topCollection != 'teamMembers'
-        && topCollection != 'eventContractLinks';
+        && topCollection != 'eventContractLinks'
+        && topCollection != 'eventClientLinks';
     }
   }
 }

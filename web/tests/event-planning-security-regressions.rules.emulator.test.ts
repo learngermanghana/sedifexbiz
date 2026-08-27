@@ -187,4 +187,26 @@ describeOrSkip('Event planning P1 security regressions', () => {
       await destroyContext(owner)
     }
   })
+
+  test('secure client collaboration bearer-link records are never exposed to browser Firestore clients', async () => {
+    const owner = await createOwner()
+    try {
+      const linkRef = doc(owner.db, 'eventClientLinks', 'browser-must-not-access-client-link')
+      await expectPermissionDenied(
+        setDoc(linkRef, {
+          storeId: owner.storeId,
+          eventId: 'event-1',
+          recipientEmail: 'client@example.com',
+          status: 'active',
+        }),
+        'store owner must not be able to forge or overwrite a secure client collaboration link directly',
+      )
+      await expectPermissionDenied(
+        getDoc(linkRef),
+        'store owner must not be able to read secure client collaboration bearer-link records directly',
+      )
+    } finally {
+      await destroyContext(owner)
+    }
+  })
 })
