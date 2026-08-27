@@ -3,6 +3,7 @@ import { doc, getDoc } from 'firebase/firestore'
 import { matchPath, useLocation } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { downloadEventWorkspacePdf } from '../utils/eventWorkspacePdf'
 import EventGiftRegister from './EventGiftRegister'
 import EventProductionTimeline from './EventProductionTimeline'
 
@@ -20,10 +21,13 @@ export default function EventProductionToolsDock() {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<ToolTab>('production')
   const [eventTitle, setEventTitle] = useState('Event')
+  const [exporting, setExporting] = useState(false)
+  const [exportMessage, setExportMessage] = useState('')
 
   useEffect(() => {
     setOpen(false)
     setTab('production')
+    setExportMessage('')
   }, [eventId])
 
   useEffect(() => {
@@ -51,6 +55,21 @@ export default function EventProductionToolsDock() {
   }, [open])
 
   if (!eventId || !storeId || isLoading) return null
+
+  async function exportCurrentPdf() {
+    setExporting(true)
+    setExportMessage('')
+    try {
+      const section = tab === 'production' ? 'productionTimeline' as const : 'giftRegister' as const
+      const result = await downloadEventWorkspacePdf({ storeId, eventId, sections: [section] })
+      setExportMessage(`${result.fileName} downloaded.`)
+    } catch (error) {
+      console.error('[event-production-tools] Unable to export PDF', error)
+      setExportMessage('The PDF could not be created.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   return (
     <>
@@ -102,9 +121,12 @@ export default function EventProductionToolsDock() {
             <button type="button" onClick={() => setOpen(false)} aria-label="Close production tools" style={{ border: 0, background: 'transparent', fontSize: 28, lineHeight: 1, cursor: 'pointer' }}>×</button>
           </header>
 
-          <nav aria-label="Production tool sections" style={{ padding: '10px 18px', background: '#fff', borderBottom: '1px solid #dfe8e2', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className={tab === 'production' ? 'button button--primary' : 'button button--ghost'} onClick={() => setTab('production')}>Production timeline</button>
-            <button type="button" className={tab === 'gifts' ? 'button button--primary' : 'button button--ghost'} onClick={() => setTab('gifts')}>Guest gifts</button>
+          <nav aria-label="Production tool sections" style={{ padding: '10px 18px', background: '#fff', borderBottom: '1px solid #dfe8e2', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className={tab === 'production' ? 'button button--primary' : 'button button--ghost'} onClick={() => { setTab('production'); setExportMessage('') }}>Production timeline</button>
+            <button type="button" className={tab === 'gifts' ? 'button button--primary' : 'button button--ghost'} onClick={() => { setTab('gifts'); setExportMessage('') }}>Guest gifts</button>
+            <span style={{ flex: 1 }} />
+            {exportMessage ? <span style={{ fontSize: '.75rem', color: '#64748b' }}>{exportMessage}</span> : null}
+            <button type="button" className="button button--ghost" disabled={exporting} onClick={() => void exportCurrentPdf()}>{exporting ? 'Creating PDF…' : `Download ${tab === 'production' ? 'production' : 'gift list'} PDF`}</button>
           </nav>
 
           <div style={{ padding: 18, overflow: 'auto', flex: 1 }}>
