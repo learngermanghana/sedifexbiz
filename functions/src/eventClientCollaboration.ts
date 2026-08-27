@@ -4,9 +4,12 @@ import { admin, defaultDb } from './firestore'
 import { sendEventContractEmail } from './eventContractEmail'
 import { hashPublicContractToken } from './eventContractSigningCore'
 import { eventClientPortalHtml, type EventClientPortalPageData } from './eventClientPortalPage'
+import {
+  effectiveClientTaskState,
+  visibleClientActivityIds,
+} from './eventClientCollaborationCore'
 
 type RecordMap = Record<string, unknown>
-type ClientTaskState = 'open' | 'submitted' | 'changes_requested' | 'verified'
 
 type ClientPortalLink = {
   storeId: string
@@ -116,10 +119,6 @@ async function loadPortalLink(rawToken: string) {
   return { token, hash, linkRef, link, eventRef, eventSnapshot, eventData }
 }
 
-function taskState(value: unknown): ClientTaskState {
-  return ['submitted', 'changes_requested', 'verified'].includes(String(value)) ? value as ClientTaskState : 'open'
-}
-
 async function portalData(rawToken: string): Promise<EventClientPortalPageData & { ok: true; expiresAt: string | null }> {
   const loaded = await loadPortalLink(rawToken)
   const [taskSnapshot, activitySnapshot] = await Promise.all([
@@ -138,7 +137,7 @@ async function portalData(rawToken: string): Promise<EventClientPortalPageData &
         dueDate: text(data.dueDate, 40),
         priority: text(data.priority, 40) || 'normal',
         status: text(data.status, 40) || 'todo',
-        clientState: taskState(data.clientState),
+        clientState: effectiveClientTaskState(data),
         clientSubmissionNote: text(data.clientSubmissionNote, 3000),
         clientStaffNote: text(data.clientStaffNote, 3000),
         submittedAt: isoDate(data.clientSubmittedAt),
@@ -148,10 +147,12 @@ async function portalData(rawToken: string): Promise<EventClientPortalPageData &
     })
     .sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title))
 
-  const activities = activitySnapshot.docs.map(item => {
+  const visibleTaskIds = tasks.map(task => task.id)
+  const rawActivities = activitySnapshot.docs.map(item => {
     const data = item.data() as RecordMap
     return {
       id: item.id,
+      taskId: text(data.taskId, 220),
       type: text(data.type, 80),
       taskTitle: text(data.taskTitle, 240),
       note: text(data.note, 3000),
@@ -159,6 +160,11 @@ async function portalData(rawToken: string): Promise<EventClientPortalPageData &
       at: isoDate(data.at),
     }
   })
+  const visibleActivityIndexes = new Set(visibleClientActivityIds(rawActivities, visibleTaskIds))
+  const activities = rawActivities
+    .filter((_, index) => visibleActivityIndexes.has(index))
+    .map(({ taskId: _taskId, ...activity }) => activity)
+
   const brand = record(loaded.link.brandSnapshot)
   const visibleDone = tasks.filter(item => item.clientState === 'verified').length
 
@@ -219,16 +225,21 @@ export const shareEventClientPortal = functions.https.onCall(async (data, contex
   const portalUrl = `${functionPortalBaseUrl()}?token=${encodeURIComponent(token)}`
   const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + LINK_LIFETIME_DAYS * 86400000)
   const linkRef = defaultDb.collection('eventClientLinks').doc(tokenHash)
-  const previousPortal = record(eventData.clientPortal)
-  const previousHash = text(previousPortal.publicLinkHash, 100)
-  const previousRef = previousHash ? defaultDb.collection('eventClientLinks').doc(previousHash) : null
   const now = admin.firestore.FieldValue.serverTimestamp()
   const brand = brandSnapshot(storeData)
 
   await defaultDb.runTransaction(async transaction => {
     const current = await transaction.get(eventRef)
     if (!current.exists) throw new functions.https.HttpsError('not-found', 'Event not found')
-    if (previousRef && previousHash !== tokenHash) transaction.set(previousRef, { status: 'revoked', revokedAt: now }, { merge: true })
+
+    const currentData = current.data() as RecordMap
+    const currentPortal = record(currentData.clientPortal)
+    const currentHash = text(currentPortal.publicLinkHash, 100)
+    if (currentHash && currentHash !== tokenHash) {
+      const currentLinkRef = defaultDb.collection('eventClientLinks').doc(currentHash)
+      transaction.set(currentLinkRef, { status: 'revoked', revokedAt: now, updatedAt: now }, { merge: true })
+    }
+
     transaction.set(linkRef, {
       storeId,
       eventId,
@@ -317,7 +328,7 @@ export const eventClientPortal = functions.https.onRequest(async (req, res) => {
 
         const taskData = taskSnapshot.data() as RecordMap
         if (taskData.clientVisible !== true) throw new Error('TASK_NOT_SHARED')
-        if (text(taskData.status, 40) === 'done' || taskState(taskData.clientState) === 'verified') throw new Error('TASK_ALREADY_DONE')
+        if (effectiveClientTaskState(taskData) === 'verified') throw new Error('TASK_ALREADY_DONE')
         const taskTitle = text(taskData.title, 240) || 'Event task'
 
         transaction.update(taskRef, {
