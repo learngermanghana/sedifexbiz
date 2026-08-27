@@ -173,6 +173,14 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Secure public contract links contain bearer URLs and signing audit data.
+    // They are accessed only through Admin SDK Cloud Functions. Never expose
+    // these records directly to browser Firestore clients, including signed-in
+    // users from other Sedifex stores.
+    match /eventContractLinks/{linkId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /engagement_threads/{threadId} {
       allow read: if true;
       allow create, update: if isEngagementThreadWrite() || isSignedIn();
@@ -240,13 +248,15 @@ service cloud.firestore {
         && subCollection != 'eventActivity';
     }
 
-    // Legacy fallback for non-store-scoped collections. Store-scoped and
-    // membership paths are intentionally excluded so their rules cannot be
-    // bypassed by an overlapping authenticated-user wildcard.
+    // Legacy fallback for non-store-scoped collections. Store-scoped,
+    // membership and secure contract-link paths are intentionally excluded so
+    // their stricter rules cannot be bypassed by an overlapping authenticated
+    // wildcard.
     match /{topCollection}/{document=**} {
       allow read, write: if isSignedIn()
         && topCollection != 'stores'
-        && topCollection != 'teamMembers';
+        && topCollection != 'teamMembers'
+        && topCollection != 'eventContractLinks';
     }
   }
 }
