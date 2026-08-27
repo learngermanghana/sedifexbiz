@@ -156,7 +156,10 @@ export async function upsertStoreCustomerFromEvent(input: EventPlanningCustomerI
   if (!name && !email && !phone) return null
 
   const existingRef = await findExistingCustomer(storeId, phone, email)
-  const contactKey = keyPhone ? `phone-${keyPhone}` : keyEmail ? `email-${slug(keyEmail)}` : `name-${slug(name)}`
+  // Phone/email remain the stable dedupe keys. When neither exists, the event
+  // document ID becomes the stable identity so two people with the same name
+  // cannot overwrite the same Customer record.
+  const contactKey = keyPhone ? `phone-${keyPhone}` : keyEmail ? `email-${slug(keyEmail)}` : `event-${eventId}`
   const customerRef = existingRef || defaultDb.collection('customers').doc(`${storeId}_${contactKey}`)
   const now = admin.firestore.FieldValue.serverTimestamp()
 
