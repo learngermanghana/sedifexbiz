@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { doc, getDoc, Timestamp, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, runTransaction, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 
 type ApprovalStatus = 'draft' | 'sent' | 'approved' | 'changes_requested'
@@ -66,6 +66,8 @@ const EMPTY_CONTRACT: ContractApproval = {
   history: [],
 }
 
+const CONTRACT_CONFLICT_ERROR = 'EVENT_CONTRACT_CONFLICT'
+
 const STATUS_LABELS: Record<ApprovalStatus, string> = {
   draft: 'Draft',
   sent: 'Sent to client',
@@ -92,6 +94,10 @@ function isApprovalStatus(value: unknown): value is ApprovalStatus {
 
 function isApprovalAction(value: unknown): value is ApprovalAction {
   return ['draft_saved', 'sent_to_client', 'changes_requested', 'client_signed'].includes(String(value))
+}
+
+function isStoredContract(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
 function mapHistory(value: unknown): ApprovalHistoryEntry[] {
@@ -160,9 +166,46 @@ function termsFingerprint(contract: ContractApproval) {
   ].join('\n---\n')
 }
 
+function hasPersistedTerms(contract: ContractApproval) {
+  return Boolean(
+    contract.serviceAgreement.trim()
+    || contract.scopeOfWork.trim()
+    || contract.paymentTerms.trim()
+    || contract.cancellationPolicy.trim(),
+  )
+}
+
+function contractFingerprint(contract: ContractApproval) {
+  return JSON.stringify({
+    status: contract.status,
+    revision: contract.revision,
+    serviceAgreement: contract.serviceAgreement,
+    scopeOfWork: contract.scopeOfWork,
+    paymentTerms: contract.paymentTerms,
+    cancellationPolicy: contract.cancellationPolicy,
+    clientNotes: contract.clientNotes,
+    signerName: contract.signerName,
+    signerEmail: contract.signerEmail,
+    signatureText: contract.signatureText,
+    signatureConsent: contract.signatureConsent,
+    sentAt: contract.sentAt?.toISOString() || null,
+    approvedAt: contract.approvedAt?.toISOString() || null,
+    changesRequestedAt: contract.changesRequestedAt?.toISOString() || null,
+    signedAt: contract.signedAt?.toISOString() || null,
+    history: contract.history.map(item => ({
+      action: item.action,
+      status: item.status,
+      at: item.at.toISOString(),
+      note: item.note,
+      actor: item.actor,
+    })),
+  })
+}
+
 export default function EventContractApprovals({ storeId, event, onClose, onChanged }: Props) {
   const [contract, setContract] = useState<ContractApproval>({ ...EMPTY_CONTRACT, signerName: event.clientName, signerEmail: event.clientEmail })
   const [loadedContract, setLoadedContract] = useState<ContractApproval | null>(null)
+  const [loadedHadPersistedApproval, setLoadedHadPersistedApproval] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -176,14 +219,20 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
       try {
         const snapshot = await getDoc(doc(db, 'stores', storeId, 'events', event.id))
         if (!active) return
-        const mapped = mapContract(snapshot.data()?.contractApproval)
+        const rawContract = snapshot.data()?.contractApproval
+        const mapped = mapContract(rawContract)
+        const historySnapshot = await getDocs(collection(db, 'stores', storeId, 'events', event.id, 'contractApprovalHistory'))
+        if (!active) return
+        const serverHistory = historySnapshot.docs.flatMap(historyDoc => mapHistory([historyDoc.data()]))
         const hydrated = {
           ...mapped,
           signerName: mapped.signerName || event.clientName,
           signerEmail: mapped.signerEmail || event.clientEmail,
+          history: [...mapped.history, ...serverHistory].sort((a, b) => a.at.getTime() - b.at.getTime()),
         }
         setContract(hydrated)
-        setLoadedContract(hydrated)
+        setLoadedContract(mapped)
+        setLoadedHadPersistedApproval(isStoredContract(rawContract))
       } catch (loadError) {
         console.error('[event-contract] Unable to load approval record', loadError)
         if (active) setError('The contract approval record could not be loaded.')
@@ -215,6 +264,11 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
       return
     }
 
+    if (!loadedContract) {
+      setError('Reload this contract before saving so Sedifex can verify the current revision.')
+      return
+    }
+
     if (action === 'client_signed') {
       if (!contract.signerName.trim() || !contract.signatureText.trim() || !contract.signatureConsent) {
         setError('Enter the signer name and typed signature, then confirm the consent checkbox.')
@@ -227,93 +281,130 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
     setSuccess(null)
 
     try {
-      const now = new Date()
-      const previous = loadedContract || EMPTY_CONTRACT
-      const revision = termsChanged ? previous.revision + 1 : previous.revision
-      let status: ApprovalStatus = contract.status
-      let sentAt = contract.sentAt
-      let approvedAt = contract.approvedAt
-      let changesRequestedAt = contract.changesRequestedAt
-      let signedAt = contract.signedAt
-      let signerName = contract.signerName.trim()
-      let signerEmail = contract.signerEmail.trim().toLowerCase()
-      let signatureText = contract.signatureText.trim()
-      let signatureConsent = contract.signatureConsent
-      let note = ''
-      let actor = 'Sedifex staff'
+      const eventRef = doc(db, 'stores', storeId, 'events', event.id)
+      const historyRef = doc(collection(eventRef, 'contractApprovalHistory'))
+      const loadedSnapshot = loadedContract
+      const localContract = contract
 
-      if (termsChanged && previous.status === 'approved' && action !== 'client_signed') {
-        approvedAt = null
-        signedAt = null
-        signatureText = ''
-        signatureConsent = false
-      }
+      await runTransaction(db, async transaction => {
+        const snapshot = await transaction.get(eventRef)
+        if (!snapshot.exists()) throw new Error('EVENT_NOT_FOUND')
 
-      if (action === 'draft_saved') {
-        status = 'draft'
-        note = termsChanged ? `Contract terms saved as revision ${revision}.` : 'Contract draft saved.'
-      }
-      if (action === 'sent_to_client') {
-        status = 'sent'
-        sentAt = now
-        approvedAt = null
-        signedAt = null
-        signatureText = ''
-        signatureConsent = false
-        note = `Revision ${revision} marked as sent to the client.`
-      }
-      if (action === 'changes_requested') {
-        status = 'changes_requested'
-        changesRequestedAt = now
-        approvedAt = null
-        signedAt = null
-        signatureText = ''
-        signatureConsent = false
-        note = contract.clientNotes.trim() || 'Client changes requested.'
-      }
-      if (action === 'client_signed') {
-        status = 'approved'
-        approvedAt = now
-        signedAt = now
-        actor = signerName
-        note = `Revision ${revision} approved with typed signature.`
-      }
+        const rawCurrent = snapshot.data()?.contractApproval
+        const currentHadPersistedApproval = isStoredContract(rawCurrent)
+        const current = mapContract(rawCurrent)
 
-      const historyEntry = {
-        action,
-        status,
-        at: now,
-        note,
-        actor,
-      }
+        const persistedStateChanged = currentHadPersistedApproval !== loadedHadPersistedApproval
+          || (currentHadPersistedApproval && contractFingerprint(current) !== contractFingerprint(loadedSnapshot))
 
-      const next: ContractApproval = {
-        ...contract,
-        status,
-        revision,
-        serviceAgreement: contract.serviceAgreement.trim(),
-        scopeOfWork: contract.scopeOfWork.trim(),
-        paymentTerms: contract.paymentTerms.trim(),
-        cancellationPolicy: contract.cancellationPolicy.trim(),
-        clientNotes: contract.clientNotes.trim(),
-        signerName,
-        signerEmail,
-        signatureText,
-        signatureConsent,
-        sentAt,
-        approvedAt,
-        changesRequestedAt,
-        signedAt,
-        history: [...previous.history, historyEntry],
-      }
+        if (persistedStateChanged) {
+          throw new Error(CONTRACT_CONFLICT_ERROR)
+        }
 
-      await updateDoc(doc(db, 'stores', storeId, 'events', event.id), {
-        contractApproval: next,
-        updatedAt: now,
+        const currentTermsChanged = termsFingerprint(localContract) !== termsFingerprint(current)
+        const revision = currentTermsChanged && hasPersistedTerms(current)
+          ? current.revision + 1
+          : current.revision
+        let status: ApprovalStatus = current.status
+        let sentAt: Date | null | ReturnType<typeof serverTimestamp> = current.sentAt
+        let approvedAt: Date | null | ReturnType<typeof serverTimestamp> = current.approvedAt
+        let changesRequestedAt: Date | null | ReturnType<typeof serverTimestamp> = current.changesRequestedAt
+        let signedAt: Date | null | ReturnType<typeof serverTimestamp> = current.signedAt
+        let signerName = localContract.signerName.trim()
+        let signerEmail = localContract.signerEmail.trim().toLowerCase()
+        let signatureText = localContract.signatureText.trim()
+        let signatureConsent = localContract.signatureConsent
+        let note = ''
+        let actor = 'Sedifex staff'
+
+        if (currentTermsChanged && current.status === 'approved' && action !== 'client_signed') {
+          approvedAt = null
+          signedAt = null
+          signatureText = ''
+          signatureConsent = false
+        }
+
+        if (action === 'draft_saved') {
+          if (current.status === 'approved' && !currentTermsChanged) {
+            status = 'approved'
+            note = `Approved revision ${revision} retained because the contract terms did not change.`
+          } else {
+            status = 'draft'
+            note = currentTermsChanged ? `Contract terms saved as revision ${revision}.` : 'Contract draft saved.'
+          }
+        }
+        if (action === 'sent_to_client') {
+          status = 'sent'
+          sentAt = serverTimestamp()
+          approvedAt = null
+          signedAt = null
+          signatureText = ''
+          signatureConsent = false
+          note = `Revision ${revision} marked as sent to the client.`
+        }
+        if (action === 'changes_requested') {
+          status = 'changes_requested'
+          changesRequestedAt = serverTimestamp()
+          approvedAt = null
+          signedAt = null
+          signatureText = ''
+          signatureConsent = false
+          note = localContract.clientNotes.trim() || 'Client changes requested.'
+        }
+        if (action === 'client_signed') {
+          status = 'approved'
+          approvedAt = serverTimestamp()
+          signedAt = serverTimestamp()
+          actor = signerName
+          note = `Revision ${revision} approved with typed signature.`
+        }
+
+        transaction.update(eventRef, {
+          'contractApproval.status': status,
+          'contractApproval.revision': revision,
+          'contractApproval.serviceAgreement': localContract.serviceAgreement.trim(),
+          'contractApproval.scopeOfWork': localContract.scopeOfWork.trim(),
+          'contractApproval.paymentTerms': localContract.paymentTerms.trim(),
+          'contractApproval.cancellationPolicy': localContract.cancellationPolicy.trim(),
+          'contractApproval.clientNotes': localContract.clientNotes.trim(),
+          'contractApproval.signerName': signerName,
+          'contractApproval.signerEmail': signerEmail,
+          'contractApproval.signatureText': signatureText,
+          'contractApproval.signatureConsent': signatureConsent,
+          'contractApproval.sentAt': sentAt,
+          'contractApproval.approvedAt': approvedAt,
+          'contractApproval.changesRequestedAt': changesRequestedAt,
+          'contractApproval.signedAt': signedAt,
+          updatedAt: serverTimestamp(),
+        })
+
+        transaction.set(historyRef, {
+          action,
+          status,
+          at: serverTimestamp(),
+          note,
+          actor,
+          revision,
+        })
       })
 
-      setContract(next)
-      setLoadedContract(next)
+      const [refreshedSnapshot, refreshedHistorySnapshot] = await Promise.all([
+        getDoc(eventRef),
+        getDocs(collection(eventRef, 'contractApprovalHistory')),
+      ])
+      const refreshedRawContract = refreshedSnapshot.data()?.contractApproval
+      const refreshedMapped = mapContract(refreshedRawContract)
+      const refreshedServerHistory = refreshedHistorySnapshot.docs.flatMap(historyDoc => mapHistory([historyDoc.data()]))
+      const refreshed = {
+        ...refreshedMapped,
+        signerName: refreshedMapped.signerName || event.clientName,
+        signerEmail: refreshedMapped.signerEmail || event.clientEmail,
+        history: [...refreshedMapped.history, ...refreshedServerHistory].sort((a, b) => a.at.getTime() - b.at.getTime()),
+      }
+
+      setContract(refreshed)
+      setLoadedContract(refreshedMapped)
+      setLoadedHadPersistedApproval(isStoredContract(refreshedRawContract))
       setSuccess(
         action === 'client_signed'
           ? 'Client approval and signature recorded.'
@@ -326,7 +417,11 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
       await onChanged?.()
     } catch (saveError) {
       console.error('[event-contract] Unable to save approval record', saveError)
-      setError('The contract approval record could not be saved. Please try again.')
+      if (saveError instanceof Error && saveError.message === CONTRACT_CONFLICT_ERROR) {
+        setError('This contract changed in another session. Close and reopen it to review the latest revision before saving.')
+      } else {
+        setError('The contract approval record could not be saved. Please try again.')
+      }
     } finally {
       setSaving(false)
     }
