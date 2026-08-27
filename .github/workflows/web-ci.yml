@@ -8,6 +8,7 @@ on:
       - 'web/**'
       - 'firestore.rules'
       - 'firebase.json'
+      - 'firebase.event-planning-ci.json'
       - '.github/workflows/web-ci.yml'
 
 jobs:
@@ -54,6 +55,7 @@ jobs:
           GCLOUD_PROJECT: sedifex-ci
         run: >-
           firebase emulators:exec
+          --config firebase.event-planning-ci.json
           --only auth,firestore
           --project sedifex-ci
           "cd web && npm exec vitest run tests/event-planning.rules.emulator.test.ts tests/event-planning-security-regressions.rules.emulator.test.ts"
