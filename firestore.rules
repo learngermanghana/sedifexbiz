@@ -6,6 +6,41 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function memberPath() {
+      return /databases/$(database)/documents/teamMembers/$(request.auth.uid);
+    }
+
+    function hasMemberRecord() {
+      return isSignedIn() && exists(memberPath());
+    }
+
+    function memberData() {
+      return get(memberPath()).data;
+    }
+
+    function hasDirectStoreAccess(storeId) {
+      return hasMemberRecord()
+        && memberData().uid == request.auth.uid
+        && memberData().storeId == storeId;
+    }
+
+    function hasLinkedOwnerStoreAccess(storeId) {
+      return hasMemberRecord()
+        && memberData().uid == request.auth.uid
+        && memberData().role == 'owner'
+        && memberData().storeId is string
+        && exists(/databases/$(database)/documents/stores/$(storeId))
+        && get(/databases/$(database)/documents/stores/$(storeId)).data.parentStoreId == memberData().storeId;
+    }
+
+    function hasStoreAccess(storeId) {
+      return hasDirectStoreAccess(storeId) || hasLinkedOwnerStoreAccess(storeId);
+    }
+
+    function isStoreOwner(storeId) {
+      return hasStoreAccess(storeId) && memberData().role == 'owner';
+    }
+
     function hasText(field, maxLength) {
       return field is string && field.size() > 0 && field.size() <= maxLength;
     }
@@ -59,9 +94,27 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
-
     match /stores/{storeId}/websiteHeroSlides/{slideId} {
       allow read, write: if isSignedIn();
+    }
+
+    // Event planning contains client, guest, vendor, contract and financial data.
+    // Keep it isolated to the active store membership rather than the legacy
+    // authenticated-user fallback used by older Sedifex collections.
+    match /stores/{storeId}/events/{eventId} {
+      allow read, create, update: if hasStoreAccess(storeId);
+      allow delete: if isStoreOwner(storeId);
+    }
+
+    match /stores/{storeId}/events/{eventId}/{eventDocument=**} {
+      allow read, create, update, delete: if hasStoreAccess(storeId);
+    }
+
+    // Audit entries are append-only from the Admin SDK Cloud Function. Store
+    // members can read them, but browser clients cannot alter audit history.
+    match /stores/{storeId}/eventActivity/{activityId} {
+      allow read: if hasStoreAccess(storeId);
+      allow create, update, delete: if false;
     }
 
     match /engagement_threads/{threadId} {
@@ -97,8 +150,22 @@ service cloud.firestore {
       allow read, update, delete: if isSignedIn();
     }
 
-    match /{document=**} {
+    // Preserve the legacy behavior for other store subcollections while
+    // excluding event planning, which has stricter multi-tenant rules above.
+    match /stores/{storeId} {
       allow read, write: if isSignedIn();
+    }
+
+    match /stores/{storeId}/{subCollection}/{document=**} {
+      allow read, write: if isSignedIn()
+        && subCollection != 'events'
+        && subCollection != 'eventActivity';
+    }
+
+    // Legacy fallback for non-store-scoped collections. Store-scoped paths are
+    // intentionally excluded so the event rules cannot be bypassed by overlap.
+    match /{topCollection}/{document=**} {
+      allow read, write: if isSignedIn() && topCollection != 'stores';
     }
   }
 }
