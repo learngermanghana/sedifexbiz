@@ -68,6 +68,9 @@ jobs:
           cat <<'EOF' > functions/.env.sedifex-web
           ${{ secrets.FUNCTIONS_ENV_SEDIFEX_WEB }}
           EOF
+          if ! grep -q '^SEDIFEX_PUBLIC_BASE_URL=' functions/.env.sedifex-web; then
+            echo 'SEDIFEX_PUBLIC_BASE_URL=https://sedifex.com' >> functions/.env.sedifex-web
+          fi
 
       - name: Delete removed legacy functions
         run: firebase functions:delete exportDailyStoreReports --region us-central1 --project sedifex-web --force || true
