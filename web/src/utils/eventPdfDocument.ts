@@ -73,6 +73,7 @@ export function wrapPdfText(value: string, maxChars: number) {
       lines.push('')
       continue
     }
+
     const words = clean.split(/\s+/)
     let current = ''
     for (const word of words) {
@@ -88,6 +89,7 @@ export function wrapPdfText(value: string, maxChars: number) {
         }
         continue
       }
+
       const next = `${current} ${word}`
       if (next.length <= maxChars) {
         current = next
@@ -125,9 +127,8 @@ function bodyLines(entry: EventPdfEntry): RenderLine[] {
     }))
   }
   if (style === 'bullet') {
-    const prefix = '- '
     return wrapPdfText(entry.text, approxChars(BODY_WIDTH - 16, 10)).map((text, index) => ({
-      text: `${index === 0 ? prefix : '  '}${text}`,
+      text: `${index === 0 ? '- ' : '  '}${text}`,
       font: 'F1' as const,
       size: 10,
       x: MARGIN_X + 12,
@@ -163,10 +164,8 @@ function textCommand(line: RenderLine, y: number) {
 }
 
 function headerCommand(title: string, reference: string) {
-  const left = escapePdfText(title)
-  const right = escapePdfText(reference)
-  const commands = [`BT /F2 8 Tf 1 0 0 1 ${MARGIN_X} 765 Tm (${left}) Tj ET\n`]
-  if (right) commands.push(`BT /F1 8 Tf 1 0 0 1 430 765 Tm (${right}) Tj ET\n`)
+  const commands = [`BT /F2 8 Tf 1 0 0 1 ${MARGIN_X} 765 Tm (${escapePdfText(title)}) Tj ET\n`]
+  if (reference) commands.push(`BT /F1 8 Tf 1 0 0 1 430 765 Tm (${escapePdfText(reference)}) Tj ET\n`)
   commands.push(`0.88 G ${MARGIN_X} 754 m ${PAGE_WIDTH - MARGIN_X} 754 l S\n`)
   return commands.join('')
 }
@@ -202,21 +201,19 @@ export function buildEventPdfDocument(input: EventPdfDocumentInput): Uint8Array 
   }
 
   function draw(line: RenderLine) {
-    const total = line.before + line.leading + line.after
-    ensureSpace(total)
+    ensureSpace(line.before + line.leading + line.after)
     page.y -= line.before
     page.content += textCommand(line, page.y)
     page.y -= line.leading + line.after
   }
 
-  const coverTitleLines = wrapPdfText(title, approxChars(BODY_WIDTH, 20))
-  for (const [index, line] of coverTitleLines.entries()) {
+  wrapPdfText(title, approxChars(BODY_WIDTH, 20)).forEach((line, index) => {
     draw({ text: line, font: 'F2', size: 20, x: MARGIN_X, leading: 25, before: index === 0 ? 8 : 0, after: 0 })
-  }
+  })
   if (subtitle) {
-    for (const line of wrapPdfText(subtitle, approxChars(BODY_WIDTH, 12))) {
+    wrapPdfText(subtitle, approxChars(BODY_WIDTH, 12)).forEach(line => {
       draw({ text: line, font: 'F1', size: 12, x: MARGIN_X, leading: 17, before: 1, after: 0 })
-    }
+    })
   }
   if (reference) draw({ text: `Reference: ${reference}`, font: 'F2', size: 10, x: MARGIN_X, leading: 15, before: 8, after: 0 })
   draw({ text: generatedLabel, font: 'F1', size: 9, x: MARGIN_X, leading: 14, before: 0, after: 10 })
@@ -289,7 +286,9 @@ export function buildEventPdfDocument(input: EventPdfDocumentInput): Uint8Array 
 }
 
 export function downloadEventPdfBytes(bytes: Uint8Array, fileName: string) {
-  const blob = new Blob([bytes], { type: 'application/pdf' })
+  const browserBytes = new Uint8Array(bytes.byteLength)
+  browserBytes.set(bytes)
+  const blob = new Blob([browserBytes.buffer], { type: 'application/pdf' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
