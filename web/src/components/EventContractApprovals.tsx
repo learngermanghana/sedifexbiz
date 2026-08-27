@@ -293,26 +293,34 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
   }
 
   function applyTemplate(fields: ContractTemplateFields, templateName: string) {
-    const changesPersistedTerms = !loadedContract || termsFingerprint(fields) !== termsFingerprint(loadedContract)
+    const matchesPersistedTerms = Boolean(
+      loadedContract && termsFingerprint(fields) === termsFingerprint(loadedContract),
+    )
 
     setContract(previous => ({
       ...previous,
       ...fields,
-      ...(changesPersistedTerms
+      ...(matchesPersistedTerms && loadedContract
         ? {
+            status: loadedContract.status,
+            signatureText: loadedContract.signatureText,
+            signatureConsent: loadedContract.signatureConsent,
+            approvedAt: loadedContract.approvedAt,
+            signedAt: loadedContract.signedAt,
+          }
+        : {
             status: 'draft' as ApprovalStatus,
             signatureText: '',
             signatureConsent: false,
             approvedAt: null,
             signedAt: null,
-          }
-        : {}),
+          }),
     }))
     setError(null)
     setSuccess(
-      changesPersistedTerms
-        ? `“${templateName}” applied. Review the wording, adjust it for this event and save the draft before sending.`
-        : `“${templateName}” matches the saved contract terms. Existing approval and signature were preserved.`,
+      matchesPersistedTerms
+        ? `“${templateName}” matches the saved contract terms. Persisted approval and signature were restored.`
+        : `“${templateName}” applied. Review the wording, adjust it for this event and save the draft before sending.`,
     )
   }
 
