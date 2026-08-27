@@ -6,17 +6,17 @@ import {
   doc,
   getDoc,
   getDocs,
-  orderBy,
-  query,
   serverTimestamp,
   updateDoc,
   writeBatch,
 } from 'firebase/firestore'
 import { db } from '../firebase'
+import EventPostEventEvaluation from './EventPostEventEvaluation'
+import EventTypeExtras from './EventTypeExtras'
 
 type TaskStatus = 'todo' | 'in_progress' | 'blocked' | 'done'
 type TaskPriority = 'low' | 'normal' | 'high' | 'critical'
-type OperationsTab = 'checklist' | 'timeline' | 'program'
+type OperationsTab = 'checklist' | 'timeline' | 'program' | 'extras' | 'evaluation'
 type ProgramApprovalStatus = 'draft' | 'approved'
 
 type EventMeta = {
@@ -121,6 +121,10 @@ const EVENT_TYPE_CHECKLISTS: Record<string, ChecklistTemplateItem[]> = {
     { title: 'Confirm family program, tributes and order of service', category: 'Program', daysBefore: 10, priority: 'high' },
     { title: 'Confirm donation desk, records and responsible team', category: 'Finance', daysBefore: 5 },
   ],
+  'Charity / community': [
+    { title: 'Confirm donation collection, receipts and responsible team', category: 'Finance', daysBefore: 7, priority: 'high' },
+    { title: 'Confirm beneficiaries, partners and public accountability plan', category: 'Program', daysBefore: 5 },
+  ],
   'Corporate event': [
     { title: 'Confirm speakers, presentations and technical requirements', category: 'Program', daysBefore: 14, priority: 'high' },
     { title: 'Confirm sponsors, branding and registration flow', category: 'Production', daysBefore: 10 },
@@ -130,6 +134,7 @@ const EVENT_TYPE_CHECKLISTS: Record<string, ChecklistTemplateItem[]> = {
   ],
   Engagement: [
     { title: 'Confirm family roles, presentation flow and key announcements', category: 'Program', daysBefore: 10 },
+    { title: 'Confirm family seating and key guest assignments', category: 'Guests', daysBefore: 5 },
   ],
   Graduation: [
     { title: 'Confirm graduate entrance, speeches and photo moments', category: 'Program', daysBefore: 7 },
@@ -154,6 +159,14 @@ function dateValue(value: unknown): Date | null {
   return typeof maybeTimestamp.toDate === 'function' ? maybeTimestamp.toDate() : null
 }
 
+function isTaskStatus(value: unknown): value is TaskStatus {
+  return ['todo', 'in_progress', 'blocked', 'done'].includes(String(value))
+}
+
+function isTaskPriority(value: unknown): value is TaskPriority {
+  return ['low', 'normal', 'high', 'critical'].includes(String(value))
+}
+
 function mapEventMeta(data: Record<string, unknown>): EventMeta {
   const rawApproval = data.programApproval && typeof data.programApproval === 'object'
     ? data.programApproval as Record<string, unknown>
@@ -170,14 +183,6 @@ function mapEventMeta(data: Record<string, unknown>): EventMeta {
       approvedAt: dateValue(rawApproval.approvedAt),
     },
   }
-}
-
-function isTaskStatus(value: unknown): value is TaskStatus {
-  return ['todo', 'in_progress', 'blocked', 'done'].includes(String(value))
-}
-
-function isTaskPriority(value: unknown): value is TaskPriority {
-  return ['low', 'normal', 'high', 'critical'].includes(String(value))
 }
 
 function mapTask(id: string, data: Record<string, unknown>): ChecklistTask {
@@ -283,17 +288,17 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
     try {
       const [eventSnapshot, tasksSnapshot, timelineSnapshot, programSnapshot] = await Promise.all([
         getDoc(eventRef),
-        getDocs(query(tasksRef, orderBy('sortOrder', 'asc'))),
-        getDocs(query(timelineRef, orderBy('sortOrder', 'asc'))),
-        getDocs(query(programRef, orderBy('sortOrder', 'asc'))),
+        getDocs(tasksRef),
+        getDocs(timelineRef),
+        getDocs(programRef),
       ])
       if (!eventSnapshot.exists()) throw new Error('EVENT_NOT_FOUND')
       const mappedMeta = mapEventMeta(eventSnapshot.data())
       setMeta(mappedMeta)
       setApprovalName(mappedMeta.programApproval.approvedBy)
-      setTasks(tasksSnapshot.docs.map(item => mapTask(item.id, item.data())))
-      setTimeline(timelineSnapshot.docs.map(item => mapTimelineItem(item.id, item.data())))
-      setProgram(programSnapshot.docs.map(item => mapProgramItem(item.id, item.data())))
+      setTasks(tasksSnapshot.docs.map(item => mapTask(item.id, item.data())).sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title)))
+      setTimeline(timelineSnapshot.docs.map(item => mapTimelineItem(item.id, item.data())).sort((a, b) => a.sortOrder - b.sortOrder || a.startTime.localeCompare(b.startTime)))
+      setProgram(programSnapshot.docs.map(item => mapProgramItem(item.id, item.data())).sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time)))
     } catch (loadError) {
       console.error('[event-operations] Unable to load workspace', loadError)
       setError('Checklist, timeline and program could not be loaded.')
@@ -313,8 +318,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
         const templates = [...BASE_CHECKLIST, ...(EVENT_TYPE_CHECKLISTS[meta!.eventType] || [])]
         const batch = writeBatch(db)
         templates.forEach((template, index) => {
-          const taskRef = doc(tasksRef)
-          batch.set(taskRef, {
+          batch.set(doc(tasksRef), {
             title: template.title,
             category: template.category,
             owner: '',
@@ -327,12 +331,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
             updatedAt: serverTimestamp(),
           })
         })
-        batch.update(eventRef, {
-          checklistSeeded: true,
-          readinessSource: 'checklist',
-          progress: 0,
-          updatedAt: serverTimestamp(),
-        })
+        batch.update(eventRef, { checklistSeeded: true, readinessSource: 'checklist', progress: 0, updatedAt: serverTimestamp() })
         await batch.commit()
         setSuccess(`${templates.length} recommended checklist tasks were created for this event.`)
         await loadWorkspace()
@@ -349,9 +348,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
   }, [eventRef, loadWorkspace, loading, meta, onChanged, tasks.length, tasksRef])
 
   const syncReadiness = useCallback(async (nextTasks: ChecklistTask[]) => {
-    const nextReadiness = nextTasks.length
-      ? Math.round(nextTasks.filter(task => task.status === 'done').length / nextTasks.length * 100)
-      : 0
+    const nextReadiness = nextTasks.length ? Math.round(nextTasks.filter(task => task.status === 'done').length / nextTasks.length * 100) : 0
     await updateDoc(eventRef, {
       progress: nextReadiness,
       readinessSource: 'checklist',
@@ -380,32 +377,24 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
   async function saveTask(event: React.FormEvent) {
     event.preventDefault()
     if (!taskForm.title.trim()) return
+    const wasEditing = Boolean(editingTaskId)
     setSaving(true)
     setError(null)
     try {
       const payload = {
-        title: taskForm.title.trim(),
-        category: taskForm.category.trim() || 'General',
-        owner: taskForm.owner.trim(),
-        dueDate: taskForm.dueDate,
-        priority: taskForm.priority,
-        status: taskForm.status,
-        notes: taskForm.notes.trim(),
-        updatedAt: serverTimestamp(),
+        title: taskForm.title.trim(), category: taskForm.category.trim() || 'General', owner: taskForm.owner.trim(), dueDate: taskForm.dueDate,
+        priority: taskForm.priority, status: taskForm.status, notes: taskForm.notes.trim(), updatedAt: serverTimestamp(),
       }
-      if (editingTaskId) {
-        await updateDoc(doc(tasksRef, editingTaskId), payload)
-      } else {
-        await addDoc(tasksRef, { ...payload, sortOrder: Date.now(), createdAt: serverTimestamp() })
-      }
-      const snapshot = await getDocs(query(tasksRef, orderBy('sortOrder', 'asc')))
-      const nextTasks = snapshot.docs.map(item => mapTask(item.id, item.data()))
-      setTasks(nextTasks)
-      await syncReadiness(nextTasks)
+      if (editingTaskId) await updateDoc(doc(tasksRef, editingTaskId), payload)
+      else await addDoc(tasksRef, { ...payload, sortOrder: Date.now(), createdAt: serverTimestamp() })
+      await loadWorkspace()
+      const snapshot = await getDocs(tasksRef)
+      const next = snapshot.docs.map(item => mapTask(item.id, item.data()))
+      await syncReadiness(next)
       resetTaskForm()
-      setSuccess(editingTaskId ? 'Checklist task updated.' : 'Checklist task added.')
+      setSuccess(wasEditing ? 'Checklist task updated.' : 'Checklist task added.')
     } catch (saveError) {
-      console.error('[event-operations] Unable to save task', saveError)
+      console.error('[event-operations] Unable to save checklist task', saveError)
       setError('The checklist task could not be saved.')
     } finally {
       setSaving(false)
@@ -413,30 +402,28 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
   }
 
   async function changeTaskStatus(task: ChecklistTask, status: TaskStatus) {
-    setError(null)
     try {
       await updateDoc(doc(tasksRef, task.id), { status, updatedAt: serverTimestamp() })
-      const nextTasks = tasks.map(item => item.id === task.id ? { ...item, status } : item)
-      setTasks(nextTasks)
-      await syncReadiness(nextTasks)
+      const next = tasks.map(row => row.id === task.id ? { ...row, status } : row)
+      setTasks(next)
+      await syncReadiness(next)
     } catch (statusError) {
-      console.error('[event-operations] Unable to update task status', statusError)
+      console.error('[event-operations] Unable to update checklist status', statusError)
       setError('The checklist status could not be updated.')
     }
   }
 
   async function removeTask(task: ChecklistTask) {
     if (!window.confirm(`Delete checklist task “${task.title}”?`)) return
-    setError(null)
     try {
       await deleteDoc(doc(tasksRef, task.id))
-      const nextTasks = tasks.filter(item => item.id !== task.id)
-      setTasks(nextTasks)
-      await syncReadiness(nextTasks)
+      const next = tasks.filter(row => row.id !== task.id)
+      setTasks(next)
       if (editingTaskId === task.id) resetTaskForm()
+      await syncReadiness(next)
       setSuccess('Checklist task deleted.')
     } catch (deleteError) {
-      console.error('[event-operations] Unable to delete task', deleteError)
+      console.error('[event-operations] Unable to delete checklist task', deleteError)
       setError('The checklist task could not be deleted.')
     }
   }
@@ -449,28 +436,23 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
   async function saveTimeline(event: React.FormEvent) {
     event.preventDefault()
     if (!timelineForm.title.trim() || !timelineForm.startTime) return
+    const wasEditing = Boolean(editingTimelineId)
     setSaving(true)
     setError(null)
     try {
       const payload = {
-        startTime: timelineForm.startTime,
-        endTime: timelineForm.endTime,
-        title: timelineForm.title.trim(),
-        owner: timelineForm.owner.trim(),
-        vendor: timelineForm.vendor.trim(),
-        location: timelineForm.location.trim(),
-        notes: timelineForm.notes.trim(),
-        updatedAt: serverTimestamp(),
+        startTime: timelineForm.startTime, endTime: timelineForm.endTime, title: timelineForm.title.trim(), owner: timelineForm.owner.trim(), vendor: timelineForm.vendor.trim(),
+        location: timelineForm.location.trim(), notes: timelineForm.notes.trim(), updatedAt: serverTimestamp(),
       }
       if (editingTimelineId) await updateDoc(doc(timelineRef, editingTimelineId), payload)
       else await addDoc(timelineRef, { ...payload, sortOrder: Number(timelineForm.startTime.replace(':', '')) || Date.now(), createdAt: serverTimestamp() })
       await loadWorkspace()
       resetTimelineForm()
-      setSuccess(editingTimelineId ? 'Timeline item updated.' : 'Timeline item added.')
+      setSuccess(wasEditing ? 'Timeline item updated.' : 'Timeline item added.')
       await onChanged?.()
     } catch (saveError) {
       console.error('[event-operations] Unable to save timeline item', saveError)
-      setError('The day-of timeline item could not be saved.')
+      setError('The timeline item could not be saved.')
     } finally {
       setSaving(false)
     }
@@ -495,32 +477,29 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
     setTimelineForm({ startTime: item.startTime, endTime: item.endTime, title: item.title, owner: item.owner, vendor: item.vendor, location: item.location, notes: item.notes })
   }
 
+  async function resetProgramApproval() {
+    await updateDoc(eventRef, {
+      'programApproval.status': 'draft',
+      'programApproval.approvedBy': '',
+      'programApproval.approvedAt': null,
+      updatedAt: serverTimestamp(),
+    })
+  }
+
   async function saveProgram(event: React.FormEvent) {
     event.preventDefault()
     if (!programForm.title.trim()) return
+    const wasEditing = Boolean(editingProgramId)
     setSaving(true)
     setError(null)
     try {
-      const payload = {
-        time: programForm.time,
-        title: programForm.title.trim(),
-        participant: programForm.participant.trim(),
-        notes: programForm.notes.trim(),
-        updatedAt: serverTimestamp(),
-      }
+      const payload = { time: programForm.time, title: programForm.title.trim(), participant: programForm.participant.trim(), notes: programForm.notes.trim(), updatedAt: serverTimestamp() }
       if (editingProgramId) await updateDoc(doc(programRef, editingProgramId), payload)
       else await addDoc(programRef, { ...payload, sortOrder: Number(programForm.time.replace(':', '')) || Date.now(), createdAt: serverTimestamp() })
-      if (meta?.programApproval.status === 'approved') {
-        await updateDoc(eventRef, {
-          'programApproval.status': 'draft',
-          'programApproval.approvedBy': '',
-          'programApproval.approvedAt': null,
-          updatedAt: serverTimestamp(),
-        })
-      }
+      if (meta?.programApproval.status === 'approved') await resetProgramApproval()
       await loadWorkspace()
       resetProgramForm()
-      setSuccess(editingProgramId ? 'Program item updated. Client approval was reset because the program changed.' : 'Program item added.')
+      setSuccess(wasEditing ? 'Program item updated. Client approval was reset if needed.' : 'Program item added.')
       await onChanged?.()
     } catch (saveError) {
       console.error('[event-operations] Unable to save program item', saveError)
@@ -534,12 +513,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
     if (!window.confirm(`Delete program item “${item.title}”?`)) return
     try {
       await deleteDoc(doc(programRef, item.id))
-      await updateDoc(eventRef, {
-        'programApproval.status': 'draft',
-        'programApproval.approvedBy': '',
-        'programApproval.approvedAt': null,
-        updatedAt: serverTimestamp(),
-      })
+      await resetProgramApproval()
       setProgram(previous => previous.filter(row => row.id !== item.id))
       setMeta(previous => previous ? { ...previous, programApproval: { status: 'draft', approvedBy: '', approvedAt: null } } : previous)
       if (editingProgramId === item.id) resetProgramForm()
@@ -587,13 +561,9 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
 
   async function reopenProgram() {
     setSaving(true)
+    setError(null)
     try {
-      await updateDoc(eventRef, {
-        'programApproval.status': 'draft',
-        'programApproval.approvedBy': '',
-        'programApproval.approvedAt': null,
-        updatedAt: serverTimestamp(),
-      })
+      await resetProgramApproval()
       await loadWorkspace()
       setSuccess('Program reopened for changes.')
       await onChanged?.()
@@ -634,6 +604,8 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
         <button type="button" className={`button ${tab === 'checklist' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('checklist')}>Checklist · {readiness}%</button>
         <button type="button" className={`button ${tab === 'timeline' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('timeline')}>Day-of timeline · {timeline.length}</button>
         <button type="button" className={`button ${tab === 'program' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('program')}>Program · {program.length}</button>
+        <button type="button" className={`button ${tab === 'extras' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('extras')}>Event-type extras</button>
+        <button type="button" className={`button ${tab === 'evaluation' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('evaluation')}>Post-event evaluation</button>
       </div>
 
       {tab === 'checklist' ? (
@@ -736,6 +708,9 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
           </div>
         </div>
       ) : null}
+
+      {tab === 'extras' ? <EventTypeExtras storeId={storeId} eventId={eventId} eventTitle={eventTitle} /> : null}
+      {tab === 'evaluation' ? <EventPostEventEvaluation storeId={storeId} eventId={eventId} eventTitle={eventTitle} onChanged={onChanged} /> : null}
     </div>
   )
 }
