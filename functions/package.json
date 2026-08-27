@@ -8,6 +8,7 @@
   "scripts": {
     "build": "rimraf lib && tsc",
     "test": "node test/bookingNormalization.test.js && node test/smsGateway.test.js",
+    "test:event-audit": "node test/eventAudit.test.js",
     "clean": "rimraf lib",
     "serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions --project sedifex-web --force",

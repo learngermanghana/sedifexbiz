@@ -1,0 +1,65 @@
+name: Event Planning Web CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'web/**'
+      - 'firestore.rules'
+      - 'firebase.json'
+      - 'firebase.event-planning-ci.json'
+      - '.github/workflows/web-ci.yml'
+
+jobs:
+  event-planning-web-ci:
+    runs-on: ubuntu-latest
+    env:
+      VITE_FB_API_KEY: fake-ci-api-key
+      VITE_FB_AUTH_DOMAIN: sedifex-ci.firebaseapp.com
+      VITE_FB_PROJECT_ID: sedifex-ci
+      VITE_FB_STORAGE_BUCKET: sedifex-ci.appspot.com
+      VITE_FB_APP_ID: 1:123456789:web:ci
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java for Firebase emulators
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools
+
+      - name: Install web dependencies
+        # package-lock.json currently predates the Microsoft/Azure packages in
+        # package.json, so CI installs from the declared manifest without
+        # mutating or depending on the stale lockfile.
+        run: npm install --no-package-lock --no-audit --no-fund
+        working-directory: web
+
+      - name: Test event task progress
+        run: npm exec vitest run src/utils/eventPlanningProgress.test.ts
+        working-directory: web
+
+      - name: Test Event Planning Firestore rules
+        env:
+          RUN_EVENT_PLANNING_EMULATOR_TESTS: '1'
+          GCLOUD_PROJECT: sedifex-ci
+        run: >-
+          firebase emulators:exec
+          --config firebase.event-planning-ci.json
+          --only auth,firestore
+          --project sedifex-ci
+          "cd web && npm exec vitest run tests/event-planning.rules.emulator.test.ts tests/event-planning-security-regressions.rules.emulator.test.ts"
+
+      - name: Build web
+        run: npm run build
+        working-directory: web

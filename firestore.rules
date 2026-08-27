@@ -6,6 +6,44 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function hasMemberRecord() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/teamMembers/$(request.auth.uid));
+    }
+
+    function memberData() {
+      return get(/databases/$(database)/documents/teamMembers/$(request.auth.uid)).data;
+    }
+
+    function hasDirectStoreAccess(storeId) {
+      return hasMemberRecord()
+        && memberData().uid == request.auth.uid
+        && memberData().storeId == storeId;
+    }
+
+    function hasLinkedOwnerStoreAccess(storeId) {
+      return hasMemberRecord()
+        && memberData().uid == request.auth.uid
+        && memberData().role == 'owner'
+        && memberData().storeId is string
+        && exists(/databases/$(database)/documents/stores/$(storeId))
+        && get(/databases/$(database)/documents/stores/$(storeId)).data.parentStoreId == memberData().storeId;
+    }
+
+    function hasStoreAccess(storeId) {
+      return hasDirectStoreAccess(storeId) || hasLinkedOwnerStoreAccess(storeId);
+    }
+
+    function isStoreOwner(storeId) {
+      return hasStoreAccess(storeId) && memberData().role == 'owner';
+    }
+
+    function ownerCanManageStore(storeId) {
+      return hasMemberRecord()
+        && memberData().role == 'owner'
+        && hasStoreAccess(storeId);
+    }
+
     function hasText(field, maxLength) {
       return field is string && field.size() > 0 && field.size() <= maxLength;
     }
@@ -59,9 +97,80 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
+    // Membership is part of the security boundary for event planning. Users
+    // may update their own non-access fields, but cannot move themselves to a
+    // different store or promote their own role. Owners can manage members for
+    // stores they own, including linked child stores.
+    match /teamMembers/{memberId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn() && (
+        // Primary owner bootstrap.
+        (
+          request.resource.data.uid == request.auth.uid
+          && request.resource.data.storeId == request.auth.uid
+          && request.resource.data.role == 'owner'
+        )
+        // Back-compatible alias document for an already-authorized member.
+        || (
+          request.resource.data.uid == request.auth.uid
+          && exists(/databases/$(database)/documents/teamMembers/$(request.auth.uid))
+          && get(/databases/$(database)/documents/teamMembers/$(request.auth.uid)).data.storeId == request.resource.data.storeId
+          && get(/databases/$(database)/documents/teamMembers/$(request.auth.uid)).data.role == request.resource.data.role
+        )
+        // Owner-managed team member.
+        || (
+          request.resource.data.storeId is string
+          && ownerCanManageStore(request.resource.data.storeId)
+        )
+      );
+
+      allow update: if isSignedIn() && (
+        (
+          resource.data.uid == request.auth.uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.storeId == resource.data.storeId
+          && request.resource.data.role == resource.data.role
+        )
+        || (
+          resource.data.storeId is string
+          && ownerCanManageStore(resource.data.storeId)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.storeId == resource.data.storeId
+        )
+      );
+
+      allow delete: if isSignedIn()
+        && resource.data.storeId is string
+        && ownerCanManageStore(resource.data.storeId)
+        && resource.data.uid != request.auth.uid;
+    }
 
     match /stores/{storeId}/websiteHeroSlides/{slideId} {
       allow read, write: if isSignedIn();
+    }
+
+    // Event planning contains client, guest, vendor, contract and financial data.
+    // Keep it isolated to the active store membership rather than the legacy
+    // authenticated-user fallback used by older Sedifex collections.
+    match /stores/{storeId}/events/{eventId} {
+      allow read, create, update: if hasStoreAccess(storeId);
+      allow delete: if isStoreOwner(storeId);
+    }
+
+    // Require one concrete segment below the event before the recursive
+    // wildcard. Rules v2 recursive wildcards can match zero segments, so a
+    // direct {eventDocument=**} here would also match the root event and OR its
+    // delete permission with the owner-only rule above.
+    match /stores/{storeId}/events/{eventId}/{eventCollection}/{document=**} {
+      allow read, create, update, delete: if hasStoreAccess(storeId);
+    }
+
+    // Audit entries are append-only from the Admin SDK Cloud Function. Store
+    // members can read them, but browser clients cannot alter audit history.
+    match /stores/{storeId}/eventActivity/{activityId} {
+      allow read: if hasStoreAccess(storeId);
+      allow create, update, delete: if false;
     }
 
     match /engagement_threads/{threadId} {
@@ -97,8 +206,47 @@ service cloud.firestore {
       allow read, update, delete: if isSignedIn();
     }
 
-    match /{document=**} {
-      allow read, write: if isSignedIn();
+    // Store identity/link fields are trusted by linked-store event access.
+    // Browser clients may maintain ordinary store settings, but they cannot
+    // re-parent an existing store or rewrite ownership identifiers to gain
+    // access to another store's event workspace. Server Admin SDK callables can
+    // still create/manage linked stores because Admin writes bypass rules.
+    match /stores/{storeId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && storeId == request.auth.uid
+        && request.resource.data.storeId == storeId
+        && request.resource.data.ownerUid == request.auth.uid
+        && !('parentStoreId' in request.resource.data);
+
+      allow update: if isSignedIn()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'storeId',
+          'ownerUid',
+          'ownerId',
+          'parentStoreId'
+        ]);
+
+      allow delete: if hasDirectStoreAccess(storeId)
+        && memberData().role == 'owner';
+    }
+
+    // Preserve the legacy behavior for other store subcollections while
+    // excluding event planning, which has stricter multi-tenant rules above.
+    match /stores/{storeId}/{subCollection}/{document=**} {
+      allow read, write: if isSignedIn()
+        && subCollection != 'events'
+        && subCollection != 'eventActivity';
+    }
+
+    // Legacy fallback for non-store-scoped collections. Store-scoped and
+    // membership paths are intentionally excluded so their rules cannot be
+    // bypassed by an overlapping authenticated-user wildcard.
+    match /{topCollection}/{document=**} {
+      allow read, write: if isSignedIn()
+        && topCollection != 'stores'
+        && topCollection != 'teamMembers';
     }
   }
 }
