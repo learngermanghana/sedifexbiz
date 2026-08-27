@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { collection, doc, getDoc, getDocs, runTransaction, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { db } from '../firebase'
+import EventOperationsWorkspace from './EventOperationsWorkspace'
 
 type ApprovalStatus = 'draft' | 'sent' | 'approved' | 'changes_requested'
 type ApprovalAction = 'draft_saved' | 'sent_to_client' | 'changes_requested' | 'client_signed'
+type WorkspaceSection = 'contract' | 'operations'
 
 type ApprovalHistoryEntry = {
   action: ApprovalAction
@@ -203,6 +205,7 @@ function contractFingerprint(contract: ContractApproval) {
 }
 
 export default function EventContractApprovals({ storeId, event, onClose, onChanged }: Props) {
+  const [section, setSection] = useState<WorkspaceSection>('contract')
   const [contract, setContract] = useState<ContractApproval>({ ...EMPTY_CONTRACT, signerName: event.clientName, signerEmail: event.clientEmail })
   const [loadedContract, setLoadedContract] = useState<ContractApproval | null>(null)
   const [loadedHadPersistedApproval, setLoadedHadPersistedApproval] = useState(false)
@@ -435,18 +438,30 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         aria-modal="true"
         aria-labelledby="event-contract-title"
         onMouseDown={modalEvent => modalEvent.stopPropagation()}
-        style={{ width: 'min(920px, calc(100vw - 28px))' }}
+        style={{ width: 'min(1040px, calc(100vw - 28px))' }}
       >
         <header className="event-planning__modal-heading">
           <div>
             <p className="event-planning__eyebrow">{event.eventCode}</p>
-            <h2 id="event-contract-title">Contract, approval & e-signature</h2>
+            <h2 id="event-contract-title">Event workspace</h2>
             <p>{event.title} · {event.clientName}</p>
           </div>
-          <button type="button" className="event-planning__icon-button" onClick={onClose} aria-label="Close contract">×</button>
+          <button type="button" className="event-planning__icon-button" onClick={onClose} aria-label="Close event workspace">×</button>
         </header>
 
-        {loading ? (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+          <button type="button" className={`button ${section === 'contract' ? 'button--primary' : 'button--ghost'}`} onClick={() => setSection('contract')}>Contract & approvals</button>
+          <button type="button" className={`button ${section === 'operations' ? 'button--primary' : 'button--ghost'}`} onClick={() => setSection('operations')}>Checklist, timeline & program</button>
+        </div>
+
+        {section === 'operations' ? (
+          <EventOperationsWorkspace
+            storeId={storeId}
+            eventId={event.id}
+            eventTitle={event.title}
+            onChanged={onChanged}
+          />
+        ) : loading ? (
           <div className="event-planning__loading"><span className="event-planning__spinner" /><p>Loading contract…</p></div>
         ) : (
           <>
