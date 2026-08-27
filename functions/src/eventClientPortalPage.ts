@@ -74,7 +74,7 @@ export function eventClientPortalHtml(data: EventClientPortalPageData, token: st
         ${task.clientSubmissionNote ? `<div class="client-note"><strong>Your last submission:</strong> ${escapeHtml(task.clientSubmissionNote)}</div>` : ''}
         ${verified
           ? `<p class="muted">Verified ${escapeHtml(formatDateTime(task.verifiedAt))}</p>`
-          : `<textarea id="note-${escapeHtml(task.id)}" placeholder="Add a note or confirmation for the event team…"></textarea><button type="button" onclick="submitTask('${escapeHtml(task.id)}')">${task.clientState === 'submitted' ? 'Resubmit update' : 'I have completed this · Submit'}</button>`}
+          : `<textarea id="note-${escapeHtml(task.id)}" data-task-id="${escapeHtml(task.id)}" placeholder="Add a note or confirmation for the event team…"></textarea><button type="button" onclick="submitTask('${escapeHtml(task.id)}')">${task.clientState === 'submitted' ? 'Resubmit update' : 'I have completed this · Submit'}</button>`}
       </article>`
     }).join('')
     : '<div class="empty">Your event team has not assigned any client tasks yet.</div>'
@@ -93,7 +93,11 @@ export function eventClientPortalHtml(data: EventClientPortalPageData, token: st
 <div class="layout"><section class="card"><h2>Your tasks</h2><p class="muted">When you finish something, submit it for verification. The event team can verify it or return it with a note.</p><div class="tasks">${taskHtml}</div></section><aside class="card"><h2>Activity</h2><p class="muted">Updates from you and the event team appear here.</p><div class="activity">${activityHtml}</div></aside></div>
 </main><script>
 var portalToken=${JSON.stringify(token)};var submitting=false;
-async function submitTask(taskId){if(submitting)return;var note=document.getElementById('note-'+taskId);submitting=true;try{var response=await fetch(location.pathname+'?token='+encodeURIComponent(portalToken),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'submit',token:portalToken,taskId:taskId,note:note?note.value:''})});var payload=await response.json().catch(function(){return{}});if(!response.ok)throw new Error(payload.error||'Could not submit this task.');location.reload()}catch(error){alert(error.message||'Could not submit this task.')}finally{submitting=false}}
-setInterval(function(){var active=document.activeElement;var editing=active&&active.tagName==='TEXTAREA';if(!editing&&!submitting)location.reload()},5000);
+function draftKey(taskId){return 'sedifex:event-client-draft:'+portalToken+':'+taskId}
+function setupDrafts(){document.querySelectorAll('textarea[data-task-id]').forEach(function(area){var taskId=area.getAttribute('data-task-id')||'';var saved='';try{saved=sessionStorage.getItem(draftKey(taskId))||''}catch(_error){}if(saved&&!area.value)area.value=saved;area.addEventListener('input',function(){try{if(area.value)sessionStorage.setItem(draftKey(taskId),area.value);else sessionStorage.removeItem(draftKey(taskId))}catch(_error){}})})}
+function hasDirtyDraft(){return Array.prototype.some.call(document.querySelectorAll('textarea[data-task-id]'),function(area){return Boolean(area.value&&area.value.trim())})}
+async function submitTask(taskId){if(submitting)return;var note=document.getElementById('note-'+taskId);submitting=true;try{var response=await fetch(location.pathname+'?token='+encodeURIComponent(portalToken),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'submit',token:portalToken,taskId:taskId,note:note?note.value:''})});var payload=await response.json().catch(function(){return{}});if(!response.ok)throw new Error(payload.error||'Could not submit this task.');try{sessionStorage.removeItem(draftKey(taskId))}catch(_error){}location.reload()}catch(error){alert(error.message||'Could not submit this task.')}finally{submitting=false}}
+setupDrafts();
+setInterval(function(){var active=document.activeElement;var editing=active&&active.tagName==='TEXTAREA';if(!editing&&!hasDirtyDraft()&&!submitting)location.reload()},5000);
 </script></body></html>`
 }
