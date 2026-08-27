@@ -158,7 +158,11 @@ service cloud.firestore {
       allow delete: if isStoreOwner(storeId);
     }
 
-    match /stores/{storeId}/events/{eventId}/{eventDocument=**} {
+    // Require one concrete segment below the event before the recursive
+    // wildcard. Rules v2 recursive wildcards can match zero segments, so a
+    // direct {eventDocument=**} here would also match the root event and OR its
+    // delete permission with the owner-only rule above.
+    match /stores/{storeId}/events/{eventId}/{eventCollection}/{document=**} {
       allow read, create, update, delete: if hasStoreAccess(storeId);
     }
 
