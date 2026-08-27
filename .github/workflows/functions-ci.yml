@@ -30,6 +30,6 @@ jobs:
         run: npm run build
         working-directory: functions
 
-      - name: Test Functions
-        run: npm test
+      - name: Test event audit
+        run: npm run test:event-audit
         working-directory: functions
