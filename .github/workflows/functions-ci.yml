@@ -37,3 +37,7 @@ jobs:
       - name: Test event contract signing
         run: npm run test:event-contract
         working-directory: functions
+
+      - name: Test event client collaboration
+        run: npm run test:event-client
+        working-directory: functions
