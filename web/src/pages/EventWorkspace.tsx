@@ -1,13 +1,38 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './EventWorkspace.css'
+import './EventWorkspaceClientBrief.css'
 
 type EventStatus = 'new' | 'planning' | 'awaiting_client' | 'confirmed' | 'completed' | 'cancelled'
 type PlanningPackage = 'full_planning' | 'partial_planning' | 'coordination_only' | 'staffing_only'
 type Complexity = 'standard' | 'moderate' | 'complex' | 'premium'
+type PackagePricing = 'included' | 'optional' | 'additional'
+
+type PackageItem = {
+  id: string
+  title: string
+  category: string
+  pricing: PackagePricing
+  amount: number | null
+  notes: string
+}
+
+type ClientBrief = {
+  requirements: string
+  themeColours: string
+  venueRequirements: string
+  catering: string
+  decor: string
+  entertainment: string
+  photography: string
+  transport: string
+  accommodation: string
+  specialInstructions: string
+  packageItems: PackageItem[]
+}
 
 type EventRecord = {
   id: string
@@ -27,6 +52,7 @@ type EventRecord = {
   status: EventStatus
   progress: number
   notes: string
+  clientBrief: ClientBrief
 }
 
 type TabKey =
@@ -83,6 +109,39 @@ const COMPLEXITY_LABELS: Record<Complexity, string> = {
   premium: 'Premium / highly complex',
 }
 
+const PACKAGE_PRICING_LABELS: Record<PackagePricing, string> = {
+  included: 'Included',
+  optional: 'Optional',
+  additional: 'Additional cost',
+}
+
+const PACKAGE_ITEM_CATEGORIES = [
+  'Planning',
+  'Venue',
+  'Catering',
+  'Decor',
+  'Entertainment',
+  'Photography / Video',
+  'Transport',
+  'Accommodation',
+  'Staffing',
+  'Other',
+]
+
+const EMPTY_BRIEF: ClientBrief = {
+  requirements: '',
+  themeColours: '',
+  venueRequirements: '',
+  catering: '',
+  decor: '',
+  entertainment: '',
+  photography: '',
+  transport: '',
+  accommodation: '',
+  specialInstructions: '',
+  packageItems: [],
+}
+
 function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -104,6 +163,44 @@ function isComplexity(value: unknown): value is Complexity {
   return ['standard', 'moderate', 'complex', 'premium'].includes(String(value))
 }
 
+function isPackagePricing(value: unknown): value is PackagePricing {
+  return ['included', 'optional', 'additional'].includes(String(value))
+}
+
+function mapPackageItem(value: unknown, index: number): PackageItem | null {
+  if (!value || typeof value !== 'object') return null
+  const item = value as Record<string, unknown>
+  const title = text(item.title)
+  if (!title) return null
+  return {
+    id: text(item.id) || `package-item-${index}`,
+    title,
+    category: text(item.category) || 'Other',
+    pricing: isPackagePricing(item.pricing) ? item.pricing : 'included',
+    amount: typeof item.amount === 'number' && Number.isFinite(item.amount) ? item.amount : null,
+    notes: text(item.notes),
+  }
+}
+
+function mapClientBrief(value: unknown): ClientBrief {
+  if (!value || typeof value !== 'object') return { ...EMPTY_BRIEF, packageItems: [] }
+  const brief = value as Record<string, unknown>
+  const rawItems = Array.isArray(brief.packageItems) ? brief.packageItems : []
+  return {
+    requirements: text(brief.requirements),
+    themeColours: text(brief.themeColours),
+    venueRequirements: text(brief.venueRequirements),
+    catering: text(brief.catering),
+    decor: text(brief.decor),
+    entertainment: text(brief.entertainment),
+    photography: text(brief.photography),
+    transport: text(brief.transport),
+    accommodation: text(brief.accommodation),
+    specialInstructions: text(brief.specialInstructions),
+    packageItems: rawItems.map(mapPackageItem).filter((item): item is PackageItem => Boolean(item)),
+  }
+}
+
 function mapEvent(id: string, data: Record<string, unknown>): EventRecord {
   return {
     id,
@@ -123,6 +220,7 @@ function mapEvent(id: string, data: Record<string, unknown>): EventRecord {
     status: isStatus(data.status) ? data.status : 'new',
     progress: Math.max(0, Math.min(100, numberValue(data.progress, 0))),
     notes: text(data.notes),
+    clientBrief: mapClientBrief(data.clientBrief),
   }
 }
 
@@ -138,11 +236,9 @@ function formatMoney(value: number | null) {
   return new Intl.NumberFormat('en-GH', { style: 'currency', currency: 'GHS', maximumFractionDigits: 0 }).format(value)
 }
 
-function PlaceholderPanel({ tab }: { tab: Exclude<TabKey, 'overview'> }) {
+function PlaceholderPanel({ tab }: { tab: Exclude<TabKey, 'overview' | 'client-brief' | 'package'> }) {
   const meta = TABS.find(item => item.key === tab)!
-  const hints: Record<Exclude<TabKey, 'overview'>, string[]> = {
-    'client-brief': ['Client requirements and priorities', 'Theme, colours and preferences', 'Approval history and change requests'],
-    package: ['Purchased planning package', 'Included services and deliverables', 'Optional items and additional-cost requests'],
+  const hints: Record<Exclude<TabKey, 'overview' | 'client-brief' | 'package'>, string[]> = {
     checklist: ['Planning tasks and owners', 'Due dates and priorities', 'Completion status feeding event readiness'],
     timeline: ['Vendor arrival times', 'Internal staff responsibilities', 'Minute-by-minute event-day run sheet'],
     program: ['Client-facing program outline', 'Approval status', 'Printable final program'],
@@ -156,7 +252,7 @@ function PlaceholderPanel({ tab }: { tab: Exclude<TabKey, 'overview'> }) {
   }
 
   return (
-    <section className="event-workspace__content-card">
+    <section className="event-workspace__content-card workspace-card">
       <div className="event-workspace__empty-icon" aria-hidden="true">{meta.label.slice(0, 2).toUpperCase()}</div>
       <div>
         <p className="event-workspace__eyebrow">Workspace section</p>
@@ -170,6 +266,243 @@ function PlaceholderPanel({ tab }: { tab: Exclude<TabKey, 'overview'> }) {
   )
 }
 
+type BriefTextKey = Exclude<keyof ClientBrief, 'packageItems'>
+
+function ClientBriefPanel({ brief, saving, onSave }: { brief: ClientBrief; saving: boolean; onSave: (brief: ClientBrief) => Promise<void> }) {
+  const [draft, setDraft] = useState<ClientBrief>(() => ({ ...brief, packageItems: [...brief.packageItems] }))
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    setDraft({ ...brief, packageItems: [...brief.packageItems] })
+  }, [brief])
+
+  function update(key: BriefTextKey, value: string) {
+    setDraft(previous => ({ ...previous, [key]: value }))
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault()
+    setMessage(null)
+    try {
+      await onSave({
+        ...draft,
+        requirements: draft.requirements.trim(),
+        themeColours: draft.themeColours.trim(),
+        venueRequirements: draft.venueRequirements.trim(),
+        catering: draft.catering.trim(),
+        decor: draft.decor.trim(),
+        entertainment: draft.entertainment.trim(),
+        photography: draft.photography.trim(),
+        transport: draft.transport.trim(),
+        accommodation: draft.accommodation.trim(),
+        specialInstructions: draft.specialInstructions.trim(),
+      })
+      setMessage('Client brief saved.')
+    } catch {
+      setMessage('Could not save the client brief.')
+    }
+  }
+
+  return (
+    <section className="workspace-card event-workspace__editor-card">
+      <header className="event-workspace__editor-heading">
+        <div>
+          <p className="event-workspace__eyebrow">Client brief</p>
+          <h2>Requirements & preferences</h2>
+          <p>Keep the client’s priorities separate from internal notes so the planning team can work from one agreed brief.</p>
+        </div>
+        <span className="event-workspace__editor-badge">Saved with this event</span>
+      </header>
+
+      {message ? <p className="event-workspace__editor-message">{message}</p> : null}
+
+      <form onSubmit={submit}>
+        <div className="event-workspace__editor-grid">
+          <label className="event-workspace__editor-wide">
+            Main client requirements
+            <textarea rows={5} value={draft.requirements} onChange={e => update('requirements', e.target.value)} placeholder="Priorities, must-haves, non-negotiables, expected experience" />
+          </label>
+          <label>
+            Theme / colours
+            <textarea rows={4} value={draft.themeColours} onChange={e => update('themeColours', e.target.value)} placeholder="Theme, colour palette, styling, dress code" />
+          </label>
+          <label>
+            Venue requirements
+            <textarea rows={4} value={draft.venueRequirements} onChange={e => update('venueRequirements', e.target.value)} placeholder="Layout, accessibility, parking, power, permits" />
+          </label>
+          <label>
+            Catering
+            <textarea rows={4} value={draft.catering} onChange={e => update('catering', e.target.value)} placeholder="Menu, drinks, dietary needs, service style" />
+          </label>
+          <label>
+            Décor
+            <textarea rows={4} value={draft.decor} onChange={e => update('decor', e.target.value)} placeholder="Stage, flowers, tables, signage, lighting" />
+          </label>
+          <label>
+            Entertainment
+            <textarea rows={4} value={draft.entertainment} onChange={e => update('entertainment', e.target.value)} placeholder="MC, DJ, band, performers, music preferences" />
+          </label>
+          <label>
+            Photography / video
+            <textarea rows={4} value={draft.photography} onChange={e => update('photography', e.target.value)} placeholder="Coverage, deliverables, shot list, livestream" />
+          </label>
+          <label>
+            Transport
+            <textarea rows={4} value={draft.transport} onChange={e => update('transport', e.target.value)} placeholder="Client, guest, staff or vendor transport" />
+          </label>
+          <label>
+            Accommodation
+            <textarea rows={4} value={draft.accommodation} onChange={e => update('accommodation', e.target.value)} placeholder="Rooms, check-in, guest or vendor accommodation" />
+          </label>
+          <label className="event-workspace__editor-wide">
+            Special instructions
+            <textarea rows={4} value={draft.specialInstructions} onChange={e => update('specialInstructions', e.target.value)} placeholder="Cultural protocols, VIP handling, accessibility, security or other instructions" />
+          </label>
+        </div>
+        <footer className="event-workspace__editor-actions">
+          <button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save client brief'}</button>
+        </footer>
+      </form>
+    </section>
+  )
+}
+
+type PackageDraftItem = Omit<PackageItem, 'amount'> & { amount: string }
+
+function makePackageDraftItem(): PackageDraftItem {
+  return {
+    id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: '',
+    category: 'Planning',
+    pricing: 'included',
+    amount: '',
+    notes: '',
+  }
+}
+
+function PackagePanel({ event, saving, onSave }: { event: EventRecord; saving: boolean; onSave: (brief: ClientBrief) => Promise<void> }) {
+  const [items, setItems] = useState<PackageDraftItem[]>(() => event.clientBrief.packageItems.map(item => ({ ...item, amount: item.amount === null ? '' : String(item.amount) })))
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    setItems(event.clientBrief.packageItems.map(item => ({ ...item, amount: item.amount === null ? '' : String(item.amount) })))
+  }, [event.clientBrief.packageItems])
+
+  const includedCount = items.filter(item => item.title.trim() && item.pricing === 'included').length
+  const optionalCount = items.filter(item => item.title.trim() && item.pricing === 'optional').length
+  const additionalTotal = items.reduce((sum, item) => {
+    const amount = Number(item.amount)
+    return item.pricing === 'additional' && Number.isFinite(amount) ? sum + amount : sum
+  }, 0)
+
+  function updateItem(index: number, patch: Partial<PackageDraftItem>) {
+    setItems(previous => previous.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item))
+  }
+
+  function removeItem(index: number) {
+    setItems(previous => previous.filter((_, itemIndex) => itemIndex !== index))
+  }
+
+  async function submit(eventSubmit: React.FormEvent) {
+    eventSubmit.preventDefault()
+    setMessage(null)
+    const packageItems: PackageItem[] = []
+
+    for (const item of items) {
+      const title = item.title.trim()
+      if (!title) continue
+      const amount = item.amount.trim() ? Number(item.amount) : null
+      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+        setMessage(`Enter a valid amount for “${title}”.`)
+        return
+      }
+      packageItems.push({
+        id: item.id,
+        title,
+        category: item.category,
+        pricing: item.pricing,
+        amount,
+        notes: item.notes.trim(),
+      })
+    }
+
+    try {
+      await onSave({ ...event.clientBrief, packageItems })
+      setMessage('Package inclusions saved.')
+    } catch {
+      setMessage('Could not save package inclusions.')
+    }
+  }
+
+  return (
+    <section className="workspace-card event-workspace__editor-card">
+      <header className="event-workspace__editor-heading">
+        <div>
+          <p className="event-workspace__eyebrow">{PACKAGE_LABELS[event.planningPackage]}</p>
+          <h2>Package inclusions</h2>
+          <p>Spell out the scope. Each item can be included, optional, or an additional client cost.</p>
+        </div>
+        <button type="button" className="button button--ghost" onClick={() => setItems(previous => [...previous, makePackageDraftItem()])}>＋ Add package item</button>
+      </header>
+
+      <div className="event-workspace__package-summary">
+        <div><span>Included</span><strong>{includedCount}</strong></div>
+        <div><span>Optional</span><strong>{optionalCount}</strong></div>
+        <div><span>Additional-cost total</span><strong>{formatMoney(additionalTotal)}</strong></div>
+      </div>
+
+      {message ? <p className="event-workspace__editor-message">{message}</p> : null}
+
+      <form onSubmit={submit}>
+        {items.length === 0 ? (
+          <div className="event-workspace__package-empty">
+            <strong>No package items yet</strong>
+            <p>Add the services and deliverables agreed with the client.</p>
+          </div>
+        ) : (
+          <div className="event-workspace__package-list">
+            {items.map((item, index) => (
+              <article key={item.id} className="event-workspace__package-item">
+                <div className="event-workspace__editor-grid">
+                  <label className="event-workspace__editor-wide">
+                    Service / deliverable
+                    <input value={item.title} onChange={e => updateItem(index, { title: e.target.value })} placeholder="e.g. Event-day coordination" />
+                  </label>
+                  <label>
+                    Category
+                    <select value={item.category} onChange={e => updateItem(index, { category: e.target.value })}>
+                      {PACKAGE_ITEM_CATEGORIES.map(category => <option key={category}>{category}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Pricing
+                    <select value={item.pricing} onChange={e => updateItem(index, { pricing: e.target.value as PackagePricing })}>
+                      {Object.entries(PACKAGE_PRICING_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Amount (GHS)
+                    <input type="number" min="0" step="0.01" value={item.amount} onChange={e => updateItem(index, { amount: e.target.value })} placeholder={item.pricing === 'included' ? 'Leave blank if included' : '0.00'} />
+                  </label>
+                  <label>
+                    Scope / notes
+                    <input value={item.notes} onChange={e => updateItem(index, { notes: e.target.value })} placeholder="Quantity, limit, conditions or exclusions" />
+                  </label>
+                </div>
+                <button type="button" className="event-workspace__remove-item" onClick={() => removeItem(index)}>Remove item</button>
+              </article>
+            ))}
+          </div>
+        )}
+
+        <footer className="event-workspace__editor-actions">
+          <button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save package'}</button>
+        </footer>
+      </form>
+    </section>
+  )
+}
+
 export default function EventWorkspace() {
   const { eventId = '' } = useParams()
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
@@ -177,6 +510,7 @@ export default function EventWorkspace() {
   const navigate = useNavigate()
   const [event, setEvent] = useState<EventRecord | null>(null)
   const [loading, setLoading] = useState(true)
+  const [savingBrief, setSavingBrief] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const requestedTab = searchParams.get('tab') as TabKey | null
@@ -232,6 +566,20 @@ export default function EventWorkspace() {
     setSearchParams(tab === 'overview' ? {} : { tab }, { replace: true })
   }
 
+  async function saveClientBrief(brief: ClientBrief) {
+    if (!storeId || !event) throw new Error('No active event')
+    setSavingBrief(true)
+    try {
+      await updateDoc(doc(db, 'stores', storeId, 'events', event.id), {
+        clientBrief: brief,
+        updatedAt: serverTimestamp(),
+      })
+      setEvent(previous => previous ? { ...previous, clientBrief: brief } : previous)
+    } finally {
+      setSavingBrief(false)
+    }
+  }
+
   if (storeLoading || loading) {
     return (
       <main className="event-workspace workspace-page">
@@ -273,12 +621,7 @@ export default function EventWorkspace() {
           <h1>{event.title}</h1>
           <p>{event.clientName}</p>
           <div className="event-workspace__meta-grid">
-            {eventMeta.map(item => (
-              <div key={item.label}>
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
-              </div>
-            ))}
+            {eventMeta.map(item => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}
           </div>
         </div>
         <div className="event-workspace__readiness-card">
@@ -291,13 +634,7 @@ export default function EventWorkspace() {
 
       <nav className="event-workspace__tabs" aria-label="Event workspace sections">
         {TABS.map(tab => (
-          <button
-            type="button"
-            key={tab.key}
-            className={activeTab === tab.key ? 'is-active' : ''}
-            aria-current={activeTab === tab.key ? 'page' : undefined}
-            onClick={() => selectTab(tab.key)}
-          >
+          <button type="button" key={tab.key} className={activeTab === tab.key ? 'is-active' : ''} aria-current={activeTab === tab.key ? 'page' : undefined} onClick={() => selectTab(tab.key)}>
             {tab.label}
           </button>
         ))}
@@ -306,10 +643,7 @@ export default function EventWorkspace() {
       {activeTab === 'overview' ? (
         <div className="event-workspace__overview-grid">
           <section className="workspace-card event-workspace__content-card event-workspace__overview-main">
-            <div>
-              <p className="event-workspace__eyebrow">Event summary</p>
-              <h2>Planning overview</h2>
-            </div>
+            <div><p className="event-workspace__eyebrow">Event summary</p><h2>Planning overview</h2></div>
             <dl className="event-workspace__details">
               <div><dt>Client</dt><dd>{event.clientName}</dd></div>
               <div><dt>Client phone</dt><dd>{event.clientPhone || 'Not provided'}</dd></div>
@@ -317,18 +651,17 @@ export default function EventWorkspace() {
               <div><dt>Event type</dt><dd>{event.eventType}</dd></div>
               <div><dt>Complexity</dt><dd>{COMPLEXITY_LABELS[event.complexity]}</dd></div>
               <div><dt>Estimated budget</dt><dd>{formatMoney(event.estimatedBudget)}</dd></div>
+              <div><dt>Client brief</dt><dd>{event.clientBrief.requirements || event.clientBrief.themeColours || event.clientBrief.packageItems.length ? 'Started' : 'Not started'}</dd></div>
+              <div><dt>Package items</dt><dd>{event.clientBrief.packageItems.length}</dd></div>
             </dl>
-            {event.notes ? (
-              <div className="event-workspace__notes">
-                <strong>Internal notes</strong>
-                <p>{event.notes}</p>
-              </div>
-            ) : null}
+            {event.notes ? <div className="event-workspace__notes"><strong>Internal notes</strong><p>{event.notes}</p></div> : null}
           </section>
 
           <aside className="workspace-card event-workspace__quick-actions">
             <p className="event-workspace__eyebrow">Quick access</p>
             <h2>Work on this event</h2>
+            <button type="button" onClick={() => selectTab('client-brief')}>Edit client brief <span>→</span></button>
+            <button type="button" onClick={() => selectTab('package')}>Manage package <span>→</span></button>
             <button type="button" onClick={() => selectTab('checklist')}>Open checklist <span>→</span></button>
             <button type="button" onClick={() => selectTab('timeline')}>Build timeline <span>→</span></button>
             <button type="button" onClick={() => selectTab('guest-list')}>Manage guest list <span>→</span></button>
@@ -336,6 +669,10 @@ export default function EventWorkspace() {
             <button type="button" onClick={() => selectTab('finance')}>Review finance <span>→</span></button>
           </aside>
         </div>
+      ) : activeTab === 'client-brief' ? (
+        <ClientBriefPanel brief={event.clientBrief} saving={savingBrief} onSave={saveClientBrief} />
+      ) : activeTab === 'package' ? (
+        <PackagePanel event={event} saving={savingBrief} onSave={saveClientBrief} />
       ) : (
         <PlaceholderPanel tab={activeTab} />
       )}
