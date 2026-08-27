@@ -38,6 +38,13 @@ export {
   processEventCommunications,
   runEventCommunicationsNow,
 } from './eventCommunications'
+export {
+  sendEventContractForSignature,
+  getPublicEventContract,
+  getPublicEventContractPdf,
+  requestPublicEventContractChanges,
+  signPublicEventContract,
+} from './eventContractSigning'
 export { auditEventPlanningWrite } from './eventAudit'
 export { v1IntegrationProducts } from './integrationProducts'
 export { v1IntegrationSocialSettings } from './integrationSocialSettings'
