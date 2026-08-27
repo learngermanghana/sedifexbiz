@@ -3,6 +3,7 @@ import { collection, doc, getDoc, getDocs, runTransaction, serverTimestamp, Time
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../firebase'
 import EventChecklistShareCard from './EventChecklistShareCard'
+import EventContractTemplateManager, { type ContractTemplateFields } from './EventContractTemplateManager'
 import EventOperationsWorkspace from './EventOperationsWorkspace'
 
 type ApprovalStatus = 'draft' | 'sent' | 'approved' | 'changes_requested'
@@ -17,13 +18,9 @@ type ApprovalHistoryEntry = {
   actor: string
 }
 
-type ContractApproval = {
+type ContractApproval = ContractTemplateFields & {
   status: ApprovalStatus
   revision: number
-  serviceAgreement: string
-  scopeOfWork: string
-  paymentTerms: string
-  cancellationPolicy: string
   clientNotes: string
   signerName: string
   signerEmail: string
@@ -90,9 +87,7 @@ function text(value: unknown) {
 function toDate(value: unknown): Date | null {
   if (value instanceof Timestamp) return value.toDate()
   if (value instanceof Date) return value
-  if (value && typeof value === 'object' && typeof (value as Timestamp).toDate === 'function') {
-    return (value as Timestamp).toDate()
-  }
+  if (value && typeof value === 'object' && typeof (value as Timestamp).toDate === 'function') return (value as Timestamp).toDate()
   return null
 }
 
@@ -167,7 +162,7 @@ function statusClass(status: ApprovalStatus) {
   return 'new'
 }
 
-function termsFingerprint(contract: ContractApproval) {
+function termsFingerprint(contract: ContractTemplateFields) {
   return [
     contract.serviceAgreement.trim(),
     contract.scopeOfWork.trim(),
@@ -176,7 +171,7 @@ function termsFingerprint(contract: ContractApproval) {
   ].join('\n---\n')
 }
 
-function hasPersistedTerms(contract: ContractApproval) {
+function hasPersistedTerms(contract: ContractTemplateFields) {
   return Boolean(
     contract.serviceAgreement.trim()
     || contract.scopeOfWork.trim()
@@ -290,13 +285,25 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
     [contract, loadedContract],
   )
 
-  const hasTerms = Boolean(
-    contract.serviceAgreement.trim() || contract.scopeOfWork.trim() || contract.paymentTerms.trim() || contract.cancellationPolicy.trim(),
-  )
+  const hasTerms = hasPersistedTerms(contract)
 
   function update<K extends keyof ContractApproval>(key: K, value: ContractApproval[K]) {
     setContract(previous => ({ ...previous, [key]: value }))
     setSuccess(null)
+  }
+
+  function applyTemplate(fields: ContractTemplateFields, templateName: string) {
+    setContract(previous => ({
+      ...previous,
+      ...fields,
+      status: 'draft',
+      signatureText: '',
+      signatureConsent: false,
+      approvedAt: null,
+      signedAt: null,
+    }))
+    setError(null)
+    setSuccess(`“${templateName}” applied. Review the wording, adjust it for this event and save the draft before sending.`)
   }
 
   async function persist(action: ApprovalAction): Promise<boolean> {
@@ -304,7 +311,6 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
       setError('Add the agreement, scope, payment terms or cancellation policy before continuing.')
       return false
     }
-
     if (!loadedContract) {
       setError('Reload this contract before saving so Sedifex can verify the current revision.')
       return false
@@ -338,10 +344,8 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         const rawCurrent = snapshot.data()?.contractApproval
         const currentHadPersistedApproval = isStoredContract(rawCurrent)
         const current = mapContract(rawCurrent)
-
         const persistedStateChanged = currentHadPersistedApproval !== loadedHadPersistedApproval
           || (currentHadPersistedApproval && contractFingerprint(current) !== contractFingerprint(loadedSnapshot))
-
         if (persistedStateChanged) throw new Error(CONTRACT_CONFLICT_ERROR)
 
         const currentTermsChanged = termsFingerprint(localContract) !== termsFingerprint(current)
@@ -464,9 +468,6 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
       return
     }
 
-    // Persist every editable recipient field immediately before the callable.
-    // This prevents a resend from using an older stored email/name when the
-    // user changed the signer without changing the contract terms.
     const saved = await persist('draft_saved')
     if (!saved) return
 
@@ -538,6 +539,20 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
               <strong style={{ fontSize: '.82rem' }}>Revision {contract.revision}</strong>
               {termsChanged ? <small style={{ color: 'var(--event-muted)' }}>Unsaved term changes</small> : null}
             </div>
+
+            <EventContractTemplateManager
+              storeId={storeId}
+              eventTitle={event.title}
+              clientName={event.clientName}
+              contract={{
+                serviceAgreement: contract.serviceAgreement,
+                scopeOfWork: contract.scopeOfWork,
+                paymentTerms: contract.paymentTerms,
+                cancellationPolicy: contract.cancellationPolicy,
+              }}
+              disabled={saving}
+              onApply={applyTemplate}
+            />
 
             <div className="event-planning__form-grid">
               <label className="event-planning__field--wide">
