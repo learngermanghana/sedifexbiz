@@ -14,8 +14,10 @@ export type EventPdfSectionKey =
   | 'contract'
   | 'checklist'
   | 'timeline'
+  | 'productionTimeline'
   | 'program'
   | 'guestList'
+  | 'giftRegister'
   | 'vendors'
   | 'staff'
   | 'finance'
@@ -28,8 +30,10 @@ export const EVENT_PDF_SECTION_OPTIONS: Array<{ key: EventPdfSectionKey; label: 
   { key: 'contract', label: 'Contract & approval' },
   { key: 'checklist', label: 'Planning checklist', internal: true },
   { key: 'timeline', label: 'Day-of timeline', internal: true },
+  { key: 'productionTimeline', label: 'Production timeline', internal: true },
   { key: 'program', label: 'Event program' },
   { key: 'guestList', label: 'Guest list', internal: true },
+  { key: 'giftRegister', label: 'Guest gift register', internal: true },
   { key: 'vendors', label: 'Vendor coordination', internal: true },
   { key: 'staff', label: 'Staff assignments', internal: true },
   { key: 'finance', label: 'Financial summary', internal: true },
@@ -45,8 +49,10 @@ type LoadedData = {
   store: RecordMap
   tasks: Array<{ id: string; data: RecordMap }>
   timeline: Array<{ id: string; data: RecordMap }>
+  productionTimeline: Array<{ id: string; data: RecordMap }>
   program: Array<{ id: string; data: RecordMap }>
   guests: Array<{ id: string; data: RecordMap }>
+  giftRegister: Array<{ id: string; data: RecordMap }>
   evaluations: Array<{ id: string; data: RecordMap }>
   customers: Array<{ id: string; data: RecordMap }>
   staffMembers: Array<{ id: string; data: RecordMap }>
@@ -157,15 +163,16 @@ async function loadData(storeId: string, eventId: string, requested: Set<EventPd
   ])
   if (!eventSnapshot.exists()) throw new Error('EVENT_NOT_FOUND')
 
-  const needsOperations = requested.has('checklist') || requested.has('timeline') || requested.has('program')
   const needsContacts = requested.has('vendors') || requested.has('staff') || requested.has('finance')
   const needsFinance = requested.has('finance')
 
-  const [tasks, timeline, program, guests, evaluations, customers, staffMembers, invoices, receipts, expenses] = await Promise.all([
+  const [tasks, timeline, productionTimeline, program, guests, giftRegister, evaluations, customers, staffMembers, invoices, receipts, expenses] = await Promise.all([
     requested.has('checklist') ? docsOf(collection(eventRef, 'tasks')) : Promise.resolve([]),
     requested.has('timeline') ? docsOf(collection(eventRef, 'timeline')) : Promise.resolve([]),
+    requested.has('productionTimeline') ? docsOf(collection(eventRef, 'productionTimeline')) : Promise.resolve([]),
     requested.has('program') ? docsOf(collection(eventRef, 'program')) : Promise.resolve([]),
     requested.has('guestList') ? docsOf(collection(eventRef, 'guests')) : Promise.resolve([]),
+    requested.has('giftRegister') ? docsOf(collection(eventRef, 'giftRegister')) : Promise.resolve([]),
     requested.has('evaluation') ? docsOf(collection(eventRef, 'postEventEvaluations')) : Promise.resolve([]),
     needsContacts ? getDocs(query(collection(db, 'customers'), where('storeId', '==', storeId))).then(snapshot => snapshot.docs.map(item => ({ id: item.id, data: item.data() as RecordMap }))) : Promise.resolve([]),
     needsContacts ? getDocs(query(collection(db, 'teamMembers'), where('storeId', '==', storeId))).then(snapshot => snapshot.docs.map(item => ({ id: item.id, data: item.data() as RecordMap }))) : Promise.resolve([]),
@@ -174,7 +181,6 @@ async function loadData(storeId: string, eventId: string, requested: Set<EventPd
     needsFinance ? getDocs(query(collection(db, 'expenses'), where('storeId', '==', storeId))).then(snapshot => snapshot.docs.map(item => ({ id: item.id, data: item.data() as RecordMap }))) : Promise.resolve([]),
   ])
 
-  void needsOperations
   return {
     eventId,
     storeId,
@@ -182,8 +188,10 @@ async function loadData(storeId: string, eventId: string, requested: Set<EventPd
     store: (storeSnapshot.data() ?? {}) as RecordMap,
     tasks,
     timeline,
+    productionTimeline,
     program,
     guests,
+    giftRegister,
     evaluations,
     customers,
     staffMembers,
@@ -319,7 +327,47 @@ function sectionTimeline(data: LoadedData): EventPdfSection {
     if (meta) entries.push(entry(meta, 'muted'))
     if (text(item.notes)) entries.push(entry(`Notes: ${text(item.notes)}`, 'muted'))
   })
+  if (!rows.length) entries.push(entry('No day-of timeline records yet.'))
   return { title: 'Day-of timeline', entries, pageBreakBefore: true }
+}
+
+function sectionProductionTimeline(data: LoadedData): EventPdfSection {
+  const setup = record(data.event.productionSetup)
+  const entries: EventPdfEntry[] = []
+  const setupFields: Array<[string, unknown]> = [
+    ['Project / event', setup.projectLabel],
+    ['Confirmed guests', setup.confirmedGuests],
+    ['Event theme', setup.eventTheme],
+    ['Event colours', setup.eventColours],
+    ['Strictly by invitation', titleCase(setup.strictlyByInvitation)],
+    ['Assigned / placed seating', titleCase(setup.placedSeating)],
+    ['Bridal party size', setup.bridalPartySize],
+    ['Reserved tables', setup.reservedTables],
+    ['Guests setup for ceremony', setup.ceremonySetupGuests],
+    ['Guests setup for reception', setup.receptionSetupGuests],
+    ['Phase 1 - Bride dress-up location', setup.bridePrepLocation],
+    ['Phase 2 - Groom dress-up location', setup.groomPrepLocation],
+    ['Phase 3 - Ceremony location', setup.ceremonyLocation],
+    ['Phase 4 - Reception location', setup.receptionLocation],
+  ]
+  setupFields.forEach(([label, value]) => {
+    const rendered = typeof value === 'number' ? String(value) : text(value)
+    if (rendered) entries.push(labelled(label, rendered))
+  })
+
+  const rows = [...data.productionTimeline].sort((a, b) => numberValue(a.data.sortOrder) - numberValue(b.data.sortOrder) || text(a.data.time).localeCompare(text(b.data.time)) || text(a.data.phase).localeCompare(text(b.data.phase)))
+  if (rows.length) entries.push(entry('Production run sheet', 'subheading'))
+  rows.forEach((row, index) => {
+    const item = row.data
+    const phase = text(item.phase) ? `Phase ${text(item.phase)}` : 'Phase not set'
+    const progress = titleCase(item.progressStatus) || 'Planned'
+    entries.push(entry(`${index + 1}. ${text(item.time) || 'Time TBC'} | ${phase} | ${text(item.activity) || 'Production activity'}`, 'bullet'))
+    const meta = [text(item.coordinator) ? `Coordinator: ${text(item.coordinator)}` : '', text(item.contactNumber) ? `Contact: ${text(item.contactNumber)}` : '', `Progress: ${progress}`].filter(Boolean).join(' | ')
+    entries.push(entry(meta, 'muted'))
+    if (text(item.remarks)) entries.push(entry(`Remarks: ${text(item.remarks)}`, 'muted'))
+  })
+  if (!entries.length) entries.push(entry('No production setup or production timeline records yet.'))
+  return { title: 'Production timeline', entries, pageBreakBefore: true }
 }
 
 function sectionProgram(data: LoadedData): EventPdfSection {
@@ -359,6 +407,25 @@ function sectionGuestList(data: LoadedData): EventPdfSection {
     if (text(guest.specialRequirements)) entries.push(entry(`Special requirements: ${text(guest.specialRequirements)}`, 'muted'))
   })
   return { title: 'Guest list', entries, pageBreakBefore: true }
+}
+
+function sectionGiftRegister(data: LoadedData): EventPdfSection {
+  const rows = [...data.giftRegister].sort((a, b) => numberValue(a.data.sortOrder) - numberValue(b.data.sortOrder) || text(a.data.guestName).localeCompare(text(b.data.guestName)))
+  const totalAmount = rows.reduce((sum, row) => sum + Math.max(0, numberValue(row.data.amount)), 0)
+  const totalGuests = rows.reduce((sum, row) => sum + Math.max(0, numberValue(row.data.guestCount)), 0)
+  const entries: EventPdfEntry[] = [
+    labelled('Gift records', rows.length),
+    labelled('Guests recorded', totalGuests),
+    labelled('Recorded amount', money(totalAmount)),
+  ]
+  rows.forEach((row, index) => {
+    const gift = row.data
+    entries.push(entry(`${index + 1}. ${text(gift.guestName) || 'Unnamed guest'} | Parcel: ${text(gift.parcelNumber) || '—'} | Recipient: ${text(gift.recipient) || '—'} | Amount: ${typeof gift.amount === 'number' ? money(gift.amount) : '—'}`, 'bullet'))
+    const meta = [text(gift.phone) ? `Phone: ${text(gift.phone)}` : '', numberValue(gift.guestCount) > 0 ? `Guests: ${numberValue(gift.guestCount)}` : '', text(gift.giftDescription) ? `Gift: ${text(gift.giftDescription)}` : '', text(gift.receivedTime) ? `Time: ${text(gift.receivedTime)}` : ''].filter(Boolean).join(' | ')
+    if (meta) entries.push(entry(meta, 'muted'))
+    if (text(gift.notes)) entries.push(entry(`Notes: ${text(gift.notes)}`, 'muted'))
+  })
+  return { title: 'Guest gift register', entries, pageBreakBefore: true }
 }
 
 function sectionVendors(data: LoadedData): EventPdfSection {
@@ -455,8 +522,10 @@ const SECTION_BUILDERS: Record<EventPdfSectionKey, (data: LoadedData) => EventPd
   contract: sectionContract,
   checklist: sectionChecklist,
   timeline: sectionTimeline,
+  productionTimeline: sectionProductionTimeline,
   program: sectionProgram,
   guestList: sectionGuestList,
+  giftRegister: sectionGiftRegister,
   vendors: sectionVendors,
   staff: sectionStaff,
   finance: sectionFinance,
