@@ -2,7 +2,7 @@ import * as functions from 'firebase-functions/v1'
 import { defineString } from 'firebase-functions/params'
 import { randomBytes } from 'crypto'
 import { admin, defaultDb } from './firestore'
-import { queueBrandedNotification } from './notifications'
+import { eventContractAdminEmails, sendEventContractEmail } from './eventContractEmail'
 import {
   buildEventContractPdf,
   hashPublicContractToken,
@@ -101,6 +101,16 @@ function brandSnapshot(storeData: RecordMap) {
   }
 }
 
+function emailBrand(value: RecordMap) {
+  return {
+    storeName: text(value.storeName, 180) || 'Sedifex Store',
+    email: email(value.email),
+    phone: text(value.phone, 80),
+    logoUrl: text(value.logoUrl, 900),
+    brandColor: text(value.brandColor, 40) || '#4f46e5',
+  }
+}
+
 function eventSnapshot(eventData: RecordMap) {
   return {
     title: text(eventData.title, 180) || text(eventData.eventType, 140) || 'Event',
@@ -131,6 +141,10 @@ function hasContractTerms(snapshot: RecordMap) {
       || text(snapshot.paymentTerms)
       || text(snapshot.cancellationPolicy),
   )
+}
+
+function legacyApprovalDeliveryLogId(storeId: string, eventId: string, revision: number, recipientEmail: string) {
+  return `${storeId}|event.approval_request|${eventId}-approval-r${revision}|customer|${recipientEmail}`.replace(/\//g, '_')
 }
 
 async function loadLink(token: string) {
@@ -185,6 +199,18 @@ function fileNameFor(link: ContractLinkRecord) {
   return `${safe}-revision-${Math.max(1, Math.floor(numberValue(link.revision, 1)))}${link.status === 'signed' ? '-signed' : ''}.pdf`
 }
 
+function emailRows(link: ContractLinkRecord) {
+  const eventData = record(link.eventSnapshot)
+  const rows: Array<[string, string]> = [
+    ['Event', text(eventData.title, 180) || 'Event'],
+    ['Contract revision', String(link.revision)],
+  ]
+  if (text(eventData.eventCode, 80)) rows.push(['Event reference', text(eventData.eventCode, 80)])
+  if (text(eventData.eventDate, 40)) rows.push(['Event date', text(eventData.eventDate, 40)])
+  if (text(eventData.venue, 220)) rows.push(['Venue', text(eventData.venue, 220)])
+  return rows
+}
+
 export const sendEventContractForSignature = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required')
   const storeId = text(data?.storeId, 180)
@@ -218,6 +244,9 @@ export const sendEventContractForSignature = functions.https.onCall(async (data,
   const now = admin.firestore.FieldValue.serverTimestamp()
   const eventCopy = eventSnapshot(eventData)
   const brandCopy = brandSnapshot(storeData)
+  const legacyLogRef = defaultDb.collection('notification_delivery_log').doc(
+    legacyApprovalDeliveryLogId(storeId, eventId, revision, recipientEmail),
+  )
 
   await defaultDb.runTransaction(async transaction => {
     const currentEvent = await transaction.get(eventRef)
@@ -248,6 +277,17 @@ export const sendEventContractForSignature = functions.https.onCall(async (data,
       updatedAt: now,
       createdBy: context.auth?.uid || null,
     })
+    // The older event-communications trigger also watches for status=sent. Seed
+    // its idempotency key so the new secure email is the only initial message.
+    transaction.set(legacyLogRef, {
+      storeId,
+      eventType: 'event.approval_request',
+      reference: `${eventId}-approval-r${revision}`,
+      recipientType: 'customer',
+      to: recipientEmail,
+      suppressedBy: 'event_contract_signing',
+      createdAt: now,
+    }, { merge: true })
     transaction.update(eventRef, {
       'contractApproval.status': 'sent',
       'contractApproval.sentAt': now,
@@ -274,32 +314,48 @@ export const sendEventContractForSignature = functions.https.onCall(async (data,
     })
   })
 
-  const notification = await queueBrandedNotification({
-    eventType: 'event.contract_sent',
+  const brand = emailBrand(brandCopy)
+  const sendResult = await sendEventContractEmail({
     storeId,
+    eventType: 'event.contract_sent',
     reference: `${eventId}-contract-r${revision}-${tokenHash.slice(0, 12)}`,
-    customer: { name: recipientName, email: recipientEmail, phone: text(eventData.clientPhone, 80) || null },
-    data: {
-      itemName: text(eventCopy.title, 180) || 'Event',
-      eventCode: text(eventCopy.eventCode, 80),
+    recipientType: 'customer',
+    to: recipientEmail,
+    subject: `Contract ready for review - ${brand.storeName}`,
+    title: 'Your event contract is ready',
+    intro: `Hello ${recipientName}, ${brand.storeName} has prepared revision ${revision} of your event agreement. Review the terms, download the PDF and sign online when you are ready.`,
+    brand,
+    rows: emailRows({
+      storeId,
+      eventId,
       revision,
-      actionUrl: reviewUrl,
-      actionLabel: 'Review & sign contract',
-      secondaryUrl: pdfUrl,
-      secondaryLabel: 'Download contract PDF',
-    },
-    forceStoreAlert: false,
+      recipientEmail,
+      recipientName,
+      status: 'active',
+      reviewUrl,
+      pdfUrl,
+      expiresAt,
+      eventSnapshot: eventCopy,
+      contractSnapshot: contract,
+      brandSnapshot: brandCopy,
+    }),
+    primaryAction: { label: 'Review & sign contract', url: reviewUrl },
+    secondaryAction: { label: 'Download contract PDF', url: pdfUrl },
+    footerNote: `This secure link expires in ${LINK_LIFETIME_DAYS} days. If you need changes, use the request-changes option on the contract page.`,
+    customer: { name: recipientName, email: recipientEmail, phone: text(eventData.clientPhone, 80) },
+    data: { eventId, eventCode: text(eventCopy.eventCode, 80), revision, reviewUrl, pdfUrl },
   })
 
   await eventRef.set({
     contractApproval: {
       emailQueuedAt: admin.firestore.FieldValue.serverTimestamp(),
-      emailDeliveries: notification.ok ? notification.deliveries ?? 0 : 0,
+      emailDeliveries: sendResult.ok ? 1 : 0,
+      emailDeliveryStatus: sendResult.ok ? 'queued' : 'failed',
     },
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true })
 
-  return { ok: true, revision, reviewUrl, pdfUrl, deliveries: notification.ok ? notification.deliveries ?? 0 : 0 }
+  return { ok: true, revision, reviewUrl, pdfUrl, deliveries: sendResult.ok ? 1 : 0 }
 })
 
 export const getPublicEventContract = functions.https.onCall(async data => {
@@ -346,7 +402,8 @@ export const requestPublicEventContractChanges = functions.https.onCall(async da
   const now = admin.firestore.FieldValue.serverTimestamp()
 
   await defaultDb.runTransaction(async transaction => {
-    const [linkSnapshot, eventSnapshot] = await Promise.all([transaction.get(linkRef), transaction.get(eventRef)])
+    const linkSnapshot = await transaction.get(linkRef)
+    const eventSnapshot = await transaction.get(eventRef)
     if (!linkSnapshot.exists || !eventSnapshot.exists) throw new functions.https.HttpsError('not-found', 'Contract record not found')
     const link = linkSnapshot.data() as unknown as ContractLinkRecord
     if (link.status !== 'active') throw new functions.https.HttpsError('failed-precondition', 'This contract is no longer awaiting review')
@@ -372,22 +429,40 @@ export const requestPublicEventContractChanges = functions.https.onCall(async da
     })
   })
 
-  await queueBrandedNotification({
-    eventType: 'event.contract_changes_requested',
+  const brand = emailBrand(initialLink.brandSnapshot)
+  const rows = emailRows(initialLink)
+  const reference = `${initialLink.eventId}-contract-r${initialLink.revision}-changes-${Date.now()}`
+  const clientResult = await sendEventContractEmail({
     storeId: initialLink.storeId,
-    reference: `${initialLink.eventId}-contract-r${initialLink.revision}-changes-${Date.now()}`,
+    eventType: 'event.contract_changes_requested',
+    reference,
+    recipientType: 'customer',
+    to: initialLink.recipientEmail,
+    subject: `Contract change request received - ${brand.storeName}`,
+    title: 'Your change request was recorded',
+    intro: `Hello ${initialLink.recipientName || 'there'}, your requested changes were sent to ${brand.storeName}. The team will revise the agreement and send you a new secure link when it is ready.`,
+    brand,
+    rows,
+    primaryAction: { label: 'View current contract', url: initialLink.reviewUrl },
     customer: { name: initialLink.recipientName, email: initialLink.recipientEmail },
-    data: {
-      itemName: text(record(initialLink.eventSnapshot).title, 180) || 'Event',
-      eventCode: text(record(initialLink.eventSnapshot).eventCode, 80),
-      revision: initialLink.revision,
-      notes: note,
-      actionUrl: initialLink.reviewUrl,
-      actionLabel: 'View contract',
-    },
-    forceStoreAlert: true,
+    data: { eventId: initialLink.eventId, revision: initialLink.revision, notes: note },
   })
-  return { ok: true }
+  const admins = await eventContractAdminEmails(initialLink.storeId, brand.email)
+  await Promise.all(admins.map(to => sendEventContractEmail({
+    storeId: initialLink.storeId,
+    eventType: 'event.contract_changes_requested',
+    reference,
+    recipientType: 'store',
+    to,
+    subject: `Client requested contract changes - ${text(record(initialLink.eventSnapshot).title, 180) || 'Event'}`,
+    title: 'Client requested contract changes',
+    intro: `${initialLink.recipientName || initialLink.recipientEmail} requested changes to revision ${initialLink.revision}. Review the note in the Event Planning workspace before resending the contract.`,
+    brand,
+    rows: [...rows, ['Requested change', note]],
+    customer: { name: initialLink.recipientName, email: initialLink.recipientEmail },
+    data: { eventId: initialLink.eventId, revision: initialLink.revision, notes: note },
+  })))
+  return { ok: true, emailQueued: clientResult.ok }
 })
 
 export const signPublicEventContract = functions.https.onCall(async (data, context) => {
@@ -413,7 +488,8 @@ export const signPublicEventContract = functions.https.onCall(async (data, conte
   const ipHash = forwarded ? hashPublicContractToken(`${tokenHash}|${forwarded}`) : null
 
   await defaultDb.runTransaction(async transaction => {
-    const [linkSnapshot, eventSnapshot] = await Promise.all([transaction.get(linkRef), transaction.get(eventRef)])
+    const linkSnapshot = await transaction.get(linkRef)
+    const eventSnapshot = await transaction.get(eventRef)
     if (!linkSnapshot.exists || !eventSnapshot.exists) throw new functions.https.HttpsError('not-found', 'Contract record not found')
     const link = linkSnapshot.data() as unknown as ContractLinkRecord
     if (link.status !== 'active') throw new functions.https.HttpsError('failed-precondition', 'This contract is no longer awaiting signature')
@@ -457,27 +533,48 @@ export const signPublicEventContract = functions.https.onCall(async (data, conte
     })
   })
 
-  const notification = await queueBrandedNotification({
-    eventType: 'event.contract_signed',
+  const signedLink: ContractLinkRecord = { ...initialLink, status: 'signed', signerName, signerEmail: initialLink.recipientEmail, signatureText }
+  const brand = emailBrand(initialLink.brandSnapshot)
+  const rows = [...emailRows(signedLink), ['Signed by', signerName]]
+  const reference = `${initialLink.eventId}-contract-r${initialLink.revision}-signed`
+  const clientResult = await sendEventContractEmail({
     storeId: initialLink.storeId,
-    reference: `${initialLink.eventId}-contract-r${initialLink.revision}-signed`,
+    eventType: 'event.contract_signed',
+    reference,
+    recipientType: 'customer',
+    to: initialLink.recipientEmail,
+    subject: `Signed contract confirmed - ${brand.storeName}`,
+    title: 'Your signed contract is confirmed',
+    intro: `Hello ${signerName}, revision ${initialLink.revision} has been signed successfully. Download the signed PDF below and keep it for your records.`,
+    brand,
+    rows,
+    primaryAction: { label: 'Download signed contract PDF', url: initialLink.pdfUrl },
+    secondaryAction: { label: 'View signed contract', url: initialLink.reviewUrl },
     customer: { name: signerName, email: initialLink.recipientEmail },
-    data: {
-      itemName: text(record(initialLink.eventSnapshot).title, 180) || 'Event',
-      eventCode: text(record(initialLink.eventSnapshot).eventCode, 80),
-      revision: initialLink.revision,
-      actionUrl: initialLink.pdfUrl,
-      actionLabel: 'Download signed contract PDF',
-      secondaryUrl: initialLink.reviewUrl,
-      secondaryLabel: 'View signed contract',
-    },
-    forceStoreAlert: true,
+    data: { eventId: initialLink.eventId, revision: initialLink.revision, pdfUrl: initialLink.pdfUrl, reviewUrl: initialLink.reviewUrl },
   })
+  const admins = await eventContractAdminEmails(initialLink.storeId, brand.email)
+  const adminResults = await Promise.all(admins.map(to => sendEventContractEmail({
+    storeId: initialLink.storeId,
+    eventType: 'event.contract_signed',
+    reference,
+    recipientType: 'store',
+    to,
+    subject: `Client signed event contract - ${text(record(initialLink.eventSnapshot).title, 180) || 'Event'}`,
+    title: 'Client signed the event contract',
+    intro: `${signerName} signed revision ${initialLink.revision}. The signed PDF is ready for your records.`,
+    brand,
+    rows,
+    primaryAction: { label: 'Download signed contract PDF', url: initialLink.pdfUrl },
+    secondaryAction: { label: 'View signed contract', url: initialLink.reviewUrl },
+    customer: { name: signerName, email: initialLink.recipientEmail },
+    data: { eventId: initialLink.eventId, revision: initialLink.revision, pdfUrl: initialLink.pdfUrl, reviewUrl: initialLink.reviewUrl },
+  })))
 
   await eventRef.set({
     contractApproval: {
       signedEmailQueuedAt: admin.firestore.FieldValue.serverTimestamp(),
-      signedEmailDeliveries: notification.ok ? notification.deliveries ?? 0 : 0,
+      signedEmailDeliveries: (clientResult.ok ? 1 : 0) + adminResults.filter(result => result.ok).length,
     },
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true })
