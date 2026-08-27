@@ -209,4 +209,38 @@ describeOrSkip('Event planning P1 security regressions', () => {
       await destroyContext(owner)
     }
   })
+
+  test('event contract templates are isolated to members of the owning store', async () => {
+    const owner = await createOwner()
+    const otherOwner = await createOwner()
+    try {
+      const templateRef = doc(owner.db, 'stores', owner.storeId, 'eventContractTemplates', 'full-planning')
+      await setDoc(templateRef, {
+        name: 'Full Planning Contract',
+        serviceAgreement: 'Store-specific agreement text',
+        scopeOfWork: 'Store-specific scope',
+        paymentTerms: 'Store-specific payment terms',
+        cancellationPolicy: 'Store-specific cancellation policy',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+
+      const ownerRead = await getDoc(templateRef)
+      if (!ownerRead.exists()) throw new Error('owner must be able to read own event contract template')
+
+      await expectPermissionDenied(
+        getDoc(doc(otherOwner.db, 'stores', owner.storeId, 'eventContractTemplates', 'full-planning')),
+        'another store owner must not be able to read a different store contract template',
+      )
+      await expectPermissionDenied(
+        updateDoc(doc(otherOwner.db, 'stores', owner.storeId, 'eventContractTemplates', 'full-planning'), {
+          paymentTerms: 'Attacker-controlled terms',
+        }),
+        'another store owner must not be able to edit a different store contract template',
+      )
+    } finally {
+      await destroyContext(otherOwner)
+      await destroyContext(owner)
+    }
+  })
 })
