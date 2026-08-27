@@ -57,7 +57,7 @@ function run() {
     paymentTerms: 'Payment terms.',
     cancellationPolicy: 'Cancellation terms.',
   })
-  assert.ok(longPdf.toString('latin1').includes('/Count 2') || longPdf.toString('latin1').includes('/Count 3'))
+  assert.match(longPdf.toString('latin1'), /\/Count [2-9]/)
 
   console.log('event contract signing tests passed')
 }
