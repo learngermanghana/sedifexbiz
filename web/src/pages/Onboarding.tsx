@@ -16,7 +16,7 @@ export default function Onboarding() {
   const user = useAuthUser()
   const navigate = useNavigate()
   const { storeId, isLoading, error } = useActiveStore()
-  const { preferences, updatePreferences } = useStorePreferences(storeId)
+  const { preferences, loading: preferencesLoading, updatePreferences } = useStorePreferences(storeId)
   const [status, setStatus] = useState<OnboardingStatus>(
     () => getOnboardingStatus(user?.uid ?? null) ?? 'pending',
   )
@@ -51,8 +51,8 @@ export default function Onboarding() {
         <div>
           <h1 className="page__title" id="onboarding-title">Choose your navigation</h1>
           <p className="page__subtitle">
-            Select your business type and the pages your team needs. Sedifex starts with
-            the recommended primary navigation for your industry.
+            Sedifex automatically selects the recommended pages for the business type you chose during signup.
+            You can keep those defaults now and add more pages later from Account → Navigation settings whenever your business needs them.
           </p>
         </div>
         {status === 'completed' && (
@@ -61,8 +61,8 @@ export default function Onboarding() {
       </header>
 
       <section className="card onboarding-card" aria-label="Navigation setup">
-        {isLoading ? (
-          <p role="status">Loading your workspace…</p>
+        {isLoading || preferencesLoading ? (
+          <p role="status">Loading the recommended pages for your business type…</p>
         ) : error ? (
           <p role="alert">{error}</p>
         ) : storeId ? (
@@ -79,7 +79,7 @@ export default function Onboarding() {
       <button
         type="button"
         className="button button--primary onboarding-card__cta"
-        disabled={!storeId}
+        disabled={!storeId || isLoading || preferencesLoading}
         onClick={() => void handleComplete()}
       >
         Save and open dashboard
