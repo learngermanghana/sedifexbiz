@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto'
 import { admin, defaultDb } from './firestore'
 import { sendEventContractEmail } from './eventContractEmail'
 import { hashPublicContractToken } from './eventContractSigningCore'
+import { eventClientPortalHtml, type EventClientPortalPageData } from './eventClientPortalPage'
 
 type RecordMap = Record<string, unknown>
 type ClientTaskState = 'open' | 'submitted' | 'changes_requested' | 'verified'
@@ -47,7 +48,7 @@ function isoDate(value: unknown) {
 }
 
 function escapeHtml(value: unknown) {
-  return text(value, 20000)
+  return text(value, 10000)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -119,12 +120,13 @@ function taskState(value: unknown): ClientTaskState {
   return ['submitted', 'changes_requested', 'verified'].includes(String(value)) ? value as ClientTaskState : 'open'
 }
 
-async function portalData(rawToken: string) {
+async function portalData(rawToken: string): Promise<EventClientPortalPageData & { ok: true; expiresAt: string | null }> {
   const loaded = await loadPortalLink(rawToken)
   const [taskSnapshot, activitySnapshot] = await Promise.all([
     loaded.eventRef.collection('tasks').get(),
     loaded.eventRef.collection('clientActivity').orderBy('at', 'desc').limit(30).get(),
   ])
+
   const tasks = taskSnapshot.docs
     .filter(item => item.data().clientVisible === true)
     .map(item => {
@@ -159,6 +161,7 @@ async function portalData(rawToken: string) {
   })
   const brand = record(loaded.link.brandSnapshot)
   const visibleDone = tasks.filter(item => item.clientState === 'verified').length
+
   return {
     ok: true,
     event: {
@@ -181,31 +184,13 @@ async function portalData(rawToken: string) {
   }
 }
 
-function portalHtml() {
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Event client portal · Sedifex</title>
-<style>
-:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17211d;background:#f5f7f5}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#f7faf8 0,#eef4f0 100%);min-height:100vh}.shell{max-width:920px;margin:0 auto;padding:28px 18px 70px}.hero,.card{background:#fff;border:1px solid #dfe8e2;border-radius:20px;box-shadow:0 16px 50px rgba(20,35,26,.07)}.hero{padding:26px;margin-bottom:18px}.eyebrow{font-size:.75rem;font-weight:850;letter-spacing:.08em;text-transform:uppercase;color:#658071;margin:0 0 6px}.hero h1{margin:0;font-size:clamp(1.7rem,5vw,2.6rem);letter-spacing:-.035em}.hero p{color:#617066;line-height:1.6}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.pill{padding:7px 10px;border-radius:999px;background:#edf7f1;color:#326145;font-weight:760;font-size:.78rem}.progress{display:flex;align-items:center;gap:12px;margin-top:18px}.progress-track{height:9px;background:#e7eee9;border-radius:999px;overflow:hidden;flex:1}.progress-track i{display:block;height:100%;background:#2d7b50}.layout{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:18px}.card{padding:20px}.card h2{margin:0 0 5px;font-size:1.2rem}.muted{color:#6b7a70;font-size:.86rem;line-height:1.55}.tasks{display:grid;gap:12px;margin-top:16px}.task{border:1px solid #dfe8e2;border-radius:16px;padding:16px;background:#fbfdfb}.task-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.task h3{margin:0;font-size:1rem}.task-meta{font-size:.76rem;color:#748278;margin:5px 0 0}.state{white-space:nowrap;padding:5px 8px;border-radius:999px;font-size:.68rem;font-weight:850;background:#eef2ff;color:#4338ca}.state.submitted{background:#fff7ed;color:#c2410c}.state.changes_requested{background:#fff1f2;color:#be123c}.state.verified{background:#ecfdf5;color:#166534}.staff-note{padding:10px 11px;border-radius:10px;background:#fff7ed;color:#9a3412;font-size:.8rem;margin-top:10px}.client-note{padding:10px 11px;border-radius:10px;background:#f3f6f4;color:#53665a;font-size:.8rem;margin-top:10px}.task textarea{width:100%;min-height:76px;margin-top:12px;border:1px solid #cdd8d1;border-radius:10px;padding:10px;font:inherit;resize:vertical}.task button,.refresh{border:0;border-radius:10px;padding:10px 13px;background:#2d7b50;color:#fff;font:inherit;font-size:.82rem;font-weight:800;cursor:pointer;margin-top:8px}.task button:disabled{opacity:.55;cursor:not-allowed}.activity{display:grid;gap:10px;margin-top:14px}.activity-item{border-top:1px solid #e7ece8;padding-top:10px}.activity-item:first-child{border-top:0;padding-top:0}.activity-item strong{font-size:.8rem}.activity-item p{font-size:.76rem;color:#65746a;margin:3px 0}.empty{padding:20px;border:1px dashed #cfd9d2;border-radius:14px;text-align:center;color:#6b7a70}.alert{padding:12px;border-radius:12px;background:#fff1f2;color:#9f1239;margin-bottom:14px}.brand{font-weight:900;color:#2d7b50}.loading{padding:50px 10px;text-align:center;color:#64748b}@media(max-width:760px){.layout{grid-template-columns:1fr}.shell{padding:16px 12px 50px}.hero,.card{border-radius:16px}.task-top{flex-direction:column}.state{white-space:normal}}
-</style></head><body><main class="shell"><div id="root" class="loading">Loading your event tasks…</div></main>
-<script>
-const qs=new URLSearchParams(location.search);const token=qs.get('token')||'';const root=document.getElementById('root');let sending=false;
-const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-const stateLabel=(s)=>({open:'To do',submitted:'Submitted · awaiting verification',changes_requested:'Changes requested',verified:'Verified done'}[s]||'To do');
-const fmt=(v)=>{if(!v)return'';const d=new Date(v);return Number.isNaN(d.getTime())?v:d.toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})};
-async function callJson(url,options){const r=await fetch(url,options);const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||'Request failed');return data}
-function render(data){const e=data.event,b=data.brand;document.documentElement.style.setProperty('--brand',b.brandColor||'#2d7b50');const tasks=data.tasks||[];const activities=data.activities||[];root.className='';root.innerHTML=`<section class="hero"><p class="eyebrow"><span class="brand">${esc(b.storeName)}</span> · Client collaboration</p><h1>${esc(e.title)}</h1><p>Hello ${esc(e.clientName)}. Use this page to complete the planning items your event team has assigned to you. Your team verifies every item before it becomes officially done.</p><div class="meta">${e.eventCode?`<span class="pill">${esc(e.eventCode)}</span>`:''}${e.eventDate?`<span class="pill">${esc(e.eventDate)}</span>`:''}${e.venue?`<span class="pill">${esc(e.venue)}</span>`:''}</div><div class="progress"><strong>${data.progress}%</strong><div class="progress-track"><i style="width:${data.progress}%"></i></div><span class="muted">verified</span></div></section><div class="layout"><section class="card"><h2>Your tasks</h2><p class="muted">Submit a task when you believe it is complete. The event team will verify it or return it with a note.</p><div class="tasks">${tasks.length?tasks.map(t=>`<article class="task"><div class="task-top"><div><h3>${esc(t.title)}</h3><p class="task-meta">${esc(t.category)}${t.dueDate?` · Due ${esc(t.dueDate)}`:''}</p></div><span class="state ${esc(t.clientState)}">${esc(stateLabel(t.clientState))}</span></div>${t.clientStaffNote?`<div class="staff-note"><strong>Event team:</strong> ${esc(t.clientStaffNote)}</div>`:''}${t.clientSubmissionNote?`<div class="client-note"><strong>Your last submission:</strong> ${esc(t.clientSubmissionNote)}</div>`:''}${t.clientState==='verified'?`<p class="muted">Verified ${esc(fmt(t.verifiedAt))}</p>`:`<textarea id="note-${esc(t.id)}" placeholder="Add a note, details, filename or confirmation for the event team…"></textarea><button type="button" data-submit="${esc(t.id)}">${t.clientState==='submitted'?'Resubmit update':'I have completed this · Submit'}</button>`}</article>`).join(''):`<div class="empty">Your event team has not assigned any client tasks yet.</div>`}</div></section><aside class="card"><h2>Activity</h2><p class="muted">Updates from you and the event team appear here.</p><div class="activity">${activities.length?activities.map(a=>`<div class="activity-item"><strong>${esc(a.taskTitle||'Event update')}</strong><p>${esc(a.actor||'Update')} · ${esc(fmt(a.at))}</p>${a.note?`<p>${esc(a.note)}</p>`:''}</div>`).join(''):`<p class="muted">No client activity yet.</p>`}</div></aside></div>`;document.querySelectorAll('[data-submit]').forEach(btn=>btn.addEventListener('click',()=>submitTask(btn.dataset.submit)))}
-async function load(){if(!token){root.innerHTML='<div class="alert">This client link is incomplete.</div>';return}try{const data=await callJson(location.pathname+'?json=1&token='+encodeURIComponent(token));render(data)}catch(e){root.innerHTML='<div class="alert">'+esc(e.message||'This client link is no longer available.')+'</div>'}}
-async function submitTask(taskId){if(sending)return;const note=document.getElementById('note-'+taskId)?.value||'';sending=true;try{await callJson(location.pathname+'?token='+encodeURIComponent(token),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'submit',token,taskId,note})});await load()}catch(e){alert(e.message||'Could not submit this task.')}finally{sending=false}}
-load();setInterval(()=>{if(!document.hidden&&!sending)load()},4000);
-</script></body></html>`
-}
-
 function errorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : ''
   if (message === 'LINK_EXPIRED') return 'This client portal link has expired. Ask the event team to share a new link.'
   if (message === 'LINK_REVOKED') return 'This client portal link is no longer active. Ask the event team for the latest link.'
   if (message === 'EVENT_NOT_FOUND') return 'This event is no longer available.'
+  if (message === 'TASK_NOT_SHARED') return 'This task is no longer shared with you.'
+  if (message === 'TASK_ALREADY_DONE') return 'This task has already been verified as done.'
   return 'This client portal link is invalid or no longer available.'
 }
 
@@ -223,6 +208,7 @@ export const shareEventClientPortal = functions.https.onCall(async (data, contex
   ])
   if (!eventSnapshot.exists) throw new functions.https.HttpsError('not-found', 'Event not found')
   if (visibleTasks.empty) throw new functions.https.HttpsError('failed-precondition', 'Choose at least one client-visible checklist task before sharing the portal')
+
   const eventData = eventSnapshot.data() as RecordMap
   const recipientEmail = email(eventData.clientEmail)
   const recipientName = text(eventData.clientName, 180) || 'Client'
@@ -311,27 +297,29 @@ export const eventClientPortal = functions.https.onRequest(async (req, res) => {
         res.status(400).json({ error: 'Choose a task to submit.' })
         return
       }
+
       const loaded = await loadPortalLink(rawToken)
       const taskRef = loaded.eventRef.collection('tasks').doc(taskId)
       const activityRef = loaded.eventRef.collection('clientActivity').doc()
       const now = admin.firestore.FieldValue.serverTimestamp()
 
       await defaultDb.runTransaction(async transaction => {
-        const [linkSnapshot, eventSnapshot, taskSnapshot] = await Promise.all([
-          transaction.get(loaded.linkRef),
-          transaction.get(loaded.eventRef),
-          transaction.get(taskRef),
-        ])
+        const linkSnapshot = await transaction.get(loaded.linkRef)
+        const eventSnapshot = await transaction.get(loaded.eventRef)
+        const taskSnapshot = await transaction.get(taskRef)
         if (!linkSnapshot.exists || !eventSnapshot.exists || !taskSnapshot.exists) throw new Error('INVALID_LINK')
+
         const link = linkSnapshot.data() as unknown as ClientPortalLink
         if (link.status !== 'active' || link.expiresAt.toMillis() < Date.now()) throw new Error('LINK_EXPIRED')
         const eventData = eventSnapshot.data() as RecordMap
         const livePortal = record(eventData.clientPortal)
         if (text(livePortal.publicLinkHash, 100) !== linkSnapshot.id || text(livePortal.status, 40) !== 'active') throw new Error('LINK_REVOKED')
+
         const taskData = taskSnapshot.data() as RecordMap
         if (taskData.clientVisible !== true) throw new Error('TASK_NOT_SHARED')
         if (text(taskData.status, 40) === 'done' || taskState(taskData.clientState) === 'verified') throw new Error('TASK_ALREADY_DONE')
         const taskTitle = text(taskData.title, 240) || 'Event task'
+
         transaction.update(taskRef, {
           status: text(taskData.status, 40) === 'todo' ? 'in_progress' : text(taskData.status, 40) || 'in_progress',
           clientState: 'submitted',
@@ -356,13 +344,12 @@ export const eventClientPortal = functions.https.onRequest(async (req, res) => {
       return
     }
 
+    const data = await portalData(rawToken)
     if (String(req.query.json || '') === '1') {
-      res.json(await portalData(rawToken))
+      res.json(data)
       return
     }
-
-    await loadPortalLink(rawToken)
-    res.status(200).type('html').send(portalHtml())
+    res.status(200).type('html').send(eventClientPortalHtml(data, rawToken))
   } catch (error) {
     const message = errorMessage(error)
     if (String(req.query.json || '') === '1' || req.method === 'POST') {
