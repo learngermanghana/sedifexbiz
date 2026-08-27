@@ -18,6 +18,30 @@ import './EventPlanning.css'
 type EventStatus = 'new' | 'planning' | 'awaiting_client' | 'confirmed' | 'completed' | 'cancelled'
 type PlanningPackage = 'full_planning' | 'partial_planning' | 'coordination_only' | 'staffing_only'
 type Complexity = 'standard' | 'moderate' | 'complex' | 'premium'
+type PackagePricing = 'included' | 'optional' | 'additional'
+
+type PackageItem = {
+  id: string
+  title: string
+  category: string
+  pricing: PackagePricing
+  amount: number | null
+  notes: string
+}
+
+type ClientBrief = {
+  requirements: string
+  themeColours: string
+  venueRequirements: string
+  catering: string
+  decor: string
+  entertainment: string
+  photography: string
+  transport: string
+  accommodation: string
+  specialInstructions: string
+  packageItems: PackageItem[]
+}
 
 type EventRecord = {
   id: string
@@ -37,6 +61,7 @@ type EventRecord = {
   status: EventStatus
   progress: number
   notes: string
+  clientBrief: ClientBrief
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -59,6 +84,10 @@ type EventForm = {
   notes: string
 }
 
+type ClientBriefForm = Omit<ClientBrief, 'packageItems'> & {
+  packageItems: Array<Omit<PackageItem, 'amount'> & { amount: string }>
+}
+
 const EMPTY_FORM: EventForm = {
   title: '',
   eventType: 'Traditional wedding',
@@ -77,6 +106,20 @@ const EMPTY_FORM: EventForm = {
   notes: '',
 }
 
+const EMPTY_BRIEF: ClientBrief = {
+  requirements: '',
+  themeColours: '',
+  venueRequirements: '',
+  catering: '',
+  decor: '',
+  entertainment: '',
+  photography: '',
+  transport: '',
+  accommodation: '',
+  specialInstructions: '',
+  packageItems: [],
+}
+
 const STATUS_LABELS: Record<EventStatus, string> = {
   new: 'New enquiry',
   planning: 'Planning',
@@ -91,6 +134,12 @@ const PACKAGE_LABELS: Record<PlanningPackage, string> = {
   partial_planning: 'Partial planning',
   coordination_only: 'Coordination only',
   staffing_only: 'Staffing only',
+}
+
+const PACKAGE_PRICING_LABELS: Record<PackagePricing, string> = {
+  included: 'Included',
+  optional: 'Optional',
+  additional: 'Additional cost',
 }
 
 const COMPLEXITY_LABELS: Record<Complexity, string> = {
@@ -109,6 +158,19 @@ const EVENT_TYPES = [
   'Birthday',
   'Engagement',
   'Graduation',
+  'Other',
+]
+
+const PACKAGE_ITEM_CATEGORIES = [
+  'Planning',
+  'Venue',
+  'Catering',
+  'Decor',
+  'Entertainment',
+  'Photography / Video',
+  'Transport',
+  'Accommodation',
+  'Staffing',
   'Other',
 ]
 
@@ -141,6 +203,44 @@ function isComplexity(value: unknown): value is Complexity {
   return ['standard', 'moderate', 'complex', 'premium'].includes(String(value))
 }
 
+function isPackagePricing(value: unknown): value is PackagePricing {
+  return ['included', 'optional', 'additional'].includes(String(value))
+}
+
+function mapPackageItem(value: unknown, index: number): PackageItem | null {
+  if (!value || typeof value !== 'object') return null
+  const item = value as Record<string, unknown>
+  const title = text(item.title)
+  if (!title) return null
+  return {
+    id: text(item.id) || `package-item-${index}`,
+    title,
+    category: text(item.category) || 'Other',
+    pricing: isPackagePricing(item.pricing) ? item.pricing : 'included',
+    amount: typeof item.amount === 'number' && Number.isFinite(item.amount) ? item.amount : null,
+    notes: text(item.notes),
+  }
+}
+
+function mapClientBrief(value: unknown): ClientBrief {
+  if (!value || typeof value !== 'object') return { ...EMPTY_BRIEF, packageItems: [] }
+  const brief = value as Record<string, unknown>
+  const rawItems = Array.isArray(brief.packageItems) ? brief.packageItems : []
+  return {
+    requirements: text(brief.requirements),
+    themeColours: text(brief.themeColours),
+    venueRequirements: text(brief.venueRequirements),
+    catering: text(brief.catering),
+    decor: text(brief.decor),
+    entertainment: text(brief.entertainment),
+    photography: text(brief.photography),
+    transport: text(brief.transport),
+    accommodation: text(brief.accommodation),
+    specialInstructions: text(brief.specialInstructions),
+    packageItems: rawItems.map(mapPackageItem).filter((item): item is PackageItem => Boolean(item)),
+  }
+}
+
 function mapEvent(id: string, data: Record<string, unknown>): EventRecord {
   return {
     id,
@@ -160,6 +260,7 @@ function mapEvent(id: string, data: Record<string, unknown>): EventRecord {
     status: isEventStatus(data.status) ? data.status : 'new',
     progress: Math.max(0, Math.min(100, numberValue(data.progress, 0))),
     notes: text(data.notes),
+    clientBrief: mapClientBrief(data.clientBrief),
     createdAt: toDate(data.createdAt),
     updatedAt: toDate(data.updatedAt),
   }
@@ -180,6 +281,27 @@ function formatMoney(value: number | null) {
 function buildEventCode(date: string) {
   const year = date.slice(0, 4) || String(new Date().getFullYear())
   return `ECE-${year}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`
+}
+
+function briefToForm(brief: ClientBrief): ClientBriefForm {
+  return {
+    ...brief,
+    packageItems: brief.packageItems.map(item => ({
+      ...item,
+      amount: item.amount === null ? '' : String(item.amount),
+    })),
+  }
+}
+
+function createPackageItem(): ClientBriefForm['packageItems'][number] {
+  return {
+    id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: '',
+    category: 'Planning',
+    pricing: 'included',
+    amount: '',
+    notes: '',
+  }
 }
 
 function EventFormModal({
@@ -250,7 +372,7 @@ function EventFormModal({
           <div>
             <p className="event-planning__eyebrow">{event ? 'Update event' : 'New event'}</p>
             <h2 id="event-form-title">{event ? 'Edit event details' : 'Create an event'}</h2>
-            <p>Capture the essential details now. Checklists, vendors and timelines will be attached from the event workspace.</p>
+            <p>Capture the essential details now. The client brief and package inclusions are managed from the event workspace.</p>
           </div>
           <button type="button" className="event-planning__icon-button" onClick={onClose} aria-label="Close form">×</button>
         </header>
@@ -328,7 +450,7 @@ function EventFormModal({
             </label>
             <label className="event-planning__field--wide">
               Internal notes
-              <textarea rows={3} value={form.notes} onChange={e => update('notes', e.target.value)} placeholder="Important requirements, preferences or early planning notes" />
+              <textarea rows={3} value={form.notes} onChange={e => update('notes', e.target.value)} placeholder="Important internal planning notes" />
             </label>
           </div>
           <footer className="event-planning__modal-actions">
@@ -339,6 +461,265 @@ function EventFormModal({
           </footer>
         </form>
       </section>
+    </div>
+  )
+}
+
+function ClientBriefModal({
+  event,
+  onClose,
+  onSave,
+}: {
+  event: EventRecord
+  onClose: () => void
+  onSave: (brief: ClientBrief) => Promise<void>
+}) {
+  const [form, setForm] = useState<ClientBriefForm>(() => briefToForm(event.clientBrief))
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  function updateField<K extends Exclude<keyof ClientBriefForm, 'packageItems'>>(key: K, value: ClientBriefForm[K]) {
+    setForm(previous => ({ ...previous, [key]: value }))
+  }
+
+  function updatePackageItem(index: number, patch: Partial<ClientBriefForm['packageItems'][number]>) {
+    setForm(previous => ({
+      ...previous,
+      packageItems: previous.packageItems.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item),
+    }))
+  }
+
+  function removePackageItem(index: number) {
+    setForm(previous => ({
+      ...previous,
+      packageItems: previous.packageItems.filter((_, itemIndex) => itemIndex !== index),
+    }))
+  }
+
+  function addPackageItem() {
+    setForm(previous => ({ ...previous, packageItems: [...previous.packageItems, createPackageItem()] }))
+  }
+
+  async function submit(submitEvent: React.FormEvent) {
+    submitEvent.preventDefault()
+    const packageItems: PackageItem[] = []
+
+    for (const item of form.packageItems) {
+      const title = item.title.trim()
+      if (!title) continue
+      const amount = item.amount.trim() ? Number(item.amount) : null
+      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+        setFormError(`Enter a valid amount for “${title}”.`)
+        return
+      }
+      packageItems.push({
+        id: item.id,
+        title,
+        category: item.category,
+        pricing: item.pricing,
+        amount,
+        notes: item.notes.trim(),
+      })
+    }
+
+    setSaving(true)
+    setFormError(null)
+    try {
+      await onSave({
+        requirements: form.requirements.trim(),
+        themeColours: form.themeColours.trim(),
+        venueRequirements: form.venueRequirements.trim(),
+        catering: form.catering.trim(),
+        decor: form.decor.trim(),
+        entertainment: form.entertainment.trim(),
+        photography: form.photography.trim(),
+        transport: form.transport.trim(),
+        accommodation: form.accommodation.trim(),
+        specialInstructions: form.specialInstructions.trim(),
+        packageItems,
+      })
+    } catch (error) {
+      console.error('[event-planning] Unable to save client brief', error)
+      setFormError('The client brief could not be saved. Please try again.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="event-planning__modal-backdrop" onMouseDown={onClose}>
+      <section
+        className="event-planning__modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="client-brief-title"
+        onMouseDown={modalEvent => modalEvent.stopPropagation()}
+      >
+        <header className="event-planning__modal-heading">
+          <div>
+            <p className="event-planning__eyebrow">{event.eventCode}</p>
+            <h2 id="client-brief-title">Client brief & package</h2>
+            <p>Record the client’s requirements and clearly separate what is included, optional, or charged additionally.</p>
+          </div>
+          <button type="button" className="event-planning__icon-button" onClick={onClose} aria-label="Close client brief">×</button>
+        </header>
+
+        {formError ? <p className="event-planning__alert event-planning__alert--error">{formError}</p> : null}
+
+        <form onSubmit={submit}>
+          <div className="event-planning__form-grid">
+            <label className="event-planning__field--wide">
+              Main client requirements
+              <textarea rows={4} value={form.requirements} onChange={e => updateField('requirements', e.target.value)} placeholder="What does the client expect from this event? Key priorities, must-haves and non-negotiables." />
+            </label>
+            <label>
+              Theme / colours
+              <textarea rows={3} value={form.themeColours} onChange={e => updateField('themeColours', e.target.value)} placeholder="Theme, colour palette, dress code, styling direction" />
+            </label>
+            <label>
+              Venue requirements
+              <textarea rows={3} value={form.venueRequirements} onChange={e => updateField('venueRequirements', e.target.value)} placeholder="Layout, capacity, accessibility, power, parking, permits" />
+            </label>
+            <label>
+              Catering
+              <textarea rows={3} value={form.catering} onChange={e => updateField('catering', e.target.value)} placeholder="Menu, drinks, service style, dietary needs" />
+            </label>
+            <label>
+              Décor
+              <textarea rows={3} value={form.decor} onChange={e => updateField('decor', e.target.value)} placeholder="Flowers, stage, tables, signage, lighting" />
+            </label>
+            <label>
+              Entertainment
+              <textarea rows={3} value={form.entertainment} onChange={e => updateField('entertainment', e.target.value)} placeholder="MC, DJ, band, performers, music preferences" />
+            </label>
+            <label>
+              Photography / video
+              <textarea rows={3} value={form.photography} onChange={e => updateField('photography', e.target.value)} placeholder="Coverage, deliverables, shot list, livestream" />
+            </label>
+            <label>
+              Transport
+              <textarea rows={3} value={form.transport} onChange={e => updateField('transport', e.target.value)} placeholder="Client, guest, vendor or staff transport" />
+            </label>
+            <label>
+              Accommodation
+              <textarea rows={3} value={form.accommodation} onChange={e => updateField('accommodation', e.target.value)} placeholder="Rooms, check-in, guest or vendor accommodation" />
+            </label>
+            <label className="event-planning__field--wide">
+              Special instructions
+              <textarea rows={3} value={form.specialInstructions} onChange={e => updateField('specialInstructions', e.target.value)} placeholder="Cultural protocols, VIP handling, accessibility, security or other special instructions" />
+            </label>
+          </div>
+
+          <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--event-line)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, color: 'var(--event-ink)' }}>Package inclusions</h3>
+                <p style={{ margin: '4px 0 0', color: 'var(--event-muted)', fontSize: '.76rem' }}>Add each service or deliverable and identify how it is priced.</p>
+              </div>
+              <button type="button" className="button button--ghost" onClick={addPackageItem}>＋ Add item</button>
+            </div>
+
+            {form.packageItems.length === 0 ? (
+              <div className="event-planning__notes" style={{ marginTop: 0 }}>
+                <strong>No package items yet</strong>
+                <p>Add the agreed services so staff and the client can see exactly what the package covers.</p>
+              </div>
+            ) : null}
+
+            {form.packageItems.map((item, index) => (
+              <div key={item.id} className="event-planning__notes" style={{ marginTop: 10 }}>
+                <div className="event-planning__form-grid">
+                  <label className="event-planning__field--wide">
+                    Service / deliverable
+                    <input value={item.title} onChange={e => updatePackageItem(index, { title: e.target.value })} placeholder="e.g. Event-day coordination" />
+                  </label>
+                  <label>
+                    Category
+                    <select value={item.category} onChange={e => updatePackageItem(index, { category: e.target.value })}>
+                      {PACKAGE_ITEM_CATEGORIES.map(category => <option key={category}>{category}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Pricing
+                    <select value={item.pricing} onChange={e => updatePackageItem(index, { pricing: e.target.value as PackagePricing })}>
+                      {Object.entries(PACKAGE_PRICING_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Amount (GHS)
+                    <input type="number" min="0" step="0.01" value={item.amount} onChange={e => updatePackageItem(index, { amount: e.target.value })} placeholder={item.pricing === 'included' ? 'Leave blank if included' : '0.00'} />
+                  </label>
+                  <label>
+                    Notes
+                    <input value={item.notes} onChange={e => updatePackageItem(index, { notes: e.target.value })} placeholder="Limits, quantity, scope or conditions" />
+                  </label>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                  <button type="button" className="event-planning__danger" style={{ border: 0, background: 'transparent' }} onClick={() => removePackageItem(index)}>Remove item</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <footer className="event-planning__modal-actions">
+            <button type="button" className="button button--ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save client brief'}</button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  )
+}
+
+function BriefSummary({ brief }: { brief: ClientBrief }) {
+  const details = [
+    ['Main requirements', brief.requirements],
+    ['Theme / colours', brief.themeColours],
+    ['Venue requirements', brief.venueRequirements],
+    ['Catering', brief.catering],
+    ['Décor', brief.decor],
+    ['Entertainment', brief.entertainment],
+    ['Photography / video', brief.photography],
+    ['Transport', brief.transport],
+    ['Accommodation', brief.accommodation],
+    ['Special instructions', brief.specialInstructions],
+  ].filter(([, value]) => Boolean(value))
+
+  const additionalTotal = brief.packageItems.reduce((sum, item) => sum + (item.pricing === 'additional' && item.amount ? item.amount : 0), 0)
+
+  return (
+    <div className="event-planning__workspace-preview">
+      <h3>Client brief</h3>
+      {details.length === 0 && brief.packageItems.length === 0 ? (
+        <p>No client brief has been added yet.</p>
+      ) : (
+        <>
+          {details.length ? (
+            <dl className="event-planning__details" style={{ marginTop: 12 }}>
+              {details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{value}</dd></div>)}
+            </dl>
+          ) : null}
+
+          <div style={{ marginTop: 16 }}>
+            <strong style={{ color: 'var(--event-ink)', fontSize: '.82rem' }}>Package inclusions</strong>
+            {brief.packageItems.length === 0 ? <p>No package items added.</p> : (
+              <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                {brief.packageItems.map(item => (
+                  <div key={item.id} style={{ padding: 10, border: '1px solid var(--event-line)', borderRadius: 9, background: '#fafbf9' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                      <strong style={{ color: 'var(--event-ink)', fontSize: '.78rem' }}>{item.title}</strong>
+                      <span className={`event-planning__status event-planning__status--${item.pricing === 'additional' ? 'awaiting_client' : item.pricing === 'optional' ? 'new' : 'planning'}`}>
+                        {PACKAGE_PRICING_LABELS[item.pricing]}{item.amount !== null ? ` · ${formatMoney(item.amount)}` : ''}
+                      </span>
+                    </div>
+                    <small style={{ display: 'block', marginTop: 3, color: 'var(--event-muted)' }}>{item.category}{item.notes ? ` · ${item.notes}` : ''}</small>
+                  </div>
+                ))}
+              </div>
+            )}
+            {additionalTotal > 0 ? <p><strong>Additional-cost items total:</strong> {formatMoney(additionalTotal)}</p> : null}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -354,6 +735,7 @@ export default function EventPlanning() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingEvent, setEditingEvent] = useState<EventRecord | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<EventRecord | null>(null)
+  const [briefEvent, setBriefEvent] = useState<EventRecord | null>(null)
   const [deletingId, setDeletingId] = useState('')
 
   const loadEvents = useCallback(async () => {
@@ -383,13 +765,7 @@ export default function EventPlanning() {
     const search = queryText.trim().toLowerCase()
     return events.filter(event => {
       const matchesStatus = statusFilter === 'all' || event.status === statusFilter
-      const matchesSearch = !search || [
-        event.title,
-        event.eventCode,
-        event.eventType,
-        event.clientName,
-        event.venue,
-      ].join(' ').toLowerCase().includes(search)
+      const matchesSearch = !search || [event.title, event.eventCode, event.eventType, event.clientName, event.venue].join(' ').toLowerCase().includes(search)
       return matchesStatus && matchesSearch
     })
   }, [events, queryText, statusFilter])
@@ -401,9 +777,7 @@ export default function EventPlanning() {
 
   const awaitingClient = events.filter(event => event.status === 'awaiting_client').length
   const activePlanning = events.filter(event => ['new', 'planning', 'awaiting_client', 'confirmed'].includes(event.status)).length
-  const averageProgress = events.length
-    ? Math.round(events.reduce((sum, event) => sum + event.progress, 0) / events.length)
-    : 0
+  const averageProgress = events.length ? Math.round(events.reduce((sum, event) => sum + event.progress, 0) / events.length) : 0
 
   async function saveEvent(form: EventForm) {
     if (!storeId) throw new Error('No active workspace')
@@ -433,6 +807,7 @@ export default function EventPlanning() {
       await addDoc(collection(db, 'stores', storeId, 'events'), {
         ...payload,
         eventCode: buildEventCode(form.eventDate),
+        clientBrief: EMPTY_BRIEF,
         createdAt: serverTimestamp(),
       })
       setSuccessMessage('Event created successfully.')
@@ -441,6 +816,20 @@ export default function EventPlanning() {
     setModalOpen(false)
     setEditingEvent(null)
     await loadEvents()
+  }
+
+  async function saveClientBrief(brief: ClientBrief) {
+    if (!storeId || !briefEvent) throw new Error('No active event')
+    await updateDoc(doc(db, 'stores', storeId, 'events', briefEvent.id), {
+      clientBrief: brief,
+      updatedAt: serverTimestamp(),
+    })
+
+    const updated = { ...briefEvent, clientBrief: brief }
+    setEvents(previous => previous.map(event => event.id === updated.id ? updated : event))
+    if (selectedEvent?.id === updated.id) setSelectedEvent(updated)
+    setBriefEvent(null)
+    setSuccessMessage('Client brief and package updated.')
   }
 
   function openCreate() {
@@ -463,6 +852,7 @@ export default function EventPlanning() {
       await deleteDoc(doc(db, 'stores', storeId, 'events', event.id))
       setEvents(previous => previous.filter(item => item.id !== event.id))
       if (selectedEvent?.id === event.id) setSelectedEvent(null)
+      if (briefEvent?.id === event.id) setBriefEvent(null)
       setSuccessMessage('Event deleted.')
     } catch (error) {
       console.error('[event-planning] Unable to delete event', error)
@@ -506,39 +896,17 @@ export default function EventPlanning() {
       ) : null}
 
       <section className="event-planning__metrics" aria-label="Event summary">
-        <article>
-          <span>Upcoming events</span>
-          <strong>{upcomingEvents}</strong>
-          <small>Scheduled ahead</small>
-        </article>
-        <article>
-          <span>Active planning</span>
-          <strong>{activePlanning}</strong>
-          <small>Open client events</small>
-        </article>
-        <article>
-          <span>Awaiting client</span>
-          <strong>{awaitingClient}</strong>
-          <small>Requires follow-up</small>
-        </article>
-        <article>
-          <span>Average readiness</span>
-          <strong>{averageProgress}%</strong>
-          <small>Across all events</small>
-        </article>
+        <article><span>Upcoming events</span><strong>{upcomingEvents}</strong><small>Scheduled ahead</small></article>
+        <article><span>Active planning</span><strong>{activePlanning}</strong><small>Open client events</small></article>
+        <article><span>Awaiting client</span><strong>{awaitingClient}</strong><small>Requires follow-up</small></article>
+        <article><span>Average readiness</span><strong>{averageProgress}%</strong><small>Across all events</small></article>
       </section>
 
       <section className="event-planning__panel workspace-card">
         <header className="event-planning__panel-heading">
-          <div>
-            <h2>Event workspace</h2>
-            <p>{filteredEvents.length} of {events.length} events shown</p>
-          </div>
+          <div><h2>Event workspace</h2><p>{filteredEvents.length} of {events.length} events shown</p></div>
           <div className="event-planning__filters">
-            <label>
-              <span className="sr-only">Search events</span>
-              <input value={queryText} onChange={e => setQueryText(e.target.value)} placeholder="Search event, client or venue" />
-            </label>
+            <label><span className="sr-only">Search events</span><input value={queryText} onChange={e => setQueryText(e.target.value)} placeholder="Search event, client or venue" /></label>
             <label>
               <span className="sr-only">Filter by status</span>
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'all' | EventStatus)}>
@@ -559,46 +927,24 @@ export default function EventPlanning() {
         ) : (
           <div className="event-planning__table-wrap">
             <table className="event-planning__table">
-              <thead>
-                <tr>
-                  <th>Event</th>
-                  <th>Date and venue</th>
-                  <th>Guests</th>
-                  <th>Package</th>
-                  <th>Readiness</th>
-                  <th>Status</th>
-                  <th><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
+              <thead><tr><th>Event</th><th>Date and venue</th><th>Guests</th><th>Package</th><th>Readiness</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {filteredEvents.map(event => (
                   <tr key={event.id}>
                     <td>
-                      <button type="button" className="event-planning__event-link" onClick={() => setSelectedEvent(event)}>
-                        {event.title}
-                      </button>
-                      <span>{event.eventType} · {event.eventCode}</span>
-                      <small>{event.clientName}</small>
+                      <button type="button" className="event-planning__event-link" onClick={() => setSelectedEvent(event)}>{event.title}</button>
+                      <span>{event.eventType} · {event.eventCode}</span><small>{event.clientName}</small>
                     </td>
-                    <td>
-                      <strong>{formatDate(event.eventDate)}{event.startTime ? ` · ${event.startTime}` : ''}</strong>
-                      <span>{event.venue || 'Venue not set'}</span>
-                    </td>
+                    <td><strong>{formatDate(event.eventDate)}{event.startTime ? ` · ${event.startTime}` : ''}</strong><span>{event.venue || 'Venue not set'}</span></td>
                     <td><strong>{event.guestCount.toLocaleString()}</strong></td>
-                    <td><span>{PACKAGE_LABELS[event.planningPackage]}</span></td>
-                    <td>
-                      <div className="event-planning__readiness">
-                        <span><small>Checklist</small><strong>{event.progress}%</strong></span>
-                        <i><b style={{ width: `${event.progress}%` }} /></i>
-                      </div>
-                    </td>
+                    <td><span>{PACKAGE_LABELS[event.planningPackage]}</span><small>{event.clientBrief.packageItems.length} package item{event.clientBrief.packageItems.length === 1 ? '' : 's'}</small></td>
+                    <td><div className="event-planning__readiness"><span><small>Checklist</small><strong>{event.progress}%</strong></span><i><b style={{ width: `${event.progress}%` }} /></i></div></td>
                     <td><span className={`event-planning__status event-planning__status--${event.status}`}>{STATUS_LABELS[event.status]}</span></td>
                     <td>
                       <div className="event-planning__row-actions">
+                        <button type="button" onClick={() => setBriefEvent(event)}>Client brief</button>
                         <button type="button" onClick={() => openEdit(event)}>Edit</button>
-                        <button type="button" className="event-planning__danger" disabled={deletingId === event.id} onClick={() => void removeEvent(event)}>
-                          {deletingId === event.id ? 'Deleting…' : 'Delete'}
-                        </button>
+                        <button type="button" className="event-planning__danger" disabled={deletingId === event.id} onClick={() => void removeEvent(event)}>{deletingId === event.id ? 'Deleting…' : 'Delete'}</button>
                       </div>
                     </td>
                   </tr>
@@ -613,11 +959,7 @@ export default function EventPlanning() {
         <aside className="event-planning__drawer-backdrop" onMouseDown={() => setSelectedEvent(null)}>
           <section className="event-planning__drawer" onMouseDown={event => event.stopPropagation()} aria-label="Event overview">
             <header>
-              <div>
-                <p className="event-planning__eyebrow">{selectedEvent.eventCode}</p>
-                <h2>{selectedEvent.title}</h2>
-                <p>{selectedEvent.clientName}</p>
-              </div>
+              <div><p className="event-planning__eyebrow">{selectedEvent.eventCode}</p><h2>{selectedEvent.title}</h2><p>{selectedEvent.clientName}</p></div>
               <button type="button" className="event-planning__icon-button" onClick={() => setSelectedEvent(null)} aria-label="Close event details">×</button>
             </header>
             <div className="event-planning__drawer-status">
@@ -635,27 +977,27 @@ export default function EventPlanning() {
               <div><dt>Client contact</dt><dd>{selectedEvent.clientPhone || selectedEvent.clientEmail || 'Not provided'}</dd></div>
             </dl>
             {selectedEvent.notes ? <div className="event-planning__notes"><strong>Internal notes</strong><p>{selectedEvent.notes}</p></div> : null}
+            <BriefSummary brief={selectedEvent.clientBrief} />
             <div className="event-planning__workspace-preview">
               <h3>Event workspace</h3>
-              <p>The next phase will connect the checklist, client brief, vendors, staff, timeline, guest list, invoices and messages to this event.</p>
-              <div>
-                {['Overview', 'Checklist', 'Client brief', 'Vendors', 'Staff', 'Timeline', 'Invoices'].map(item => <span key={item}>{item}</span>)}
-              </div>
+              <p>Client brief and package inclusions are now active. Checklist, vendors, staff, timeline, guest list, invoices and messages can be connected next.</p>
+              <div>{['Overview', 'Client brief', 'Package', 'Checklist', 'Vendors', 'Staff', 'Timeline', 'Invoices'].map(item => <span key={item}>{item}</span>)}</div>
             </div>
             <footer>
               <button type="button" className="button button--ghost" onClick={() => setSelectedEvent(null)}>Close</button>
-              <button type="button" className="button button--primary" onClick={() => { setSelectedEvent(null); openEdit(selectedEvent) }}>Edit event</button>
+              <button type="button" className="button button--ghost" onClick={() => setBriefEvent(selectedEvent)}>Edit client brief</button>
+              <button type="button" className="button button--primary" onClick={() => { const event = selectedEvent; setSelectedEvent(null); openEdit(event) }}>Edit event</button>
             </footer>
           </section>
         </aside>
       ) : null}
 
       {modalOpen ? (
-        <EventFormModal
-          event={editingEvent}
-          onClose={() => { setModalOpen(false); setEditingEvent(null) }}
-          onSave={saveEvent}
-        />
+        <EventFormModal event={editingEvent} onClose={() => { setModalOpen(false); setEditingEvent(null) }} onSave={saveEvent} />
+      ) : null}
+
+      {briefEvent ? (
+        <ClientBriefModal event={briefEvent} onClose={() => setBriefEvent(null)} onSave={saveClientBrief} />
       ) : null}
     </main>
   )
