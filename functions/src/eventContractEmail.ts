@@ -29,7 +29,7 @@ export type ContractEmailInput = {
   title: string
   intro: string
   brand: ContractEmailBrand
-  rows?: Array<[string, string]>
+  rows?: string[][]
   primaryAction?: ContractEmailAction
   secondaryAction?: ContractEmailAction
   footerNote?: string
