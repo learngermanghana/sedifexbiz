@@ -303,6 +303,8 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
       ...(matchesPersistedTerms && loadedContract
         ? {
             status: loadedContract.status,
+            signerName: loadedContract.signerName || event.clientName,
+            signerEmail: loadedContract.signerEmail || event.clientEmail,
             signatureText: loadedContract.signatureText,
             signatureConsent: loadedContract.signatureConsent,
             approvedAt: loadedContract.approvedAt,
@@ -319,7 +321,7 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
     setError(null)
     setSuccess(
       matchesPersistedTerms
-        ? `“${templateName}” matches the saved contract terms. Persisted approval and signature were restored.`
+        ? `“${templateName}” matches the saved contract terms. Persisted approval, signer identity and signature were restored.`
         : `“${templateName}” applied. Review the wording, adjust it for this event and save the draft before sending.`,
     )
   }
@@ -373,8 +375,8 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         let approvedAt: Date | null | ReturnType<typeof serverTimestamp> = current.approvedAt
         let changesRequestedAt: Date | null | ReturnType<typeof serverTimestamp> = current.changesRequestedAt
         let signedAt: Date | null | ReturnType<typeof serverTimestamp> = current.signedAt
-        const signerName = localContract.signerName.trim()
-        const signerEmail = localContract.signerEmail.trim().toLowerCase()
+        let signerName = localContract.signerName.trim()
+        let signerEmail = localContract.signerEmail.trim().toLowerCase()
         let signatureText = localContract.signatureText.trim()
         let signatureConsent = localContract.signatureConsent
         let note = ''
@@ -390,6 +392,12 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         if (action === 'draft_saved') {
           if (current.status === 'approved' && !currentTermsChanged) {
             status = 'approved'
+            signerName = current.signerName
+            signerEmail = current.signerEmail
+            signatureText = current.signatureText
+            signatureConsent = current.signatureConsent
+            approvedAt = current.approvedAt
+            signedAt = current.signedAt
             note = `Approved revision ${revision} retained because the contract terms did not change.`
           } else {
             status = 'draft'
