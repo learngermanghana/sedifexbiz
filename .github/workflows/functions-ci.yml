@@ -33,3 +33,7 @@ jobs:
       - name: Test event audit
         run: npm run test:event-audit
         working-directory: functions
+
+      - name: Test event contract signing
+        run: npm run test:event-contract
+        working-directory: functions
