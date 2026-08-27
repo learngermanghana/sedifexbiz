@@ -36,8 +36,15 @@ export const syncEventPlanningCustomer = functions.firestore
     const after = change.after.data() as RecordMap
     const before = change.before.exists ? change.before.data() as RecordMap : null
     const integrations = record(after.integrations)
+    const beforeIntegrations = before ? record(before.integrations) : {}
     const linkedCustomerId = text(integrations.clientCustomerId, 240)
+    const beforeLinkedCustomerId = text(beforeIntegrations.clientCustomerId, 240)
     const identityChanged = !before || clientIdentity(before) !== clientIdentity(after)
+    const explicitLinkRemoval = Boolean(before && beforeLinkedCustomerId && !linkedCustomerId && !identityChanged)
+
+    // Respect the organizer explicitly removing the client/customer link. Without
+    // this guard the trigger would immediately recreate the same link.
+    if (explicitLinkRemoval) return null
 
     // Event-only edits should not touch an existing client link. This also stops
     // the trigger from looping after it writes integrations.clientCustomerId.
