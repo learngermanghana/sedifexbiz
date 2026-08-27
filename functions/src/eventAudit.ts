@@ -48,9 +48,7 @@ export const auditEventPlanningWrite = onDocumentWrittenWithAuthContext(
       .collection('eventActivity')
       .doc(auditDocumentId(event.id))
 
-    const batch = defaultDb.batch()
-
-    batch.set(activityRef, {
+    const activity = {
       storeId,
       eventId,
       eventCode: text(current.eventCode, 80) || null,
@@ -65,23 +63,44 @@ export const auditEventPlanningWrite = onDocumentWrittenWithAuthContext(
       progressAfter: numberOrNull(after?.progress),
       occurredAt: now,
       source: 'firestore-auth-context',
-    })
-
-    if (afterSnapshot?.exists) {
-      const metadata: RecordMap = {
-        updatedBy: actorId,
-        updatedByType: actorType,
-        auditUpdatedAt: now,
-      }
-
-      if (action === 'created') {
-        metadata.createdBy = actorId
-        metadata.createdByType = actorType
-      }
-
-      batch.set(afterSnapshot.ref, metadata, { merge: true })
     }
 
-    await batch.commit()
+    // Firestore event delivery is asynchronous and not ordered relative to a
+    // later write. Never merge metadata straight into the trigger snapshot's
+    // ref: if the event was deleted meanwhile, a set(..., { merge: true })
+    // would recreate a phantom event containing only audit fields.
+    await defaultDb.runTransaction(async transaction => {
+      if (afterSnapshot?.exists) {
+        const liveSnapshot = await transaction.get(afterSnapshot.ref)
+        const triggerUpdateTime = afterSnapshot.updateTime
+        const liveUpdateTime = liveSnapshot.updateTime
+        const sameVersion = Boolean(
+          liveSnapshot.exists
+          && triggerUpdateTime
+          && liveUpdateTime
+          && liveUpdateTime.isEqual(triggerUpdateTime),
+        )
+
+        // Only annotate the exact event version that produced this trigger.
+        // If it was deleted or changed again, its later trigger will carry the
+        // correct actor metadata instead.
+        if (sameVersion) {
+          const metadata: RecordMap = {
+            updatedBy: actorId,
+            updatedByType: actorType,
+            auditUpdatedAt: now,
+          }
+
+          if (action === 'created') {
+            metadata.createdBy = actorId
+            metadata.createdByType = actorType
+          }
+
+          transaction.update(afterSnapshot.ref, metadata)
+        }
+      }
+
+      transaction.set(activityRef, activity)
+    })
   },
 )
