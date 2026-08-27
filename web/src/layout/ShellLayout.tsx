@@ -2,7 +2,6 @@ import React from 'react'
 import { Outlet } from 'react-router-dom'
 import AskSedifexAgent from '../components/AskSedifexAgent'
 import EventClientCollaborationDock from '../components/EventClientCollaborationDock'
-import EventEmailDeliveryDock from '../components/EventEmailDeliveryDock'
 import EventProductionToolsDock from '../components/EventProductionToolsDock'
 import Shell from './Shell'
 
@@ -13,7 +12,6 @@ export function ShellLayout() {
     <Shell>
       <Outlet />
       <EventClientCollaborationDock />
-      <EventEmailDeliveryDock />
       <EventProductionToolsDock />
       {/* Keep EventPdfExportDock mounted only at App level so the Events list and full event workspace share one export control. */}
       {/* Temporarily hide Ask Sedifex until it is ready to return. */}
