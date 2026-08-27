@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { doc, getDoc, runTransaction, Timestamp } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, runTransaction, serverTimestamp, Timestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 
 type ApprovalStatus = 'draft' | 'sent' | 'approved' | 'changes_requested'
@@ -221,10 +221,14 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         if (!active) return
         const rawContract = snapshot.data()?.contractApproval
         const mapped = mapContract(rawContract)
+        const historySnapshot = await getDocs(collection(db, 'stores', storeId, 'events', event.id, 'contractApprovalHistory'))
+        if (!active) return
+        const serverHistory = historySnapshot.docs.flatMap(historyDoc => mapHistory([historyDoc.data()]))
         const hydrated = {
           ...mapped,
           signerName: mapped.signerName || event.clientName,
           signerEmail: mapped.signerEmail || event.clientEmail,
+          history: [...mapped.history, ...serverHistory].sort((a, b) => a.at.getTime() - b.at.getTime()),
         }
         setContract(hydrated)
         setLoadedContract(mapped)
@@ -278,10 +282,11 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
 
     try {
       const eventRef = doc(db, 'stores', storeId, 'events', event.id)
+      const historyRef = doc(collection(eventRef, 'contractApprovalHistory'))
       const loadedSnapshot = loadedContract
       const localContract = contract
 
-      const next = await runTransaction(db, async transaction => {
+      await runTransaction(db, async transaction => {
         const snapshot = await transaction.get(eventRef)
         if (!snapshot.exists()) throw new Error('EVENT_NOT_FOUND')
 
@@ -296,16 +301,15 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
           throw new Error(CONTRACT_CONFLICT_ERROR)
         }
 
-        const now = new Date()
         const currentTermsChanged = termsFingerprint(localContract) !== termsFingerprint(current)
         const revision = currentTermsChanged && hasPersistedTerms(current)
           ? current.revision + 1
           : current.revision
         let status: ApprovalStatus = current.status
-        let sentAt = current.sentAt
-        let approvedAt = current.approvedAt
-        let changesRequestedAt = current.changesRequestedAt
-        let signedAt = current.signedAt
+        let sentAt: Date | null | ReturnType<typeof serverTimestamp> = current.sentAt
+        let approvedAt: Date | null | ReturnType<typeof serverTimestamp> = current.approvedAt
+        let changesRequestedAt: Date | null | ReturnType<typeof serverTimestamp> = current.changesRequestedAt
+        let signedAt: Date | null | ReturnType<typeof serverTimestamp> = current.signedAt
         let signerName = localContract.signerName.trim()
         let signerEmail = localContract.signerEmail.trim().toLowerCase()
         let signatureText = localContract.signatureText.trim()
@@ -321,12 +325,17 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         }
 
         if (action === 'draft_saved') {
-          status = 'draft'
-          note = currentTermsChanged ? `Contract terms saved as revision ${revision}.` : 'Contract draft saved.'
+          if (current.status === 'approved' && !currentTermsChanged) {
+            status = 'approved'
+            note = `Approved revision ${revision} retained because the contract terms did not change.`
+          } else {
+            status = 'draft'
+            note = currentTermsChanged ? `Contract terms saved as revision ${revision}.` : 'Contract draft saved.'
+          }
         }
         if (action === 'sent_to_client') {
           status = 'sent'
-          sentAt = now
+          sentAt = serverTimestamp()
           approvedAt = null
           signedAt = null
           signatureText = ''
@@ -335,7 +344,7 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         }
         if (action === 'changes_requested') {
           status = 'changes_requested'
-          changesRequestedAt = now
+          changesRequestedAt = serverTimestamp()
           approvedAt = null
           signedAt = null
           signatureText = ''
@@ -344,51 +353,58 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         }
         if (action === 'client_signed') {
           status = 'approved'
-          approvedAt = now
-          signedAt = now
+          approvedAt = serverTimestamp()
+          signedAt = serverTimestamp()
           actor = signerName
           note = `Revision ${revision} approved with typed signature.`
         }
 
-        const historyEntry: ApprovalHistoryEntry = {
-          action,
-          status,
-          at: now,
-          note,
-          actor,
-        }
-
-        const nextContract: ContractApproval = {
-          ...current,
-          status,
-          revision,
-          serviceAgreement: localContract.serviceAgreement.trim(),
-          scopeOfWork: localContract.scopeOfWork.trim(),
-          paymentTerms: localContract.paymentTerms.trim(),
-          cancellationPolicy: localContract.cancellationPolicy.trim(),
-          clientNotes: localContract.clientNotes.trim(),
-          signerName,
-          signerEmail,
-          signatureText,
-          signatureConsent,
-          sentAt,
-          approvedAt,
-          changesRequestedAt,
-          signedAt,
-          history: [...current.history, historyEntry],
-        }
-
         transaction.update(eventRef, {
-          contractApproval: nextContract,
-          updatedAt: now,
+          'contractApproval.status': status,
+          'contractApproval.revision': revision,
+          'contractApproval.serviceAgreement': localContract.serviceAgreement.trim(),
+          'contractApproval.scopeOfWork': localContract.scopeOfWork.trim(),
+          'contractApproval.paymentTerms': localContract.paymentTerms.trim(),
+          'contractApproval.cancellationPolicy': localContract.cancellationPolicy.trim(),
+          'contractApproval.clientNotes': localContract.clientNotes.trim(),
+          'contractApproval.signerName': signerName,
+          'contractApproval.signerEmail': signerEmail,
+          'contractApproval.signatureText': signatureText,
+          'contractApproval.signatureConsent': signatureConsent,
+          'contractApproval.sentAt': sentAt,
+          'contractApproval.approvedAt': approvedAt,
+          'contractApproval.changesRequestedAt': changesRequestedAt,
+          'contractApproval.signedAt': signedAt,
+          updatedAt: serverTimestamp(),
         })
 
-        return nextContract
+        transaction.set(historyRef, {
+          action,
+          status,
+          at: serverTimestamp(),
+          note,
+          actor,
+          revision,
+        })
       })
 
-      setContract(next)
-      setLoadedContract(next)
-      setLoadedHadPersistedApproval(true)
+      const [refreshedSnapshot, refreshedHistorySnapshot] = await Promise.all([
+        getDoc(eventRef),
+        getDocs(collection(eventRef, 'contractApprovalHistory')),
+      ])
+      const refreshedRawContract = refreshedSnapshot.data()?.contractApproval
+      const refreshedMapped = mapContract(refreshedRawContract)
+      const refreshedServerHistory = refreshedHistorySnapshot.docs.flatMap(historyDoc => mapHistory([historyDoc.data()]))
+      const refreshed = {
+        ...refreshedMapped,
+        signerName: refreshedMapped.signerName || event.clientName,
+        signerEmail: refreshedMapped.signerEmail || event.clientEmail,
+        history: [...refreshedMapped.history, ...refreshedServerHistory].sort((a, b) => a.at.getTime() - b.at.getTime()),
+      }
+
+      setContract(refreshed)
+      setLoadedContract(refreshedMapped)
+      setLoadedHadPersistedApproval(isStoredContract(refreshedRawContract))
       setSuccess(
         action === 'client_signed'
           ? 'Client approval and signature recorded.'
