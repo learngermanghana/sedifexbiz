@@ -165,6 +165,24 @@ function ensureLinkUsable(link: ContractLinkRecord, allowSigned = true) {
   }
 }
 
+async function assertPublicLinkStillCurrent(tokenHash: string, link: ContractLinkRecord) {
+  const eventSnapshot = await defaultDb.collection('stores').doc(link.storeId).collection('events').doc(link.eventId).get()
+  if (!eventSnapshot.exists) throw new functions.https.HttpsError('not-found', 'Event not found')
+  const eventData = eventSnapshot.data() as RecordMap
+  const approval = record(eventData.contractApproval)
+  const currentRevision = Math.max(1, Math.floor(numberValue(approval.revision, 1)))
+  if (currentRevision !== link.revision || text(approval.publicLinkHash, 100) !== tokenHash) {
+    throw new functions.https.HttpsError('failed-precondition', 'A newer contract revision is available')
+  }
+  const approvalStatus = text(approval.status, 40).toLowerCase()
+  if (link.status === 'active' && approvalStatus !== 'sent') {
+    throw new functions.https.HttpsError('failed-precondition', 'This contract is no longer awaiting client review')
+  }
+  if (link.status === 'signed' && approvalStatus !== 'approved') {
+    throw new functions.https.HttpsError('failed-precondition', 'This signed contract record is no longer current')
+  }
+}
+
 function pdfInput(link: ContractLinkRecord): EventContractPdfInput {
   const eventData = record(link.eventSnapshot)
   const contract = record(link.contractSnapshot)
@@ -229,7 +247,7 @@ export const sendEventContractForSignature = functions.https.onCall(async (data,
     throw new functions.https.HttpsError('failed-precondition', 'Save the contract terms before sending it to the client')
   }
   const recipientEmail = email(approval.signerEmail) || email(eventData.clientEmail)
-  const recipientName = text(eventData.clientName, 180) || text(approval.signerName, 180) || 'Client'
+  const recipientName = text(approval.signerName, 180) || text(eventData.clientName, 180) || 'Client'
   if (!recipientEmail) throw new functions.https.HttpsError('failed-precondition', 'Add the client email before sending the contract')
 
   const token = createPublicToken()
@@ -257,6 +275,9 @@ export const sendEventContractForSignature = functions.https.onCall(async (data,
     if (currentRevision !== revision) {
       throw new functions.https.HttpsError('aborted', 'The contract changed. Reload it before sending.')
     }
+    if (email(currentApproval.signerEmail) !== recipientEmail || (text(currentApproval.signerName, 180) || text(currentData.clientName, 180) || 'Client') !== recipientName) {
+      throw new functions.https.HttpsError('aborted', 'The contract recipient changed. Reload it before sending.')
+    }
     if (previousRef && previousHash !== tokenHash) {
       transaction.set(previousRef, { status: 'revoked', revokedAt: now, replacedByHash: tokenHash }, { merge: true })
     }
@@ -277,8 +298,6 @@ export const sendEventContractForSignature = functions.https.onCall(async (data,
       updatedAt: now,
       createdBy: context.auth?.uid || null,
     })
-    // The older event-communications trigger also watches for status=sent. Seed
-    // its idempotency key so the new secure email is the only initial message.
     transaction.set(legacyLogRef, {
       storeId,
       eventType: 'event.approval_request',
@@ -295,7 +314,7 @@ export const sendEventContractForSignature = functions.https.onCall(async (data,
       'contractApproval.signedAt': null,
       'contractApproval.signatureText': '',
       'contractApproval.signatureConsent': false,
-      'contractApproval.signerName': text(approval.signerName, 180) || recipientName,
+      'contractApproval.signerName': text(currentApproval.signerName, 180) || recipientName,
       'contractApproval.signerEmail': recipientEmail,
       'contractApproval.publicLinkHash': tokenHash,
       'contractApproval.publicReviewUrl': reviewUrl,
@@ -359,8 +378,9 @@ export const sendEventContractForSignature = functions.https.onCall(async (data,
 })
 
 export const getPublicEventContract = functions.https.onCall(async data => {
-  const { data: link } = await loadLink(text(data?.token, 300))
+  const { tokenHash, data: link } = await loadLink(text(data?.token, 300))
   ensureLinkUsable(link)
+  await assertPublicLinkStillCurrent(tokenHash, link)
   return {
     ok: true,
     status: link.status,
@@ -379,8 +399,9 @@ export const getPublicEventContract = functions.https.onCall(async data => {
 })
 
 export const getPublicEventContractPdf = functions.https.onCall(async data => {
-  const { data: link } = await loadLink(text(data?.token, 300))
+  const { tokenHash, data: link } = await loadLink(text(data?.token, 300))
   ensureLinkUsable(link)
+  await assertPublicLinkStillCurrent(tokenHash, link)
   const pdf = buildEventContractPdf(pdfInput(link))
   return {
     ok: true,
@@ -409,6 +430,9 @@ export const requestPublicEventContractChanges = functions.https.onCall(async da
     if (link.status !== 'active') throw new functions.https.HttpsError('failed-precondition', 'This contract is no longer awaiting review')
     const eventData = eventSnapshot.data() as RecordMap
     const approval = record(eventData.contractApproval)
+    if (text(approval.status, 40).toLowerCase() !== 'sent') {
+      throw new functions.https.HttpsError('failed-precondition', 'This contract is no longer awaiting client review')
+    }
     if (Math.max(1, Math.floor(numberValue(approval.revision, 1))) !== link.revision || text(approval.publicLinkHash, 100) !== linkSnapshot.id) {
       throw new functions.https.HttpsError('failed-precondition', 'A newer contract revision is available')
     }
@@ -496,6 +520,9 @@ export const signPublicEventContract = functions.https.onCall(async (data, conte
     if (link.expiresAt.toMillis() < Date.now()) throw new functions.https.HttpsError('deadline-exceeded', 'This contract link has expired')
     const eventData = eventSnapshot.data() as RecordMap
     const approval = record(eventData.contractApproval)
+    if (text(approval.status, 40).toLowerCase() !== 'sent') {
+      throw new functions.https.HttpsError('failed-precondition', 'This contract is no longer awaiting client signature')
+    }
     if (Math.max(1, Math.floor(numberValue(approval.revision, 1))) !== link.revision || text(approval.publicLinkHash, 100) !== linkSnapshot.id) {
       throw new functions.https.HttpsError('failed-precondition', 'A newer contract revision is available')
     }
@@ -535,7 +562,7 @@ export const signPublicEventContract = functions.https.onCall(async (data, conte
 
   const signedLink: ContractLinkRecord = { ...initialLink, status: 'signed', signerName, signerEmail: initialLink.recipientEmail, signatureText }
   const brand = emailBrand(initialLink.brandSnapshot)
-  const rows = [...emailRows(signedLink), ['Signed by', signerName]]
+  const rows: Array<[string, string]> = [...emailRows(signedLink), ['Signed by', signerName]]
   const reference = `${initialLink.eventId}-contract-r${initialLink.revision}-signed`
   const clientResult = await sendEventContractEmail({
     storeId: initialLink.storeId,
