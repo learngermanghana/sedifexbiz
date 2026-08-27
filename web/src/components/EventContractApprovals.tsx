@@ -341,21 +341,17 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         const persistedStateChanged = currentHadPersistedApproval !== loadedHadPersistedApproval
           || (currentHadPersistedApproval && contractFingerprint(current) !== contractFingerprint(loadedSnapshot))
 
-        if (persistedStateChanged) {
-          throw new Error(CONTRACT_CONFLICT_ERROR)
-        }
+        if (persistedStateChanged) throw new Error(CONTRACT_CONFLICT_ERROR)
 
         const currentTermsChanged = termsFingerprint(localContract) !== termsFingerprint(current)
-        const revision = currentTermsChanged && hasPersistedTerms(current)
-          ? current.revision + 1
-          : current.revision
+        const revision = currentTermsChanged && hasPersistedTerms(current) ? current.revision + 1 : current.revision
         let status: ApprovalStatus = current.status
         let sentAt: Date | null | ReturnType<typeof serverTimestamp> = current.sentAt
         let approvedAt: Date | null | ReturnType<typeof serverTimestamp> = current.approvedAt
         let changesRequestedAt: Date | null | ReturnType<typeof serverTimestamp> = current.changesRequestedAt
         let signedAt: Date | null | ReturnType<typeof serverTimestamp> = current.signedAt
-        let signerName = localContract.signerName.trim()
-        let signerEmail = localContract.signerEmail.trim().toLowerCase()
+        const signerName = localContract.signerName.trim()
+        const signerEmail = localContract.signerEmail.trim().toLowerCase()
         let signatureText = localContract.signatureText.trim()
         let signatureConsent = localContract.signatureConsent
         let note = ''
@@ -467,10 +463,11 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
       return
     }
 
-    if (termsChanged || !loadedHadPersistedApproval) {
-      const saved = await persist('draft_saved')
-      if (!saved) return
-    }
+    // Persist every editable recipient field immediately before the callable.
+    // This prevents a resend from using an older stored email/name when the
+    // user changed the signer without changing the contract terms.
+    const saved = await persist('draft_saved')
+    if (!saved) return
 
     setSaving(true)
     setError(null)
@@ -524,12 +521,7 @@ export default function EventContractApprovals({ storeId, event, onClose, onChan
         </div>
 
         {section === 'operations' ? (
-          <EventOperationsWorkspace
-            storeId={storeId}
-            eventId={event.id}
-            eventTitle={event.title}
-            onChanged={onChanged}
-          />
+          <EventOperationsWorkspace storeId={storeId} eventId={event.id} eventTitle={event.title} onChanged={onChanged} />
         ) : loading ? (
           <div className="event-planning__loading"><span className="event-planning__spinner" /><p>Loading contract…</p></div>
         ) : (
