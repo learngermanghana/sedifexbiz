@@ -68,21 +68,19 @@ export default function EventPdfExportDock() {
     }
 
     const findTarget = () => document.querySelector<HTMLElement>('.event-planning__hero')
-    const existingTarget = findTarget()
-    if (existingTarget) {
-      setInlineTarget(existingTarget)
-      return
+    const syncTarget = () => {
+      const target = findTarget()
+      setInlineTarget(current => {
+        if (current === target && (!current || current.isConnected)) return current
+        return target
+      })
     }
 
-    const observer = new MutationObserver(() => {
-      const target = findTarget()
-      if (!target) return
-      setInlineTarget(target)
-      observer.disconnect()
-    })
+    syncTarget()
+    const observer = new MutationObserver(syncTarget)
     observer.observe(document.body, { childList: true, subtree: true })
     return () => observer.disconnect()
-  }, [isListRoute, location.pathname])
+  }, [isListRoute, location.pathname, storeId])
 
   useEffect(() => {
     let active = true
