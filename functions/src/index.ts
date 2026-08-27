@@ -45,6 +45,7 @@ export {
   requestPublicEventContractChanges,
   signPublicEventContract,
 } from './eventContractSigning'
+export { getEventEmailDeliveryProfile } from './eventEmailDeliveryProfile'
 export {
   shareEventClientPortal,
   eventClientPortal,
