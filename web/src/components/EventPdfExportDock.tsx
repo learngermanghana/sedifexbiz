@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { matchPath, useLocation } from 'react-router-dom'
+import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import {
   EVENT_PDF_SECTION_OPTIONS,
@@ -26,12 +28,21 @@ const TAB_EXPORTS: Record<string, { label: string; sections: EventPdfSectionKey[
 
 const DEFAULT_PACK_SECTIONS = EVENT_PDF_SECTION_OPTIONS.map(option => option.key)
 
+type EventOption = {
+  id: string
+  label: string
+}
+
 export default function EventPdfExportDock() {
   const location = useLocation()
   const { storeId, isLoading } = useActiveStore()
-  const routeMatch = matchPath({ path: '/event-planning/:eventId', end: true }, location.pathname)
-  const eventId = routeMatch?.params.eventId || ''
-  const tab = new URLSearchParams(location.search).get('tab') || 'overview'
+  const eventRouteMatch = matchPath({ path: '/event-planning/:eventId', end: true }, location.pathname)
+  const listRouteMatch = matchPath({ path: '/event-planning', end: true }, location.pathname)
+  const routeEventId = eventRouteMatch?.params.eventId || ''
+  const [eventOptions, setEventOptions] = useState<EventOption[]>([])
+  const [selectedEventId, setSelectedEventId] = useState('')
+  const eventId = routeEventId || selectedEventId
+  const tab = eventRouteMatch ? new URLSearchParams(location.search).get('tab') || 'overview' : 'overview'
   const currentExport = TAB_EXPORTS[tab] ?? TAB_EXPORTS.overview
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<EventPdfSectionKey[]>(DEFAULT_PACK_SECTIONS)
@@ -43,7 +54,37 @@ export default function EventPdfExportDock() {
     setOpen(false)
     setMessage(null)
     setError(null)
-  }, [eventId])
+  }, [location.pathname, routeEventId])
+
+  useEffect(() => {
+    let active = true
+    if (!listRouteMatch || !storeId || isLoading) {
+      setEventOptions([])
+      if (!listRouteMatch) setSelectedEventId('')
+      return () => { active = false }
+    }
+
+    async function loadEvents() {
+      try {
+        const snapshot = await getDocs(query(collection(db, 'stores', storeId, 'events'), orderBy('eventDate', 'asc')))
+        if (!active) return
+        const options = snapshot.docs.map(item => {
+          const data = item.data() as Record<string, unknown>
+          const title = typeof data.title === 'string' && data.title.trim() ? data.title.trim() : 'Untitled event'
+          const code = typeof data.eventCode === 'string' && data.eventCode.trim() ? data.eventCode.trim() : ''
+          return { id: item.id, label: code ? `${title} · ${code}` : title }
+        })
+        setEventOptions(options)
+        setSelectedEventId(previous => options.some(option => option.id === previous) ? previous : options[0]?.id || '')
+      } catch (loadError) {
+        console.error('[event-pdf] Unable to load event choices', loadError)
+        if (active) setError('Events could not be loaded for PDF export.')
+      }
+    }
+
+    void loadEvents()
+    return () => { active = false }
+  }, [isLoading, listRouteMatch, storeId])
 
   useEffect(() => {
     if (!open) return
@@ -55,8 +96,9 @@ export default function EventPdfExportDock() {
   }, [open])
 
   const selectedSet = useMemo(() => new Set(selected), [selected])
+  const isEventPlanningRoute = Boolean(eventRouteMatch || listRouteMatch)
 
-  if (!routeMatch || !eventId || !storeId || isLoading) return null
+  if (!isEventPlanningRoute || !storeId || isLoading) return null
 
   function toggleSection(key: EventPdfSectionKey) {
     setSelected(previous => previous.includes(key) ? previous.filter(item => item !== key) : [...previous, key])
@@ -65,7 +107,11 @@ export default function EventPdfExportDock() {
   }
 
   async function download(sections: EventPdfSectionKey[], pack = false) {
-    if (!storeId || !eventId) return
+    if (!storeId) return
+    if (!eventId) {
+      setError('Choose an event first.')
+      return
+    }
     if (!sections.length) {
       setError('Choose at least one section for the Event Pack.')
       return
@@ -94,7 +140,7 @@ export default function EventPdfExportDock() {
         aria-controls="event-pdf-export-panel"
       >
         <span className="event-pdf-dock__file-mark" aria-hidden="true">PDF</span>
-        PDF exports
+        PDF / Event Pack
       </button>
 
       {open ? (
@@ -110,11 +156,22 @@ export default function EventPdfExportDock() {
           {error ? <p className="event-pdf-dock__message event-pdf-dock__message--error">{error}</p> : null}
           {message ? <p className="event-pdf-dock__message event-pdf-dock__message--success">{message}</p> : null}
 
+          {listRouteMatch ? (
+            <div className="event-pdf-dock__current">
+              <span>Choose event</span>
+              {eventOptions.length ? (
+                <select value={selectedEventId} onChange={event => { setSelectedEventId(event.target.value); setError(null); setMessage(null) }}>
+                  {eventOptions.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+              ) : <p>No event is available yet. Create an event before exporting a PDF.</p>}
+            </div>
+          ) : null}
+
           {currentExport ? (
             <div className="event-pdf-dock__current">
-              <span>Current section</span>
+              <span>{listRouteMatch ? 'Quick export' : 'Current section'}</span>
               <strong>{currentExport.label}</strong>
-              <button type="button" className="button button--primary" disabled={busy} onClick={() => void download(currentExport.sections)}>
+              <button type="button" className="button button--primary" disabled={busy || !eventId} onClick={() => void download(currentExport.sections)}>
                 {busy ? 'Creating PDF…' : `Download ${currentExport.label} PDF`}
               </button>
             </div>
@@ -154,7 +211,7 @@ export default function EventPdfExportDock() {
 
           <footer className="event-pdf-dock__actions">
             <span>{selected.length} section{selected.length === 1 ? '' : 's'} selected</span>
-            <button type="button" className="button button--primary" disabled={busy || !selected.length} onClick={() => void download(selected, true)}>
+            <button type="button" className="button button--primary" disabled={busy || !selected.length || !eventId} onClick={() => void download(selected, true)}>
               {busy ? 'Creating Event Pack…' : 'Download Event Pack'}
             </button>
           </footer>
