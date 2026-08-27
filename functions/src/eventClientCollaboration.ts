@@ -50,6 +50,22 @@ function isoDate(value: unknown) {
   return null
 }
 
+function clientBriefFields(value: unknown) {
+  const brief = record(value)
+  return {
+    requirements: text(brief.requirements, 5000),
+    themeColours: text(brief.themeColours, 3000),
+    venueRequirements: text(brief.venueRequirements, 3000),
+    catering: text(brief.catering, 3000),
+    decor: text(brief.decor, 3000),
+    entertainment: text(brief.entertainment, 3000),
+    photography: text(brief.photography, 3000),
+    transport: text(brief.transport, 3000),
+    accommodation: text(brief.accommodation, 3000),
+    specialInstructions: text(brief.specialInstructions, 5000),
+  }
+}
+
 function escapeHtml(value: unknown) {
   return text(value, 10000)
     .replace(/&/g, '&amp;')
@@ -167,6 +183,7 @@ async function portalData(rawToken: string): Promise<EventClientPortalPageData &
 
   const brand = record(loaded.link.brandSnapshot)
   const visibleDone = tasks.filter(item => item.clientState === 'verified').length
+  const clientBrief = record(loaded.eventData.clientBrief)
 
   return {
     ok: true,
@@ -183,6 +200,8 @@ async function portalData(rawToken: string): Promise<EventClientPortalPageData &
       email: email(brand.email),
       brandColor: text(brand.brandColor, 40) || '#4f46e5',
     },
+    brief: clientBriefFields(clientBrief),
+    briefUpdatedAt: isoDate(clientBrief.clientUpdatedAt),
     tasks,
     activities,
     progress: tasks.length ? Math.round(visibleDone / tasks.length * 100) : 0,
@@ -214,12 +233,11 @@ export const shareEventClientPortal = functions.https.onCall(async (data, contex
     eventRef.collection('tasks').where('clientVisible', '==', true).get(),
   ])
   if (!eventSnapshot.exists) throw new functions.https.HttpsError('not-found', 'Event not found')
-  if (visibleTasks.empty) throw new functions.https.HttpsError('failed-precondition', 'Choose at least one client-visible checklist task before sharing the portal')
 
   const eventData = eventSnapshot.data() as RecordMap
   const recipientEmail = email(eventData.clientEmail)
   const recipientName = text(eventData.clientName, 180) || 'Client'
-  if (!recipientEmail) throw new functions.https.HttpsError('failed-precondition', 'Add the client email before sharing the checklist')
+  if (!recipientEmail) throw new functions.https.HttpsError('failed-precondition', 'Add the client email before sharing the client portal')
 
   const token = createToken()
   const tokenHash = hashPublicContractToken(token)
@@ -272,9 +290,9 @@ export const shareEventClientPortal = functions.https.onCall(async (data, contex
     reference: `${eventId}-client-portal-${tokenHash.slice(0, 12)}`,
     recipientType: 'customer',
     to: recipientEmail,
-    subject: `Your event planning checklist - ${text(brand.storeName, 180) || 'Event team'}`,
-    title: 'Your event planning checklist is ready',
-    intro: `Hello ${recipientName}, your event team has shared planning tasks with you. Open the secure client portal to review your items, start work and submit completed tasks for verification.`,
+    subject: `Your event planning portal - ${text(brand.storeName, 180) || 'Event team'}`,
+    title: 'Your event planning portal is ready',
+    intro: `Hello ${recipientName}, your event team has shared a secure planning portal with you. You can update your event brief and work on any checklist tasks the team has shared.`,
     brand: {
       storeName: text(brand.storeName, 180) || 'Event team',
       email: email(brand.email),
@@ -284,13 +302,13 @@ export const shareEventClientPortal = functions.https.onCall(async (data, contex
     },
     rows: [
       ['Event', text(eventData.title, 180) || text(eventData.eventType, 140) || 'Event'],
+      ['Live brief', 'Editable by client'],
       ['Client tasks', String(visibleTasks.size)],
-      ['Workflow', 'To do > In progress > Submit > Event team verifies > Done'],
     ],
-    primaryAction: { label: 'Open client checklist', url: portalUrl },
-    footerNote: `Your event team verifies each submitted task before it is marked done. This secure link expires in ${LINK_LIFETIME_DAYS} days.`,
+    primaryAction: { label: 'Open client portal', url: portalUrl },
+    footerNote: `Your live brief saves directly to the event workspace. Shared checklist tasks are verified by the event team before they are marked done. This secure link expires in ${LINK_LIFETIME_DAYS} days.`,
     customer: { name: recipientName, email: recipientEmail, phone: text(eventData.clientPhone, 80) },
-    data: { eventId, portalUrl, clientTaskCount: visibleTasks.size },
+    data: { eventId, portalUrl, clientTaskCount: visibleTasks.size, liveClientBrief: true },
   })
 
   return { ok: true, portalUrl, expiresAt: expiresAt.toDate().toISOString(), deliveries: delivery.ok ? 1 : 0 }
@@ -304,17 +322,51 @@ export const eventClientPortal = functions.https.onRequest(async (req, res) => {
   try {
     if (req.method === 'POST') {
       const action = text(req.body?.action, 40)
-      const taskId = text(req.body?.taskId, 220)
-      const note = text(req.body?.note, 3000)
-      if (!['start', 'submit'].includes(action) || !taskId) {
-        res.status(400).json({ error: 'Choose a valid task action.' })
+      const loaded = await loadPortalLink(rawToken)
+      const now = admin.firestore.FieldValue.serverTimestamp()
+
+      if (action === 'save_brief') {
+        const brief = clientBriefFields(req.body?.brief)
+        await defaultDb.runTransaction(async transaction => {
+          const linkSnapshot = await transaction.get(loaded.linkRef)
+          const eventSnapshot = await transaction.get(loaded.eventRef)
+          if (!linkSnapshot.exists || !eventSnapshot.exists) throw new Error('INVALID_LINK')
+
+          const link = linkSnapshot.data() as unknown as ClientPortalLink
+          if (link.status !== 'active' || link.expiresAt.toMillis() < Date.now()) throw new Error('LINK_EXPIRED')
+          const eventData = eventSnapshot.data() as RecordMap
+          const livePortal = record(eventData.clientPortal)
+          if (text(livePortal.publicLinkHash, 100) !== linkSnapshot.id || text(livePortal.status, 40) !== 'active') throw new Error('LINK_REVOKED')
+
+          transaction.update(loaded.eventRef, {
+            'clientBrief.requirements': brief.requirements,
+            'clientBrief.themeColours': brief.themeColours,
+            'clientBrief.venueRequirements': brief.venueRequirements,
+            'clientBrief.catering': brief.catering,
+            'clientBrief.decor': brief.decor,
+            'clientBrief.entertainment': brief.entertainment,
+            'clientBrief.photography': brief.photography,
+            'clientBrief.transport': brief.transport,
+            'clientBrief.accommodation': brief.accommodation,
+            'clientBrief.specialInstructions': brief.specialInstructions,
+            'clientBrief.clientUpdatedAt': now,
+            'clientBrief.clientUpdatedBy': link.recipientEmail || link.recipientName || 'Client',
+            updatedAt: now,
+          })
+        })
+        res.json({ ok: true })
         return
       }
 
-      const loaded = await loadPortalLink(rawToken)
+      const taskId = text(req.body?.taskId, 220)
+      const note = text(req.body?.note, 3000)
+      if (!['start', 'submit'].includes(action) || !taskId) {
+        res.status(400).json({ error: 'Choose a valid client portal action.' })
+        return
+      }
+
       const taskRef = loaded.eventRef.collection('tasks').doc(taskId)
       const activityRef = loaded.eventRef.collection('clientActivity').doc()
-      const now = admin.firestore.FieldValue.serverTimestamp()
 
       await defaultDb.runTransaction(async transaction => {
         const linkSnapshot = await transaction.get(loaded.linkRef)
