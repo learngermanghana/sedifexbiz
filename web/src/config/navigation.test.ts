@@ -81,15 +81,57 @@ describe('resolveNavigation', () => {
     expect(items[0].target).toBe('/website-builder')
   })
 
-  it('includes document modules in enabled module presets by industry', () => {
-    expect(INDUSTRY_ENABLED_MODULE_PRESETS.shop).toContain('invoices')
-    expect(INDUSTRY_ENABLED_MODULE_PRESETS.shop).toContain('receipts')
-    expect(INDUSTRY_ENABLED_MODULE_PRESETS.shop).toContain('website-builder')
-    expect(INDUSTRY_ENABLED_MODULE_PRESETS.travel).toContain('invoices')
-    expect(INDUSTRY_ENABLED_MODULE_PRESETS.travel).toContain('receipts')
-    expect(INDUSTRY_ENABLED_MODULE_PRESETS.ngo).toContain('invoices')
-    expect(INDUSTRY_ENABLED_MODULE_PRESETS.ngo).toContain('receipts')
-    expect(INDUSTRY_ENABLED_MODULE_PRESETS.school).toContain('invoices')
-    expect(INDUSTRY_ENABLED_MODULE_PRESETS.school).toContain('receipts')
+  it('keeps signup presets focused on the selected business type', () => {
+    expect(INDUSTRY_ENABLED_MODULE_PRESETS.shop).toEqual([
+      'dashboard',
+      'products',
+      'sell',
+      'marketplace-orders',
+      'invoices',
+      'receipts',
+      'customers',
+    ])
+    expect(INDUSTRY_ENABLED_MODULE_PRESETS.travel).toEqual([
+      'dashboard',
+      'customers',
+      'bookings',
+      'upcoming-events',
+      'invoices',
+      'receipts',
+    ])
+    expect(INDUSTRY_ENABLED_MODULE_PRESETS.ngo).toEqual([
+      'dashboard',
+      'customers',
+      'bookings',
+      'upcoming-events',
+      'donor-management',
+      'funds-ledger',
+      'volunteers',
+    ])
+    expect(INDUSTRY_ENABLED_MODULE_PRESETS.school).toEqual([
+      'dashboard',
+      'students',
+      'customers',
+      'bookings',
+      'upcoming-events',
+      'student-registration',
+      'invoices',
+    ])
+    expect(INDUSTRY_ENABLED_MODULE_PRESETS.event).toEqual([
+      'events',
+      'customers',
+      'invoices',
+      'bulk-email',
+    ])
+  })
+
+  it('leaves advanced pages available for opt-in instead of enabling them at signup', () => {
+    for (const industry of ['shop', 'travel', 'ngo', 'school'] as const) {
+      expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('reports')
+      expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('integrations')
+      expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('website-builder')
+      expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('bulk-email')
+      expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('bulk-messaging')
+    }
   })
 })

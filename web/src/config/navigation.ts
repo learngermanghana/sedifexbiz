@@ -83,10 +83,10 @@ export type NavigationSettings = {
 export const WEBSITE_BUILDER_SECTION_IDS = ['promo', 'gallery', 'website-hero-slides', 'social-links'] as const
 
 export const INDUSTRY_ENABLED_MODULE_PRESETS: Record<Industry, string[]> = {
-  shop: ['dashboard', 'events', 'reports', 'products', 'sell', 'marketplace-orders', 'quick-pay', 'invoices', 'receipts', 'expenses', 'customers', 'bookings', 'upcoming-events', 'settlement', 'integrations', 'blog', 'website-builder', 'donor-management'],
-  travel: ['dashboard', 'events', 'reports', 'products', 'marketplace-orders', 'quick-pay', 'invoices', 'receipts', 'expenses', 'bookings', 'upcoming-events', 'settlement', 'integrations', 'blog', 'website-builder', 'customers', 'bulk-messaging', 'bulk-email', 'donor-management'],
-  ngo: ['dashboard', 'events', 'reports', 'products', 'marketplace-orders', 'quick-pay', 'invoices', 'receipts', 'expenses', 'customers', 'volunteers', 'support-requests', 'upcoming-events', 'settlement', 'integrations', 'blog', 'website-builder', 'bulk-messaging', 'bulk-email', 'donor-management', 'funds-ledger'],
-  school: ['dashboard', 'events', 'reports', 'products', 'marketplace-orders', 'quick-pay', 'invoices', 'receipts', 'expenses', 'bookings', 'upcoming-events', 'student-registration', 'students', 'settlement', 'integrations', 'blog', 'website-builder', 'customers', 'bulk-messaging', 'bulk-email'],
+  shop: ['dashboard', 'products', 'sell', 'marketplace-orders', 'invoices', 'receipts', 'customers'],
+  travel: ['dashboard', 'customers', 'bookings', 'upcoming-events', 'invoices', 'receipts'],
+  ngo: ['dashboard', 'customers', 'bookings', 'upcoming-events', 'donor-management', 'funds-ledger', 'volunteers'],
+  school: ['dashboard', 'students', 'customers', 'bookings', 'upcoming-events', 'student-registration', 'invoices'],
   event: ['events', 'customers', 'invoices', 'bulk-email'],
 }
 
