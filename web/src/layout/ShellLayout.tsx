@@ -11,7 +11,7 @@ export function ShellLayout() {
     <Shell>
       <Outlet />
       <EventClientCollaborationDock />
-      {/* EventPdfExportDock is mounted once at App level so list and workspace routes share one control. */}
+      {/* Keep EventPdfExportDock mounted only at App level so the Events list and full event workspace share one export control. */}
       {/* Temporarily hide Ask Sedifex until it is ready to return. */}
       {SHOW_ASK_SEDIFEX ? <AskSedifexAgent enabled /> : null}
     </Shell>
