@@ -28,4 +28,38 @@ describe('event business navigation preset', () => {
     expect(items.find(item => item.id === 'events')?.label).toBe('Event Management')
     expect(items.find(item => item.id === 'bulk-email')?.label).toBe('Email')
   })
+
+  it('keeps Account last when an event workspace enables more pages', () => {
+    const items = resolveNavigation({
+      role: 'owner',
+      workspaceProfile: {
+        industry: 'event',
+        labelPolicy: 'industry_aliases',
+        enabledModules: [
+          'events',
+          'customers',
+          'invoices',
+          'bulk-email',
+          'upcoming-events',
+          'integrations',
+          'blog',
+          'website-builder',
+        ],
+      },
+    })
+
+    expect(items.at(-1)?.id).toBe('account')
+    expect(items.find(item => item.id === 'account')?.sortOrder).toBe(110)
+    expect(items.map(item => item.id)).toEqual([
+      'events',
+      'customers',
+      'invoices',
+      'bulk-email',
+      'upcoming-events',
+      'integrations',
+      'blog',
+      'website-builder',
+      'account',
+    ])
+  })
 })

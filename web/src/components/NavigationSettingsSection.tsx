@@ -39,12 +39,14 @@ function uniqueList(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)))
 }
 
-function moduleIsEnabled(enabledModules: string[], id: string) {
-  return enabledModules.length === 0 || enabledModules.includes(id)
+function effectiveModules(industry: Industry, enabledModules: string[]) {
+  const selected = enabledModules.length > 0
+    ? enabledModules
+    : INDUSTRY_ENABLED_MODULE_PRESETS[industry] ?? []
+  return uniqueList([...selected, 'account'])
 }
 
 function moduleSummary(enabledModules: string[]) {
-  if (enabledModules.length === 0) return `${CONFIGURABLE_NAV_ITEMS.length} pages active`
   const count = CONFIGURABLE_NAV_ITEMS.filter(item => enabledModules.includes(item.id)).length
   return `${count} ${count === 1 ? 'page' : 'pages'} active`
 }
@@ -72,10 +74,10 @@ export default function NavigationSettingsSection({ preferences, onSave, canEdit
 
   const selectedIndustry = INDUSTRY_OPTIONS.find(option => option.value === draft.industry) ?? INDUSTRY_OPTIONS[0]
 
-  const enabledModuleIds = useMemo(() => {
-    if (draft.enabledModules.length === 0) return CONFIGURABLE_NAV_ITEMS.map(item => item.id)
-    return uniqueList(draft.enabledModules)
-  }, [draft.enabledModules])
+  const enabledModuleIds = useMemo(
+    () => effectiveModules(draft.industry, draft.enabledModules),
+    [draft.enabledModules, draft.industry],
+  )
 
   const enabledModulesByIndustry = useMemo(() => new Set(INDUSTRY_ENABLED_MODULE_PRESETS[draft.industry] ?? []), [draft.industry])
 
@@ -109,8 +111,9 @@ export default function NavigationSettingsSection({ preferences, onSave, canEdit
   }
 
   const toggleModule = (id: string) => {
+    if (id === 'account') return
     setDraft(current => {
-      const currentEnabled = current.enabledModules.length === 0 ? CONFIGURABLE_NAV_ITEMS.map(item => item.id) : current.enabledModules
+      const currentEnabled = effectiveModules(current.industry, current.enabledModules)
       const enabled = currentEnabled.includes(id) ? currentEnabled.filter(item => item !== id) : [...currentEnabled, id]
       return { ...current, enabledModules: uniqueList(enabled), customNavItems: [] }
     })
@@ -127,20 +130,21 @@ export default function NavigationSettingsSection({ preferences, onSave, canEdit
   }
 
   const hideAllPages = () => {
-    setDraft(current => ({ ...current, enabledModules: [], customNavItems: [] }))
-    setError('All pages are hidden. Tick any page before saving if you want it in the sidebar.')
+    setDraft(current => ({ ...current, enabledModules: ['account'], customNavItems: [] }))
+    setError('All optional pages are hidden. Account stays available so you can change navigation later.')
   }
 
   const renderPageRow = (item: typeof NAV_ITEMS[number]) => {
-    const checked = moduleIsEnabled(draft.enabledModules, item.id)
+    const checked = enabledModuleIds.includes(item.id)
     const recommended = enabledModulesByIndustry.has(item.id)
+    const isAccount = item.id === 'account'
     return (
       <div key={item.id} className="account-overview__integration-key-item">
         <label style={{ alignItems: 'center', display: 'flex', flex: 1, gap: 12, margin: 0 }}>
-          <input type="checkbox" disabled={!canEdit} checked={checked} onChange={() => toggleModule(item.id)} />
+          <input type="checkbox" disabled={!canEdit || isAccount} checked={checked} onChange={() => toggleModule(item.id)} />
           <span>
             <Link to={item.target} style={{ color: 'inherit', fontWeight: 700, textDecoration: 'none' }}>{item.label}</Link>
-            {recommended ? <small className="account-overview__hint" style={{ display: 'block' }}>Recommended for {selectedIndustry.label}</small> : null}
+            {isAccount ? <small className="account-overview__hint" style={{ display: 'block' }}>Always available to workspace owners</small> : recommended ? <small className="account-overview__hint" style={{ display: 'block' }}>Recommended for {selectedIndustry.label}</small> : null}
           </span>
         </label>
         <Link className="button button--secondary" to={item.target}>Open</Link>
@@ -152,7 +156,7 @@ export default function NavigationSettingsSection({ preferences, onSave, canEdit
     <div className="account-overview__section-header">
       <h2 id="account-nav-settings">Navigation settings</h2>
       <p className="account-overview__subtitle">
-        Tick the pages you want in the sidebar. Click a page name or Open to visit it now.
+        Sedifex starts with recommended pages for your selected business type. Tick more pages whenever you need them, or remove optional pages to keep the sidebar focused.
       </p>
     </div>
 
@@ -163,17 +167,18 @@ export default function NavigationSettingsSection({ preferences, onSave, canEdit
         <select value={draft.industry} disabled={!canEdit} onChange={event => applyIndustryTemplate(event.target.value as Industry)}>
           {INDUSTRY_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
+        <small className="account-overview__hint">Changing business type selects its recommended pages automatically. You can customize them here at any time.</small>
       </label>
       <div className="account-overview__card" role="status">
         <strong>{moduleSummary(enabledModuleIds)}</strong>
-        <p className="account-overview__hint">Only ticked pages show in the sidebar.</p>
+        <p className="account-overview__hint">Only selected pages show in the sidebar. Account remains available so you can always return to Navigation settings.</p>
       </div>
     </div>
 
     <div className="account-overview__website-sync-actions">
       <button type="button" className="button button--secondary" disabled={!canEdit} onClick={resetToTemplate}>Use recommended pages</button>
       <button type="button" className="button button--secondary" disabled={!canEdit} onClick={showAllPages}>Show all pages</button>
-      <button type="button" className="button button--ghost" disabled={!canEdit} onClick={hideAllPages}>Hide all pages</button>
+      <button type="button" className="button button--ghost" disabled={!canEdit} onClick={hideAllPages}>Hide optional pages</button>
     </div>
 
     <div className="account-overview__nav-groups">

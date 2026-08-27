@@ -33,7 +33,10 @@ const DEFAULT_PREFERENCES: StorePreferences = {
   navigation: {
     industry: 'shop',
     labelPolicy: 'shared',
-    enabledModules: [],
+    // Keep the transient shell focused while the selected workspace profile loads.
+    // Account is always available to owners; the saved industry preset replaces this
+    // as soon as Firestore returns the store settings.
+    enabledModules: ['account'],
     dashboardModules: [],
     primaryMetrics: [],
     customLabels: {},

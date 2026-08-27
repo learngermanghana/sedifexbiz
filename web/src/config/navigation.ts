@@ -59,7 +59,7 @@ const INDUSTRY_LABELS: Record<Industry, Partial<Record<string, string>>> = {
 }
 
 const INDUSTRY_SORT_ORDERS: Partial<Record<Industry, Partial<Record<string, number>>>> = {
-  event: { events: 10, customers: 20, invoices: 30, 'bulk-email': 40, account: 50 },
+  event: { events: 10, customers: 20, invoices: 30, 'bulk-email': 40 },
 }
 
 export type CustomNavItem = {
