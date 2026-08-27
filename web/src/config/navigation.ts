@@ -1,5 +1,5 @@
 export type NavRole = 'owner' | 'staff'
-export type Industry = 'shop' | 'travel' | 'ngo' | 'school'
+export type Industry = 'shop' | 'travel' | 'ngo' | 'school' | 'event'
 export type NavigationLabelPolicy = 'shared' | 'industry_aliases'
 export type NavItemType = 'module' | 'internal' | 'external'
 
@@ -55,6 +55,11 @@ const INDUSTRY_LABELS: Record<Industry, Partial<Record<string, string>>> = {
   travel: { '/customers': 'Customers', '/bookings': 'Booking', '/upcoming-events': 'Upcoming events', '/marketplace-orders': 'Online Orders', '/website-builder': 'Website Builder', '/promo': 'Trip promos', '/gallery': 'Trip gallery', '/social-links': 'Contact links' },
   ngo: { '/customers': 'Donors', '/bookings': 'Campaigns', '/upcoming-events': 'Upcoming campaigns', '/marketplace-orders': 'Online Orders', '/website-builder': 'Website Builder', '/promo': 'Campaign promo', '/gallery': 'Impact gallery', '/social-links': 'Contact links', '/expenses': 'Petty expenses' },
   school: { '/customers': 'Contacts', '/students': 'Students', '/bookings': 'Classes', '/upcoming-events': 'Upcoming classes', '/marketplace-orders': 'Registrations & Orders', '/website-builder': 'Website Builder', '/promo': 'Admissions promo', '/gallery': 'School gallery', '/social-links': 'Contact links' },
+  event: { '/event-planning': 'Event Management', '/bulk-email': 'Email' },
+}
+
+const INDUSTRY_SORT_ORDERS: Partial<Record<Industry, Partial<Record<string, number>>>> = {
+  event: { events: 10, customers: 20, invoices: 30, 'bulk-email': 40, account: 50 },
 }
 
 export type CustomNavItem = {
@@ -82,6 +87,7 @@ export const INDUSTRY_ENABLED_MODULE_PRESETS: Record<Industry, string[]> = {
   travel: ['dashboard', 'events', 'reports', 'products', 'marketplace-orders', 'quick-pay', 'invoices', 'receipts', 'expenses', 'bookings', 'upcoming-events', 'settlement', 'integrations', 'blog', 'website-builder', 'customers', 'bulk-messaging', 'bulk-email', 'donor-management'],
   ngo: ['dashboard', 'events', 'reports', 'products', 'marketplace-orders', 'quick-pay', 'invoices', 'receipts', 'expenses', 'customers', 'volunteers', 'support-requests', 'upcoming-events', 'settlement', 'integrations', 'blog', 'website-builder', 'bulk-messaging', 'bulk-email', 'donor-management', 'funds-ledger'],
   school: ['dashboard', 'events', 'reports', 'products', 'marketplace-orders', 'quick-pay', 'invoices', 'receipts', 'expenses', 'bookings', 'upcoming-events', 'student-registration', 'students', 'settlement', 'integrations', 'blog', 'website-builder', 'customers', 'bulk-messaging', 'bulk-email'],
+  event: ['events', 'customers', 'invoices', 'bulk-email'],
 }
 
 export type NavigationResolverInput = { role: NavRole; workspaceProfile: NavigationSettings; permissions?: string[] }
@@ -114,7 +120,8 @@ export function resolveNavigation(input: NavigationResolverInput): NavItem[] {
   }).map(item => {
     const customLabel = workspaceProfile.customLabels?.[item.target]?.trim()
     const aliasLabel = aliasLabels[item.target]
-    return toShellNavItem({ ...item, label: customLabel || aliasLabel || item.label })
+    const industrySortOrder = INDUSTRY_SORT_ORDERS[workspaceProfile.industry]?.[item.id]
+    return toShellNavItem({ ...item, label: customLabel || aliasLabel || item.label, sortOrder: industrySortOrder ?? item.sortOrder })
   })
   const customItems = (workspaceProfile.customNavItems ?? []).filter(item => {
     if (!item.roles_allowed.includes(role)) return false
