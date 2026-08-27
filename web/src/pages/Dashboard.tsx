@@ -45,6 +45,7 @@ const DEFAULT_KPI_IDS_BY_INDUSTRY: Record<Industry, string[]> = {
   travel: ['bookings', 'confirmed-bookings', 'paid-bookings', 'booking-value', 'customers', 'manual-payments'],
   ngo: ['donors', 'donor-lifetime-giving', 'volunteers', 'support-requests', 'all-products', 'blog-posts'],
   school: ['student-registrations', 'active-students', 'paid-students', 'pending-students', 'bookings', 'all-products'],
+  event: ['customers'],
 }
 
 const DEFAULT_QUICK_ACTIONS: QuickAction[] = [
@@ -52,6 +53,7 @@ const DEFAULT_QUICK_ACTIONS: QuickAction[] = [
   { id: 'record-sale', label: 'Record sale', hint: 'Open POS and sell quickly', to: '/sell', moduleIds: ['sell'], industries: ['shop'] },
   { id: 'orders', label: 'Review orders', hint: 'Open website and marketplace orders', to: '/online-orders', moduleIds: ['online-orders', 'marketplace-orders'] },
   { id: 'bookings', label: 'Add booking', hint: 'Create or review appointments/classes', to: '/bookings', moduleIds: ['bookings'], industries: ['shop', 'travel', 'school'] },
+  { id: 'event-management', label: 'Manage events', hint: 'Open the event planning workspace', to: '/event-planning', moduleIds: ['events'], industries: ['event'] },
   { id: 'student-registration', label: 'Register student', hint: 'Review applications and print IDs', to: '/student-registration', moduleIds: ['student-registration'], industries: ['school'] },
   { id: 'students', label: 'Students', hint: 'Open confirmed student records', to: '/students', moduleIds: ['students'], industries: ['school'] },
   { id: 'sms', label: 'Send SMS', hint: 'Broadcast to customers or students', to: '/bulk-messaging', moduleIds: ['bulk-messaging'] },
@@ -123,6 +125,7 @@ function dashboardIntro(industry: Industry) {
     travel: { eyebrow: 'Service overview', title: 'Booking and client overview', subtitle: 'Track bookings, paid requests, pending verification, and client follow-up without mixing in unrelated modules.' },
     ngo: { eyebrow: 'Impact overview', title: 'Donor and volunteer overview', subtitle: 'See donor activity, volunteer requests, campaign records, and important follow-ups in one clean workspace.' },
     school: { eyebrow: 'School overview', title: 'Student and admissions overview', subtitle: 'Monitor registrations, confirmed students, payment follow-ups, classes, and school records from one focused dashboard.' },
+    event: { eyebrow: 'Event overview', title: 'Event and client overview', subtitle: 'Keep event work, client records, invoices, and communication focused in one event-business workspace.' },
   }
   return copy[industry]
 }

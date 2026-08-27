@@ -22,6 +22,7 @@ const INDUSTRY_OPTIONS: Array<{ value: Industry; label: string }> = [
   { value: 'travel', label: 'Travel' },
   { value: 'ngo', label: 'NGO' },
   { value: 'school', label: 'School' },
+  { value: 'event', label: 'Event Planning / Coordination' },
 ]
 
 const PAGE_GROUPS: PageGroup[] = [
