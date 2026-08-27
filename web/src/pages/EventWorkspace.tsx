@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import EventGuestList from '../components/EventGuestList'
+import EventModuleIntegrations, { type EventIntegrationTab } from '../components/EventModuleIntegrations'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './EventWorkspace.css'
@@ -71,6 +72,8 @@ type TabKey =
   | 'messages'
   | 'evaluation'
 
+type PlaceholderTab = Exclude<TabKey, 'overview' | 'client-brief' | 'package' | 'guest-list' | EventIntegrationTab>
+
 const TABS: Array<{ key: TabKey; label: string; description: string }> = [
   { key: 'overview', label: 'Overview', description: 'Event summary and readiness' },
   { key: 'client-brief', label: 'Client Brief', description: 'Requirements, preferences and approvals' },
@@ -86,6 +89,8 @@ const TABS: Array<{ key: TabKey; label: string; description: string }> = [
   { key: 'messages', label: 'Messages', description: 'Client, vendor and staff communication' },
   { key: 'evaluation', label: 'Evaluation', description: 'Post-event reviews and feedback' },
 ]
+
+const INTEGRATION_TABS: EventIntegrationTab[] = ['vendors', 'staff', 'finance', 'documents', 'messages']
 
 const STATUS_LABELS: Record<EventStatus, string> = {
   new: 'New enquiry',
@@ -237,18 +242,12 @@ function formatMoney(value: number | null) {
   return new Intl.NumberFormat('en-GH', { style: 'currency', currency: 'GHS', maximumFractionDigits: 0 }).format(value)
 }
 
-function PlaceholderPanel({ tab }: { tab: Exclude<TabKey, 'overview' | 'client-brief' | 'package'> }) {
+function PlaceholderPanel({ tab }: { tab: PlaceholderTab }) {
   const meta = TABS.find(item => item.key === tab)!
-  const hints: Record<Exclude<TabKey, 'overview' | 'client-brief' | 'package'>, string[]> = {
+  const hints: Record<PlaceholderTab, string[]> = {
     checklist: ['Planning tasks and owners', 'Due dates and priorities', 'Completion status feeding event readiness'],
     timeline: ['Vendor arrival times', 'Internal staff responsibilities', 'Minute-by-minute event-day run sheet'],
     program: ['Client-facing program outline', 'Approval status', 'Printable final program'],
-    'guest-list': ['Guest and household records', 'RSVP status and table/group', 'Check-in and attendance status'],
-    vendors: ['Vendor contacts and categories', 'Quotes, deposits and balances', 'Confirmation and delivery status'],
-    staff: ['Assigned Sedifex staff', 'Event-day roles and call times', 'Responsibility and handover notes'],
-    finance: ['Client budget and contract value', 'Payments received and balances', 'Vendor commitments, expenses and margin'],
-    documents: ['Contracts and signed agreements', 'Invoices and receipts', 'Approved files and printable documents'],
-    messages: ['Client communication', 'Vendor and staff notices', 'Event reminders and follow-up history'],
     evaluation: ['Client satisfaction review', 'Vendor performance review', 'Internal team post-event evaluation'],
   }
 
@@ -258,7 +257,7 @@ function PlaceholderPanel({ tab }: { tab: Exclude<TabKey, 'overview' | 'client-b
       <div>
         <p className="event-workspace__eyebrow">Workspace section</p>
         <h2>{meta.label}</h2>
-        <p>{meta.description}. This tab is now part of the event workspace foundation and is ready for its event-specific data model.</p>
+        <p>{meta.description}. This section is part of the event workspace foundation and is ready for its event-specific workflow.</p>
         <ul className="event-workspace__hint-list">
           {hints[tab].map(item => <li key={item}>{item}</li>)}
         </ul>
@@ -281,8 +280,8 @@ function ClientBriefPanel({ brief, saving, onSave }: { brief: ClientBrief; savin
     setDraft(previous => ({ ...previous, [key]: value }))
   }
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault()
+  async function submit(submitEvent: React.FormEvent) {
+    submitEvent.preventDefault()
     setMessage(null)
     try {
       await onSave({
@@ -319,46 +318,16 @@ function ClientBriefPanel({ brief, saving, onSave }: { brief: ClientBrief; savin
 
       <form onSubmit={submit}>
         <div className="event-workspace__editor-grid">
-          <label className="event-workspace__editor-wide">
-            Main client requirements
-            <textarea rows={5} value={draft.requirements} onChange={e => update('requirements', e.target.value)} placeholder="Priorities, must-haves, non-negotiables, expected experience" />
-          </label>
-          <label>
-            Theme / colours
-            <textarea rows={4} value={draft.themeColours} onChange={e => update('themeColours', e.target.value)} placeholder="Theme, colour palette, styling, dress code" />
-          </label>
-          <label>
-            Venue requirements
-            <textarea rows={4} value={draft.venueRequirements} onChange={e => update('venueRequirements', e.target.value)} placeholder="Layout, accessibility, parking, power, permits" />
-          </label>
-          <label>
-            Catering
-            <textarea rows={4} value={draft.catering} onChange={e => update('catering', e.target.value)} placeholder="Menu, drinks, dietary needs, service style" />
-          </label>
-          <label>
-            Décor
-            <textarea rows={4} value={draft.decor} onChange={e => update('decor', e.target.value)} placeholder="Stage, flowers, tables, signage, lighting" />
-          </label>
-          <label>
-            Entertainment
-            <textarea rows={4} value={draft.entertainment} onChange={e => update('entertainment', e.target.value)} placeholder="MC, DJ, band, performers, music preferences" />
-          </label>
-          <label>
-            Photography / video
-            <textarea rows={4} value={draft.photography} onChange={e => update('photography', e.target.value)} placeholder="Coverage, deliverables, shot list, livestream" />
-          </label>
-          <label>
-            Transport
-            <textarea rows={4} value={draft.transport} onChange={e => update('transport', e.target.value)} placeholder="Client, guest, staff or vendor transport" />
-          </label>
-          <label>
-            Accommodation
-            <textarea rows={4} value={draft.accommodation} onChange={e => update('accommodation', e.target.value)} placeholder="Rooms, check-in, guest or vendor accommodation" />
-          </label>
-          <label className="event-workspace__editor-wide">
-            Special instructions
-            <textarea rows={4} value={draft.specialInstructions} onChange={e => update('specialInstructions', e.target.value)} placeholder="Cultural protocols, VIP handling, accessibility, security or other instructions" />
-          </label>
+          <label className="event-workspace__editor-wide">Main client requirements<textarea rows={5} value={draft.requirements} onChange={e => update('requirements', e.target.value)} placeholder="Priorities, must-haves, non-negotiables, expected experience" /></label>
+          <label>Theme / colours<textarea rows={4} value={draft.themeColours} onChange={e => update('themeColours', e.target.value)} placeholder="Theme, colour palette, styling, dress code" /></label>
+          <label>Venue requirements<textarea rows={4} value={draft.venueRequirements} onChange={e => update('venueRequirements', e.target.value)} placeholder="Layout, accessibility, parking, power, permits" /></label>
+          <label>Catering<textarea rows={4} value={draft.catering} onChange={e => update('catering', e.target.value)} placeholder="Menu, drinks, dietary needs, service style" /></label>
+          <label>Décor<textarea rows={4} value={draft.decor} onChange={e => update('decor', e.target.value)} placeholder="Stage, flowers, tables, signage, lighting" /></label>
+          <label>Entertainment<textarea rows={4} value={draft.entertainment} onChange={e => update('entertainment', e.target.value)} placeholder="MC, DJ, band, performers, music preferences" /></label>
+          <label>Photography / video<textarea rows={4} value={draft.photography} onChange={e => update('photography', e.target.value)} placeholder="Coverage, deliverables, shot list, livestream" /></label>
+          <label>Transport<textarea rows={4} value={draft.transport} onChange={e => update('transport', e.target.value)} placeholder="Client, guest, staff or vendor transport" /></label>
+          <label>Accommodation<textarea rows={4} value={draft.accommodation} onChange={e => update('accommodation', e.target.value)} placeholder="Rooms, check-in, guest or vendor accommodation" /></label>
+          <label className="event-workspace__editor-wide">Special instructions<textarea rows={4} value={draft.specialInstructions} onChange={e => update('specialInstructions', e.target.value)} placeholder="Cultural protocols, VIP handling, accessibility, security or other instructions" /></label>
         </div>
         <footer className="event-workspace__editor-actions">
           <button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save client brief'}</button>
@@ -392,28 +361,24 @@ function PackagePanel({ event, saving, onSave }: { event: EventRecord; saving: b
   const includedCount = items.filter(item => item.title.trim() && item.pricing === 'included').length
   const optionalCount = items.filter(item => item.title.trim() && item.pricing === 'optional').length
   const additionalTotal = items.reduce((sum, item) => {
-    const amount = Number(item.amount)
-    return item.pricing === 'additional' && Number.isFinite(amount) ? sum + amount : sum
+    const parsed = Number(item.amount)
+    return item.pricing === 'additional' && Number.isFinite(parsed) ? sum + parsed : sum
   }, 0)
 
   function updateItem(index: number, patch: Partial<PackageDraftItem>) {
     setItems(previous => previous.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item))
   }
 
-  function removeItem(index: number) {
-    setItems(previous => previous.filter((_, itemIndex) => itemIndex !== index))
-  }
-
-  async function submit(eventSubmit: React.FormEvent) {
-    eventSubmit.preventDefault()
+  async function submit(submitEvent: React.FormEvent) {
+    submitEvent.preventDefault()
     setMessage(null)
     const packageItems: PackageItem[] = []
 
     for (const item of items) {
       const title = item.title.trim()
       if (!title) continue
-      const amount = item.amount.trim() ? Number(item.amount) : null
-      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+      const itemAmount = item.amount.trim() ? Number(item.amount) : null
+      if (itemAmount !== null && (!Number.isFinite(itemAmount) || itemAmount < 0)) {
         setMessage(`Enter a valid amount for “${title}”.`)
         return
       }
@@ -422,7 +387,7 @@ function PackagePanel({ event, saving, onSave }: { event: EventRecord; saving: b
         title,
         category: item.category,
         pricing: item.pricing,
-        amount,
+        amount: itemAmount,
         notes: item.notes.trim(),
       })
     }
@@ -456,48 +421,24 @@ function PackagePanel({ event, saving, onSave }: { event: EventRecord; saving: b
 
       <form onSubmit={submit}>
         {items.length === 0 ? (
-          <div className="event-workspace__package-empty">
-            <strong>No package items yet</strong>
-            <p>Add the services and deliverables agreed with the client.</p>
-          </div>
+          <div className="event-workspace__package-empty"><strong>No package items yet</strong><p>Add the services and deliverables agreed with the client.</p></div>
         ) : (
           <div className="event-workspace__package-list">
             {items.map((item, index) => (
               <article key={item.id} className="event-workspace__package-item">
                 <div className="event-workspace__editor-grid">
-                  <label className="event-workspace__editor-wide">
-                    Service / deliverable
-                    <input value={item.title} onChange={e => updateItem(index, { title: e.target.value })} placeholder="e.g. Event-day coordination" />
-                  </label>
-                  <label>
-                    Category
-                    <select value={item.category} onChange={e => updateItem(index, { category: e.target.value })}>
-                      {PACKAGE_ITEM_CATEGORIES.map(category => <option key={category}>{category}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    Pricing
-                    <select value={item.pricing} onChange={e => updateItem(index, { pricing: e.target.value as PackagePricing })}>
-                      {Object.entries(PACKAGE_PRICING_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
-                  </label>
-                  <label>
-                    Amount (GHS)
-                    <input type="number" min="0" step="0.01" value={item.amount} onChange={e => updateItem(index, { amount: e.target.value })} placeholder={item.pricing === 'included' ? 'Leave blank if included' : '0.00'} />
-                  </label>
-                  <label>
-                    Scope / notes
-                    <input value={item.notes} onChange={e => updateItem(index, { notes: e.target.value })} placeholder="Quantity, limit, conditions or exclusions" />
-                  </label>
+                  <label className="event-workspace__editor-wide">Service / deliverable<input value={item.title} onChange={e => updateItem(index, { title: e.target.value })} placeholder="e.g. Event-day coordination" /></label>
+                  <label>Category<select value={item.category} onChange={e => updateItem(index, { category: e.target.value })}>{PACKAGE_ITEM_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></label>
+                  <label>Pricing<select value={item.pricing} onChange={e => updateItem(index, { pricing: e.target.value as PackagePricing })}>{Object.entries(PACKAGE_PRICING_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+                  <label>Amount (GHS)<input type="number" min="0" step="0.01" value={item.amount} onChange={e => updateItem(index, { amount: e.target.value })} placeholder={item.pricing === 'included' ? 'Leave blank if included' : '0.00'} /></label>
+                  <label>Scope / notes<input value={item.notes} onChange={e => updateItem(index, { notes: e.target.value })} placeholder="Quantity, limit, conditions or exclusions" /></label>
                 </div>
-                <button type="button" className="event-workspace__remove-item" onClick={() => removeItem(index)}>Remove item</button>
+                <button type="button" className="event-workspace__remove-item" onClick={() => setItems(previous => previous.filter((_, itemIndex) => itemIndex !== index))}>Remove item</button>
               </article>
             ))}
           </div>
         )}
-
-        <footer className="event-workspace__editor-actions">
-          <button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save package'}</button>
-        </footer>
+        <footer className="event-workspace__editor-actions"><button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save package'}</button></footer>
       </form>
     </section>
   )
@@ -581,17 +522,10 @@ export default function EventWorkspace() {
   }
 
   if (storeLoading || loading) {
-    return (
-      <main className="event-workspace workspace-page">
-        <section className="workspace-card event-workspace__loading">
-          <span className="event-workspace__spinner" />
-          <p>Loading event workspace…</p>
-        </section>
-      </main>
-    )
+    return <main className="event-workspace workspace-page"><section className="workspace-card event-workspace__loading"><span className="event-workspace__spinner" /><p>Loading event workspace…</p></section></main>
   }
 
-  if (storeError || error || !event) {
+  if (storeError || error || !event || !storeId) {
     return (
       <main className="event-workspace workspace-page">
         <section className="workspace-card event-workspace__error">
@@ -604,40 +538,24 @@ export default function EventWorkspace() {
     )
   }
 
+  const integrationTab = INTEGRATION_TABS.includes(activeTab as EventIntegrationTab) ? activeTab as EventIntegrationTab : null
+
   return (
     <main className="event-workspace workspace-page">
-      <div className="event-workspace__breadcrumb">
-        <Link to="/event-planning">Events</Link>
-        <span aria-hidden="true">/</span>
-        <span>{event.eventCode}</span>
-      </div>
+      <div className="event-workspace__breadcrumb"><Link to="/event-planning">Events</Link><span aria-hidden="true">/</span><span>{event.eventCode}</span></div>
 
       <header className="event-workspace__hero workspace-card">
         <div className="event-workspace__hero-copy">
-          <div className="event-workspace__hero-topline">
-            <p className="event-workspace__eyebrow">{event.eventType} · {event.eventCode}</p>
-            <span className={`event-workspace__status event-workspace__status--${event.status}`}>{STATUS_LABELS[event.status]}</span>
-          </div>
+          <div className="event-workspace__hero-topline"><p className="event-workspace__eyebrow">{event.eventType} · {event.eventCode}</p><span className={`event-workspace__status event-workspace__status--${event.status}`}>{STATUS_LABELS[event.status]}</span></div>
           <h1>{event.title}</h1>
           <p>{event.clientName}</p>
-          <div className="event-workspace__meta-grid">
-            {eventMeta.map(item => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}
-          </div>
+          <div className="event-workspace__meta-grid">{eventMeta.map(item => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</div>
         </div>
-        <div className="event-workspace__readiness-card">
-          <span>Event readiness</span>
-          <strong>{event.progress}%</strong>
-          <div><i style={{ width: `${event.progress}%` }} /></div>
-          <small>Current planning progress</small>
-        </div>
+        <div className="event-workspace__readiness-card"><span>Event readiness</span><strong>{event.progress}%</strong><div><i style={{ width: `${event.progress}%` }} /></div><small>Current planning progress</small></div>
       </header>
 
       <nav className="event-workspace__tabs" aria-label="Event workspace sections">
-        {TABS.map(tab => (
-          <button type="button" key={tab.key} className={activeTab === tab.key ? 'is-active' : ''} aria-current={activeTab === tab.key ? 'page' : undefined} onClick={() => selectTab(tab.key)}>
-            {tab.label}
-          </button>
-        ))}
+        {TABS.map(tab => <button type="button" key={tab.key} className={activeTab === tab.key ? 'is-active' : ''} aria-current={activeTab === tab.key ? 'page' : undefined} onClick={() => selectTab(tab.key)}>{tab.label}</button>)}
       </nav>
 
       {activeTab === 'overview' ? (
@@ -656,10 +574,8 @@ export default function EventWorkspace() {
             </dl>
             {event.notes ? <div className="event-workspace__notes"><strong>Internal notes</strong><p>{event.notes}</p></div> : null}
           </section>
-
           <aside className="workspace-card event-workspace__quick-actions">
-            <p className="event-workspace__eyebrow">Quick access</p>
-            <h2>Work on this event</h2>
+            <p className="event-workspace__eyebrow">Quick access</p><h2>Work on this event</h2>
             <button type="button" onClick={() => selectTab('client-brief')}>Edit client brief <span>→</span></button>
             <button type="button" onClick={() => selectTab('package')}>Manage package <span>→</span></button>
             <button type="button" onClick={() => selectTab('checklist')}>Open checklist <span>→</span></button>
@@ -675,8 +591,22 @@ export default function EventWorkspace() {
         <PackagePanel event={event} saving={savingBrief} onSave={saveClientBrief} />
       ) : activeTab === 'guest-list' ? (
         <EventGuestList storeId={storeId} eventId={event.id} eventTitle={event.title} expectedGuestCount={event.guestCount} />
+      ) : integrationTab ? (
+        <EventModuleIntegrations
+          tab={integrationTab}
+          storeId={storeId}
+          event={{
+            id: event.id,
+            eventCode: event.eventCode,
+            title: event.title,
+            clientName: event.clientName,
+            clientPhone: event.clientPhone,
+            clientEmail: event.clientEmail,
+            estimatedBudget: event.estimatedBudget,
+          }}
+        />
       ) : (
-        <PlaceholderPanel tab={activeTab} />
+        <PlaceholderPanel tab={activeTab as PlaceholderTab} />
       )}
     </main>
   )
