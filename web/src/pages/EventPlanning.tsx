@@ -11,6 +11,7 @@ import {
   Timestamp,
   updateDoc,
 } from 'firebase/firestore'
+import EventContractApprovals from '../components/EventContractApprovals'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './EventPlanning.css'
@@ -304,36 +305,28 @@ function createPackageItem(): ClientBriefForm['packageItems'][number] {
   }
 }
 
-function EventFormModal({
-  event,
-  onClose,
-  onSave,
-}: {
+function EventFormModal({ event, onClose, onSave }: {
   event: EventRecord | null
   onClose: () => void
   onSave: (form: EventForm) => Promise<void>
 }) {
-  const [form, setForm] = useState<EventForm>(() =>
-    event
-      ? {
-          title: event.title,
-          eventType: event.eventType,
-          clientName: event.clientName === 'Client not assigned' ? '' : event.clientName,
-          clientPhone: event.clientPhone,
-          clientEmail: event.clientEmail,
-          eventDate: event.eventDate,
-          startTime: event.startTime,
-          venue: event.venue,
-          guestCount: String(event.guestCount || ''),
-          planningPackage: event.planningPackage,
-          complexity: event.complexity,
-          estimatedBudget: event.estimatedBudget === null ? '' : String(event.estimatedBudget),
-          status: event.status,
-          progress: String(event.progress),
-          notes: event.notes,
-        }
-      : EMPTY_FORM,
-  )
+  const [form, setForm] = useState<EventForm>(() => event ? {
+    title: event.title,
+    eventType: event.eventType,
+    clientName: event.clientName === 'Client not assigned' ? '' : event.clientName,
+    clientPhone: event.clientPhone,
+    clientEmail: event.clientEmail,
+    eventDate: event.eventDate,
+    startTime: event.startTime,
+    venue: event.venue,
+    guestCount: String(event.guestCount || ''),
+    planningPackage: event.planningPackage,
+    complexity: event.complexity,
+    estimatedBudget: event.estimatedBudget === null ? '' : String(event.estimatedBudget),
+    status: event.status,
+    progress: String(event.progress),
+    notes: event.notes,
+  } : EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -361,18 +354,12 @@ function EventFormModal({
 
   return (
     <div className="event-planning__modal-backdrop" onMouseDown={onClose}>
-      <section
-        className="event-planning__modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="event-form-title"
-        onMouseDown={modalEvent => modalEvent.stopPropagation()}
-      >
+      <section className="event-planning__modal" role="dialog" aria-modal="true" aria-labelledby="event-form-title" onMouseDown={modalEvent => modalEvent.stopPropagation()}>
         <header className="event-planning__modal-heading">
           <div>
             <p className="event-planning__eyebrow">{event ? 'Update event' : 'New event'}</p>
             <h2 id="event-form-title">{event ? 'Edit event details' : 'Create an event'}</h2>
-            <p>Capture the essential details now. The client brief and package inclusions are managed from the event workspace.</p>
+            <p>Capture the essential details now. Client requirements, package terms and approvals are managed from the event workspace.</p>
           </div>
           <button type="button" className="event-planning__icon-button" onClick={onClose} aria-label="Close form">×</button>
         </header>
@@ -381,83 +368,25 @@ function EventFormModal({
 
         <form onSubmit={submit}>
           <div className="event-planning__form-grid">
-            <label className="event-planning__field--wide">
-              Event name
-              <input required value={form.title} onChange={e => update('title', e.target.value)} placeholder="e.g. Ama & Kojo’s Traditional Wedding" />
-            </label>
-            <label>
-              Event type
-              <select value={form.eventType} onChange={e => update('eventType', e.target.value)}>
-                {EVENT_TYPES.map(type => <option key={type}>{type}</option>)}
-              </select>
-            </label>
-            <label>
-              Planning package
-              <select value={form.planningPackage} onChange={e => update('planningPackage', e.target.value as PlanningPackage)}>
-                {Object.entries(PACKAGE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-              </select>
-            </label>
-            <label>
-              Client name
-              <input required value={form.clientName} onChange={e => update('clientName', e.target.value)} placeholder="Full name or company" />
-            </label>
-            <label>
-              Client phone
-              <input value={form.clientPhone} onChange={e => update('clientPhone', e.target.value)} placeholder="e.g. 024 000 0000" />
-            </label>
-            <label>
-              Client email
-              <input type="email" value={form.clientEmail} onChange={e => update('clientEmail', e.target.value)} placeholder="client@example.com" />
-            </label>
-            <label>
-              Expected guests
-              <input required type="number" min="1" value={form.guestCount} onChange={e => update('guestCount', e.target.value)} placeholder="250" />
-            </label>
-            <label>
-              Event date
-              <input required type="date" value={form.eventDate} onChange={e => update('eventDate', e.target.value)} />
-            </label>
-            <label>
-              Start time
-              <input required type="time" value={form.startTime} onChange={e => update('startTime', e.target.value)} />
-            </label>
-            <label className="event-planning__field--wide">
-              Venue or location
-              <input required value={form.venue} onChange={e => update('venue', e.target.value)} placeholder="Venue, town or city" />
-            </label>
-            <label>
-              Event complexity
-              <select value={form.complexity} onChange={e => update('complexity', e.target.value as Complexity)}>
-                {Object.entries(COMPLEXITY_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-              </select>
-            </label>
-            <label>
-              Estimated client budget (GHS)
-              <input type="number" min="0" step="0.01" value={form.estimatedBudget} onChange={e => update('estimatedBudget', e.target.value)} placeholder="20000" />
-            </label>
-            <label>
-              Status
-              <select value={form.status} onChange={e => update('status', e.target.value as EventStatus)}>
-                {Object.entries(STATUS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-              </select>
-            </label>
-            <label>
-              Planning progress
-              <div className="event-planning__progress-input">
-                <input type="range" min="0" max="100" value={form.progress} onChange={e => update('progress', e.target.value)} />
-                <strong>{form.progress}%</strong>
-              </div>
-            </label>
-            <label className="event-planning__field--wide">
-              Internal notes
-              <textarea rows={3} value={form.notes} onChange={e => update('notes', e.target.value)} placeholder="Important internal planning notes" />
-            </label>
+            <label className="event-planning__field--wide">Event name<input required value={form.title} onChange={e => update('title', e.target.value)} placeholder="e.g. Ama & Kojo’s Traditional Wedding" /></label>
+            <label>Event type<select value={form.eventType} onChange={e => update('eventType', e.target.value)}>{EVENT_TYPES.map(type => <option key={type}>{type}</option>)}</select></label>
+            <label>Planning package<select value={form.planningPackage} onChange={e => update('planningPackage', e.target.value as PlanningPackage)}>{Object.entries(PACKAGE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+            <label>Client name<input required value={form.clientName} onChange={e => update('clientName', e.target.value)} placeholder="Full name or company" /></label>
+            <label>Client phone<input value={form.clientPhone} onChange={e => update('clientPhone', e.target.value)} placeholder="e.g. 024 000 0000" /></label>
+            <label>Client email<input type="email" value={form.clientEmail} onChange={e => update('clientEmail', e.target.value)} placeholder="client@example.com" /></label>
+            <label>Expected guests<input required type="number" min="1" value={form.guestCount} onChange={e => update('guestCount', e.target.value)} placeholder="250" /></label>
+            <label>Event date<input required type="date" value={form.eventDate} onChange={e => update('eventDate', e.target.value)} /></label>
+            <label>Start time<input required type="time" value={form.startTime} onChange={e => update('startTime', e.target.value)} /></label>
+            <label className="event-planning__field--wide">Venue or location<input required value={form.venue} onChange={e => update('venue', e.target.value)} placeholder="Venue, town or city" /></label>
+            <label>Event complexity<select value={form.complexity} onChange={e => update('complexity', e.target.value as Complexity)}>{Object.entries(COMPLEXITY_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+            <label>Estimated client budget (GHS)<input type="number" min="0" step="0.01" value={form.estimatedBudget} onChange={e => update('estimatedBudget', e.target.value)} placeholder="20000" /></label>
+            <label>Status<select value={form.status} onChange={e => update('status', e.target.value as EventStatus)}>{Object.entries(STATUS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+            <label>Planning progress<div className="event-planning__progress-input"><input type="range" min="0" max="100" value={form.progress} onChange={e => update('progress', e.target.value)} /><strong>{form.progress}%</strong></div></label>
+            <label className="event-planning__field--wide">Internal notes<textarea rows={3} value={form.notes} onChange={e => update('notes', e.target.value)} placeholder="Important internal planning notes" /></label>
           </div>
           <footer className="event-planning__modal-actions">
             <button type="button" className="button button--ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="button button--primary" disabled={saving}>
-              {saving ? 'Saving…' : event ? 'Save changes' : 'Create event'}
-            </button>
+            <button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : event ? 'Save changes' : 'Create event'}</button>
           </footer>
         </form>
       </section>
@@ -465,11 +394,7 @@ function EventFormModal({
   )
 }
 
-function ClientBriefModal({
-  event,
-  onClose,
-  onSave,
-}: {
+function ClientBriefModal({ event, onClose, onSave }: {
   event: EventRecord
   onClose: () => void
   onSave: (brief: ClientBrief) => Promise<void>
@@ -490,10 +415,7 @@ function ClientBriefModal({
   }
 
   function removePackageItem(index: number) {
-    setForm(previous => ({
-      ...previous,
-      packageItems: previous.packageItems.filter((_, itemIndex) => itemIndex !== index),
-    }))
+    setForm(previous => ({ ...previous, packageItems: previous.packageItems.filter((_, itemIndex) => itemIndex !== index) }))
   }
 
   function addPackageItem() {
@@ -503,7 +425,6 @@ function ClientBriefModal({
   async function submit(submitEvent: React.FormEvent) {
     submitEvent.preventDefault()
     const packageItems: PackageItem[] = []
-
     for (const item of form.packageItems) {
       const title = item.title.trim()
       if (!title) continue
@@ -512,14 +433,7 @@ function ClientBriefModal({
         setFormError(`Enter a valid amount for “${title}”.`)
         return
       }
-      packageItems.push({
-        id: item.id,
-        title,
-        category: item.category,
-        pricing: item.pricing,
-        amount,
-        notes: item.notes.trim(),
-      })
+      packageItems.push({ id: item.id, title, category: item.category, pricing: item.pricing, amount, notes: item.notes.trim() })
     }
 
     setSaving(true)
@@ -547,123 +461,46 @@ function ClientBriefModal({
 
   return (
     <div className="event-planning__modal-backdrop" onMouseDown={onClose}>
-      <section
-        className="event-planning__modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="client-brief-title"
-        onMouseDown={modalEvent => modalEvent.stopPropagation()}
-      >
+      <section className="event-planning__modal" role="dialog" aria-modal="true" aria-labelledby="client-brief-title" onMouseDown={modalEvent => modalEvent.stopPropagation()}>
         <header className="event-planning__modal-heading">
-          <div>
-            <p className="event-planning__eyebrow">{event.eventCode}</p>
-            <h2 id="client-brief-title">Client brief & package</h2>
-            <p>Record the client’s requirements and clearly separate what is included, optional, or charged additionally.</p>
-          </div>
+          <div><p className="event-planning__eyebrow">{event.eventCode}</p><h2 id="client-brief-title">Client brief & package</h2><p>Record the client’s requirements and clearly separate what is included, optional, or charged additionally.</p></div>
           <button type="button" className="event-planning__icon-button" onClick={onClose} aria-label="Close client brief">×</button>
         </header>
-
         {formError ? <p className="event-planning__alert event-planning__alert--error">{formError}</p> : null}
-
         <form onSubmit={submit}>
           <div className="event-planning__form-grid">
-            <label className="event-planning__field--wide">
-              Main client requirements
-              <textarea rows={4} value={form.requirements} onChange={e => updateField('requirements', e.target.value)} placeholder="What does the client expect from this event? Key priorities, must-haves and non-negotiables." />
-            </label>
-            <label>
-              Theme / colours
-              <textarea rows={3} value={form.themeColours} onChange={e => updateField('themeColours', e.target.value)} placeholder="Theme, colour palette, dress code, styling direction" />
-            </label>
-            <label>
-              Venue requirements
-              <textarea rows={3} value={form.venueRequirements} onChange={e => updateField('venueRequirements', e.target.value)} placeholder="Layout, capacity, accessibility, power, parking, permits" />
-            </label>
-            <label>
-              Catering
-              <textarea rows={3} value={form.catering} onChange={e => updateField('catering', e.target.value)} placeholder="Menu, drinks, service style, dietary needs" />
-            </label>
-            <label>
-              Décor
-              <textarea rows={3} value={form.decor} onChange={e => updateField('decor', e.target.value)} placeholder="Flowers, stage, tables, signage, lighting" />
-            </label>
-            <label>
-              Entertainment
-              <textarea rows={3} value={form.entertainment} onChange={e => updateField('entertainment', e.target.value)} placeholder="MC, DJ, band, performers, music preferences" />
-            </label>
-            <label>
-              Photography / video
-              <textarea rows={3} value={form.photography} onChange={e => updateField('photography', e.target.value)} placeholder="Coverage, deliverables, shot list, livestream" />
-            </label>
-            <label>
-              Transport
-              <textarea rows={3} value={form.transport} onChange={e => updateField('transport', e.target.value)} placeholder="Client, guest, vendor or staff transport" />
-            </label>
-            <label>
-              Accommodation
-              <textarea rows={3} value={form.accommodation} onChange={e => updateField('accommodation', e.target.value)} placeholder="Rooms, check-in, guest or vendor accommodation" />
-            </label>
-            <label className="event-planning__field--wide">
-              Special instructions
-              <textarea rows={3} value={form.specialInstructions} onChange={e => updateField('specialInstructions', e.target.value)} placeholder="Cultural protocols, VIP handling, accessibility, security or other special instructions" />
-            </label>
+            <label className="event-planning__field--wide">Main client requirements<textarea rows={4} value={form.requirements} onChange={e => updateField('requirements', e.target.value)} placeholder="Key priorities, must-haves and non-negotiables" /></label>
+            <label>Theme / colours<textarea rows={3} value={form.themeColours} onChange={e => updateField('themeColours', e.target.value)} placeholder="Theme, palette, dress code" /></label>
+            <label>Venue requirements<textarea rows={3} value={form.venueRequirements} onChange={e => updateField('venueRequirements', e.target.value)} placeholder="Layout, capacity, accessibility, parking" /></label>
+            <label>Catering<textarea rows={3} value={form.catering} onChange={e => updateField('catering', e.target.value)} placeholder="Menu, drinks, dietary needs" /></label>
+            <label>Décor<textarea rows={3} value={form.decor} onChange={e => updateField('decor', e.target.value)} placeholder="Flowers, stage, tables, signage" /></label>
+            <label>Entertainment<textarea rows={3} value={form.entertainment} onChange={e => updateField('entertainment', e.target.value)} placeholder="MC, DJ, band, performers" /></label>
+            <label>Photography / video<textarea rows={3} value={form.photography} onChange={e => updateField('photography', e.target.value)} placeholder="Coverage, deliverables, shot list" /></label>
+            <label>Transport<textarea rows={3} value={form.transport} onChange={e => updateField('transport', e.target.value)} placeholder="Client, guest, vendor or staff transport" /></label>
+            <label>Accommodation<textarea rows={3} value={form.accommodation} onChange={e => updateField('accommodation', e.target.value)} placeholder="Rooms, guest or vendor accommodation" /></label>
+            <label className="event-planning__field--wide">Special instructions<textarea rows={3} value={form.specialInstructions} onChange={e => updateField('specialInstructions', e.target.value)} placeholder="Cultural protocols, VIP handling, accessibility, security" /></label>
           </div>
 
           <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--event-line)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 12 }}>
-              <div>
-                <h3 style={{ margin: 0, color: 'var(--event-ink)' }}>Package inclusions</h3>
-                <p style={{ margin: '4px 0 0', color: 'var(--event-muted)', fontSize: '.76rem' }}>Add each service or deliverable and identify how it is priced.</p>
-              </div>
+              <div><h3 style={{ margin: 0, color: 'var(--event-ink)' }}>Package inclusions</h3><p style={{ margin: '4px 0 0', color: 'var(--event-muted)', fontSize: '.76rem' }}>Add each service or deliverable and identify how it is priced.</p></div>
               <button type="button" className="button button--ghost" onClick={addPackageItem}>＋ Add item</button>
             </div>
-
-            {form.packageItems.length === 0 ? (
-              <div className="event-planning__notes" style={{ marginTop: 0 }}>
-                <strong>No package items yet</strong>
-                <p>Add the agreed services so staff and the client can see exactly what the package covers.</p>
-              </div>
-            ) : null}
-
+            {form.packageItems.length === 0 ? <div className="event-planning__notes" style={{ marginTop: 0 }}><strong>No package items yet</strong><p>Add the agreed services so staff and the client can see exactly what the package covers.</p></div> : null}
             {form.packageItems.map((item, index) => (
               <div key={item.id} className="event-planning__notes" style={{ marginTop: 10 }}>
                 <div className="event-planning__form-grid">
-                  <label className="event-planning__field--wide">
-                    Service / deliverable
-                    <input value={item.title} onChange={e => updatePackageItem(index, { title: e.target.value })} placeholder="e.g. Event-day coordination" />
-                  </label>
-                  <label>
-                    Category
-                    <select value={item.category} onChange={e => updatePackageItem(index, { category: e.target.value })}>
-                      {PACKAGE_ITEM_CATEGORIES.map(category => <option key={category}>{category}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    Pricing
-                    <select value={item.pricing} onChange={e => updatePackageItem(index, { pricing: e.target.value as PackagePricing })}>
-                      {Object.entries(PACKAGE_PRICING_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    Amount (GHS)
-                    <input type="number" min="0" step="0.01" value={item.amount} onChange={e => updatePackageItem(index, { amount: e.target.value })} placeholder={item.pricing === 'included' ? 'Leave blank if included' : '0.00'} />
-                  </label>
-                  <label>
-                    Notes
-                    <input value={item.notes} onChange={e => updatePackageItem(index, { notes: e.target.value })} placeholder="Limits, quantity, scope or conditions" />
-                  </label>
+                  <label className="event-planning__field--wide">Service / deliverable<input value={item.title} onChange={e => updatePackageItem(index, { title: e.target.value })} placeholder="e.g. Event-day coordination" /></label>
+                  <label>Category<select value={item.category} onChange={e => updatePackageItem(index, { category: e.target.value })}>{PACKAGE_ITEM_CATEGORIES.map(category => <option key={category}>{category}</option>)}</select></label>
+                  <label>Pricing<select value={item.pricing} onChange={e => updatePackageItem(index, { pricing: e.target.value as PackagePricing })}>{Object.entries(PACKAGE_PRICING_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+                  <label>Amount (GHS)<input type="number" min="0" step="0.01" value={item.amount} onChange={e => updatePackageItem(index, { amount: e.target.value })} placeholder={item.pricing === 'included' ? 'Leave blank if included' : '0.00'} /></label>
+                  <label>Notes<input value={item.notes} onChange={e => updatePackageItem(index, { notes: e.target.value })} placeholder="Limits, quantity, scope or conditions" /></label>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-                  <button type="button" className="event-planning__danger" style={{ border: 0, background: 'transparent' }} onClick={() => removePackageItem(index)}>Remove item</button>
-                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}><button type="button" className="event-planning__danger" style={{ border: 0, background: 'transparent' }} onClick={() => removePackageItem(index)}>Remove item</button></div>
               </div>
             ))}
           </div>
-
-          <footer className="event-planning__modal-actions">
-            <button type="button" className="button button--ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save client brief'}</button>
-          </footer>
+          <footer className="event-planning__modal-actions"><button type="button" className="button button--ghost" onClick={onClose}>Cancel</button><button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save client brief'}</button></footer>
         </form>
       </section>
     </div>
@@ -671,7 +508,7 @@ function ClientBriefModal({
 }
 
 function BriefSummary({ brief }: { brief: ClientBrief }) {
-  const details = [
+  const details: Array<[string, string]> = [
     ['Main requirements', brief.requirements],
     ['Theme / colours', brief.themeColours],
     ['Venue requirements', brief.venueRequirements],
@@ -683,22 +520,14 @@ function BriefSummary({ brief }: { brief: ClientBrief }) {
     ['Accommodation', brief.accommodation],
     ['Special instructions', brief.specialInstructions],
   ].filter(([, value]) => Boolean(value))
-
   const additionalTotal = brief.packageItems.reduce((sum, item) => sum + (item.pricing === 'additional' && item.amount ? item.amount : 0), 0)
 
   return (
     <div className="event-planning__workspace-preview">
       <h3>Client brief</h3>
-      {details.length === 0 && brief.packageItems.length === 0 ? (
-        <p>No client brief has been added yet.</p>
-      ) : (
+      {details.length === 0 && brief.packageItems.length === 0 ? <p>No client brief has been added yet.</p> : (
         <>
-          {details.length ? (
-            <dl className="event-planning__details" style={{ marginTop: 12 }}>
-              {details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{value}</dd></div>)}
-            </dl>
-          ) : null}
-
+          {details.length ? <dl className="event-planning__details" style={{ marginTop: 12 }}>{details.map(([label, value]) => <div key={label}><dt>{label}</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{value}</dd></div>)}</dl> : null}
           <div style={{ marginTop: 16 }}>
             <strong style={{ color: 'var(--event-ink)', fontSize: '.82rem' }}>Package inclusions</strong>
             {brief.packageItems.length === 0 ? <p>No package items added.</p> : (
@@ -707,9 +536,7 @@ function BriefSummary({ brief }: { brief: ClientBrief }) {
                   <div key={item.id} style={{ padding: 10, border: '1px solid var(--event-line)', borderRadius: 9, background: '#fafbf9' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                       <strong style={{ color: 'var(--event-ink)', fontSize: '.78rem' }}>{item.title}</strong>
-                      <span className={`event-planning__status event-planning__status--${item.pricing === 'additional' ? 'awaiting_client' : item.pricing === 'optional' ? 'new' : 'planning'}`}>
-                        {PACKAGE_PRICING_LABELS[item.pricing]}{item.amount !== null ? ` · ${formatMoney(item.amount)}` : ''}
-                      </span>
+                      <span className={`event-planning__status event-planning__status--${item.pricing === 'additional' ? 'awaiting_client' : item.pricing === 'optional' ? 'new' : 'planning'}`}>{PACKAGE_PRICING_LABELS[item.pricing]}{item.amount !== null ? ` · ${formatMoney(item.amount)}` : ''}</span>
                     </div>
                     <small style={{ display: 'block', marginTop: 3, color: 'var(--event-muted)' }}>{item.category}{item.notes ? ` · ${item.notes}` : ''}</small>
                   </div>
@@ -736,6 +563,7 @@ export default function EventPlanning() {
   const [editingEvent, setEditingEvent] = useState<EventRecord | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<EventRecord | null>(null)
   const [briefEvent, setBriefEvent] = useState<EventRecord | null>(null)
+  const [approvalEvent, setApprovalEvent] = useState<EventRecord | null>(null)
   const [deletingId, setDeletingId] = useState('')
 
   const loadEvents = useCallback(async () => {
@@ -757,9 +585,7 @@ export default function EventPlanning() {
     }
   }, [storeId])
 
-  useEffect(() => {
-    void loadEvents()
-  }, [loadEvents])
+  useEffect(() => { void loadEvents() }, [loadEvents])
 
   const filteredEvents = useMemo(() => {
     const search = queryText.trim().toLowerCase()
@@ -799,7 +625,6 @@ export default function EventPlanning() {
       notes: form.notes.trim(),
       updatedAt: serverTimestamp(),
     }
-
     if (editingEvent) {
       await updateDoc(doc(db, 'stores', storeId, 'events', editingEvent.id), payload)
       setSuccessMessage('Event updated successfully.')
@@ -812,7 +637,6 @@ export default function EventPlanning() {
       })
       setSuccessMessage('Event created successfully.')
     }
-
     setModalOpen(false)
     setEditingEvent(null)
     await loadEvents()
@@ -820,11 +644,7 @@ export default function EventPlanning() {
 
   async function saveClientBrief(brief: ClientBrief) {
     if (!storeId || !briefEvent) throw new Error('No active event')
-    await updateDoc(doc(db, 'stores', storeId, 'events', briefEvent.id), {
-      clientBrief: brief,
-      updatedAt: serverTimestamp(),
-    })
-
+    await updateDoc(doc(db, 'stores', storeId, 'events', briefEvent.id), { clientBrief: brief, updatedAt: serverTimestamp() })
     const updated = { ...briefEvent, clientBrief: brief }
     setEvents(previous => previous.map(event => event.id === updated.id ? updated : event))
     if (selectedEvent?.id === updated.id) setSelectedEvent(updated)
@@ -853,6 +673,7 @@ export default function EventPlanning() {
       setEvents(previous => previous.filter(item => item.id !== event.id))
       if (selectedEvent?.id === event.id) setSelectedEvent(null)
       if (briefEvent?.id === event.id) setBriefEvent(null)
+      if (approvalEvent?.id === event.id) setApprovalEvent(null)
       setSuccessMessage('Event deleted.')
     } catch (error) {
       console.error('[event-planning] Unable to delete event', error)
@@ -863,37 +684,19 @@ export default function EventPlanning() {
   }
 
   if (storeLoading || loading) {
-    return (
-      <main className="event-planning workspace-page">
-        <section className="event-planning__loading workspace-card">
-          <span className="event-planning__spinner" />
-          <p>Loading event workspace…</p>
-        </section>
-      </main>
-    )
+    return <main className="event-planning workspace-page"><section className="event-planning__loading workspace-card"><span className="event-planning__spinner" /><p>Loading event workspace…</p></section></main>
   }
 
   return (
     <main className="event-planning workspace-page">
       <header className="event-planning__hero">
-        <div>
-          <p className="event-planning__eyebrow">Planning and coordination</p>
-          <h1>Events</h1>
-          <p>Create, organise and monitor every client event from one workspace.</p>
-        </div>
-        <button type="button" className="button button--primary event-planning__create" onClick={openCreate}>
-          <span aria-hidden="true">＋</span> Create event
-        </button>
+        <div><p className="event-planning__eyebrow">Planning and coordination</p><h1>Events</h1><p>Create, organise and monitor every client event from one workspace.</p></div>
+        <button type="button" className="button button--primary event-planning__create" onClick={openCreate}><span aria-hidden="true">＋</span> Create event</button>
       </header>
 
       {storeError ? <p className="event-planning__alert event-planning__alert--error">{storeError}</p> : null}
       {pageError ? <p className="event-planning__alert event-planning__alert--error">{pageError}</p> : null}
-      {successMessage ? (
-        <p className="event-planning__alert event-planning__alert--success">
-          {successMessage}
-          <button type="button" onClick={() => setSuccessMessage(null)} aria-label="Dismiss message">×</button>
-        </p>
-      ) : null}
+      {successMessage ? <p className="event-planning__alert event-planning__alert--success">{successMessage}<button type="button" onClick={() => setSuccessMessage(null)} aria-label="Dismiss message">×</button></p> : null}
 
       <section className="event-planning__metrics" aria-label="Event summary">
         <article><span>Upcoming events</span><strong>{upcomingEvents}</strong><small>Scheduled ahead</small></article>
@@ -907,23 +710,12 @@ export default function EventPlanning() {
           <div><h2>Event workspace</h2><p>{filteredEvents.length} of {events.length} events shown</p></div>
           <div className="event-planning__filters">
             <label><span className="sr-only">Search events</span><input value={queryText} onChange={e => setQueryText(e.target.value)} placeholder="Search event, client or venue" /></label>
-            <label>
-              <span className="sr-only">Filter by status</span>
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'all' | EventStatus)}>
-                <option value="all">All statuses</option>
-                {Object.entries(STATUS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-              </select>
-            </label>
+            <label><span className="sr-only">Filter by status</span><select value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'all' | EventStatus)}><option value="all">All statuses</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
           </div>
         </header>
 
         {filteredEvents.length === 0 ? (
-          <div className="event-planning__empty">
-            <div aria-hidden="true">EC</div>
-            <h3>{events.length ? 'No matching events' : 'Create your first event'}</h3>
-            <p>{events.length ? 'Try a different search or status filter.' : 'Start with the client, date, venue and expected guest count.'}</p>
-            {!events.length ? <button type="button" className="button button--primary" onClick={openCreate}>Create event</button> : null}
-          </div>
+          <div className="event-planning__empty"><div aria-hidden="true">EC</div><h3>{events.length ? 'No matching events' : 'Create your first event'}</h3><p>{events.length ? 'Try a different search or status filter.' : 'Start with the client, date, venue and expected guest count.'}</p>{!events.length ? <button type="button" className="button button--primary" onClick={openCreate}>Create event</button> : null}</div>
         ) : (
           <div className="event-planning__table-wrap">
             <table className="event-planning__table">
@@ -931,22 +723,13 @@ export default function EventPlanning() {
               <tbody>
                 {filteredEvents.map(event => (
                   <tr key={event.id}>
-                    <td>
-                      <button type="button" className="event-planning__event-link" onClick={() => setSelectedEvent(event)}>{event.title}</button>
-                      <span>{event.eventType} · {event.eventCode}</span><small>{event.clientName}</small>
-                    </td>
+                    <td><button type="button" className="event-planning__event-link" onClick={() => setSelectedEvent(event)}>{event.title}</button><span>{event.eventType} · {event.eventCode}</span><small>{event.clientName}</small></td>
                     <td><strong>{formatDate(event.eventDate)}{event.startTime ? ` · ${event.startTime}` : ''}</strong><span>{event.venue || 'Venue not set'}</span></td>
                     <td><strong>{event.guestCount.toLocaleString()}</strong></td>
                     <td><span>{PACKAGE_LABELS[event.planningPackage]}</span><small>{event.clientBrief.packageItems.length} package item{event.clientBrief.packageItems.length === 1 ? '' : 's'}</small></td>
                     <td><div className="event-planning__readiness"><span><small>Checklist</small><strong>{event.progress}%</strong></span><i><b style={{ width: `${event.progress}%` }} /></i></div></td>
                     <td><span className={`event-planning__status event-planning__status--${event.status}`}>{STATUS_LABELS[event.status]}</span></td>
-                    <td>
-                      <div className="event-planning__row-actions">
-                        <button type="button" onClick={() => setBriefEvent(event)}>Client brief</button>
-                        <button type="button" onClick={() => openEdit(event)}>Edit</button>
-                        <button type="button" className="event-planning__danger" disabled={deletingId === event.id} onClick={() => void removeEvent(event)}>{deletingId === event.id ? 'Deleting…' : 'Delete'}</button>
-                      </div>
-                    </td>
+                    <td><div className="event-planning__row-actions"><button type="button" onClick={() => setBriefEvent(event)}>Client brief</button><button type="button" onClick={() => setApprovalEvent(event)}>Contract & approval</button><button type="button" onClick={() => openEdit(event)}>Edit</button><button type="button" className="event-planning__danger" disabled={deletingId === event.id} onClick={() => void removeEvent(event)}>{deletingId === event.id ? 'Deleting…' : 'Delete'}</button></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -958,46 +741,37 @@ export default function EventPlanning() {
       {selectedEvent ? (
         <aside className="event-planning__drawer-backdrop" onMouseDown={() => setSelectedEvent(null)}>
           <section className="event-planning__drawer" onMouseDown={event => event.stopPropagation()} aria-label="Event overview">
-            <header>
-              <div><p className="event-planning__eyebrow">{selectedEvent.eventCode}</p><h2>{selectedEvent.title}</h2><p>{selectedEvent.clientName}</p></div>
-              <button type="button" className="event-planning__icon-button" onClick={() => setSelectedEvent(null)} aria-label="Close event details">×</button>
-            </header>
-            <div className="event-planning__drawer-status">
-              <span className={`event-planning__status event-planning__status--${selectedEvent.status}`}>{STATUS_LABELS[selectedEvent.status]}</span>
-              <strong>{selectedEvent.progress}% ready</strong>
-            </div>
+            <header><div><p className="event-planning__eyebrow">{selectedEvent.eventCode}</p><h2>{selectedEvent.title}</h2><p>{selectedEvent.clientName}</p></div><button type="button" className="event-planning__icon-button" onClick={() => setSelectedEvent(null)} aria-label="Close event details">×</button></header>
+            <div className="event-planning__drawer-status"><span className={`event-planning__status event-planning__status--${selectedEvent.status}`}>{STATUS_LABELS[selectedEvent.status]}</span><strong>{selectedEvent.progress}% ready</strong></div>
             <dl className="event-planning__details">
-              <div><dt>Event type</dt><dd>{selectedEvent.eventType}</dd></div>
-              <div><dt>Date</dt><dd>{formatDate(selectedEvent.eventDate)}{selectedEvent.startTime ? ` at ${selectedEvent.startTime}` : ''}</dd></div>
-              <div><dt>Venue</dt><dd>{selectedEvent.venue || 'Not set'}</dd></div>
-              <div><dt>Expected guests</dt><dd>{selectedEvent.guestCount.toLocaleString()}</dd></div>
-              <div><dt>Package</dt><dd>{PACKAGE_LABELS[selectedEvent.planningPackage]}</dd></div>
-              <div><dt>Complexity</dt><dd>{COMPLEXITY_LABELS[selectedEvent.complexity]}</dd></div>
-              <div><dt>Estimated budget</dt><dd>{formatMoney(selectedEvent.estimatedBudget)}</dd></div>
-              <div><dt>Client contact</dt><dd>{selectedEvent.clientPhone || selectedEvent.clientEmail || 'Not provided'}</dd></div>
+              <div><dt>Event type</dt><dd>{selectedEvent.eventType}</dd></div><div><dt>Date</dt><dd>{formatDate(selectedEvent.eventDate)}{selectedEvent.startTime ? ` at ${selectedEvent.startTime}` : ''}</dd></div><div><dt>Venue</dt><dd>{selectedEvent.venue || 'Not set'}</dd></div><div><dt>Expected guests</dt><dd>{selectedEvent.guestCount.toLocaleString()}</dd></div><div><dt>Package</dt><dd>{PACKAGE_LABELS[selectedEvent.planningPackage]}</dd></div><div><dt>Complexity</dt><dd>{COMPLEXITY_LABELS[selectedEvent.complexity]}</dd></div><div><dt>Estimated budget</dt><dd>{formatMoney(selectedEvent.estimatedBudget)}</dd></div><div><dt>Client contact</dt><dd>{selectedEvent.clientPhone || selectedEvent.clientEmail || 'Not provided'}</dd></div>
             </dl>
             {selectedEvent.notes ? <div className="event-planning__notes"><strong>Internal notes</strong><p>{selectedEvent.notes}</p></div> : null}
             <BriefSummary brief={selectedEvent.clientBrief} />
             <div className="event-planning__workspace-preview">
-              <h3>Event workspace</h3>
-              <p>Client brief and package inclusions are now active. Checklist, vendors, staff, timeline, guest list, invoices and messages can be connected next.</p>
-              <div>{['Overview', 'Client brief', 'Package', 'Checklist', 'Vendors', 'Staff', 'Timeline', 'Invoices'].map(item => <span key={item}>{item}</span>)}</div>
+              <h3>Contracts & approvals</h3>
+              <p>Prepare the service agreement, scope, payment terms and cancellation policy. Track client changes, approval and typed e-signature with revision history.</p>
+              <button type="button" className="button button--ghost" style={{ marginTop: 10 }} onClick={() => setApprovalEvent(selectedEvent)}>Open contract & approval</button>
             </div>
-            <footer>
-              <button type="button" className="button button--ghost" onClick={() => setSelectedEvent(null)}>Close</button>
-              <button type="button" className="button button--ghost" onClick={() => setBriefEvent(selectedEvent)}>Edit client brief</button>
-              <button type="button" className="button button--primary" onClick={() => { const event = selectedEvent; setSelectedEvent(null); openEdit(event) }}>Edit event</button>
-            </footer>
+            <div className="event-planning__workspace-preview">
+              <h3>Event workspace</h3>
+              <p>Client brief, package and contract approvals are active. Checklist, vendors, staff, timeline, guest list, invoices and messages can be connected next.</p>
+              <div>{['Overview', 'Client brief', 'Package', 'Contract', 'Approvals', 'Checklist', 'Vendors', 'Staff', 'Timeline', 'Invoices'].map(item => <span key={item}>{item}</span>)}</div>
+            </div>
+            <footer><button type="button" className="button button--ghost" onClick={() => setSelectedEvent(null)}>Close</button><button type="button" className="button button--ghost" onClick={() => setBriefEvent(selectedEvent)}>Edit client brief</button><button type="button" className="button button--ghost" onClick={() => setApprovalEvent(selectedEvent)}>Contract & approval</button><button type="button" className="button button--primary" onClick={() => { const event = selectedEvent; setSelectedEvent(null); openEdit(event) }}>Edit event</button></footer>
           </section>
         </aside>
       ) : null}
 
-      {modalOpen ? (
-        <EventFormModal event={editingEvent} onClose={() => { setModalOpen(false); setEditingEvent(null) }} onSave={saveEvent} />
-      ) : null}
-
-      {briefEvent ? (
-        <ClientBriefModal event={briefEvent} onClose={() => setBriefEvent(null)} onSave={saveClientBrief} />
+      {modalOpen ? <EventFormModal event={editingEvent} onClose={() => { setModalOpen(false); setEditingEvent(null) }} onSave={saveEvent} /> : null}
+      {briefEvent ? <ClientBriefModal event={briefEvent} onClose={() => setBriefEvent(null)} onSave={saveClientBrief} /> : null}
+      {approvalEvent && storeId ? (
+        <EventContractApprovals
+          storeId={storeId}
+          event={{ id: approvalEvent.id, eventCode: approvalEvent.eventCode, title: approvalEvent.title, clientName: approvalEvent.clientName, clientEmail: approvalEvent.clientEmail }}
+          onClose={() => setApprovalEvent(null)}
+          onChanged={loadEvents}
+        />
       ) : null}
     </main>
   )
