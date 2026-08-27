@@ -3,6 +3,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore'
 import { matchPath, useLocation } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
+import { downloadEventClientPackPdf } from '../utils/eventClientPackPdf'
 import {
   EVENT_PDF_SECTION_OPTIONS,
   downloadEventWorkspacePdf,
@@ -48,6 +49,7 @@ export default function EventPdfExportDock() {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<EventPdfSectionKey[]>(DEFAULT_PACK_SECTIONS)
   const [busy, setBusy] = useState(false)
+  const [busyLabel, setBusyLabel] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -107,7 +109,7 @@ export default function EventPdfExportDock() {
     setError(null)
   }
 
-  async function download(sections: EventPdfSectionKey[], pack = false) {
+  async function download(sections: EventPdfSectionKey[], pack = false, label = 'PDF') {
     if (!storeId) return
     if (!eventId) {
       setError('Choose an event first.')
@@ -118,6 +120,7 @@ export default function EventPdfExportDock() {
       return
     }
     setBusy(true)
+    setBusyLabel(label)
     setError(null)
     setMessage(null)
     try {
@@ -128,6 +131,28 @@ export default function EventPdfExportDock() {
       setError(downloadError instanceof Error ? downloadError.message : 'The event PDF could not be created.')
     } finally {
       setBusy(false)
+      setBusyLabel('')
+    }
+  }
+
+  async function downloadClientPack() {
+    if (!storeId || !eventId) {
+      setError('Choose an event first.')
+      return
+    }
+    setBusy(true)
+    setBusyLabel('Client Pack')
+    setError(null)
+    setMessage(null)
+    try {
+      const result = await downloadEventClientPackPdf({ storeId, eventId })
+      setMessage(`${result.fileName} downloaded. Client Pack contains only client-shareable event information.`)
+    } catch (downloadError) {
+      console.error('[event-pdf] Unable to export Client Pack', downloadError)
+      setError(downloadError instanceof Error ? downloadError.message : 'The Client Pack could not be created.')
+    } finally {
+      setBusy(false)
+      setBusyLabel('')
     }
   }
 
@@ -168,12 +193,25 @@ export default function EventPdfExportDock() {
             </div>
           ) : null}
 
+          <div className="event-pdf-dock__current">
+            <span>Recommended presets</span>
+            <strong>Choose who will receive the document</strong>
+            <button type="button" className="button button--primary" disabled={busy || !eventId} onClick={() => void downloadClientPack()}>
+              {busy && busyLabel === 'Client Pack' ? 'Creating Client Pack…' : 'Download Client Pack'}
+            </button>
+            <p>Safe for the client: event summary without internal notes, client brief, package/scope, contract, client-visible tasks and the program only after it is approved.</p>
+            <button type="button" className="button button--ghost" disabled={busy || !eventId} onClick={() => void download(DEFAULT_PACK_SECTIONS, true, 'Internal Event Pack')}>
+              {busy && busyLabel === 'Internal Event Pack' ? 'Creating Internal Pack…' : 'Download Internal Event Pack'}
+            </button>
+            <p>Internal use: includes checklist, timeline, guest list, vendors, staff, finance and evaluation.</p>
+          </div>
+
           {currentExport ? (
             <div className="event-pdf-dock__current">
               <span>{isListRoute ? 'Quick export' : 'Current section'}</span>
               <strong>{currentExport.label}</strong>
-              <button type="button" className="button button--primary" disabled={busy || !eventId} onClick={() => void download(currentExport.sections)}>
-                {busy ? 'Creating PDF…' : `Download ${currentExport.label} PDF`}
+              <button type="button" className="button button--primary" disabled={busy || !eventId} onClick={() => void download(currentExport.sections, false, currentExport.label)}>
+                {busy && busyLabel === currentExport.label ? 'Creating PDF…' : `Download ${currentExport.label} PDF`}
               </button>
             </div>
           ) : (
@@ -186,8 +224,8 @@ export default function EventPdfExportDock() {
 
           <div className="event-pdf-dock__pack-heading">
             <div>
-              <span>Combined document</span>
-              <strong>Build Event Pack</strong>
+              <span>Custom combined document</span>
+              <strong>Build your own Event Pack</strong>
             </div>
             <button type="button" className="event-pdf-dock__select-link" onClick={() => setSelected(selected.length === EVENT_PDF_SECTION_OPTIONS.length ? [] : DEFAULT_PACK_SECTIONS)}>
               {selected.length === EVENT_PDF_SECTION_OPTIONS.length ? 'Clear all' : 'Select all'}
@@ -207,13 +245,13 @@ export default function EventPdfExportDock() {
           </div>
 
           <div className="event-pdf-dock__privacy-note">
-            Internal sections can contain guest, vendor, staff and financial information. Review the selected sections before sharing the Event Pack outside your team.
+            Use Client Pack when sending documents outside your team. Custom/Internal packs can contain guest, vendor, staff, financial and other internal information.
           </div>
 
           <footer className="event-pdf-dock__actions">
             <span>{selected.length} section{selected.length === 1 ? '' : 's'} selected</span>
-            <button type="button" className="button button--primary" disabled={busy || !selected.length || !eventId} onClick={() => void download(selected, true)}>
-              {busy ? 'Creating Event Pack…' : 'Download Event Pack'}
+            <button type="button" className="button button--primary" disabled={busy || !selected.length || !eventId} onClick={() => void download(selected, true, 'Custom Event Pack')}>
+              {busy && busyLabel === 'Custom Event Pack' ? 'Creating Event Pack…' : 'Download Custom Event Pack'}
             </button>
           </footer>
         </section>
