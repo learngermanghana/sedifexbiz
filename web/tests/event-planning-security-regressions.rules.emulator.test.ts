@@ -4,6 +4,7 @@ import {
   connectFirestoreEmulator,
   deleteDoc,
   doc,
+  getDoc,
   getFirestore,
   serverTimestamp,
   setDoc,
@@ -162,6 +163,27 @@ describeOrSkip('Event planning P1 security regressions', () => {
       )
     } finally {
       await destroyContext(staff)
+      await destroyContext(owner)
+    }
+  })
+
+  test('secure contract bearer-link records are never exposed to browser Firestore clients', async () => {
+    const owner = await createOwner()
+    try {
+      const linkRef = doc(owner.db, 'eventContractLinks', 'browser-must-not-access-this-link')
+      await expectPermissionDenied(
+        setDoc(linkRef, {
+          storeId: owner.storeId,
+          eventId: 'event-1',
+          reviewUrl: 'https://sedifex.com/event-contract/secret-token',
+        }),
+        'store owner must not be able to forge or overwrite a secure contract link directly',
+      )
+      await expectPermissionDenied(
+        getDoc(linkRef),
+        'store owner must not be able to read secure contract bearer-link records directly',
+      )
+    } finally {
       await destroyContext(owner)
     }
   })
