@@ -6,16 +6,13 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function memberPath() {
-      return /databases/$(database)/documents/teamMembers/$(request.auth.uid);
-    }
-
     function hasMemberRecord() {
-      return isSignedIn() && exists(memberPath());
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/teamMembers/$(request.auth.uid));
     }
 
     function memberData() {
-      return get(memberPath()).data;
+      return get(/databases/$(database)/documents/teamMembers/$(request.auth.uid)).data;
     }
 
     function hasDirectStoreAccess(storeId) {
@@ -39,6 +36,12 @@ service cloud.firestore {
 
     function isStoreOwner(storeId) {
       return hasStoreAccess(storeId) && memberData().role == 'owner';
+    }
+
+    function ownerCanManageStore(storeId) {
+      return hasMemberRecord()
+        && memberData().role == 'owner'
+        && hasStoreAccess(storeId);
     }
 
     function hasText(field, maxLength) {
@@ -92,6 +95,46 @@ service cloud.firestore {
     match /publicStores/{docId} {
       allow read: if true;
       allow write: if isSignedIn();
+    }
+
+    // Membership is part of the security boundary for event planning. Users
+    // may update their own non-access fields, but cannot move themselves to a
+    // different store or promote their own role. Owners can manage members for
+    // stores they own, including linked child stores.
+    match /teamMembers/{memberId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn() && (
+        (
+          request.resource.data.uid == request.auth.uid
+          && request.resource.data.storeId == request.auth.uid
+          && request.resource.data.role == 'owner'
+        )
+        || (
+          request.resource.data.storeId is string
+          && ownerCanManageStore(request.resource.data.storeId)
+        )
+      );
+
+      allow update: if isSignedIn() && (
+        (
+          resource.data.uid == request.auth.uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.storeId == resource.data.storeId
+          && request.resource.data.role == resource.data.role
+        )
+        || (
+          resource.data.storeId is string
+          && ownerCanManageStore(resource.data.storeId)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.storeId == resource.data.storeId
+        )
+      );
+
+      allow delete: if isSignedIn()
+        && resource.data.storeId is string
+        && ownerCanManageStore(resource.data.storeId)
+        && resource.data.uid != request.auth.uid;
     }
 
     match /stores/{storeId}/websiteHeroSlides/{slideId} {
@@ -162,10 +205,13 @@ service cloud.firestore {
         && subCollection != 'eventActivity';
     }
 
-    // Legacy fallback for non-store-scoped collections. Store-scoped paths are
-    // intentionally excluded so the event rules cannot be bypassed by overlap.
+    // Legacy fallback for non-store-scoped collections. Store-scoped and
+    // membership paths are intentionally excluded so their rules cannot be
+    // bypassed by an overlapping authenticated-user wildcard.
     match /{topCollection}/{document=**} {
-      allow read, write: if isSignedIn() && topCollection != 'stores';
+      allow read, write: if isSignedIn()
+        && topCollection != 'stores'
+        && topCollection != 'teamMembers';
     }
   }
 }
