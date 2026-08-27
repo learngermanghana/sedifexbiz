@@ -38,6 +38,7 @@ export default function EventPdfExportDock() {
   const { storeId, isLoading } = useActiveStore()
   const eventRouteMatch = matchPath({ path: '/event-planning/:eventId', end: true }, location.pathname)
   const listRouteMatch = matchPath({ path: '/event-planning', end: true }, location.pathname)
+  const isListRoute = Boolean(listRouteMatch)
   const routeEventId = eventRouteMatch?.params.eventId || ''
   const [eventOptions, setEventOptions] = useState<EventOption[]>([])
   const [selectedEventId, setSelectedEventId] = useState('')
@@ -58,9 +59,9 @@ export default function EventPdfExportDock() {
 
   useEffect(() => {
     let active = true
-    if (!listRouteMatch || !storeId || isLoading) {
+    if (!isListRoute || !storeId || isLoading) {
       setEventOptions([])
-      if (!listRouteMatch) setSelectedEventId('')
+      if (!isListRoute) setSelectedEventId('')
       return () => { active = false }
     }
 
@@ -84,7 +85,7 @@ export default function EventPdfExportDock() {
 
     void loadEvents()
     return () => { active = false }
-  }, [isLoading, listRouteMatch, storeId])
+  }, [isLoading, isListRoute, storeId])
 
   useEffect(() => {
     if (!open) return
@@ -96,7 +97,7 @@ export default function EventPdfExportDock() {
   }, [open])
 
   const selectedSet = useMemo(() => new Set(selected), [selected])
-  const isEventPlanningRoute = Boolean(eventRouteMatch || listRouteMatch)
+  const isEventPlanningRoute = Boolean(eventRouteMatch || isListRoute)
 
   if (!isEventPlanningRoute || !storeId || isLoading) return null
 
@@ -156,7 +157,7 @@ export default function EventPdfExportDock() {
           {error ? <p className="event-pdf-dock__message event-pdf-dock__message--error">{error}</p> : null}
           {message ? <p className="event-pdf-dock__message event-pdf-dock__message--success">{message}</p> : null}
 
-          {listRouteMatch ? (
+          {isListRoute ? (
             <div className="event-pdf-dock__current">
               <span>Choose event</span>
               {eventOptions.length ? (
@@ -169,7 +170,7 @@ export default function EventPdfExportDock() {
 
           {currentExport ? (
             <div className="event-pdf-dock__current">
-              <span>{listRouteMatch ? 'Quick export' : 'Current section'}</span>
+              <span>{isListRoute ? 'Quick export' : 'Current section'}</span>
               <strong>{currentExport.label}</strong>
               <button type="button" className="button button--primary" disabled={busy || !eventId} onClick={() => void download(currentExport.sections)}>
                 {busy ? 'Creating PDF…' : `Download ${currentExport.label} PDF`}
