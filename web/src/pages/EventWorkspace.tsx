@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import EventGuestList from '../components/EventGuestList'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './EventWorkspace.css'
@@ -477,8 +478,7 @@ function PackagePanel({ event, saving, onSave }: { event: EventRecord; saving: b
                   <label>
                     Pricing
                     <select value={item.pricing} onChange={e => updateItem(index, { pricing: e.target.value as PackagePricing })}>
-                      {Object.entries(PACKAGE_PRICING_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-                    </select>
+                      {Object.entries(PACKAGE_PRICING_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
                   </label>
                   <label>
                     Amount (GHS)
@@ -673,6 +673,8 @@ export default function EventWorkspace() {
         <ClientBriefPanel brief={event.clientBrief} saving={savingBrief} onSave={saveClientBrief} />
       ) : activeTab === 'package' ? (
         <PackagePanel event={event} saving={savingBrief} onSave={saveClientBrief} />
+      ) : activeTab === 'guest-list' ? (
+        <EventGuestList storeId={storeId} eventId={event.id} eventTitle={event.title} expectedGuestCount={event.guestCount} />
       ) : (
         <PlaceholderPanel tab={activeTab} />
       )}
