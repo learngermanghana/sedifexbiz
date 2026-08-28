@@ -33,12 +33,22 @@ type ClientTask = {
   sortOrder: number
 }
 
+type ProgramChangeRequest = {
+  id: string
+  status: string
+  message: string
+  requestedBy: string
+  requestedAt: Date | null
+  revision: number
+}
+
 type EventPortalMeta = {
   title: string
   clientName: string
   clientEmail: string
   publicUrl: string
   status: string
+  programChangeRequest: ProgramChangeRequest | null
 }
 
 type ActivityEntry = {
@@ -52,6 +62,10 @@ type ActivityEntry = {
 
 function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
 function numberValue(value: unknown, fallback = 0) {
@@ -148,13 +162,24 @@ export default function EventClientCollaborationDock() {
         return
       }
       const data = snapshot.data() as Record<string, unknown>
-      const portal = data.clientPortal && typeof data.clientPortal === 'object' ? data.clientPortal as Record<string, unknown> : {}
+      const portal = record(data.clientPortal)
+      const programRequest = record(data.programChangeRequest)
       setEvent({
         title: text(data.title) || text(data.eventType) || 'Event',
         clientName: text(data.clientName) || 'Client',
         clientEmail: text(data.clientEmail),
         publicUrl: text(portal.publicUrl),
         status: text(portal.status),
+        programChangeRequest: text(programRequest.status) === 'open' && text(programRequest.id)
+          ? {
+              id: text(programRequest.id),
+              status: 'open',
+              message: text(programRequest.message),
+              requestedBy: text(programRequest.requestedBy) || 'Client',
+              requestedAt: dateValue(programRequest.requestedAt),
+              revision: Math.max(1, Math.floor(numberValue(programRequest.revision, 1))),
+            }
+          : null,
       })
     }, listenerError => {
       console.error('[event-client-collaboration] Event listener failed', listenerError)
@@ -191,6 +216,7 @@ export default function EventClientCollaborationDock() {
 
   const visibleTasks = useMemo(() => tasks.filter(task => task.clientVisible), [tasks])
   const submittedCount = visibleTasks.filter(task => task.clientState === 'submitted').length
+  const attentionCount = submittedCount + (event?.programChangeRequest ? 1 : 0)
 
   if (!routeMatch || !eventId || !storeId || isLoading) return null
 
@@ -230,8 +256,8 @@ export default function EventClientCollaborationDock() {
         ? ` It also includes ${visibleTasks.length} selected checklist task${visibleTasks.length === 1 ? '' : 's'}.`
         : ''
       setMessage(response.data.deliveries > 0
-        ? `Client portal emailed to ${event.clientEmail}. The client can update the live brief.${taskSummary}`
-        : `Client portal created with the live brief.${taskSummary} Email delivery could not be confirmed, so copy the link and send it manually.`)
+        ? `Client portal emailed to ${event.clientEmail}. The client can update the live brief and review protected published documents.${taskSummary}`
+        : `Client portal created with the live brief and protected document review.${taskSummary} Email delivery could not be confirmed, so copy the link and send it manually.`)
     } catch (shareError) {
       console.error('[event-client-collaboration] Unable to share portal', shareError)
       const raw = shareError && typeof shareError === 'object' && 'message' in shareError ? String((shareError as { message?: unknown }).message || '') : ''
@@ -248,6 +274,42 @@ export default function EventClientCollaborationDock() {
       setMessage('Client portal link copied.')
     } catch {
       setError('Could not copy the link. Open it and copy the address from your browser.')
+    }
+  }
+
+  async function resolveProgramChange(decision: 'accept' | 'decline') {
+    if (!storeId || !eventId || !event?.programChangeRequest) return
+    const request = event.programChangeRequest
+    const note = decision === 'decline'
+      ? window.prompt('Optional reply to the client explaining why this program change is not being accepted:')
+      : ''
+    if (decision === 'decline' && note === null) return
+
+    setBusy(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const resolveRequest = httpsCallable<
+        { storeId: string; eventId: string; requestId: string; decision: 'accept' | 'decline'; note: string },
+        { ok: boolean; status: 'accepted' | 'declined'; nextRevision: number | null }
+      >(functions, 'resolveEventProgramChangeRequest')
+      const response = await resolveRequest({
+        storeId,
+        eventId,
+        requestId: request.id,
+        decision,
+        note: note?.trim() || '',
+      })
+      setMessage(decision === 'accept'
+        ? `Client request accepted. Approved revision ${request.revision} was archived and revision ${response.data.nextRevision} is now open for staff changes.`
+        : 'Client program change request declined. The approved program remains unchanged.')
+      window.dispatchEvent(new CustomEvent('sedifex:event-program-revision-changed', { detail: { eventId } }))
+    } catch (decisionError) {
+      console.error('[event-client-collaboration] Unable to resolve program change request', decisionError)
+      const raw = decisionError && typeof decisionError === 'object' && 'message' in decisionError ? String((decisionError as { message?: unknown }).message || '') : ''
+      setError(raw.replace(/^FirebaseError:\s*/i, '') || 'The program change request could not be resolved.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -308,14 +370,14 @@ export default function EventClientCollaborationDock() {
     <>
       <button
         type="button"
-        className={`event-client-dock__trigger${submittedCount ? ' event-client-dock__trigger--attention' : ''}`}
+        className={`event-client-dock__trigger${attentionCount ? ' event-client-dock__trigger--attention' : ''}`}
         onClick={() => setOpen(previous => !previous)}
         aria-expanded={open}
         aria-controls="event-client-collaboration-panel"
       >
         <span aria-hidden="true">Client</span>
         Client portal
-        {submittedCount ? <strong>{submittedCount}</strong> : null}
+        {attentionCount ? <strong>{attentionCount}</strong> : null}
       </button>
 
       {open ? (
@@ -335,8 +397,8 @@ export default function EventClientCollaborationDock() {
           <div className="event-client-dock__share">
             <div>
               <span>Secure client portal</span>
-              <strong>Live client brief · {visibleTasks.length} task{visibleTasks.length === 1 ? '' : 's'} shared</strong>
-              <p>The client can update requirements, preferences and special instructions directly in the portal. Package and pricing items remain staff-controlled.</p>
+              <strong>Live client brief · protected program review · {visibleTasks.length} task{visibleTasks.length === 1 ? '' : 's'} shared</strong>
+              <p>The client can update requirements and preferences directly. Approved program content is read-only; clients request changes instead of editing it.</p>
               <p>Shared tasks follow: To do → In progress → Submitted by client → Awaiting verification → Done.</p>
             </div>
             <div className="event-client-dock__share-actions">
@@ -346,13 +408,36 @@ export default function EventClientCollaborationDock() {
             </div>
           </div>
 
+          {event?.programChangeRequest ? (
+            <>
+              <div className="event-client-dock__section-heading">
+                <div><span>Program change request</span><strong>Client requested a revision</strong></div>
+                <small>Approved revision {event.programChangeRequest.revision}</small>
+              </div>
+              <div className="event-client-dock__tasks">
+                <article className="event-client-dock__task is-submitted">
+                  <div className="event-client-dock__task-top">
+                    <strong>{event.programChangeRequest.requestedBy}</strong>
+                    <span className="event-client-dock__state event-client-dock__state--submitted">Awaiting decision</span>
+                  </div>
+                  <p>{event.programChangeRequest.requestedAt ? formatDate(event.programChangeRequest.requestedAt) : 'Client request'}</p>
+                  <div className="event-client-dock__note"><b>Requested change:</b> {event.programChangeRequest.message}</div>
+                  <div className="event-client-dock__decision-actions">
+                    <button type="button" className="button button--primary" disabled={busy} onClick={() => void resolveProgramChange('accept')}>Accept & create revision</button>
+                    <button type="button" className="button button--ghost" disabled={busy} onClick={() => void resolveProgramChange('decline')}>Decline request</button>
+                  </div>
+                </article>
+              </div>
+            </>
+          ) : null}
+
           <div className="event-client-dock__section-heading">
             <div><span>Checklist</span><strong>Choose what the client can see</strong></div>
             <small>Changes appear here live.</small>
           </div>
 
           <div className="event-client-dock__tasks">
-            {!tasks.length ? <div className="event-client-dock__empty">No checklist tasks yet. You can still share the live client brief now and add client-visible tasks later.</div> : null}
+            {!tasks.length ? <div className="event-client-dock__empty">No checklist tasks yet. You can still share the live client brief and protected program review now.</div> : null}
             {tasks.map(task => (
               <article key={task.id} className={`event-client-dock__task${task.clientState === 'submitted' ? ' is-submitted' : ''}`}>
                 <div className="event-client-dock__task-top">
