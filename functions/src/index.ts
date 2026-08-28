@@ -55,7 +55,7 @@ export {
   prepareEventProgramRevision,
   resolveEventProgramChangeRequest,
 } from './eventProgramCollaboration'
-export { approveEventProgram } from './eventProgramApproval'
+export { approveEventProgram, publishEventProgram } from './eventProgramApproval'
 export { syncEventPlanningCustomer } from './eventCustomerSync'
 export { auditEventPlanningWrite } from './eventAudit'
 export { v1IntegrationProducts } from './integrationProducts'

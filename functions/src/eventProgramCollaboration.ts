@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions/v1'
 import { admin, defaultDb } from './firestore'
+import { fingerprintProgramSnapshot } from './eventProgramApproval'
 
 type RecordMap = Record<string, unknown>
 
@@ -15,9 +16,16 @@ type StoredProgramItem = PortalProgramItem & { sortOrder: number }
 
 export type ClientPortalProgramData = {
   status: 'draft' | 'approved'
+  publishedAt: string | null
+  requireClientApproval: boolean
+  clientApproved: boolean
+  clientApprovedBy: string
+  clientApprovedAt: string | null
   approvedBy: string
   approvedAt: string | null
   revision: number
+  fingerprint: string
+  canApprove: boolean
   canRequestChanges: boolean
   preparingRevision: number | null
   items: PortalProgramItem[]
@@ -84,6 +92,22 @@ function mapProgramSnapshot(snapshot: FirebaseFirestore.QuerySnapshot): StoredPr
     .sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time))
 }
 
+function publicationState(source: RecordMap) {
+  const hasExplicitClientApproval = typeof source.clientApproved === 'boolean'
+  const legacyApproved = !hasExplicitClientApproval && Boolean(text(source.approvedBy, 220))
+  const clientApproved = source.clientApproved === true || legacyApproved
+  const requireClientApproval = source.requireClientApproval === true || (source.requireClientApproval === undefined && legacyApproved)
+  return {
+    publishedAt: isoDate(source.publishedAt) || isoDate(source.approvedAt),
+    requireClientApproval,
+    clientApproved,
+    clientApprovedBy: text(source.clientApprovedBy, 220) || (clientApproved ? text(source.approvedBy, 220) : ''),
+    clientApprovedAt: isoDate(source.clientApprovedAt) || (clientApproved ? isoDate(source.approvedAt) : null),
+    approvedBy: text(source.approvedBy, 220),
+    approvedAt: isoDate(source.approvedAt),
+  }
+}
+
 async function assertStoreAccess(storeId: string, uid: string) {
   const [storeSnapshot, memberSnapshot] = await Promise.all([
     defaultDb.collection('stores').doc(storeId).get(),
@@ -113,13 +137,13 @@ async function assertArchiveSlotAvailable(
   if (archiveSnapshot.exists) {
     throw new functions.https.HttpsError(
       'failed-precondition',
-      `Approved program revision ${revision} is already archived. Refresh before making more changes.`,
+      `Published program revision ${revision} is already archived. Refresh before making more changes.`,
     )
   }
   return archiveRef
 }
 
-function archiveApprovedProgram(
+function archivePublishedProgram(
   transaction: FirebaseFirestore.Transaction,
   archiveRef: FirebaseFirestore.DocumentReference,
   eventRef: FirebaseFirestore.DocumentReference,
@@ -131,11 +155,19 @@ function archiveApprovedProgram(
   reason: string,
   extraArchiveFields: RecordMap = {},
 ) {
+  const publication = publicationState(approval)
   transaction.set(archiveRef, {
     revision,
     status: 'approved',
-    approvedBy: text(approval.approvedBy, 220),
+    publishedAt: approval.publishedAt || approval.approvedAt || null,
+    publishedBy: text(approval.publishedBy, 220),
+    requireClientApproval: publication.requireClientApproval,
+    clientApproved: publication.clientApproved,
+    clientApprovedBy: publication.clientApprovedBy,
+    clientApprovedAt: approval.clientApprovedAt || approval.approvedAt || null,
+    approvedBy: publication.approvedBy,
     approvedAt: approval.approvedAt || null,
+    fingerprint: text(approval.fingerprint, 64),
     items: programItems,
     archivedAt: now,
     archivedBy: actor,
@@ -144,8 +176,15 @@ function archiveApprovedProgram(
   })
   transaction.update(eventRef, {
     'programApproval.status': 'draft',
+    'programApproval.publishedAt': null,
+    'programApproval.publishedBy': '',
+    'programApproval.requireClientApproval': false,
+    'programApproval.clientApproved': false,
+    'programApproval.clientApprovedBy': '',
+    'programApproval.clientApprovedAt': null,
     'programApproval.approvedBy': '',
     'programApproval.approvedAt': null,
+    'programApproval.fingerprint': '',
     'programApproval.revision': revision + 1,
     updatedAt: now,
   })
@@ -173,15 +212,19 @@ export async function loadClientProgramForPortal(
       revision: Math.max(1, Math.floor(numberValue(data.revision, 1))),
     }
   })
+  const hasOpenRequest = changeRequests.some(request => request.status === 'open')
 
   if (currentStatus === 'approved') {
     const programSnapshot = await eventRef.collection('program').get()
     const items = mapProgramSnapshot(programSnapshot).map(({ sortOrder: _sortOrder, ...item }) => item)
+    const publication = publicationState(approval)
+    const fingerprint = programSnapshot.empty ? '' : fingerprintProgramSnapshot(programSnapshot)
     return {
       status: items.length ? 'approved' : 'draft',
-      approvedBy: text(approval.approvedBy, 220),
-      approvedAt: isoDate(approval.approvedAt),
+      ...publication,
       revision: currentRevision,
+      fingerprint,
+      canApprove: items.length > 0 && publication.requireClientApproval && !publication.clientApproved && !hasOpenRequest,
       canRequestChanges: items.length > 0,
       preparingRevision: null,
       items,
@@ -199,11 +242,13 @@ export async function loadClientProgramForPortal(
         .map(mapArchivedProgramItem)
         .sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time))
         .map(({ sortOrder: _sortOrder, ...item }) => item)
+      const publication = publicationState(archive)
       return {
         status: items.length ? 'approved' : 'draft',
-        approvedBy: text(archive.approvedBy, 220),
-        approvedAt: isoDate(archive.approvedAt),
+        ...publication,
         revision: previousRevision,
+        fingerprint: text(archive.fingerprint, 64),
+        canApprove: false,
         canRequestChanges: false,
         preparingRevision: currentRevision,
         items,
@@ -214,9 +259,16 @@ export async function loadClientProgramForPortal(
 
   return {
     status: 'draft',
+    publishedAt: null,
+    requireClientApproval: false,
+    clientApproved: false,
+    clientApprovedBy: '',
+    clientApprovedAt: null,
     approvedBy: '',
     approvedAt: null,
     revision: currentRevision,
+    fingerprint: '',
+    canApprove: false,
     canRequestChanges: false,
     preparingRevision: null,
     items: [],
@@ -251,11 +303,11 @@ export const prepareEventProgramRevision = functions.https.onCall(async (data, c
     const programSnapshot = await transaction.get(eventRef.collection('program'))
     const programItems = mapProgramSnapshot(programSnapshot)
     if (!programItems.length) {
-      throw new functions.https.HttpsError('failed-precondition', 'The approved program has no items to archive')
+      throw new functions.https.HttpsError('failed-precondition', 'The published program has no items to archive')
     }
     const archiveRef = await assertArchiveSlotAvailable(transaction, eventRef, revision)
 
-    archiveApprovedProgram(transaction, archiveRef, eventRef, approval, revision, programItems, now, actor, 'staff_reopen')
+    archivePublishedProgram(transaction, archiveRef, eventRef, approval, revision, programItems, now, actor, 'staff_reopen')
     return { archivedRevision: revision, nextRevision: revision + 1, alreadyDraft: false }
   })
 
@@ -304,17 +356,17 @@ export const mutateEventProgram = functions.https.onCall(async (data, context) =
     const eventData = eventSnapshot.data() as RecordMap
     const approval = record(eventData.programApproval)
     const revision = Math.max(1, Math.floor(numberValue(approval.revision, 1)))
-    const approved = text(approval.status, 40) === 'approved'
+    const published = text(approval.status, 40) === 'approved'
     let archivedRevision: number | null = null
     let nextRevision = revision
 
-    if (approved) {
+    if (published) {
       const programItems = mapProgramSnapshot(programSnapshot)
       if (!programItems.length) {
-        throw new functions.https.HttpsError('failed-precondition', 'The approved program has no items to archive')
+        throw new functions.https.HttpsError('failed-precondition', 'The published program has no items to archive')
       }
       const archiveRef = await assertArchiveSlotAvailable(transaction, eventRef, revision)
-      archiveApprovedProgram(transaction, archiveRef, eventRef, approval, revision, programItems, now, actor, 'staff_program_mutation')
+      archivePublishedProgram(transaction, archiveRef, eventRef, approval, revision, programItems, now, actor, 'staff_program_mutation')
       archivedRevision = revision
       nextRevision = revision + 1
     } else {
@@ -340,56 +392,8 @@ export const mutateEventProgram = functions.https.onCall(async (data, context) =
       itemId: itemRef.id,
       archivedRevision,
       nextRevision,
-      wasApproved: approved,
+      wasApproved: published,
     }
-  })
-
-  return { ok: true, ...result }
-})
-
-export const approveEventProgram = functions.https.onCall(async (data, context) => {
-  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required')
-  const storeId = text(data?.storeId, 180)
-  const eventId = text(data?.eventId, 220)
-  const approverName = text(data?.approverName, 220)
-  const expectedRevision = Math.max(1, Math.floor(numberValue(data?.expectedRevision, 0)))
-  if (!storeId || !eventId || !approverName || !expectedRevision) {
-    throw new functions.https.HttpsError('invalid-argument', 'Event, approver and expected revision are required')
-  }
-
-  await assertStoreAccess(storeId, context.auth.uid)
-  const eventRef = defaultDb.collection('stores').doc(storeId).collection('events').doc(eventId)
-  const now = admin.firestore.FieldValue.serverTimestamp()
-
-  const result = await defaultDb.runTransaction(async transaction => {
-    const eventSnapshot = await transaction.get(eventRef)
-    if (!eventSnapshot.exists) throw new functions.https.HttpsError('not-found', 'Event not found')
-    const programSnapshot = await transaction.get(eventRef.collection('program'))
-    if (programSnapshot.empty) {
-      throw new functions.https.HttpsError('failed-precondition', 'Add at least one program item before recording client approval')
-    }
-
-    const eventData = eventSnapshot.data() as RecordMap
-    const approval = record(eventData.programApproval)
-    const currentRevision = Math.max(1, Math.floor(numberValue(approval.revision, 1)))
-    if (currentRevision !== expectedRevision) {
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        `Program revision changed from ${expectedRevision} to ${currentRevision}. Refresh and review the latest draft before approving.`,
-      )
-    }
-    if (text(approval.status, 40) === 'approved') {
-      throw new functions.https.HttpsError('failed-precondition', 'This program was already approved in another session. Refresh to see the latest status.')
-    }
-
-    transaction.update(eventRef, {
-      'programApproval.status': 'approved',
-      'programApproval.approvedBy': approverName,
-      'programApproval.approvedAt': now,
-      'programApproval.revision': currentRevision,
-      updatedAt: now,
-    })
-    return { revision: currentRevision }
   })
 
   return { ok: true, ...result }
@@ -434,15 +438,15 @@ export const resolveEventProgramChangeRequest = functions.https.onCall(async (da
       const approval = record(eventData.programApproval)
       const approvalRevision = Math.max(1, Math.floor(numberValue(approval.revision, 1)))
       if (text(approval.status, 40) !== 'approved' || approvalRevision !== requestRevision) {
-        throw new functions.https.HttpsError('failed-precondition', 'The approved program changed before this request was accepted. Refresh and review the latest revision.')
+        throw new functions.https.HttpsError('failed-precondition', 'The published program changed before this request was accepted. Refresh and review the latest revision.')
       }
       const programItems = programSnapshot ? mapProgramSnapshot(programSnapshot) : []
       if (!programItems.length) {
-        throw new functions.https.HttpsError('failed-precondition', 'The approved program has no items to archive')
+        throw new functions.https.HttpsError('failed-precondition', 'The published program has no items to archive')
       }
       const archiveRef = await assertArchiveSlotAvailable(transaction, eventRef, requestRevision)
 
-      archiveApprovedProgram(
+      archivePublishedProgram(
         transaction,
         archiveRef,
         eventRef,
