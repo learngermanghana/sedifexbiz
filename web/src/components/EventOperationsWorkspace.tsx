@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../firebase'
+import { fingerprintEventProgram } from '../utils/eventProgramFingerprint'
 import EventPostEventEvaluation from './EventPostEventEvaluation'
 import EventTypeExtras from './EventTypeExtras'
 
@@ -569,15 +570,17 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
     setSaving(true)
     setError(null)
     try {
+      const expectedFingerprint = await fingerprintEventProgram(program)
       const approve = httpsCallable<
-        { storeId: string; eventId: string; approverName: string; expectedRevision: number },
-        { ok: boolean; revision: number }
+        { storeId: string; eventId: string; approverName: string; expectedRevision: number; expectedFingerprint: string },
+        { ok: boolean; revision: number; fingerprint: string }
       >(functions, 'approveEventProgram')
       const response = await approve({
         storeId,
         eventId,
         approverName: approvalName.trim(),
         expectedRevision: meta.programApproval.revision,
+        expectedFingerprint,
       })
       await loadWorkspace()
       setSuccess(`Client program approval recorded for revision ${response.data.revision}.`)
