@@ -90,6 +90,8 @@ export const INDUSTRY_ENABLED_MODULE_PRESETS: Record<Industry, string[]> = {
   event: ['dashboard', 'events', 'customers', 'invoices', 'reports', 'bulk-email'],
 }
 
+const LEGACY_EVENT_PRESET = ['events', 'customers', 'invoices', 'bulk-email']
+
 export type NavigationResolverInput = { role: NavRole; workspaceProfile: NavigationSettings; permissions?: string[] }
 
 function toShellNavItem(item: NavItem): NavItem { return { ...item, label: item.label.trim() } }
@@ -99,14 +101,27 @@ function hasPermissions(requiredPermissions: string[] | undefined, grantedPermis
   return requiredPermissions.every(permission => grantedPermissions.has(permission))
 }
 
+function isLegacyEventPreset(industry: Industry, configuredModules: string[] | undefined) {
+  if (industry !== 'event' || !configuredModules || configuredModules.length !== LEGACY_EVENT_PRESET.length) return false
+  const configured = new Set(configuredModules)
+  return LEGACY_EVENT_PRESET.every(moduleId => configured.has(moduleId))
+}
+
 export function resolveNavigation(input: NavigationResolverInput): NavItem[] {
   const { role, workspaceProfile } = input
   const aliasLabels = workspaceProfile.labelPolicy === 'industry_aliases' ? INDUSTRY_LABELS[workspaceProfile.industry] : {}
+  const configuredModules = workspaceProfile.enabledModules && workspaceProfile.enabledModules.length > 0
+    ? workspaceProfile.enabledModules
+    : undefined
   const enabledModules = new Set(
-    workspaceProfile.enabledModules && workspaceProfile.enabledModules.length > 0
-      ? workspaceProfile.enabledModules
+    configuredModules
+      ? configuredModules
       : INDUSTRY_ENABLED_MODULE_PRESETS[workspaceProfile.industry],
   )
+  if (isLegacyEventPreset(workspaceProfile.industry, configuredModules)) {
+    enabledModules.add('dashboard')
+    enabledModules.add('reports')
+  }
   if (enabledModules && WEBSITE_BUILDER_SECTION_IDS.some(id => enabledModules.has(id))) {
     enabledModules.add('website-builder')
   }
