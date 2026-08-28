@@ -171,6 +171,73 @@ export async function loadClientProgramForPortal(
   }
 }
 
+export const prepareEventProgramRevision = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required')
+  const storeId = text(data?.storeId, 180)
+  const eventId = text(data?.eventId, 220)
+  if (!storeId || !eventId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Store and event are required')
+  }
+
+  await assertStoreAccess(storeId, context.auth.uid)
+  const eventRef = defaultDb.collection('stores').doc(storeId).collection('events').doc(eventId)
+  const actor = text(context.auth.token.email, 220) || text(context.auth.token.name, 220) || context.auth.uid
+  const now = admin.firestore.FieldValue.serverTimestamp()
+
+  const result = await defaultDb.runTransaction(async transaction => {
+    const eventSnapshot = await transaction.get(eventRef)
+    if (!eventSnapshot.exists) throw new functions.https.HttpsError('not-found', 'Event not found')
+
+    const eventData = eventSnapshot.data() as RecordMap
+    const approval = record(eventData.programApproval)
+    const revision = Math.max(1, Math.floor(numberValue(approval.revision, 1)))
+    if (text(approval.status, 40) !== 'approved') {
+      return { archivedRevision: null, nextRevision: revision, alreadyDraft: true }
+    }
+
+    const programSnapshot = await transaction.get(eventRef.collection('program'))
+    const programItems = programSnapshot.docs
+      .map(item => {
+        const value = item.data() as RecordMap
+        return {
+          id: item.id,
+          time: text(value.time, 40),
+          title: text(value.title, 240) || 'Program item',
+          participant: text(value.participant, 240),
+          notes: text(value.notes, 3000),
+          sortOrder: numberValue(value.sortOrder),
+        }
+      })
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time))
+
+    if (!programItems.length) {
+      throw new functions.https.HttpsError('failed-precondition', 'The approved program has no items to archive')
+    }
+
+    const archiveRef = eventRef.collection('programRevisions').doc(`revision-${revision}`)
+    transaction.set(archiveRef, {
+      revision,
+      status: 'approved',
+      approvedBy: text(approval.approvedBy, 220),
+      approvedAt: approval.approvedAt || null,
+      items: programItems,
+      archivedAt: now,
+      archivedBy: actor,
+      reason: 'staff_reopen',
+    }, { merge: true })
+    transaction.update(eventRef, {
+      'programApproval.status': 'draft',
+      'programApproval.approvedBy': '',
+      'programApproval.approvedAt': null,
+      'programApproval.revision': revision + 1,
+      updatedAt: now,
+    })
+    return { archivedRevision: revision, nextRevision: revision + 1, alreadyDraft: false }
+  })
+
+  return { ok: true, ...result }
+})
+
 export const resolveEventProgramChangeRequest = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required')
   const storeId = text(data?.storeId, 180)
