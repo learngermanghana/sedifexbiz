@@ -64,6 +64,24 @@ const html = eventClientPortalHtml({
     specialInstructions: 'Wheelchair access',
   },
   briefUpdatedAt: null,
+  program: {
+    status: 'approved',
+    approvedBy: 'Sandra',
+    approvedAt: null,
+    revision: 2,
+    canRequestChanges: true,
+    preparingRevision: null,
+    items: [
+      {
+        id: 'program-1',
+        time: '16:00',
+        title: 'Couple entrance',
+        participant: 'Couple',
+        notes: 'After welcome speech',
+      },
+    ],
+    changeRequests: [],
+  },
   tasks: [
     {
       id: 'task-1',
@@ -88,5 +106,10 @@ assert.ok(html.includes('Your live event brief'), 'portal should expose the live
 assert.ok(html.includes('data-brief-field="requirements"'), 'portal should render editable brief fields')
 assert.ok(html.includes("action:'save_brief'"), 'portal should post the secure brief save action')
 assert.ok(html.includes('briefDirty'), 'auto refresh must not discard unsaved brief changes')
+assert.ok(html.includes('Program for review'), 'portal should display the published program as a protected document')
+assert.ok(html.includes('Couple entrance'), 'portal should render approved program items')
+assert.ok(html.includes('data-program-change-request'), 'portal should offer a change request instead of direct program editing')
+assert.ok(html.includes("action:'request_program_change'"), 'program change requests must use the secure portal action')
+assert.ok(html.includes('programRequestDirty'), 'auto refresh must not discard an unsent program change request')
 
 console.log('Event client collaboration tests passed')
