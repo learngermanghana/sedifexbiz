@@ -157,7 +157,12 @@
 .event-planning__status--completed { color: #4b6754 !important; background: #e4ebe5; }
 .event-planning__status--cancelled { color: #8a554f !important; background: #f3e3e1; }
 
-.event-planning__row-actions { display: flex; gap: 5px; }
+.event-planning__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 270px;
+}
 .event-planning__row-actions button {
   padding: 6px 8px;
   border: 1px solid #dce1de;
@@ -165,6 +170,16 @@
   background: #fff;
   color: #53615c;
   font-size: .7rem;
+}
+.event-planning__row-actions .event-planning__workspace-action {
+  border-color: #4f46e5;
+  background: #4f46e5;
+  color: #fff;
+  font-weight: 800;
+}
+.event-planning__row-actions .event-planning__workspace-action:hover {
+  background: #4338ca;
+  border-color: #4338ca;
 }
 .event-planning__row-actions .event-planning__danger { color: #a3564c; }
 .event-planning__row-actions button:disabled { opacity: .55; cursor: wait; }
