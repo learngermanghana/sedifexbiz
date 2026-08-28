@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useActiveStore } from '../../hooks/useActiveStore'
+import { useStorePreferences } from '../../hooks/useStorePreferences'
+import EventPortfolioReport from './EventPortfolioReport'
 import './reportsHome.css'
 
-type ReportItem = { title: string; href: string; description: string; badge: string }
+type ReportItem = { title: string; href: string; description: string; badge: string; inline?: boolean }
 type ReportGroup = { title: string; reports: ReportItem[] }
 
 const reportGroups: ReportGroup[] = [
@@ -26,15 +29,30 @@ const reportGroups: ReportGroup[] = [
   { title: 'Content data', reports: [{ title: 'Blog Report', href: '/reports/blog', description: 'Published and draft post history with export-ready records.', badge: 'Content' }] },
 ]
 
+const eventReportGroup: ReportGroup = {
+  title: 'Event planning',
+  reports: [{
+    title: 'Event Performance & Financial Report',
+    href: '#event-performance-report',
+    description: 'Portfolio readiness, client balances, vendor commitments, expenses and expected profit using the same Event Management records.',
+    badge: 'Events',
+    inline: true,
+  }],
+}
+
 export default function ReportsHome() {
+  const { storeId } = useActiveStore()
+  const { preferences } = useStorePreferences(storeId)
+  const isEventBusiness = preferences.navigation.industry === 'event'
   const [search, setSearch] = useState('')
+  const visibleGroups = useMemo(() => isEventBusiness ? [eventReportGroup, ...reportGroups] : reportGroups, [isEventBusiness])
   const filteredGroups = useMemo(() => {
     const term = search.trim().toLowerCase()
-    if (!term) return reportGroups
-    return reportGroups
+    if (!term) return visibleGroups
+    return visibleGroups
       .map(group => ({ ...group, reports: group.reports.filter(report => [report.title, report.badge, report.description].join(' ').toLowerCase().includes(term)) }))
       .filter(group => group.reports.length > 0)
-  }, [search])
+  }, [search, visibleGroups])
 
   return (
     <div className="workspace-page reports-directory-page">
@@ -59,13 +77,17 @@ export default function ReportsHome() {
                   <p className="workspace-muted">{report.description}</p>
                 </div>
                 <div className="reports-row-action">
-                  <Link to={report.href} className="button button--primary">Open report</Link>
+                  {report.inline
+                    ? <a href={report.href} className="button button--primary">Open report</a>
+                    : <Link to={report.href} className="button button--primary">Open report</Link>}
                 </div>
               </article>
             ))}
           </div>
         </section>
       ))}
+
+      {isEventBusiness ? <EventPortfolioReport /> : null}
     </div>
   )
 }
