@@ -13,12 +13,13 @@ import {
 import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../firebase'
 import { fingerprintEventProgram } from '../utils/eventProgramFingerprint'
+import EventChecklistShareCard from './EventChecklistShareCard'
 import EventPostEventEvaluation from './EventPostEventEvaluation'
 import EventTypeExtras from './EventTypeExtras'
 
 type TaskStatus = 'todo' | 'in_progress' | 'blocked' | 'done'
 type TaskPriority = 'low' | 'normal' | 'high' | 'critical'
-type OperationsTab = 'checklist' | 'timeline' | 'program' | 'extras' | 'evaluation'
+type OperationsTab = 'portal' | 'checklist' | 'timeline' | 'program' | 'extras' | 'evaluation'
 type ProgramApprovalStatus = 'draft' | 'approved'
 
 type EventMeta = {
@@ -275,6 +276,15 @@ function callableErrorMessage(error: unknown) {
   return String((error as { message?: unknown }).message || '').replace(/^FirebaseError:\s*/i, '')
 }
 
+function detailsTabLabel(eventType: string) {
+  if (['Traditional wedding', 'White wedding', 'Engagement'].includes(eventType)) return 'Wedding Details'
+  if (eventType === 'Funeral') return 'Funeral Details'
+  if (eventType === 'Corporate event') return 'Corporate Details'
+  if (eventType === 'Charity / community') return 'Donations & Details'
+  if (eventType === 'Naming ceremony') return 'Ceremony Details'
+  return 'Event Details'
+}
+
 export default function EventOperationsWorkspace({ storeId, eventId, eventTitle, onChanged }: Props) {
   const [tab, setTab] = useState<OperationsTab>('checklist')
   const [meta, setMeta] = useState<EventMeta | null>(null)
@@ -323,7 +333,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
       setProgram(programSnapshot.docs.map(item => mapProgramItem(item.id, item.data())).sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time)))
     } catch (loadError) {
       console.error('[event-operations] Unable to load workspace', loadError)
-      setError('Checklist, timeline and program could not be loaded.')
+      setError('Checklist, run sheet and program could not be loaded.')
     } finally {
       setLoading(false)
     }
@@ -470,27 +480,27 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
       else await addDoc(timelineRef, { ...payload, sortOrder: Number(timelineForm.startTime.replace(':', '')) || Date.now(), createdAt: serverTimestamp() })
       await loadWorkspace()
       resetTimelineForm()
-      setSuccess(wasEditing ? 'Timeline item updated.' : 'Timeline item added.')
+      setSuccess(wasEditing ? 'Run-sheet item updated.' : 'Run-sheet item added.')
       await onChanged?.()
     } catch (saveError) {
-      console.error('[event-operations] Unable to save timeline item', saveError)
-      setError('The timeline item could not be saved.')
+      console.error('[event-operations] Unable to save run-sheet item', saveError)
+      setError('The run-sheet item could not be saved.')
     } finally {
       setSaving(false)
     }
   }
 
   async function removeTimeline(item: TimelineItem) {
-    if (!window.confirm(`Delete timeline item “${item.title}”?`)) return
+    if (!window.confirm(`Delete run-sheet item “${item.title}”?`)) return
     try {
       await deleteDoc(doc(timelineRef, item.id))
       setTimeline(previous => previous.filter(row => row.id !== item.id))
       if (editingTimelineId === item.id) resetTimelineForm()
-      setSuccess('Timeline item deleted.')
+      setSuccess('Run-sheet item deleted.')
       await onChanged?.()
     } catch (deleteError) {
-      console.error('[event-operations] Unable to delete timeline item', deleteError)
-      setError('The timeline item could not be deleted.')
+      console.error('[event-operations] Unable to delete run-sheet item', deleteError)
+      setError('The run-sheet item could not be deleted.')
     }
   }
 
@@ -637,7 +647,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
       setError('Pop-ups are blocked. Allow pop-ups to print this schedule.')
       return
     }
-    popup.document.write(`<!doctype html><html><head><title>${escapeHtml(eventTitle)} - ${kind}</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#14231a}h1{margin-bottom:4px}p{color:#53665a}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #d8dfda;padding:9px;text-align:left;vertical-align:top}th{background:#f3f6f4}@media print{button{display:none}}</style></head><body><h1>${escapeHtml(eventTitle)}</h1><p>${kind === 'timeline' ? 'Day-of timeline / run sheet' : 'Client program outline'}</p><table><thead><tr>${headings}</tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`)
+    popup.document.write(`<!doctype html><html><head><title>${escapeHtml(eventTitle)} - ${kind}</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#14231a}h1{margin-bottom:4px}p{color:#53665a}table{width:100%;border-collapse:collapse;margin-top:24px}th,td{border:1px solid #d8dfda;padding:9px;text-align:left;vertical-align:top}th{background:#f3f6f4}@media print{button{display:none}}</style></head><body><h1>${escapeHtml(eventTitle)}</h1><p>${kind === 'timeline' ? 'Event-day run sheet' : 'Client program outline'}</p><table><thead><tr>${headings}</tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`)
     popup.document.close()
   }
 
@@ -652,19 +662,23 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
       : meta.programApproval.requireClientApproval
         ? `Published · awaiting client approval · revision ${meta.programApproval.revision}`
         : `Published to client · revision ${meta.programApproval.revision}`
+  const detailsLabel = detailsTabLabel(meta.eventType)
 
   return (
-    <div style={{ marginTop: 4 }}>
+    <div className="event-planning__operations-workspace" style={{ marginTop: 4 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', gap: 8, overflowX: 'auto', padding: '10px 0', margin: '-4px 0 18px', background: '#fffdf9', borderBottom: '1px solid #eef1ef' }}>
+        <button type="button" className={`button ${tab === 'portal' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('portal')}>Client Portal</button>
+        <button type="button" className={`button ${tab === 'checklist' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('checklist')}>Checklist{readiness > 0 ? ` · ${readiness}%` : ''}</button>
+        <button type="button" className={`button ${tab === 'timeline' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('timeline')}>Run Sheet{timeline.length ? ` · ${timeline.length}` : ''}</button>
+        <button type="button" className={`button ${tab === 'program' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('program')}>Program{program.length ? ` · ${program.length}` : ''}</button>
+        <button type="button" className={`button ${tab === 'extras' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('extras')}>{detailsLabel}</button>
+        <button type="button" className={`button ${tab === 'evaluation' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('evaluation')}>Evaluation</button>
+      </div>
+
       {error ? <p className="event-planning__alert event-planning__alert--error">{error}</p> : null}
       {success ? <p className="event-planning__alert event-planning__alert--success">{success}<button type="button" onClick={() => setSuccess(null)} aria-label="Dismiss">×</button></p> : null}
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
-        <button type="button" className={`button ${tab === 'checklist' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('checklist')}>Checklist · {readiness}%</button>
-        <button type="button" className={`button ${tab === 'timeline' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('timeline')}>Day-of timeline · {timeline.length}</button>
-        <button type="button" className={`button ${tab === 'program' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('program')}>Program · {program.length}</button>
-        <button type="button" className={`button ${tab === 'extras' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('extras')}>Event-type extras</button>
-        <button type="button" className={`button ${tab === 'evaluation' ? 'button--primary' : 'button--ghost'}`} onClick={() => setTab('evaluation')}>Post-event evaluation</button>
-      </div>
+      {tab === 'portal' ? <EventChecklistShareCard storeId={storeId} event={{ id: eventId }} embedded /> : null}
 
       {tab === 'checklist' ? (
         <div>
@@ -713,10 +727,10 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
       {tab === 'timeline' ? (
         <div>
           <div className="event-planning__workspace-preview" style={{ marginTop: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}><div><h3>Day-of timeline / run sheet</h3><p>{meta.eventDate ? `${formatDate(meta.eventDate)} · ` : ''}{meta.venue || 'Venue not set'}. Assign each line to staff or vendors and print the final run sheet.</p></div><button type="button" className="button button--ghost" onClick={() => printSchedule('timeline')}>Print timeline</button></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}><div><h3>Event-day run sheet</h3><p>{meta.eventDate ? `${formatDate(meta.eventDate)} · ` : ''}{meta.venue || 'Venue not set'}. Use this for behind-the-scenes staff and vendor timing, assignments and locations.</p></div><button type="button" className="button button--ghost" onClick={() => printSchedule('timeline')}>Print run sheet</button></div>
           </div>
           <form onSubmit={saveTimeline} className="event-planning__workspace-preview" style={{ marginTop: 14 }}>
-            <h3>{editingTimelineId ? 'Edit timeline item' : 'Add timeline item'}</h3>
+            <h3>{editingTimelineId ? 'Edit run-sheet item' : 'Add run-sheet item'}</h3>
             <div className="event-planning__form-grid" style={{ marginTop: 12 }}>
               <label>Start time<input required type="time" value={timelineForm.startTime} onChange={e => setTimelineForm(previous => ({ ...previous, startTime: e.target.value }))} /></label>
               <label>End time<input type="time" value={timelineForm.endTime} onChange={e => setTimelineForm(previous => ({ ...previous, endTime: e.target.value }))} /></label>
@@ -726,10 +740,10 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
               <label>Location<input value={timelineForm.location} onChange={e => setTimelineForm(previous => ({ ...previous, location: e.target.value }))} placeholder="Stage, entrance, venue…" /></label>
               <label className="event-planning__field--wide">Notes<textarea rows={2} value={timelineForm.notes} onChange={e => setTimelineForm(previous => ({ ...previous, notes: e.target.value }))} placeholder="Instructions, dependencies or contact details" /></label>
             </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>{editingTimelineId ? <button type="button" className="button button--ghost" onClick={resetTimelineForm}>Cancel</button> : null}<button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : editingTimelineId ? 'Save item' : 'Add to timeline'}</button></div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>{editingTimelineId ? <button type="button" className="button button--ghost" onClick={resetTimelineForm}>Cancel</button> : null}<button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : editingTimelineId ? 'Save item' : 'Add to run sheet'}</button></div>
           </form>
           <div style={{ display: 'grid', gap: 9, marginTop: 14 }}>
-            {!timeline.length ? <div className="event-planning__notes"><strong>No timeline items yet</strong><p>Build the event-day run sheet in chronological order.</p></div> : null}
+            {!timeline.length ? <div className="event-planning__notes"><strong>No run-sheet items yet</strong><p>Build the event-day staff and vendor schedule in chronological order.</p></div> : null}
             {timeline.map(item => <div key={item.id} className="event-planning__notes" style={{ marginTop: 0 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}><div style={{ flex: '1 1 320px' }}><strong>{item.startTime}{item.endTime ? `–${item.endTime}` : ''} · {item.title}</strong><p style={{ marginTop: 4 }}>{[item.owner, item.vendor, item.location].filter(Boolean).join(' · ') || 'No assignment yet'}{item.notes ? ` · ${item.notes}` : ''}</p></div><div style={{ display: 'flex', gap: 7 }}><button type="button" className="button button--ghost" onClick={() => editTimeline(item)}>Edit</button><button type="button" className="button button--ghost" onClick={() => void removeTimeline(item)}>Delete</button></div></div></div>)}
           </div>
         </div>
@@ -739,7 +753,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
         <div>
           <div className="event-planning__workspace-preview" style={{ marginTop: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-              <div><h3>Client program outline</h3><p>Build the guest-facing program here. Publish it when it is ready for the client to see. Editing a published program opens a protected new revision.</p></div>
+              <div><h3>Client program outline</h3><p>Build the guest-facing order of activities here. Publish it when it is ready for the client to see. Editing a published program opens a protected new revision.</p></div>
               <span className={`event-planning__status event-planning__status--${meta.programApproval.status === 'approved' ? 'confirmed' : 'new'}`}>{programStatusLabel}</span>
             </div>
             {meta.programApproval.status === 'approved' ? (
