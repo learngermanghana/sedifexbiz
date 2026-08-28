@@ -118,9 +118,11 @@ describe('resolveNavigation', () => {
       'invoices',
     ])
     expect(INDUSTRY_ENABLED_MODULE_PRESETS.event).toEqual([
+      'dashboard',
       'events',
       'customers',
       'invoices',
+      'reports',
       'bulk-email',
     ])
   })
