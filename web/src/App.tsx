@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged } from 'firebase/auth'
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Link, matchPath, Outlet, useLocation } from 'react-router-dom'
 import './App.css'
 import './pwa'
 import { auth } from './firebase'
@@ -59,6 +59,7 @@ export default function App() {
     (isQuickPayHost && location.pathname === '/') ||
     publicPaths.some(path => location.pathname.startsWith(path))
   const isAccountRoute = location.pathname.startsWith('/account')
+  const isEventPlanningListRoute = Boolean(matchPath({ path: '/event-planning', end: true }, location.pathname))
 
   useEffect(() => {
     configureAuthPersistence(auth).catch(error => {
@@ -180,7 +181,7 @@ export default function App() {
     content = (
       <AuthUserContext.Provider value={user}>
         <Outlet />
-        {location.pathname === '/event-planning' ? <EventPdfExportDock /> : null}
+        {isEventPlanningListRoute ? <EventPdfExportDock /> : null}
       </AuthUserContext.Provider>
     )
   }
