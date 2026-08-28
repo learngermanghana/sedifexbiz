@@ -66,9 +66,16 @@ const html = eventClientPortalHtml({
   briefUpdatedAt: null,
   program: {
     status: 'approved',
-    approvedBy: 'Sandra',
+    publishedAt: '2026-08-28T10:00:00.000Z',
+    requireClientApproval: true,
+    clientApproved: false,
+    clientApprovedBy: '',
+    clientApprovedAt: null,
+    approvedBy: '',
     approvedAt: null,
     revision: 2,
+    fingerprint: 'a'.repeat(64),
+    canApprove: true,
     canRequestChanges: true,
     preparingRevision: null,
     items: [
@@ -106,8 +113,12 @@ assert.ok(html.includes('Your live event brief'), 'portal should expose the live
 assert.ok(html.includes('data-brief-field="requirements"'), 'portal should render editable brief fields')
 assert.ok(html.includes("action:'save_brief'"), 'portal should post the secure brief save action')
 assert.ok(html.includes('briefDirty'), 'auto refresh must not discard unsaved brief changes')
-assert.ok(html.includes('Your event program'), 'portal should display the published program as a protected document')
-assert.ok(html.includes('Couple entrance'), 'portal should render approved program items')
+assert.ok(html.includes('Your event program'), 'portal should display a published program as a protected document')
+assert.ok(html.includes('Couple entrance'), 'portal should render published program items')
+assert.ok(html.includes('Awaiting your approval'), 'published programs requiring approval should explain the pending client action')
+assert.ok(html.includes('Approve program'), 'client should be able to approve when staff requires approval')
+assert.ok(html.includes("action:'approve_program'"), 'client approval must use the secure portal action')
+assert.ok(html.includes("fingerprint:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"), 'client approval must be tied to the exact published content')
 assert.ok(html.includes('data-program-change-request'), 'portal should offer a change request instead of direct program editing')
 assert.ok(html.includes("action:'request_program_change'"), 'program change requests must use the secure portal action')
 assert.ok(html.includes('programRequestDirty'), 'auto refresh must not discard an unsent program change request')
