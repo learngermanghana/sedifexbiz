@@ -29,6 +29,11 @@ type EventMeta = {
   checklistSeeded: boolean
   programApproval: {
     status: ProgramApprovalStatus
+    publishedAt: Date | null
+    requireClientApproval: boolean
+    clientApproved: boolean
+    clientApprovedBy: string
+    clientApprovedAt: Date | null
     approvedBy: string
     approvedAt: Date | null
     revision: number
@@ -174,6 +179,9 @@ function mapEventMeta(data: Record<string, unknown>): EventMeta {
   const rawApproval = data.programApproval && typeof data.programApproval === 'object'
     ? data.programApproval as Record<string, unknown>
     : {}
+  const hasExplicitClientApproval = typeof rawApproval.clientApproved === 'boolean'
+  const legacyClientApproved = !hasExplicitClientApproval && Boolean(text(rawApproval.approvedBy))
+  const clientApproved = rawApproval.clientApproved === true || legacyClientApproved
   return {
     eventType: text(data.eventType) || 'Other',
     eventDate: text(data.eventDate),
@@ -182,6 +190,11 @@ function mapEventMeta(data: Record<string, unknown>): EventMeta {
     checklistSeeded: data.checklistSeeded === true,
     programApproval: {
       status: rawApproval.status === 'approved' ? 'approved' : 'draft',
+      publishedAt: dateValue(rawApproval.publishedAt) || dateValue(rawApproval.approvedAt),
+      requireClientApproval: rawApproval.requireClientApproval === true || (rawApproval.requireClientApproval === undefined && legacyClientApproved),
+      clientApproved,
+      clientApprovedBy: text(rawApproval.clientApprovedBy) || (clientApproved ? text(rawApproval.approvedBy) : ''),
+      clientApprovedAt: dateValue(rawApproval.clientApprovedAt) || (clientApproved ? dateValue(rawApproval.approvedAt) : null),
       approvedBy: text(rawApproval.approvedBy),
       approvedAt: dateValue(rawApproval.approvedAt),
       revision: Math.max(1, Math.floor(numberValue(rawApproval.revision, 1))),
@@ -276,7 +289,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
   const [editingTimelineId, setEditingTimelineId] = useState<string | null>(null)
   const [editingProgramId, setEditingProgramId] = useState<string | null>(null)
-  const [approvalName, setApprovalName] = useState('')
+  const [requireClientApproval, setRequireClientApproval] = useState(false)
   const seedStartedRef = useRef(false)
 
   const [taskForm, setTaskForm] = useState({ title: '', category: 'General', owner: '', dueDate: '', priority: 'normal' as TaskPriority, status: 'todo' as TaskStatus, notes: '' })
@@ -304,7 +317,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
       if (!eventSnapshot.exists()) throw new Error('EVENT_NOT_FOUND')
       const mappedMeta = mapEventMeta(eventSnapshot.data())
       setMeta(mappedMeta)
-      setApprovalName(mappedMeta.programApproval.approvedBy)
+      setRequireClientApproval(mappedMeta.programApproval.requireClientApproval)
       setTasks(tasksSnapshot.docs.map(item => mapTask(item.id, item.data())).sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title)))
       setTimeline(timelineSnapshot.docs.map(item => mapTimelineItem(item.id, item.data())).sort((a, b) => a.sortOrder - b.sortOrder || a.startTime.localeCompare(b.startTime)))
       setProgram(programSnapshot.docs.map(item => mapProgramItem(item.id, item.data())).sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time)))
@@ -520,7 +533,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
       await loadWorkspace()
       resetProgramForm()
       setSuccess(result.archivedRevision
-        ? `${wasEditing ? 'Program item updated' : 'Program item added'}. Approved revision ${result.archivedRevision} was preserved before revision ${result.nextRevision} was changed.`
+        ? `${wasEditing ? 'Program item updated' : 'Program item added'}. Published revision ${result.archivedRevision} was preserved before revision ${result.nextRevision} was changed.`
         : wasEditing ? 'Program item updated.' : 'Program item added.')
       await onChanged?.()
     } catch (saveError) {
@@ -541,7 +554,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
       await loadWorkspace()
       if (editingProgramId === item.id) resetProgramForm()
       setSuccess(result.archivedRevision
-        ? `Program item deleted. Approved revision ${result.archivedRevision} was preserved before revision ${result.nextRevision} was changed.`
+        ? `Program item deleted. Published revision ${result.archivedRevision} was preserved before revision ${result.nextRevision} was changed.`
         : 'Program item deleted.')
       await onChanged?.()
     } catch (deleteError) {
@@ -558,38 +571,36 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
     setProgramForm({ time: item.time, title: item.title, participant: item.participant, notes: item.notes })
   }
 
-  async function approveProgram() {
+  async function publishProgram() {
     if (!program.length) {
-      setError('Add at least one program item before recording client approval.')
-      return
-    }
-    if (!approvalName.trim()) {
-      setError('Enter the client or approver name first.')
+      setError('Add at least one program item before publishing it to the client.')
       return
     }
     setSaving(true)
     setError(null)
     try {
       const expectedFingerprint = await fingerprintEventProgram(program)
-      const approve = httpsCallable<
-        { storeId: string; eventId: string; approverName: string; expectedRevision: number; expectedFingerprint: string },
-        { ok: boolean; revision: number; fingerprint: string }
-      >(functions, 'approveEventProgram')
-      const response = await approve({
+      const publish = httpsCallable<
+        { storeId: string; eventId: string; requireClientApproval: boolean; expectedRevision: number; expectedFingerprint: string },
+        { ok: boolean; revision: number; fingerprint: string; requireClientApproval: boolean }
+      >(functions, 'publishEventProgram')
+      const response = await publish({
         storeId,
         eventId,
-        approverName: approvalName.trim(),
+        requireClientApproval,
         expectedRevision: meta.programApproval.revision,
         expectedFingerprint,
       })
       await loadWorkspace()
-      setSuccess(`Client program approval recorded for revision ${response.data.revision}.`)
+      setSuccess(response.data.requireClientApproval
+        ? `Program revision ${response.data.revision} published to the client. Client approval is required.`
+        : `Program revision ${response.data.revision} published to the client. No client approval is required.`)
       await onChanged?.()
-    } catch (approvalError) {
-      console.error('[event-operations] Unable to approve program', approvalError)
-      const message = callableErrorMessage(approvalError)
+    } catch (publishError) {
+      console.error('[event-operations] Unable to publish program', publishError)
+      const message = callableErrorMessage(publishError)
       await loadWorkspace()
-      setError(message || 'Client approval could not be recorded. The latest program was reloaded for review.')
+      setError(message || 'The program could not be published. The latest program was reloaded for review.')
     } finally {
       setSaving(false)
     }
@@ -602,13 +613,13 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
       const result = await prepareProgramRevision()
       await loadWorkspace()
       setSuccess(result.archivedRevision
-        ? `Approved revision ${result.archivedRevision} was preserved. Revision ${result.nextRevision} is now open for changes.`
+        ? `Published revision ${result.archivedRevision} was preserved. Revision ${result.nextRevision} is now open for changes.`
         : 'Program is already open for changes.')
       await onChanged?.()
     } catch (approvalError) {
       console.error('[event-operations] Unable to reopen program', approvalError)
       await loadWorkspace()
-      setError(callableErrorMessage(approvalError) || 'The program approval could not be reopened. The latest program was reloaded.')
+      setError(callableErrorMessage(approvalError) || 'The published program could not be reopened. The latest program was reloaded.')
     } finally {
       setSaving(false)
     }
@@ -633,6 +644,14 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
   if (loading || !meta) {
     return <div className="event-planning__loading"><span className="event-planning__spinner" /><p>Loading event operations…</p></div>
   }
+
+  const programStatusLabel = meta.programApproval.status === 'draft'
+    ? `Draft · revision ${meta.programApproval.revision}`
+    : meta.programApproval.clientApproved
+      ? `Client approved · revision ${meta.programApproval.revision}`
+      : meta.programApproval.requireClientApproval
+        ? `Published · awaiting client approval · revision ${meta.programApproval.revision}`
+        : `Published to client · revision ${meta.programApproval.revision}`
 
   return (
     <div style={{ marginTop: 4 }}>
@@ -720,13 +739,33 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
         <div>
           <div className="event-planning__workspace-preview" style={{ marginTop: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-              <div><h3>Client program outline</h3><p>Keep the guest-facing program separate from the internal run sheet. Program changes and approvals are validated against the current server revision before they are saved.</p></div>
-              <span className={`event-planning__status event-planning__status--${meta.programApproval.status === 'approved' ? 'confirmed' : 'new'}`}>{meta.programApproval.status === 'approved' ? `Client approved · revision ${meta.programApproval.revision}` : `Draft · revision ${meta.programApproval.revision}`}</span>
+              <div><h3>Client program outline</h3><p>Build the guest-facing program here. Publish it when it is ready for the client to see. Editing a published program opens a protected new revision.</p></div>
+              <span className={`event-planning__status event-planning__status--${meta.programApproval.status === 'approved' ? 'confirmed' : 'new'}`}>{programStatusLabel}</span>
             </div>
-            {meta.programApproval.status === 'approved' ? <p style={{ marginTop: 10 }}><strong>Approved by:</strong> {meta.programApproval.approvedBy} · {formatDateTime(meta.programApproval.approvedAt)}</p> : null}
-            <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap', marginTop: 12 }}>
-              <label style={{ flex: '1 1 240px' }}>Client / approver name<input value={approvalName} onChange={e => setApprovalName(e.target.value)} placeholder="Name of client approving the program" /></label>
-              {meta.programApproval.status === 'approved' ? <button type="button" className="button button--ghost" disabled={saving} onClick={() => void reopenProgram()}>Reopen for changes</button> : <button type="button" className="button button--primary" disabled={saving} onClick={() => void approveProgram()}>Mark client approved</button>}
+            {meta.programApproval.status === 'approved' ? (
+              <p style={{ marginTop: 10 }}>
+                <strong>Published:</strong> {formatDateTime(meta.programApproval.publishedAt)}
+                {meta.programApproval.clientApproved ? <> · <strong>Approved by:</strong> {meta.programApproval.clientApprovedBy || 'Client'} · {formatDateTime(meta.programApproval.clientApprovedAt)}</> : null}
+              </p>
+            ) : null}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap', marginTop: 12 }}>
+              {meta.programApproval.status === 'draft' ? (
+                <label style={{ flex: '1 1 300px', padding: '10px 12px', border: '1px solid #d8dfda', borderRadius: 10 }}>
+                  <span style={{ display: 'flex', gap: 9, alignItems: 'center', fontWeight: 700 }}>
+                    <input type="checkbox" checked={requireClientApproval} onChange={e => setRequireClientApproval(e.target.checked)} />
+                    Require client approval
+                  </span>
+                  <small style={{ display: 'block', marginTop: 5, color: '#66756c', fontWeight: 400 }}>Leave this off when the client only needs to view the program.</small>
+                </label>
+              ) : (
+                <div style={{ flex: '1 1 300px' }}>
+                  <strong>{meta.programApproval.requireClientApproval ? 'Client approval required' : 'Client approval not required'}</strong>
+                  <p style={{ margin: '4px 0 0' }}>{meta.programApproval.requireClientApproval ? (meta.programApproval.clientApproved ? 'The client has approved this published revision.' : 'The client can approve it from the Program tab in their portal.') : 'The client can view the program and request changes without approving it.'}</p>
+                </div>
+              )}
+              {meta.programApproval.status === 'approved'
+                ? <button type="button" className="button button--ghost" disabled={saving} onClick={() => void reopenProgram()}>Reopen for changes</button>
+                : <button type="button" className="button button--primary" disabled={saving || !program.length} onClick={() => void publishProgram()}>{saving ? 'Publishing…' : 'Publish to client'}</button>}
               <button type="button" className="button button--ghost" onClick={() => printSchedule('program')}>Print program</button>
             </div>
           </div>
