@@ -180,7 +180,7 @@ export default function App() {
     content = (
       <AuthUserContext.Provider value={user}>
         <Outlet />
-        <EventPdfExportDock />
+        {location.pathname === '/event-planning' ? <EventPdfExportDock /> : null}
       </AuthUserContext.Provider>
     )
   }
