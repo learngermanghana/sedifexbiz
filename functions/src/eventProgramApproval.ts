@@ -62,6 +62,10 @@ function programFingerprint(items: StoredProgramItem[]) {
   return createHash('sha256').update(JSON.stringify(canonical), 'utf8').digest('hex')
 }
 
+export function fingerprintProgramSnapshot(snapshot: FirebaseFirestore.QuerySnapshot) {
+  return programFingerprint(mapProgramSnapshot(snapshot))
+}
+
 async function assertStoreAccess(storeId: string, uid: string) {
   const [storeSnapshot, memberSnapshot] = await Promise.all([
     defaultDb.collection('stores').doc(storeId).get(),
@@ -81,38 +85,119 @@ async function assertStoreAccess(storeId: string, uid: string) {
   }
 }
 
+function validateExpectedProgram(data: unknown) {
+  const payload = record(data)
+  const rawExpectedRevision = Number(payload.expectedRevision)
+  const expectedFingerprint = text(payload.expectedFingerprint, 64).toLowerCase()
+  if (!Number.isInteger(rawExpectedRevision) || rawExpectedRevision < 1 || !/^[a-f0-9]{64}$/.test(expectedFingerprint)) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'A valid expected revision and reviewed program fingerprint are required',
+    )
+  }
+  return { expectedRevision: rawExpectedRevision, expectedFingerprint }
+}
+
+function assertExpectedProgram(
+  approval: RecordMap,
+  programSnapshot: FirebaseFirestore.QuerySnapshot,
+  expectedRevision: number,
+  expectedFingerprint: string,
+) {
+  const currentRevision = Math.max(1, Math.floor(numberValue(approval.revision, 1)))
+  if (currentRevision !== expectedRevision) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      `Program revision changed from ${expectedRevision} to ${currentRevision}. Refresh and review the latest draft before continuing.`,
+    )
+  }
+  const currentFingerprint = fingerprintProgramSnapshot(programSnapshot)
+  if (currentFingerprint !== expectedFingerprint) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'The program content changed after this page loaded. Refresh and review the latest draft before continuing.',
+    )
+  }
+  return { currentRevision, currentFingerprint }
+}
+
+export const publishEventProgram = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required')
+
+  const storeId = text(data?.storeId, 180)
+  const eventId = text(data?.eventId, 220)
+  if (!storeId || !eventId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Event is required')
+  }
+  const { expectedRevision, expectedFingerprint } = validateExpectedProgram(data)
+  const requireClientApproval = data?.requireClientApproval === true
+
+  await assertStoreAccess(storeId, context.auth.uid)
+  const eventRef = defaultDb.collection('stores').doc(storeId).collection('events').doc(eventId)
+  const now = admin.firestore.FieldValue.serverTimestamp()
+  const actor = text(context.auth.token.email, 220) || text(context.auth.token.name, 220) || context.auth.uid
+
+  const result = await defaultDb.runTransaction(async transaction => {
+    const eventSnapshot = await transaction.get(eventRef)
+    if (!eventSnapshot.exists) throw new functions.https.HttpsError('not-found', 'Event not found')
+    const programSnapshot = await transaction.get(eventRef.collection('program'))
+    if (programSnapshot.empty) {
+      throw new functions.https.HttpsError('failed-precondition', 'Add at least one program item before publishing to the client')
+    }
+
+    const eventData = eventSnapshot.data() as RecordMap
+    const approval = record(eventData.programApproval)
+    const { currentRevision, currentFingerprint } = assertExpectedProgram(
+      approval,
+      programSnapshot,
+      expectedRevision,
+      expectedFingerprint,
+    )
+    if (text(approval.status, 40) === 'approved') {
+      throw new functions.https.HttpsError('failed-precondition', 'This program is already published. Refresh to see the latest status.')
+    }
+
+    transaction.update(eventRef, {
+      'programApproval.status': 'approved',
+      'programApproval.revision': currentRevision,
+      'programApproval.fingerprint': currentFingerprint,
+      'programApproval.publishedAt': now,
+      'programApproval.publishedBy': actor,
+      'programApproval.requireClientApproval': requireClientApproval,
+      'programApproval.clientApproved': false,
+      'programApproval.clientApprovedBy': '',
+      'programApproval.clientApprovedAt': null,
+      'programApproval.approvedBy': '',
+      'programApproval.approvedAt': null,
+      updatedAt: now,
+    })
+
+    return { revision: currentRevision, fingerprint: currentFingerprint, requireClientApproval }
+  })
+
+  return { ok: true, ...result }
+})
+
+// Kept for older staff clients. New staff UI publishes first; client approval happens in the secure client portal.
 export const approveEventProgram = functions.https.onCall(async (data, context) => {
   if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Sign in required')
 
   const storeId = text(data?.storeId, 180)
   const eventId = text(data?.eventId, 220)
   const approverName = text(data?.approverName, 220)
-  const rawExpectedRevision = Number(data?.expectedRevision)
-  const expectedFingerprint = text(data?.expectedFingerprint, 64).toLowerCase()
-
-  if (
-    !storeId
-    || !eventId
-    || !approverName
-    || !Number.isInteger(rawExpectedRevision)
-    || rawExpectedRevision < 1
-    || !/^[a-f0-9]{64}$/.test(expectedFingerprint)
-  ) {
-    throw new functions.https.HttpsError(
-      'invalid-argument',
-      'Event, approver, a valid expected revision and the reviewed program fingerprint are required',
-    )
+  if (!storeId || !eventId || !approverName) {
+    throw new functions.https.HttpsError('invalid-argument', 'Event and approver are required')
   }
+  const { expectedRevision, expectedFingerprint } = validateExpectedProgram(data)
 
-  const expectedRevision = rawExpectedRevision
   await assertStoreAccess(storeId, context.auth.uid)
   const eventRef = defaultDb.collection('stores').doc(storeId).collection('events').doc(eventId)
   const now = admin.firestore.FieldValue.serverTimestamp()
+  const actor = text(context.auth.token.email, 220) || text(context.auth.token.name, 220) || context.auth.uid
 
   const result = await defaultDb.runTransaction(async transaction => {
     const eventSnapshot = await transaction.get(eventRef)
     if (!eventSnapshot.exists) throw new functions.https.HttpsError('not-found', 'Event not found')
-
     const programSnapshot = await transaction.get(eventRef.collection('program'))
     if (programSnapshot.empty) {
       throw new functions.https.HttpsError('failed-precondition', 'Add at least one program item before recording client approval')
@@ -120,32 +205,28 @@ export const approveEventProgram = functions.https.onCall(async (data, context) 
 
     const eventData = eventSnapshot.data() as RecordMap
     const approval = record(eventData.programApproval)
-    const currentRevision = Math.max(1, Math.floor(numberValue(approval.revision, 1)))
-    if (currentRevision !== expectedRevision) {
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        `Program revision changed from ${expectedRevision} to ${currentRevision}. Refresh and review the latest draft before approving.`,
-      )
-    }
-
-    const currentFingerprint = programFingerprint(mapProgramSnapshot(programSnapshot))
-    if (currentFingerprint !== expectedFingerprint) {
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        'The program content changed after this page loaded. Refresh and review the latest draft before approving.',
-      )
-    }
-
-    if (text(approval.status, 40) === 'approved') {
-      throw new functions.https.HttpsError('failed-precondition', 'This program was already approved in another session. Refresh to see the latest status.')
+    const { currentRevision, currentFingerprint } = assertExpectedProgram(
+      approval,
+      programSnapshot,
+      expectedRevision,
+      expectedFingerprint,
+    )
+    if (approval.clientApproved === true) {
+      throw new functions.https.HttpsError('failed-precondition', 'This program was already approved. Refresh to see the latest status.')
     }
 
     transaction.update(eventRef, {
       'programApproval.status': 'approved',
-      'programApproval.approvedBy': approverName,
-      'programApproval.approvedAt': now,
       'programApproval.revision': currentRevision,
       'programApproval.fingerprint': currentFingerprint,
+      'programApproval.publishedAt': approval.publishedAt || now,
+      'programApproval.publishedBy': text(approval.publishedBy, 220) || actor,
+      'programApproval.requireClientApproval': true,
+      'programApproval.clientApproved': true,
+      'programApproval.clientApprovedBy': approverName,
+      'programApproval.clientApprovedAt': now,
+      'programApproval.approvedBy': approverName,
+      'programApproval.approvedAt': now,
       updatedAt: now,
     })
 
