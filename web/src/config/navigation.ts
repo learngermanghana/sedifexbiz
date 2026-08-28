@@ -59,7 +59,7 @@ const INDUSTRY_LABELS: Record<Industry, Partial<Record<string, string>>> = {
 }
 
 const INDUSTRY_SORT_ORDERS: Partial<Record<Industry, Partial<Record<string, number>>>> = {
-  event: { events: 10, customers: 20, invoices: 30, 'bulk-email': 40 },
+  event: { dashboard: 10, events: 20, customers: 30, invoices: 40, reports: 50, 'bulk-email': 60 },
 }
 
 export type CustomNavItem = {
@@ -87,7 +87,7 @@ export const INDUSTRY_ENABLED_MODULE_PRESETS: Record<Industry, string[]> = {
   travel: ['dashboard', 'customers', 'bookings', 'upcoming-events', 'invoices', 'receipts'],
   ngo: ['dashboard', 'customers', 'bookings', 'upcoming-events', 'donor-management', 'funds-ledger', 'volunteers'],
   school: ['dashboard', 'students', 'customers', 'bookings', 'upcoming-events', 'student-registration', 'invoices'],
-  event: ['events', 'customers', 'invoices', 'bulk-email'],
+  event: ['dashboard', 'events', 'customers', 'invoices', 'reports', 'bulk-email'],
 }
 
 export type NavigationResolverInput = { role: NavRole; workspaceProfile: NavigationSettings; permissions?: string[] }
