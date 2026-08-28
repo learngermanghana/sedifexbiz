@@ -4,6 +4,7 @@ import { admin, defaultDb } from './firestore'
 import { sendEventContractEmail } from './eventContractEmail'
 import { hashPublicContractToken } from './eventContractSigningCore'
 import { eventClientPortalHtml, type EventClientPortalPageData } from './eventClientPortalPage'
+import { loadClientProgramForPortal } from './eventProgramCollaboration'
 import {
   effectiveClientTaskState,
   visibleClientActivityIds,
@@ -137,9 +138,10 @@ async function loadPortalLink(rawToken: string) {
 
 async function portalData(rawToken: string): Promise<EventClientPortalPageData & { ok: true; expiresAt: string | null }> {
   const loaded = await loadPortalLink(rawToken)
-  const [taskSnapshot, activitySnapshot] = await Promise.all([
+  const [taskSnapshot, activitySnapshot, program] = await Promise.all([
     loaded.eventRef.collection('tasks').get(),
     loaded.eventRef.collection('clientActivity').orderBy('at', 'desc').limit(30).get(),
+    loadClientProgramForPortal(loaded.eventRef, loaded.eventData),
   ])
 
   const tasks = taskSnapshot.docs
@@ -202,6 +204,7 @@ async function portalData(rawToken: string): Promise<EventClientPortalPageData &
     },
     brief: clientBriefFields(clientBrief),
     briefUpdatedAt: isoDate(clientBrief.clientUpdatedAt),
+    program,
     tasks,
     activities,
     progress: tasks.length ? Math.round(visibleDone / tasks.length * 100) : 0,
@@ -217,6 +220,9 @@ function errorMessage(error: unknown) {
   if (message === 'TASK_NOT_SHARED') return 'This task is no longer shared with you.'
   if (message === 'TASK_ALREADY_DONE') return 'This task has already been verified as done.'
   if (message === 'TASK_NOT_STARTED') return 'Start this task before submitting it as completed.'
+  if (message === 'PROGRAM_NOT_APPROVED') return 'The event team is currently preparing a program revision. You can request another change after the new revision is approved.'
+  if (message === 'PROGRAM_CHANGE_ALREADY_OPEN') return 'You already have a program change request awaiting the event team.'
+  if (message === 'PROGRAM_CHANGE_REQUIRED') return 'Describe the program change you want the event team to make.'
   return 'This client portal link is invalid or no longer available.'
 }
 
@@ -246,6 +252,8 @@ export const shareEventClientPortal = functions.https.onCall(async (data, contex
   const linkRef = defaultDb.collection('eventClientLinks').doc(tokenHash)
   const now = admin.firestore.FieldValue.serverTimestamp()
   const brand = brandSnapshot(storeData)
+  const programApproval = record(eventData.programApproval)
+  const hasApprovedProgram = text(programApproval.status, 40) === 'approved'
 
   await defaultDb.runTransaction(async transaction => {
     const current = await transaction.get(eventRef)
@@ -292,7 +300,7 @@ export const shareEventClientPortal = functions.https.onCall(async (data, contex
     to: recipientEmail,
     subject: `Your event planning portal - ${text(brand.storeName, 180) || 'Event team'}`,
     title: 'Your event planning portal is ready',
-    intro: `Hello ${recipientName}, your event team has shared a secure planning portal with you. You can update your event brief and work on any checklist tasks the team has shared.`,
+    intro: `Hello ${recipientName}, your event team has shared a secure planning portal with you. You can update your event brief, review approved program information and work on any checklist tasks the team has shared.`,
     brand: {
       storeName: text(brand.storeName, 180) || 'Event team',
       email: email(brand.email),
@@ -303,12 +311,13 @@ export const shareEventClientPortal = functions.https.onCall(async (data, contex
     rows: [
       ['Event', text(eventData.title, 180) || text(eventData.eventType, 140) || 'Event'],
       ['Live brief', 'Editable by client'],
+      ['Program', hasApprovedProgram ? 'Approved program available for review' : 'Not yet published'],
       ['Client tasks', String(visibleTasks.size)],
     ],
     primaryAction: { label: 'Open client portal', url: portalUrl },
-    footerNote: `Your live brief saves directly to the event workspace. Shared checklist tasks are verified by the event team before they are marked done. This secure link expires in ${LINK_LIFETIME_DAYS} days.`,
+    footerNote: `Sensitive approved documents stay read-only in the portal. Request a change and the event team can open a new revision. This secure link expires in ${LINK_LIFETIME_DAYS} days.`,
     customer: { name: recipientName, email: recipientEmail, phone: text(eventData.clientPhone, 80) },
-    data: { eventId, portalUrl, clientTaskCount: visibleTasks.size, liveClientBrief: true },
+    data: { eventId, portalUrl, clientTaskCount: visibleTasks.size, liveClientBrief: true, protectedProgramReview: true },
   })
 
   return { ok: true, portalUrl, expiresAt: expiresAt.toDate().toISOString(), deliveries: delivery.ok ? 1 : 0 }
@@ -355,6 +364,53 @@ export const eventClientPortal = functions.https.onRequest(async (req, res) => {
           })
         })
         res.json({ ok: true })
+        return
+      }
+
+      if (action === 'request_program_change') {
+        const note = text(req.body?.note, 3000)
+        if (!note) throw new Error('PROGRAM_CHANGE_REQUIRED')
+        const requestRef = loaded.eventRef.collection('programChangeRequests').doc()
+        await defaultDb.runTransaction(async transaction => {
+          const linkSnapshot = await transaction.get(loaded.linkRef)
+          const eventSnapshot = await transaction.get(loaded.eventRef)
+          if (!linkSnapshot.exists || !eventSnapshot.exists) throw new Error('INVALID_LINK')
+
+          const link = linkSnapshot.data() as unknown as ClientPortalLink
+          if (link.status !== 'active' || link.expiresAt.toMillis() < Date.now()) throw new Error('LINK_EXPIRED')
+          const eventData = eventSnapshot.data() as RecordMap
+          const livePortal = record(eventData.clientPortal)
+          if (text(livePortal.publicLinkHash, 100) !== linkSnapshot.id || text(livePortal.status, 40) !== 'active') throw new Error('LINK_REVOKED')
+
+          const approval = record(eventData.programApproval)
+          if (text(approval.status, 40) !== 'approved') throw new Error('PROGRAM_NOT_APPROVED')
+          const revision = Math.max(1, Math.floor(numberValue(approval.revision, 1)))
+          const currentRequest = record(eventData.programChangeRequest)
+          if (text(currentRequest.status, 40) === 'open') throw new Error('PROGRAM_CHANGE_ALREADY_OPEN')
+          const requestedBy = link.recipientName || link.recipientEmail || 'Client'
+
+          transaction.set(requestRef, {
+            status: 'open',
+            message: note,
+            requestedBy,
+            requestedByEmail: link.recipientEmail || '',
+            requestedAt: now,
+            revision,
+            programApprovedAt: approval.approvedAt || null,
+          })
+          transaction.update(loaded.eventRef, {
+            programChangeRequest: {
+              id: requestRef.id,
+              status: 'open',
+              message: note,
+              requestedBy,
+              requestedAt: now,
+              revision,
+            },
+            updatedAt: now,
+          })
+        })
+        res.json({ ok: true, requestId: requestRef.id })
         return
       }
 
