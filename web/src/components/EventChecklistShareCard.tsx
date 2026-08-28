@@ -5,7 +5,7 @@ import { db, functions } from '../firebase'
 
 type EventChecklistShareTarget = {
   id: string
-  clientEmail: string
+  clientEmail?: string
 }
 
 type ChecklistShareTask = {
@@ -16,12 +16,24 @@ type ChecklistShareTask = {
   clientVisible: boolean
 }
 
+type Props = {
+  storeId: string
+  event: EventChecklistShareTarget
+  embedded?: boolean
+}
+
 function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export default function EventChecklistShareCard({ storeId, event }: { storeId: string; event: EventChecklistShareTarget }) {
+export default function EventChecklistShareCard({ storeId, event, embedded = false }: Props) {
+  if (!embedded) return null
+  return <EventChecklistShareCardBody storeId={storeId} event={event} />
+}
+
+function EventChecklistShareCardBody({ storeId, event }: Omit<Props, 'embedded'>) {
   const [portalUrl, setPortalUrl] = useState('')
+  const [clientEmail, setClientEmail] = useState(text(event.clientEmail))
   const [tasks, setTasks] = useState<ChecklistShareTask[]>([])
   const [loading, setLoading] = useState(true)
   const [sharing, setSharing] = useState(false)
@@ -46,6 +58,7 @@ export default function EventChecklistShareCard({ storeId, event }: { storeId: s
           ? data.clientPortal as Record<string, unknown>
           : {}
         setPortalUrl(text(rawPortal.publicUrl))
+        setClientEmail(text(data?.clientEmail) || text(event.clientEmail))
         setTasks(tasksSnapshot.docs.map(item => {
           const task = item.data() as Record<string, unknown>
           return {
@@ -58,14 +71,14 @@ export default function EventChecklistShareCard({ storeId, event }: { storeId: s
         }))
       } catch (loadError) {
         console.error('[event-checklist-share] Unable to load client portal', loadError)
-        if (active) setError('The client checklist sharing settings could not be loaded.')
+        if (active) setError('The client portal settings could not be loaded.')
       } finally {
         if (active) setLoading(false)
       }
     }
     void loadShareState()
     return () => { active = false }
-  }, [event.id, storeId])
+  }, [event.clientEmail, event.id, storeId])
 
   const sharedTaskCount = tasks.filter(task => task.clientVisible).length
 
@@ -101,16 +114,8 @@ export default function EventChecklistShareCard({ storeId, event }: { storeId: s
   }
 
   async function shareChecklist() {
-    if (!event.clientEmail.trim()) {
-      setError('Add the client email to the event before sharing the checklist.')
-      return
-    }
-    if (!tasks.length) {
-      setError('Add at least one checklist task before sharing with the client.')
-      return
-    }
-    if (!sharedTaskCount) {
-      setError('Select at least one “Client visible” task before sharing. Internal tasks will remain private.')
+    if (!clientEmail) {
+      setError('Add the client email to the event before sharing the client portal.')
       return
     }
 
@@ -126,15 +131,15 @@ export default function EventChecklistShareCard({ storeId, event }: { storeId: s
       setPortalUrl(response.data.portalUrl)
       setMessage(
         response.data.deliveries > 0
-          ? `Checklist link emailed to ${event.clientEmail}. ${sharedTaskCount} selected task${sharedTaskCount === 1 ? '' : 's'} shared.`
-          : `Checklist link created for ${sharedTaskCount} selected task${sharedTaskCount === 1 ? '' : 's'}. Email delivery could not be confirmed, so copy the link below and send it manually.`,
+          ? `Client portal emailed to ${clientEmail}.${sharedTaskCount ? ` ${sharedTaskCount} checklist task${sharedTaskCount === 1 ? '' : 's'} shared.` : ''}`
+          : `Client portal created.${sharedTaskCount ? ` ${sharedTaskCount} checklist task${sharedTaskCount === 1 ? '' : 's'} shared.` : ''} Email delivery could not be confirmed, so copy the link below and send it manually.`,
       )
     } catch (shareError) {
-      console.error('[event-checklist-share] Unable to share checklist', shareError)
+      console.error('[event-checklist-share] Unable to share client portal', shareError)
       const raw = shareError && typeof shareError === 'object' && 'message' in shareError
         ? String((shareError as { message?: unknown }).message || '')
         : ''
-      setError(raw.replace(/^FirebaseError:\s*/i, '') || 'The client checklist could not be shared.')
+      setError(raw.replace(/^FirebaseError:\s*/i, '') || 'The client portal could not be shared.')
     } finally {
       setSharing(false)
     }
@@ -145,29 +150,29 @@ export default function EventChecklistShareCard({ storeId, event }: { storeId: s
     setError(null)
     try {
       await navigator.clipboard.writeText(portalUrl)
-      setMessage('Client checklist link copied.')
+      setMessage('Client portal link copied.')
     } catch {
       setError('Could not copy the link. Open the client view and copy the address from your browser.')
     }
   }
 
   return (
-    <div className="event-planning__workspace-preview" style={{ marginTop: 0, marginBottom: 16, borderColor: '#cfe7d7', background: '#f5fbf7' }}>
+    <div className="event-planning__workspace-preview" style={{ marginTop: 0, borderColor: '#cfe7d7', background: '#f5fbf7' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 0 }}>
         <div style={{ flex: '1 1 420px' }}>
-          <p className="event-planning__eyebrow" style={{ marginBottom: 5 }}>Client checklist</p>
-          <h3>Share a live to-do list with the client</h3>
-          <p>Select exactly which checklist items the client may see. Tasks left unchecked stay internal, including finance, staffing or other sensitive items.</p>
-          <p style={{ marginTop: 5 }}>{loading ? 'Loading client sharing status…' : `${sharedTaskCount} of ${tasks.length} checklist task${tasks.length === 1 ? '' : 's'} selected for the client.`}</p>
+          <p className="event-planning__eyebrow" style={{ marginBottom: 5 }}>Client portal</p>
+          <h3>Share the live event portal</h3>
+          <p>The client can update the brief, review the published program and complete any checklist tasks you choose to share.</p>
+          <p style={{ marginTop: 5 }}>{loading ? 'Loading client portal status…' : `${sharedTaskCount} of ${tasks.length} checklist task${tasks.length === 1 ? '' : 's'} visible to the client.`}</p>
         </div>
-        <button type="button" className="button button--primary" disabled={sharing || loading || !sharedTaskCount} onClick={() => void shareChecklist()}>
-          {sharing ? 'Creating link…' : portalUrl ? 'Reshare selected tasks' : 'Share selected tasks'}
+        <button type="button" className="button button--primary" disabled={sharing || loading} onClick={() => void shareChecklist()}>
+          {sharing ? 'Creating link…' : portalUrl ? 'Reshare client portal' : 'Share client portal'}
         </button>
       </div>
 
       {!loading && tasks.length ? (
         <div style={{ display: 'grid', gap: 7, marginTop: 14 }}>
-          <strong style={{ fontSize: '.78rem' }}>Choose client-visible tasks</strong>
+          <strong style={{ fontSize: '.78rem' }}>Checklist tasks visible to the client</strong>
           {tasks.map(task => (
             <label key={task.id} style={{ display: 'flex', gap: 9, alignItems: 'center', padding: '8px 10px', border: '1px solid #dce8df', borderRadius: 9, background: '#fff', fontSize: '.76rem', fontWeight: 700 }}>
               <input
@@ -190,7 +195,7 @@ export default function EventChecklistShareCard({ storeId, event }: { storeId: s
       {portalUrl ? (
         <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
           <label style={{ color: '#4d5c56', fontSize: '.75rem', fontWeight: 800 }}>
-            Client checklist link
+            Client portal link
             <input readOnly value={portalUrl} onFocus={inputEvent => inputEvent.currentTarget.select()} style={{ width: '100%', minHeight: 42, marginTop: 6, border: '1px solid #d8dedb', borderRadius: 9, background: '#fff' }} />
           </label>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 0 }}>
@@ -199,7 +204,7 @@ export default function EventChecklistShareCard({ storeId, event }: { storeId: s
           </div>
         </div>
       ) : (
-        <p style={{ marginTop: 10 }}>Select the tasks the client should see, then share. Unchecked tasks are never added to the client portal automatically.</p>
+        <p style={{ marginTop: 10 }}>You can share the portal even before any checklist task is client-visible. Add shared tasks later when the client needs to complete something.</p>
       )}
     </div>
   )
