@@ -50,6 +50,7 @@ export {
   shareEventClientPortal,
   eventClientPortal,
 } from './eventClientCollaboration'
+export { resolveEventProgramChangeRequest } from './eventProgramCollaboration'
 export { syncEventPlanningCustomer } from './eventCustomerSync'
 export { auditEventPlanningWrite } from './eventAudit'
 export { v1IntegrationProducts } from './integrationProducts'
