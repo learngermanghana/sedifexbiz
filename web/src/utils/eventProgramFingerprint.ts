@@ -7,9 +7,12 @@ type ProgramFingerprintItem = {
   sortOrder: number
 }
 
+function compareCodeUnits(left: string, right: string) {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 export async function fingerprintEventProgram(items: ProgramFingerprintItem[]) {
-  const canonical = [...items]
-    .sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time) || a.id.localeCompare(b.id))
+  const canonical = items
     .map(item => ({
       id: item.id,
       time: item.time.trim(),
@@ -18,6 +21,7 @@ export async function fingerprintEventProgram(items: ProgramFingerprintItem[]) {
       notes: item.notes.trim(),
       sortOrder: Number.isFinite(item.sortOrder) ? item.sortOrder : 0,
     }))
+    .sort((a, b) => a.sortOrder - b.sortOrder || compareCodeUnits(a.time, b.time) || compareCodeUnits(a.id, b.id))
 
   const bytes = new TextEncoder().encode(JSON.stringify(canonical))
   const digest = await crypto.subtle.digest('SHA-256', bytes)

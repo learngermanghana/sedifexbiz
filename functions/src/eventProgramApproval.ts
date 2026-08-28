@@ -17,6 +17,14 @@ function text(value: unknown, max = 5000) {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
 }
 
+function fingerprintText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function compareCodeUnits(left: string, right: string) {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
 function record(value: unknown): RecordMap {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as RecordMap : {}
 }
@@ -32,14 +40,14 @@ function mapProgramSnapshot(snapshot: FirebaseFirestore.QuerySnapshot): StoredPr
       const value = item.data() as RecordMap
       return {
         id: item.id,
-        time: text(value.time, 40),
-        title: text(value.title, 240) || 'Untitled program item',
-        participant: text(value.participant, 240),
-        notes: text(value.notes, 3000),
+        time: fingerprintText(value.time),
+        title: fingerprintText(value.title) || 'Untitled program item',
+        participant: fingerprintText(value.participant),
+        notes: fingerprintText(value.notes),
         sortOrder: numberValue(value.sortOrder),
       }
     })
-    .sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time) || a.id.localeCompare(b.id))
+    .sort((a, b) => a.sortOrder - b.sortOrder || compareCodeUnits(a.time, b.time) || compareCodeUnits(a.id, b.id))
 }
 
 function programFingerprint(items: StoredProgramItem[]) {

@@ -15,15 +15,207 @@
 }
 
 @media (max-width: 720px) {
-  .customer-contact-actions {
+  .customers-page .page__header {
+    align-items: stretch;
+  }
+
+  .customers-page .customers-page__badge {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .customers-page .customers-page__tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .customers-page .customers-page__toolbar,
+  .customers-page .customers-page__filters,
+  .customers-page .customers-page__tag-filters {
+    min-width: 0;
+  }
+
+  .customers-page .customers-page__filters,
+  .customers-page .customers-page__tag-filters {
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .customers-page .customers-page__filters-label {
+    flex-basis: 100%;
+  }
+
+  .customers-page .customers-page__quick-filters,
+  .customers-page .customers-page__tag-chip-group {
+    width: 100%;
+  }
+
+  .customers-page .customers-page__quick-filters .button,
+  .customers-page .customers-page__tag-chip-group .button {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .customers-page .customers-page__tool-buttons {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
-    margin: 0 0 8px;
+    gap: 8px;
   }
 
-  .customer-contact-actions .button {
+  .customers-page .customers-page__tool-buttons .button {
     width: 100%;
-    min-height: 40px;
+    min-width: 0;
+  }
+
+  .customers-page .table-wrapper {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .customers-page .table {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    border-collapse: separate;
+  }
+
+  .customers-page .table thead {
+    display: none;
+  }
+
+  .customers-page .table tbody {
+    display: grid;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .customers-page .table tbody tr {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+    overflow: hidden;
+  }
+
+  .customers-page .table tbody tr.customers-page__row--selected {
+    border-color: rgba(79, 70, 229, 0.4);
+    background: rgba(79, 70, 229, 0.05);
+  }
+
+  .customers-page .table tbody tr.customers-page__row--debt {
+    border-left: 3px solid #dc2626;
+  }
+
+  .customers-page .table tbody td {
+    display: grid;
+    grid-template-columns: minmax(82px, 0.7fr) minmax(0, 1.3fr);
+    gap: 10px;
+    align-items: start;
+    width: 100%;
+    min-width: 0;
+    padding: 9px 0;
+    border: 0;
+    border-bottom: 1px solid #eef2f7;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .customers-page .table tbody td::before {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    line-height: 1.35;
+    text-transform: uppercase;
+  }
+
+  .customers-page .table tbody td:nth-child(1)::before { content: 'Name'; }
+  .customers-page .table tbody td:nth-child(2)::before { content: 'Contact'; }
+  .customers-page .table tbody td:nth-child(3)::before { content: 'Tags'; }
+  .customers-page .table tbody td:nth-child(4)::before { content: 'Visits'; }
+  .customers-page .table tbody td:nth-child(5)::before { content: 'Last visit'; }
+  .customers-page .table tbody td:nth-child(6)::before { content: 'Total spend'; }
+  .customers-page .table tbody td:nth-child(7)::before { content: 'Debt'; }
+  .customers-page .table tbody td:nth-child(8)::before { content: 'Actions'; }
+
+  .customers-page .table tbody td:first-child {
+    font-weight: 700;
+    font-size: 15px;
+  }
+
+  .customers-page .table tbody td:last-child {
+    border-bottom: 0;
+  }
+
+  .customers-page .customers-page__tag-list,
+  .customers-page .customers-page__debt-cell {
+    min-width: 0;
+  }
+
+  .customers-page .customers-page__tag-chip {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .customers-page .customers-page__table-actions {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .customers-page .customers-page__table-actions::before {
+    grid-column: 1 / -1;
+  }
+
+  .customers-page .customers-page__table-actions > .button,
+  .customers-page .customers-page__table-actions .customer-contact-actions > .button {
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+    padding-inline: 8px;
+    line-height: 1.2;
+    white-space: normal;
+  }
+
+  .customers-page .customer-contact-actions {
+    display: contents;
+    margin: 0;
+  }
+
+  .customers-page .customers-page__action-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+
+  .customers-page .customers-page__action-buttons .button {
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+    white-space: normal;
+  }
+
+  .customers-page .customers-page__details-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 430px) {
+  .customers-page .customers-page__tool-buttons,
+  .customers-page .customers-page__table-actions,
+  .customers-page .customers-page__action-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .customers-page .table tbody td {
+    grid-template-columns: minmax(74px, 0.65fr) minmax(0, 1.35fr);
   }
 }
