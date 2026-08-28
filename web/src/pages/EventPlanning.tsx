@@ -11,6 +11,7 @@ import {
   Timestamp,
   updateDoc,
 } from 'firebase/firestore'
+import { useNavigate } from 'react-router-dom'
 import EventContractApprovals from '../components/EventContractApprovals'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
@@ -553,6 +554,7 @@ function BriefSummary({ brief }: { brief: ClientBrief }) {
 
 export default function EventPlanning() {
   const { storeId, isLoading: storeLoading, error: storeError } = useActiveStore()
+  const navigate = useNavigate()
   const [events, setEvents] = useState<EventRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [pageError, setPageError] = useState<string | null>(null)
@@ -662,6 +664,10 @@ export default function EventPlanning() {
     setModalOpen(true)
   }
 
+  function openWorkspace(event: EventRecord) {
+    navigate(`/event-planning/${encodeURIComponent(event.id)}`)
+  }
+
   async function removeEvent(event: EventRecord) {
     if (!storeId) return
     const confirmed = window.confirm(`Delete “${event.title}”? This cannot be undone.`)
@@ -723,13 +729,13 @@ export default function EventPlanning() {
               <tbody>
                 {filteredEvents.map(event => (
                   <tr key={event.id}>
-                    <td><button type="button" className="event-planning__event-link" onClick={() => setSelectedEvent(event)}>{event.title}</button><span>{event.eventType} · {event.eventCode}</span><small>{event.clientName}</small></td>
+                    <td><button type="button" className="event-planning__event-link" onClick={() => openWorkspace(event)} aria-label={`Open ${event.title} workspace`}>{event.title}</button><span>{event.eventType} · {event.eventCode}</span><small>{event.clientName}</small></td>
                     <td><strong>{formatDate(event.eventDate)}{event.startTime ? ` · ${event.startTime}` : ''}</strong><span>{event.venue || 'Venue not set'}</span></td>
                     <td><strong>{event.guestCount.toLocaleString()}</strong></td>
                     <td><span>{PACKAGE_LABELS[event.planningPackage]}</span><small>{event.clientBrief.packageItems.length} package item{event.clientBrief.packageItems.length === 1 ? '' : 's'}</small></td>
                     <td><div className="event-planning__readiness"><span><small>Checklist</small><strong>{event.progress}%</strong></span><i><b style={{ width: `${event.progress}%` }} /></i></div></td>
                     <td><span className={`event-planning__status event-planning__status--${event.status}`}>{STATUS_LABELS[event.status]}</span></td>
-                    <td><div className="event-planning__row-actions"><button type="button" onClick={() => setBriefEvent(event)}>Client brief</button><button type="button" onClick={() => setApprovalEvent(event)}>Contract & approval</button><button type="button" onClick={() => openEdit(event)}>Edit</button><button type="button" className="event-planning__danger" disabled={deletingId === event.id} onClick={() => void removeEvent(event)}>{deletingId === event.id ? 'Deleting…' : 'Delete'}</button></div></td>
+                    <td><div className="event-planning__row-actions"><button type="button" className="event-planning__workspace-action" onClick={() => openWorkspace(event)}>Open workspace</button><button type="button" onClick={() => setBriefEvent(event)}>Client brief</button><button type="button" onClick={() => setApprovalEvent(event)}>Contract & approval</button><button type="button" onClick={() => openEdit(event)}>Edit</button><button type="button" className="event-planning__danger" disabled={deletingId === event.id} onClick={() => void removeEvent(event)}>{deletingId === event.id ? 'Deleting…' : 'Delete'}</button></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -754,11 +760,12 @@ export default function EventPlanning() {
               <button type="button" className="button button--ghost" style={{ marginTop: 10 }} onClick={() => setApprovalEvent(selectedEvent)}>Open contract & approval</button>
             </div>
             <div className="event-planning__workspace-preview">
-              <h3>Event workspace</h3>
-              <p>Client brief, package and contract approvals are active. Checklist, vendors, staff, timeline, guest list, invoices and messages can be connected next.</p>
-              <div>{['Overview', 'Client brief', 'Package', 'Contract', 'Approvals', 'Checklist', 'Vendors', 'Staff', 'Timeline', 'Invoices'].map(item => <span key={item}>{item}</span>)}</div>
+              <h3>Full event workspace</h3>
+              <p>Open the event workspace to manage the checklist, timeline, program, guest list, vendors, staff, finance, documents, messages and evaluation.</p>
+              <div>{['Overview', 'Client brief', 'Package', 'Checklist', 'Timeline', 'Program', 'Guest list', 'Vendors', 'Staff', 'Finance', 'Documents', 'Messages', 'Evaluation'].map(item => <span key={item}>{item}</span>)}</div>
+              <button type="button" className="button button--primary" style={{ marginTop: 12 }} onClick={() => openWorkspace(selectedEvent)}>Open full workspace</button>
             </div>
-            <footer><button type="button" className="button button--ghost" onClick={() => setSelectedEvent(null)}>Close</button><button type="button" className="button button--ghost" onClick={() => setBriefEvent(selectedEvent)}>Edit client brief</button><button type="button" className="button button--ghost" onClick={() => setApprovalEvent(selectedEvent)}>Contract & approval</button><button type="button" className="button button--primary" onClick={() => { const event = selectedEvent; setSelectedEvent(null); openEdit(event) }}>Edit event</button></footer>
+            <footer><button type="button" className="button button--ghost" onClick={() => setSelectedEvent(null)}>Close</button><button type="button" className="button button--ghost" onClick={() => setBriefEvent(selectedEvent)}>Edit client brief</button><button type="button" className="button button--ghost" onClick={() => setApprovalEvent(selectedEvent)}>Contract & approval</button><button type="button" className="button button--primary" onClick={() => openWorkspace(selectedEvent)}>Open workspace</button></footer>
           </section>
         </aside>
       ) : null}
