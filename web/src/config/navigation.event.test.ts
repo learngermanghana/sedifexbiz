@@ -33,6 +33,27 @@ describe('event business navigation preset', () => {
     expect(items.find(item => item.id === 'bulk-email')?.label).toBe('Email')
   })
 
+  it('upgrades the exact legacy event preset with Dashboard and Reports', () => {
+    const items = resolveNavigation({
+      role: 'owner',
+      workspaceProfile: {
+        industry: 'event',
+        labelPolicy: 'industry_aliases',
+        enabledModules: ['events', 'customers', 'invoices', 'bulk-email'],
+      },
+    })
+
+    expect(items.map(item => item.id)).toEqual([
+      'dashboard',
+      'events',
+      'customers',
+      'invoices',
+      'reports',
+      'bulk-email',
+      'account',
+    ])
+  })
+
   it('keeps Account last when an event workspace enables more pages', () => {
     const items = resolveNavigation({
       role: 'owner',
