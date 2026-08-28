@@ -256,6 +256,11 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#039;')
 }
 
+function callableErrorMessage(error: unknown) {
+  if (!error || typeof error !== 'object' || !('message' in error)) return ''
+  return String((error as { message?: unknown }).message || '').replace(/^FirebaseError:\s*/i, '')
+}
+
 export default function EventOperationsWorkspace({ storeId, eventId, eventTitle, onChanged }: Props) {
   const [tab, setTab] = useState<OperationsTab>('checklist')
   const [meta, setMeta] = useState<EventMeta | null>(null)
@@ -489,27 +494,38 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
     return response.data
   }
 
+  async function mutateProgram(action: 'upsert' | 'delete', itemId = '', item?: { time: string; title: string; participant: string; notes: string }) {
+    const mutate = httpsCallable<
+      { storeId: string; eventId: string; action: 'upsert' | 'delete'; itemId?: string; item?: { time: string; title: string; participant: string; notes: string } },
+      { ok: boolean; itemId: string; archivedRevision: number | null; nextRevision: number; wasApproved: boolean }
+    >(functions, 'mutateEventProgram')
+    const response = await mutate({ storeId, eventId, action, itemId: itemId || undefined, item })
+    return response.data
+  }
+
   async function saveProgram(event: React.FormEvent) {
     event.preventDefault()
     if (!programForm.title.trim()) return
     const wasEditing = Boolean(editingProgramId)
-    const wasApproved = meta?.programApproval.status === 'approved'
     setSaving(true)
     setError(null)
     try {
-      if (wasApproved) await prepareProgramRevision()
-      const payload = { time: programForm.time, title: programForm.title.trim(), participant: programForm.participant.trim(), notes: programForm.notes.trim(), updatedAt: serverTimestamp() }
-      if (editingProgramId) await updateDoc(doc(programRef, editingProgramId), payload)
-      else await addDoc(programRef, { ...payload, sortOrder: Number(programForm.time.replace(':', '')) || Date.now(), createdAt: serverTimestamp() })
+      const result = await mutateProgram('upsert', editingProgramId || '', {
+        time: programForm.time,
+        title: programForm.title.trim(),
+        participant: programForm.participant.trim(),
+        notes: programForm.notes.trim(),
+      })
       await loadWorkspace()
       resetProgramForm()
-      setSuccess(wasApproved
-        ? `${wasEditing ? 'Program item updated' : 'Program item added'}. The previous approved revision was preserved for the client.`
+      setSuccess(result.archivedRevision
+        ? `${wasEditing ? 'Program item updated' : 'Program item added'}. Approved revision ${result.archivedRevision} was preserved before revision ${result.nextRevision} was changed.`
         : wasEditing ? 'Program item updated.' : 'Program item added.')
       await onChanged?.()
     } catch (saveError) {
       console.error('[event-operations] Unable to save program item', saveError)
-      setError('The program item could not be saved.')
+      await loadWorkspace()
+      setError(callableErrorMessage(saveError) || 'The program item could not be saved. The latest program was reloaded.')
     } finally {
       setSaving(false)
     }
@@ -517,19 +533,22 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
 
   async function removeProgram(item: ProgramItem) {
     if (!window.confirm(`Delete program item “${item.title}”?`)) return
-    const wasApproved = meta?.programApproval.status === 'approved'
+    setSaving(true)
+    setError(null)
     try {
-      if (wasApproved) await prepareProgramRevision()
-      await deleteDoc(doc(programRef, item.id))
+      const result = await mutateProgram('delete', item.id)
       await loadWorkspace()
       if (editingProgramId === item.id) resetProgramForm()
-      setSuccess(wasApproved
-        ? 'Program item deleted. The previous approved revision was preserved for the client.'
+      setSuccess(result.archivedRevision
+        ? `Program item deleted. Approved revision ${result.archivedRevision} was preserved before revision ${result.nextRevision} was changed.`
         : 'Program item deleted.')
       await onChanged?.()
     } catch (deleteError) {
       console.error('[event-operations] Unable to delete program item', deleteError)
-      setError('The program item could not be deleted.')
+      await loadWorkspace()
+      setError(callableErrorMessage(deleteError) || 'The program item could not be deleted. The latest program was reloaded.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -550,19 +569,24 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
     setSaving(true)
     setError(null)
     try {
-      await updateDoc(eventRef, {
-        'programApproval.status': 'approved',
-        'programApproval.approvedBy': approvalName.trim(),
-        'programApproval.approvedAt': serverTimestamp(),
-        'programApproval.revision': meta.programApproval.revision,
-        updatedAt: serverTimestamp(),
+      const approve = httpsCallable<
+        { storeId: string; eventId: string; approverName: string; expectedRevision: number },
+        { ok: boolean; revision: number }
+      >(functions, 'approveEventProgram')
+      const response = await approve({
+        storeId,
+        eventId,
+        approverName: approvalName.trim(),
+        expectedRevision: meta.programApproval.revision,
       })
       await loadWorkspace()
-      setSuccess(`Client program approval recorded for revision ${meta.programApproval.revision}.`)
+      setSuccess(`Client program approval recorded for revision ${response.data.revision}.`)
       await onChanged?.()
     } catch (approvalError) {
       console.error('[event-operations] Unable to approve program', approvalError)
-      setError('Client approval could not be recorded.')
+      const message = callableErrorMessage(approvalError)
+      await loadWorkspace()
+      setError(message || 'Client approval could not be recorded. The latest program was reloaded for review.')
     } finally {
       setSaving(false)
     }
@@ -580,7 +604,8 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
       await onChanged?.()
     } catch (approvalError) {
       console.error('[event-operations] Unable to reopen program', approvalError)
-      setError('The program approval could not be reopened.')
+      await loadWorkspace()
+      setError(callableErrorMessage(approvalError) || 'The program approval could not be reopened. The latest program was reloaded.')
     } finally {
       setSaving(false)
     }
@@ -692,7 +717,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
         <div>
           <div className="event-planning__workspace-preview" style={{ marginTop: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-              <div><h3>Client program outline</h3><p>Keep the guest-facing program separate from the internal run sheet. Any change after approval preserves the approved revision before opening a new draft.</p></div>
+              <div><h3>Client program outline</h3><p>Keep the guest-facing program separate from the internal run sheet. Program changes and approvals are validated against the current server revision before they are saved.</p></div>
               <span className={`event-planning__status event-planning__status--${meta.programApproval.status === 'approved' ? 'confirmed' : 'new'}`}>{meta.programApproval.status === 'approved' ? `Client approved · revision ${meta.programApproval.revision}` : `Draft · revision ${meta.programApproval.revision}`}</span>
             </div>
             {meta.programApproval.status === 'approved' ? <p style={{ marginTop: 10 }}><strong>Approved by:</strong> {meta.programApproval.approvedBy} · {formatDateTime(meta.programApproval.approvedAt)}</p> : null}
@@ -715,7 +740,7 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
           </form>
           <div style={{ display: 'grid', gap: 9, marginTop: 14 }}>
             {!program.length ? <div className="event-planning__notes"><strong>No program outline yet</strong><p>Add the sequence the client and guests should see.</p></div> : null}
-            {program.map(item => <div key={item.id} className="event-planning__notes" style={{ marginTop: 0 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}><div style={{ flex: '1 1 320px' }}><strong>{item.time ? `${item.time} · ` : ''}{item.title}</strong><p style={{ marginTop: 4 }}>{item.participant || 'No participant assigned'}{item.notes ? ` · ${item.notes}` : ''}</p></div><div style={{ display: 'flex', gap: 7 }}><button type="button" className="button button--ghost" onClick={() => editProgram(item)}>Edit</button><button type="button" className="button button--ghost" onClick={() => void removeProgram(item)}>Delete</button></div></div></div>)}
+            {program.map(item => <div key={item.id} className="event-planning__notes" style={{ marginTop: 0 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}><div style={{ flex: '1 1 320px' }}><strong>{item.time ? `${item.time} · ` : ''}{item.title}</strong><p style={{ marginTop: 4 }}>{item.participant || 'No participant assigned'}{item.notes ? ` · ${item.notes}` : ''}</p></div><div style={{ display: 'flex', gap: 7 }}><button type="button" className="button button--ghost" onClick={() => editProgram(item)}>Edit</button><button type="button" className="button button--ghost" disabled={saving} onClick={() => void removeProgram(item)}>Delete</button></div></div></div>)}
           </div>
         </div>
       ) : null}
