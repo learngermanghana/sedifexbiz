@@ -118,7 +118,7 @@ assert.ok(html.includes('Couple entrance'), 'portal should render published prog
 assert.ok(html.includes('Awaiting your approval'), 'published programs requiring approval should explain the pending client action')
 assert.ok(html.includes('Approve program'), 'client should be able to approve when staff requires approval')
 assert.ok(html.includes("action:'approve_program'"), 'client approval must use the secure portal action')
-assert.ok(html.includes("fingerprint:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"), 'client approval must be tied to the exact published content')
+assert.ok(html.includes('fingerprint:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'), 'client approval must be tied to the exact published content')
 assert.ok(html.includes('data-program-change-request'), 'portal should offer a change request instead of direct program editing')
 assert.ok(html.includes("action:'request_program_change'"), 'program change requests must use the secure portal action')
 assert.ok(html.includes('programRequestDirty'), 'auto refresh must not discard an unsent program change request')
