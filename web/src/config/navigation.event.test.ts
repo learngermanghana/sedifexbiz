@@ -13,15 +13,19 @@ describe('event business navigation preset', () => {
     })
 
     expect(INDUSTRY_ENABLED_MODULE_PRESETS.event).toEqual([
+      'dashboard',
       'events',
       'customers',
       'invoices',
+      'reports',
       'bulk-email',
     ])
     expect(items.map(item => item.id)).toEqual([
+      'dashboard',
       'events',
       'customers',
       'invoices',
+      'reports',
       'bulk-email',
       'account',
     ])
@@ -36,9 +40,11 @@ describe('event business navigation preset', () => {
         industry: 'event',
         labelPolicy: 'industry_aliases',
         enabledModules: [
+          'dashboard',
           'events',
           'customers',
           'invoices',
+          'reports',
           'bulk-email',
           'upcoming-events',
           'integrations',
@@ -51,9 +57,11 @@ describe('event business navigation preset', () => {
     expect(items.at(-1)?.id).toBe('account')
     expect(items.find(item => item.id === 'account')?.sortOrder).toBe(110)
     expect(items.map(item => item.id)).toEqual([
+      'dashboard',
       'events',
       'customers',
       'invoices',
+      'reports',
       'bulk-email',
       'upcoming-events',
       'integrations',
