@@ -44,9 +44,17 @@ export function isReservedPublicSlug(value: string): boolean {
   return RESERVED_PUBLIC_SLUGS.has(normalized)
 }
 
+function isOpaqueIdLikeSlug(value: string): boolean {
+  const trimmed = value.trim().toLowerCase()
+  if (trimmed.length < 20) return false
+  if (!/^[a-z0-9]+$/.test(trimmed)) return false
+  return /[a-z]/.test(trimmed) && /[0-9]/.test(trimmed)
+}
+
 export function buildPromoSlug(...candidates: Array<string | null | undefined>): string {
   for (const candidate of candidates) {
     if (!candidate) continue
+    if (isOpaqueIdLikeSlug(candidate)) continue
     const normalized = normalizePromoSlug(candidate)
     if (!normalized) continue
     if (!isReservedPublicSlug(normalized)) return normalized

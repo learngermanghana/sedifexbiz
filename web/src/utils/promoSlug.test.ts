@@ -14,4 +14,8 @@ describe('promoSlug utils', () => {
     expect(buildPromoSlug('dashboard', 'Bright Mart')).toBe('dashboard-store')
     expect(buildPromoSlug(null, 'Bright Mart')).toBe('bright-mart')
   })
+
+  it('ignores opaque id-like candidates and prefers store names', () => {
+    expect(buildPromoSlug('37mjqg20mjoriggaiaoouahdsgj1', 'Bright Mart')).toBe('bright-mart')
+  })
 })
