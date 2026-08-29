@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { FieldValue, type DocumentReference, type Firestore, type QuerySnapshot } from 'firebase-admin/firestore'
 
 type CanonicalCustomerInput = {
@@ -36,6 +37,10 @@ function phoneKey(value: unknown) {
 
 function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80)
+}
+
+function identityHash(value: string) {
+  return createHash('sha256').update(value, 'utf8').digest('hex').slice(0, 32)
 }
 
 async function findExistingCustomer(
@@ -95,7 +100,7 @@ export async function upsertCanonicalCustomer(firestore: Firestore, input: Canon
   const contactKey = keyPhone
     ? `phone-${keyPhone}`
     : keyEmail
-      ? `email-${slug(keyEmail)}`
+      ? `email-${identityHash(keyEmail)}`
       : `record-${slug(fallbackIdentity)}`
   const customerRef = existingRef || firestore.collection('customers').doc(`${storeId}_${contactKey}`)
   const now = FieldValue.serverTimestamp()
