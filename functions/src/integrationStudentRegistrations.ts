@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions/v1'
 import { defineString } from 'firebase-functions/params'
 import { admin, defaultDb } from './firestore'
+import { upsertStoreCustomerIdentity } from './customerUpsert'
 
 const INTEGRATION_CONTRACT_VERSION = defineString('INTEGRATION_CONTRACT_VERSION', { default: '2026-04-13' })
 const SEDIFEX_INTEGRATION_API_KEY = defineString('SEDIFEX_INTEGRATION_API_KEY', { default: '' })
@@ -86,19 +87,6 @@ async function isAuthorized(req: functions.https.Request, storeId: string) {
   return false
 }
 
-async function findCustomerDoc(storeId: string, phone: string, email: string) {
-  const customersRef = defaultDb.collection('stores').doc(storeId).collection('customers')
-  if (phone) {
-    const byPhone = await customersRef.where('phone', '==', phone).limit(1).get()
-    if (!byPhone.empty) return byPhone.docs[0]
-  }
-  if (email) {
-    const byEmail = await customersRef.where('email', '==', email).limit(1).get()
-    if (!byEmail.empty) return byEmail.docs[0]
-  }
-  return null
-}
-
 export const v1IntegrationStudentRegistrations = functions.https.onRequest(async (req, res): Promise<void> => {
   setCors(res)
   if (req.method === 'OPTIONS') {
@@ -159,11 +147,27 @@ export const v1IntegrationStudentRegistrations = functions.https.onRequest(async
     const reference = clean(payment.reference ?? body.reference, 160) || `REG-${registrationRef.id.slice(0, 8).toUpperCase()}`
     const paymentStatus = clean(payment.status ?? body.paymentStatus, 80) || 'checkout_created'
     const paymentMode = clean(payment.mode ?? body.paymentMode, 80) || 'online_checkout'
+    const sourceChannel = clean(body.sourceChannel, 120) || 'client_website'
 
-    const storeRef = defaultDb.collection('stores').doc(storeId)
-    const existingCustomer = await findCustomerDoc(storeId, phone, email)
-    const customerRef = existingCustomer ? existingCustomer.ref : storeRef.collection('customers').doc()
-    await customerRef.set({ name: studentName, displayName: studentName, phone: phone || null, email: email || null, source: 'student-registration', tags: ['Student', course].filter(Boolean), updatedAt: now, createdAt: existingCustomer ? existingCustomer.get('createdAt') || now : now }, { merge: true })
+    const canonicalCustomer = await upsertStoreCustomerIdentity({
+      storeId,
+      customer: { name: studentName, phone, email },
+      sourceChannel: 'student_registration',
+      sourceTag: 'student',
+      identityKey: `student-registration-${registrationRef.id}`,
+    })
+    if (!canonicalCustomer?.customerId) {
+      throw new Error('customer-identity-resolution-failed')
+    }
+    const customerId = canonicalCustomer.customerId
+
+    await defaultDb.collection('customers').doc(customerId).set({
+      studentRegistrationId: registrationRef.id,
+      lastStudentRegistrationId: registrationRef.id,
+      lastStudentCourse: course,
+      studentRegistrationSource: sourceChannel,
+      updatedAt: now,
+    }, { merge: true })
 
     const registrationRecord: AnyRecord = {
       id: registrationRef.id,
@@ -172,9 +176,16 @@ export const v1IntegrationStudentRegistrations = functions.https.onRequest(async
       pageId: 'student-registration',
       pageType: 'student_registration',
       source: clean(body.source ?? body.sourceChannel, 120) || 'website_registration_form',
-      sourceChannel: clean(body.sourceChannel, 120) || 'client_website',
+      sourceChannel,
       status: clean(body.status, 80) || 'new',
-      customerId: customerRef.id,
+      customerId,
+      customer_id: customerId,
+      customerIdentity: {
+        customerId,
+        source: 'student_registration',
+        strategy: 'canonical_customer_v1',
+        linkedAt: now,
+      },
       customer: { name: studentName, phone: phone || null, email: email || null },
       data: {
         course,
@@ -196,9 +207,8 @@ export const v1IntegrationStudentRegistrations = functions.https.onRequest(async
 
     await registrationRef.set(registrationRecord, { merge: true })
     await defaultDb.collection('stores').doc(storeId).collection('student_registrations').doc(registrationRef.id).set(registrationRecord, { merge: true })
-    await defaultDb.collection('customers').add({ storeId, name: studentName, displayName: studentName, phone: phone || null, email: email || null, source: 'student-registration-website', tags: ['Student', course].filter(Boolean), studentRegistrationId: registrationRef.id, createdAt: now, updatedAt: now })
 
-    res.status(200).json({ ok: true, storeId, registrationId: registrationRef.id, reference, registration: registrationRecord })
+    res.status(200).json({ ok: true, storeId, registrationId: registrationRef.id, reference, customerId, registration: registrationRecord })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'student-registration-failed'
     functions.logger.error('student registration integration failed', { storeId, message })

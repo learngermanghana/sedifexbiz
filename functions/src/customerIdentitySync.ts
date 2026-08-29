@@ -146,6 +146,26 @@ async function linkDocument(change: FirestoreChange, input: {
   return null
 }
 
+async function registrationCustomerId(registrationId: string) {
+  if (!registrationId) return ''
+  for (const collectionName of ['studentRegistrations', 'student_registrations']) {
+    try {
+      const registration = await defaultDb.collection(collectionName).doc(registrationId).get()
+      if (registration.exists) {
+        const customerId = firstText(registration.get('customerId'), registration.get('customer_id'))
+        if (customerId) return customerId
+      }
+    } catch (error) {
+      functions.logger.warn('Student registration customer inheritance lookup failed', {
+        registrationId,
+        collectionName,
+        error,
+      })
+    }
+  }
+  return ''
+}
+
 export const syncStoreBookingCustomerIdentity = functions.firestore
   .document('stores/{storeId}/integrationBookings/{bookingId}')
   .onWrite((change, context) => linkDocument(change, {
@@ -206,6 +226,7 @@ export const syncReceiptCustomerIdentity = functions.firestore
     })
   })
 
+// Dashboard/manual admissions use camelCase. Keep this trigger for those records.
 export const syncStudentRegistrationCustomerIdentity = functions.firestore
   .document('studentRegistrations/{registrationId}')
   .onWrite(async (change, context) => {
@@ -221,6 +242,33 @@ export const syncStudentRegistrationCustomerIdentity = functions.firestore
     })
   })
 
+// Website and integration admissions use the deployed snake_case collection.
+export const syncExternalStudentRegistrationCustomerIdentity = functions.firestore
+  .document('student_registrations/{registrationId}')
+  .onWrite(async (change, context) => {
+    if (!change.after.exists) return null
+    const data = change.after.data() as RecordMap
+    const storeId = clean(data.storeId, 180)
+    if (!storeId) return null
+    return linkDocument(change, {
+      storeId,
+      sourceChannel: 'student_registration',
+      sourceTag: 'student',
+      identityKey: `student-registration-${clean(context.params.registrationId, 220)}`,
+    })
+  })
+
+// The integration API also mirrors registrations under the store. Canonicalize
+// that copy so any store-scoped readers see the same CRM identity immediately.
+export const syncStoreStudentRegistrationCustomerIdentity = functions.firestore
+  .document('stores/{storeId}/student_registrations/{registrationId}')
+  .onWrite((change, context) => linkDocument(change, {
+    storeId: clean(context.params.storeId, 180),
+    sourceChannel: 'student_registration',
+    sourceTag: 'student',
+    identityKey: `student-registration-${clean(context.params.registrationId, 220)}`,
+  }))
+
 export const syncStudentCustomerIdentity = functions.firestore
   .document('students/{studentId}')
   .onWrite(async (change, context) => {
@@ -229,16 +277,8 @@ export const syncStudentCustomerIdentity = functions.firestore
     const storeId = clean(data.storeId, 180)
     if (!storeId) return null
 
-    let preferredCustomerId = ''
     const registrationId = clean(data.studentRegistrationId, 220)
-    if (registrationId) {
-      try {
-        const registration = await defaultDb.collection('studentRegistrations').doc(registrationId).get()
-        if (registration.exists) preferredCustomerId = firstText(registration.get('customerId'), registration.get('customer_id'))
-      } catch (error) {
-        functions.logger.warn('Student customer inheritance lookup failed', { storeId, registrationId, error })
-      }
-    }
+    const preferredCustomerId = await registrationCustomerId(registrationId)
 
     return linkDocument(change, {
       storeId,
