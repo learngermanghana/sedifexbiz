@@ -39,6 +39,7 @@ export const syncEventPlanningCustomer = functions.firestore
     const beforeIntegrations = before ? record(before.integrations) : {}
     const linkedCustomerId = text(integrations.clientCustomerId, 240)
     const beforeLinkedCustomerId = text(beforeIntegrations.clientCustomerId, 240)
+    const topLevelCustomerId = text(after.customerId, 240)
     const identityChanged = !before || clientIdentity(before) !== clientIdentity(after)
     const explicitLinkRemoval = Boolean(before && beforeLinkedCustomerId && !linkedCustomerId && !identityChanged)
 
@@ -46,9 +47,18 @@ export const syncEventPlanningCustomer = functions.firestore
     // this guard the trigger would immediately recreate the same link.
     if (explicitLinkRemoval) return null
 
-    // Event-only edits should not touch an existing client link. This also stops
-    // the trigger from looping after it writes integrations.clientCustomerId.
-    if (!identityChanged && linkedCustomerId) return null
+    // Keep the new canonical top-level customerId in sync with the established
+    // Event Planning link, including existing projects that are edited later.
+    if (!identityChanged && linkedCustomerId) {
+      if (topLevelCustomerId !== linkedCustomerId) {
+        await change.after.ref.set({
+          customerId: linkedCustomerId,
+          customer_id: linkedCustomerId,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true })
+      }
+      return null
+    }
 
     const customer = await upsertStoreCustomerFromEvent({
       storeId,
@@ -63,9 +73,12 @@ export const syncEventPlanningCustomer = functions.firestore
       },
     })
 
-    if (!customer || customer.customerId === linkedCustomerId) return null
+    if (!customer) return null
+    if (customer.customerId === linkedCustomerId && customer.customerId === topLevelCustomerId) return null
 
-    await defaultDb.collection('stores').doc(storeId).collection('events').doc(eventId).update({
+    await defaultDb.collection('stores').doc(storeId).collection('events').doc(eventId).set({
+      customerId: customer.customerId,
+      customer_id: customer.customerId,
       'integrations.clientCustomerId': customer.customerId,
       'integrations.clientCustomerSync': {
         customerId: customer.customerId,
@@ -74,7 +87,7 @@ export const syncEventPlanningCustomer = functions.firestore
         source: 'event_planning',
       },
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    })
+    }, { merge: true })
 
     console.log('[event-customer-sync] Event client linked', {
       storeId,
