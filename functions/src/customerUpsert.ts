@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { admin, defaultDb } from './firestore'
 
 export type CheckoutCustomerInput = {
@@ -74,6 +75,10 @@ function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80)
 }
 
+function identityHash(value: string) {
+  return createHash('sha256').update(value, 'utf8').digest('hex').slice(0, 32)
+}
+
 async function findExistingCustomer(storeId: string, normalizedPhone: string, normalizedEmail: string) {
   const collection = defaultDb.collection('customers')
   const phone = phoneKey(normalizedPhone)
@@ -115,7 +120,7 @@ export async function upsertStoreCustomerIdentity(input: StoreCustomerIdentityIn
   const contactKey = keyPhone
     ? `phone-${keyPhone}`
     : keyEmail
-      ? `email-${slug(keyEmail)}`
+      ? `email-${identityHash(keyEmail)}`
       : `record-${slug(fallbackIdentity)}`
   const customerRef = existingRef || defaultDb.collection('customers').doc(`${storeId}_${contactKey}`)
   const now = admin.firestore.FieldValue.serverTimestamp()
@@ -162,7 +167,7 @@ export async function upsertStoreCustomerFromCheckout(input: CheckoutCustomerInp
   if (!name && !email && !phone) return null
 
   const existingRef = await findExistingCustomer(storeId, phone, email)
-  const contactKey = keyPhone ? `phone-${keyPhone}` : keyEmail ? `email-${slug(keyEmail)}` : `name-${slug(name)}`
+  const contactKey = keyPhone ? `phone-${keyPhone}` : keyEmail ? `email-${identityHash(keyEmail)}` : `name-${slug(name)}`
   const customerRef = existingRef || defaultDb.collection('customers').doc(`${storeId}_${contactKey}`)
   const now = admin.firestore.FieldValue.serverTimestamp()
   const amount = typeof input.amount === 'number' && Number.isFinite(input.amount) ? input.amount : null
@@ -223,7 +228,7 @@ export async function upsertStoreCustomerFromEvent(input: EventPlanningCustomerI
   // Phone/email remain the stable dedupe keys. When neither exists, the event
   // document ID becomes the stable identity so two people with the same name
   // cannot overwrite the same Customer record.
-  const contactKey = keyPhone ? `phone-${keyPhone}` : keyEmail ? `email-${slug(keyEmail)}` : `event-${eventId}`
+  const contactKey = keyPhone ? `phone-${keyPhone}` : keyEmail ? `email-${identityHash(keyEmail)}` : `event-${eventId}`
   const customerRef = existingRef || defaultDb.collection('customers').doc(`${storeId}_${contactKey}`)
   const now = admin.firestore.FieldValue.serverTimestamp()
 
