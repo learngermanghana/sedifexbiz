@@ -48,6 +48,19 @@ export const syncIntegrationOrderCustomer = functions.firestore
     })
 
     if (result?.customerId) {
+      if (clean(data.customerId, 240) !== result.customerId || clean(data.customer_id, 240) !== result.customerId) {
+        await change.after.ref.set({
+          customerId: result.customerId,
+          customer_id: result.customerId,
+          customerIdentity: {
+            customerId: result.customerId,
+            source: sourceChannel,
+            strategy: 'canonical_customer_v1',
+            linkedAt: functions.firestore.FieldValue?.serverTimestamp?.() ?? null,
+          },
+        }, { merge: true })
+      }
+
       functions.logger.info('Auto-saved integration order customer', {
         storeId,
         reference,
