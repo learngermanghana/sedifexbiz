@@ -41,6 +41,7 @@ export default function App() {
     '/billing/verify',
     '/inventory-system-ghana',
     '/inventory-management-software-ghana',
+    '/event-management-software',
     '/pricing',
     '/docs',
     '/how-to-use-sedifex',
