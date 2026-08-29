@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import EventGuestList from '../components/EventGuestList'
+import EventSeatingPlanner from '../components/EventSeatingPlanner'
 import EventModuleIntegrations, { type EventIntegrationTab } from '../components/EventModuleIntegrations'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
@@ -65,6 +66,7 @@ type TabKey =
   | 'timeline'
   | 'program'
   | 'guest-list'
+  | 'seating'
   | 'vendors'
   | 'staff'
   | 'finance'
@@ -72,7 +74,7 @@ type TabKey =
   | 'messages'
   | 'evaluation'
 
-type PlaceholderTab = Exclude<TabKey, 'overview' | 'client-brief' | 'package' | 'guest-list' | EventIntegrationTab>
+type PlaceholderTab = Exclude<TabKey, 'overview' | 'client-brief' | 'package' | 'guest-list' | 'seating' | EventIntegrationTab>
 
 const TABS: Array<{ key: TabKey; label: string; description: string }> = [
   { key: 'overview', label: 'Overview', description: 'Event summary and readiness' },
@@ -82,6 +84,7 @@ const TABS: Array<{ key: TabKey; label: string; description: string }> = [
   { key: 'timeline', label: 'Timeline', description: 'Internal day-of run sheet' },
   { key: 'program', label: 'Program', description: 'Client-approved event program' },
   { key: 'guest-list', label: 'Guest List', description: 'RSVP and attendance management' },
+  { key: 'seating', label: 'Seating', description: 'Tables, assignments and capacity' },
   { key: 'vendors', label: 'Vendors', description: 'Suppliers and commitments' },
   { key: 'staff', label: 'Staff', description: 'Team roles and assignments' },
   { key: 'finance', label: 'Finance', description: 'Budget, payments and expenses' },
@@ -581,6 +584,7 @@ export default function EventWorkspace() {
             <button type="button" onClick={() => selectTab('checklist')}>Open checklist <span>→</span></button>
             <button type="button" onClick={() => selectTab('timeline')}>Build timeline <span>→</span></button>
             <button type="button" onClick={() => selectTab('guest-list')}>Manage guest list <span>→</span></button>
+            <button type="button" onClick={() => selectTab('seating')}>Plan seating <span>→</span></button>
             <button type="button" onClick={() => selectTab('vendors')}>Manage vendors <span>→</span></button>
             <button type="button" onClick={() => selectTab('finance')}>Review finance <span>→</span></button>
           </aside>
@@ -591,6 +595,8 @@ export default function EventWorkspace() {
         <PackagePanel event={event} saving={savingBrief} onSave={saveClientBrief} />
       ) : activeTab === 'guest-list' ? (
         <EventGuestList storeId={storeId} eventId={event.id} eventTitle={event.title} expectedGuestCount={event.guestCount} />
+      ) : activeTab === 'seating' ? (
+        <EventSeatingPlanner storeId={storeId} eventId={event.id} eventTitle={event.title} expectedGuestCount={event.guestCount} />
       ) : integrationTab ? (
         <EventModuleIntegrations
           tab={integrationTab}
