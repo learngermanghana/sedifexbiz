@@ -84,6 +84,7 @@ import DonorWebsiteIntegrationPage from './pages/docs/DonorWebsiteIntegrationPag
 import PublicBlogPage from './pages/PublicBlogPage'
 import { ToastProvider } from './components/ToastProvider'
 import './studentRegistrationTabs.css'
+import './pages/PublicQuickPayCheckout.mobile.css'
 
 const SalesCashReport = React.lazy(() => import('./pages/reports/SalesCashReport'))
 const BusinessExpenses = React.lazy(() => import('./pages/BusinessExpenses'))
