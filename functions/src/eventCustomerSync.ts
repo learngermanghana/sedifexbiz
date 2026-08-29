@@ -42,20 +42,39 @@ export const syncEventPlanningCustomer = functions.firestore
     const topLevelCustomerId = text(after.customerId, 240)
     const identityChanged = !before || clientIdentity(before) !== clientIdentity(after)
     const explicitLinkRemoval = Boolean(before && beforeLinkedCustomerId && !linkedCustomerId && !identityChanged)
+    const hasUnlinkMarker = Boolean(integrations.clientCustomerUnlinkedAt)
 
-    // Respect the organizer explicitly removing the client/customer link. Without
-    // this guard the trigger would immediately recreate the same link.
-    if (explicitLinkRemoval) return null
+    // An explicit unlink must clear every canonical field the CRM matcher uses.
+    // The marker prevents this trigger's own cleanup write from immediately
+    // re-linking the same unchanged client on the next invocation.
+    if (explicitLinkRemoval) {
+      await change.after.ref.update({
+        customerId: admin.firestore.FieldValue.delete(),
+        customer_id: admin.firestore.FieldValue.delete(),
+        customerIdentity: admin.firestore.FieldValue.delete(),
+        'integrations.clientCustomerSync': admin.firestore.FieldValue.delete(),
+        'integrations.clientCustomerUnlinkedAt': admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      })
+      return null
+    }
 
-    // Keep the new canonical top-level customerId in sync with the established
-    // Event Planning link, including existing projects that are edited later.
+    if (!identityChanged && !linkedCustomerId && !topLevelCustomerId && hasUnlinkMarker) {
+      return null
+    }
+
+    // Keep the canonical top-level customerId in sync with an established or
+    // manually restored Event Planning link. update() is intentional here:
+    // dotted keys are Firestore field paths, so the nested unlink marker is
+    // actually deleted instead of creating a literal dotted field name.
     if (!identityChanged && linkedCustomerId) {
-      if (topLevelCustomerId !== linkedCustomerId) {
-        await change.after.ref.set({
+      if (topLevelCustomerId !== linkedCustomerId || hasUnlinkMarker) {
+        await change.after.ref.update({
           customerId: linkedCustomerId,
           customer_id: linkedCustomerId,
+          'integrations.clientCustomerUnlinkedAt': admin.firestore.FieldValue.delete(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true })
+        })
       }
       return null
     }
@@ -74,7 +93,7 @@ export const syncEventPlanningCustomer = functions.firestore
     })
 
     if (!customer) return null
-    if (customer.customerId === linkedCustomerId && customer.customerId === topLevelCustomerId) return null
+    if (customer.customerId === linkedCustomerId && customer.customerId === topLevelCustomerId && !hasUnlinkMarker) return null
 
     await defaultDb.collection('stores').doc(storeId).collection('events').doc(eventId).update({
       customerId: customer.customerId,
@@ -86,6 +105,7 @@ export const syncEventPlanningCustomer = functions.firestore
         syncedAt: admin.firestore.FieldValue.serverTimestamp(),
         source: 'event_planning',
       },
+      'integrations.clientCustomerUnlinkedAt': admin.firestore.FieldValue.delete(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     })
 

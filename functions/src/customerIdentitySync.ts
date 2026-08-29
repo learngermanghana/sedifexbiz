@@ -210,8 +210,35 @@ export const syncReceiptCustomerIdentity = functions.firestore
 
     if (storeId && invoiceId) {
       try {
-        const invoice = await defaultDb.collection('stores').doc(storeId).collection('invoices').doc(invoiceId).get()
-        if (invoice.exists) preferredCustomerId = firstText(invoice.get('customerId'), invoice.get('customer_id'))
+        const invoiceRef = defaultDb.collection('stores').doc(storeId).collection('invoices').doc(invoiceId)
+        const invoice = await invoiceRef.get()
+        if (invoice.exists) {
+          const invoiceData = invoice.data() as RecordMap
+          const invoiceCustomer = await resolveCustomerId({
+            storeId,
+            data: invoiceData,
+            sourceChannel: 'invoice',
+            sourceTag: 'invoice',
+            identityKey: `invoice-${invoiceId}`,
+          })
+          if (invoiceCustomer?.customerId) {
+            preferredCustomerId = invoiceCustomer.customerId
+            const invoiceCustomerId = clean(invoiceData.customerId, 240)
+            const invoiceSnakeCustomerId = clean(invoiceData.customer_id, 240)
+            if (invoiceCustomerId !== preferredCustomerId || invoiceSnakeCustomerId !== preferredCustomerId) {
+              await invoiceRef.set({
+                customerId: preferredCustomerId,
+                customer_id: preferredCustomerId,
+                customerIdentity: {
+                  customerId: preferredCustomerId,
+                  source: 'invoice',
+                  strategy: 'canonical_customer_v1',
+                  linkedAt: admin.firestore.FieldValue.serverTimestamp(),
+                },
+              }, { merge: true })
+            }
+          }
+        }
       } catch (error) {
         functions.logger.warn('Receipt customer inheritance lookup failed', { storeId, invoiceId, error })
       }
@@ -221,7 +248,7 @@ export const syncReceiptCustomerIdentity = functions.firestore
       storeId,
       sourceChannel: 'receipt',
       sourceTag: 'payment',
-      identityKey: `receipt-${clean(context.params.receiptId, 220)}`,
+      identityKey: invoiceId ? `invoice-${invoiceId}` : `receipt-${clean(context.params.receiptId, 220)}`,
       preferredCustomerId,
     })
   })
