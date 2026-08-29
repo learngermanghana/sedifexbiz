@@ -64,15 +64,17 @@ export const syncEventPlanningCustomer = functions.firestore
     }
 
     // Keep the canonical top-level customerId in sync with an established or
-    // manually restored Event Planning link.
+    // manually restored Event Planning link. update() is intentional here:
+    // dotted keys are Firestore field paths, so the nested unlink marker is
+    // actually deleted instead of creating a literal dotted field name.
     if (!identityChanged && linkedCustomerId) {
       if (topLevelCustomerId !== linkedCustomerId || hasUnlinkMarker) {
-        await change.after.ref.set({
+        await change.after.ref.update({
           customerId: linkedCustomerId,
           customer_id: linkedCustomerId,
           'integrations.clientCustomerUnlinkedAt': admin.firestore.FieldValue.delete(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true })
+        })
       }
       return null
     }
