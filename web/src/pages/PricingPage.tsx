@@ -128,7 +128,7 @@ export default function PricingPage() {
     upsertMetaTag(
       'name',
       'keywords',
-      'Sedifex pricing, Google Ads automation, SEO, inventory system Ghana, bulk SMS Ghana, retail software Ghana',
+      'Sedifex pricing, Google Ads automation, SEO, inventory system Ghana, bulk SMS Ghana, retail software Ghana, event management software, event planning software',
     )
   }, [])
 
@@ -153,6 +153,21 @@ export default function PricingPage() {
           </div>
         </div>
       </header>
+
+      <section className="seo-page__section seo-page__section--highlight">
+        <div className="seo-page__section-header">
+          <h2>Run an event planning or coordination company?</h2>
+          <p>
+            Explore Sedifex event management software for client portals, shared checklists, run
+            sheets, programs, vendors, staff, contracts and event finance.
+          </p>
+        </div>
+        <div className="seo-page__hero-actions">
+          <Link className="seo-page__cta" to="/event-management-software">
+            Explore event management software
+          </Link>
+        </div>
+      </section>
 
       <section className="seo-page__section">
         <div className="seo-page__section-header">
