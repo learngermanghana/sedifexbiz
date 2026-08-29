@@ -112,21 +112,53 @@ export async function upsertCanonicalCustomer(firestore: Firestore, input: Canon
     tags: FieldValue.arrayUnion(sourceTag, 'auto-captured'),
     sources: FieldValue.arrayUnion(sourceChannel),
   }
+
   if (!existingRef) {
     patch.createdAt = now
     patch.customerSource = sourceChannel
-  }
-  if (name) {
-    patch.name = name
-    patch.displayName = name
-  }
-  if (phone) {
-    patch.phone = phone
-    patch.phoneKey = keyPhone
-  }
-  if (email) {
-    patch.email = email
-    patch.emailKey = keyEmail
+    if (name) {
+      patch.name = name
+      patch.displayName = name
+    }
+    if (phone) {
+      patch.phone = phone
+      patch.phoneKey = keyPhone
+    }
+    if (email) {
+      patch.email = email
+      patch.emailKey = keyEmail
+    }
+  } else {
+    const snapshot = await existingRef.get()
+    const existingName = text(snapshot.get('name'), 220)
+    const existingDisplayName = text(snapshot.get('displayName'), 220)
+    const existingPhone = normalizePhone(snapshot.get('phone'))
+    const existingEmail = normalizeEmail(snapshot.get('email'))
+
+    // Public registration can link to an established CRM profile, but it must
+    // not be able to rename that profile or replace verified contact data.
+    // Only fill identity fields that are genuinely blank.
+    if (!existingName && !existingDisplayName && name) {
+      patch.name = name
+      patch.displayName = name
+    } else {
+      if (!existingName && existingDisplayName) patch.name = existingDisplayName
+      if (!existingDisplayName && existingName) patch.displayName = existingName
+    }
+
+    if (existingPhone) {
+      patch.phoneKey = phoneKey(existingPhone)
+    } else if (phone) {
+      patch.phone = phone
+      patch.phoneKey = keyPhone
+    }
+
+    if (existingEmail) {
+      patch.emailKey = existingEmail.toLowerCase()
+    } else if (email) {
+      patch.email = email
+      patch.emailKey = keyEmail
+    }
   }
 
   await customerRef.set(patch, { merge: true })
