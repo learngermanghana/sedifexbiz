@@ -31,6 +31,18 @@ export type EventPlanningCustomerInput = {
   }
 }
 
+export type StoreCustomerIdentityInput = {
+  storeId: string
+  customer: {
+    name?: string | null
+    email?: string | null
+    phone?: string | null
+  }
+  sourceChannel?: string | null
+  sourceTag?: string | null
+  identityKey?: string | null
+}
+
 function clean(value: unknown, max = 500) {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
 }
@@ -83,6 +95,58 @@ async function findExistingCustomer(storeId: string, normalizedPhone: string, no
   }
 
   return null
+}
+
+export async function upsertStoreCustomerIdentity(input: StoreCustomerIdentityInput) {
+  const storeId = clean(input.storeId, 180)
+  if (!storeId) return null
+
+  const name = clean(input.customer.name, 220)
+  const email = normalizeEmail(input.customer.email)
+  const phone = normalizePhone(input.customer.phone)
+  const keyPhone = phoneKey(phone)
+  const keyEmail = email.toLowerCase()
+  if (!name && !email && !phone) return null
+
+  const existingRef = await findExistingCustomer(storeId, phone, email)
+  const sourceChannel = clean(input.sourceChannel, 80) || 'crm_identity_sync'
+  const sourceTag = clean(input.sourceTag, 80) || sourceChannel.replace(/_/g, '-')
+  const fallbackIdentity = clean(input.identityKey, 220) || name || `${sourceChannel}-${Date.now()}`
+  const contactKey = keyPhone
+    ? `phone-${keyPhone}`
+    : keyEmail
+      ? `email-${slug(keyEmail)}`
+      : `record-${slug(fallbackIdentity)}`
+  const customerRef = existingRef || defaultDb.collection('customers').doc(`${storeId}_${contactKey}`)
+  const now = admin.firestore.FieldValue.serverTimestamp()
+
+  const patch: Record<string, unknown> = {
+    storeId,
+    updatedAt: now,
+    lastActivityAt: now,
+    tags: admin.firestore.FieldValue.arrayUnion(sourceTag, 'auto-captured'),
+    sources: admin.firestore.FieldValue.arrayUnion(sourceChannel),
+  }
+
+  if (!existingRef) {
+    patch.createdAt = now
+    patch.customerSource = sourceChannel
+  }
+  if (name) {
+    patch.name = name
+    patch.displayName = name
+  }
+  if (phone) {
+    patch.phone = phone
+    patch.phoneKey = keyPhone
+  }
+  if (email) {
+    patch.email = email
+    patch.emailKey = keyEmail
+  }
+
+  await customerRef.set(patch, { merge: true })
+  return { customerId: customerRef.id, created: !existingRef }
 }
 
 export async function upsertStoreCustomerFromCheckout(input: CheckoutCustomerInput) {
