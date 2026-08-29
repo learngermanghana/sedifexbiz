@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { FieldValue } from 'firebase-admin/firestore'
 import { db } from './_firebase-admin.js'
 import { calculateCheckoutFees, toPaystackMinorAmount } from './_checkout-fees.js'
+import { upsertCanonicalCustomer } from './_customer-identity.js'
 
 type PaymentMode = 'online' | 'manual' | 'none'
 
@@ -110,6 +111,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const submissionRef = firestore.collection('student_registrations').doc()
   const studentCode = text(data.studentCode, 80) || buildStudentCode(storeId, submissionRef.id)
 
+  const canonicalCustomer = await upsertCanonicalCustomer(firestore, {
+    storeId,
+    name: studentName,
+    email,
+    phone,
+    sourceChannel: 'student_registration',
+    sourceTag: 'student',
+    identityKey: `student-registration-${submissionRef.id}`,
+  })
+  if (!canonicalCustomer?.customerId) {
+    return res.status(500).json({ error: 'Unable to resolve customer profile.' })
+  }
+  const customerId = canonicalCustomer.customerId
+
   const paymentStatus =
     paymentMode === 'online'
       ? 'pending'
@@ -129,6 +144,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     idCardIssued: false,
     idCardIssuedAt: null,
     idCardExpiresAt: text(data.idCardExpiresAt, 80) || null,
+    customerId,
+    customer_id: customerId,
+    customerIdentity: {
+      customerId,
+      source: 'student_registration',
+      strategy: 'canonical_customer_v1',
+      linkedAt: now,
+    },
     customer: {
       name: studentName,
       email: email || null,
@@ -160,21 +183,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     updatedAt: now,
   })
 
-  await firestore.collection('customers').add({
-    storeId,
-    name: studentName,
-    displayName: studentName,
-    email: email || null,
-    phone: phone || null,
-    source: 'student-registration',
-    tags: ['Student', course].filter(Boolean),
+  await firestore.collection('customers').doc(customerId).set({
     studentRegistrationId: submissionRef.id,
+    lastStudentRegistrationId: submissionRef.id,
     studentCode,
     studentStatus: providedStatus,
     studentPhotoUrl: providedPhotoUrl || null,
-    createdAt: now,
+    lastStudentCourse: course || null,
+    studentRegistrationSource: source,
     updatedAt: now,
-  })
+  }, { merge: true })
 
   let payment: Record<string, unknown> | null = null
   if (paymentMode === 'online') {
@@ -190,6 +208,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         submissionId: submissionRef.id,
         studentCode,
         studentName,
+        customerId,
         course,
         source,
       },
@@ -221,6 +240,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ok: true,
     submissionId: submissionRef.id,
     studentCode,
+    customerId,
     reference,
     paymentMode,
     paymentStatus,
