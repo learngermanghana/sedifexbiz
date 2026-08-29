@@ -21,11 +21,14 @@ import EventPdfExportDock from './components/EventPdfExportDock'
 export default function App() {
   const [user, setUser] = useState<User | null>(null)
   const [isAuthReady, setIsAuthReady] = useState(false)
-  const [storeAccessStatus, setStoreAccessStatus] = useState<'idle' | 'pending' | 'ready' | 'failed'>('idle')
+  const [storeAccessStatus, setStoreAccessStatus] = useState<
+    'idle' | 'pending' | 'ready' | 'failed'
+  >('idle')
   const [storeAccessError, setStoreAccessError] = useState<string | null>(null)
   const location = useLocation()
 
-  const isQuickPayHost = typeof window !== 'undefined' && window.location.hostname === 'pay.sedifex.com'
+  const isQuickPayHost =
+    typeof window !== 'undefined' && window.location.hostname === 'pay.sedifex.com'
 
   const isPwaApp = useMemo(() => {
     const urlParams = new URLSearchParams(window.location.search)
@@ -84,7 +87,10 @@ export default function App() {
         } catch (error) {
           console.error('Store access resolution failed:', error)
           setStoreAccessStatus('failed')
-          const message = error instanceof Error && error.message ? error.message : 'Your Sedifex workspace is unavailable.'
+          const message =
+            error instanceof Error && error.message
+              ? error.message
+              : 'Your Sedifex workspace is unavailable.'
           setStoreAccessError(message)
           localStorage.removeItem('storeId')
           localStorage.removeItem('workspaceSlug')
@@ -107,27 +113,66 @@ export default function App() {
   if (isQuickPayHost && location.pathname === '/') {
     content = <QuickPayLanding />
   } else if (!isAuthReady && !isPublicRoute) {
-    content = <main className="app" style={appStyle}><div className="app__card"><p className="form__hint">Checking your session…</p></div></main>
+    content = (
+      <main className="app" style={appStyle}>
+        <div className="app__card">
+          <p className="form__hint">Checking your session…</p>
+        </div>
+      </main>
+    )
   } else if (storeAccessStatus === 'pending' && user && !isPublicRoute) {
-    content = <main className="app" style={appStyle}><div className="app__card"><p className="form__hint">Preparing your workspace…</p></div></main>
+    content = (
+      <main className="app" style={appStyle}>
+        <div className="app__card">
+          <p className="form__hint">Preparing your workspace…</p>
+        </div>
+      </main>
+    )
   } else if (storeAccessStatus === 'failed' && !isPublicRoute && !isAccountRoute) {
     const normalizedStoreAccessError = storeAccessError?.toLowerCase() ?? ''
-    const hasBillingRelatedError = normalizedStoreAccessError.includes('bill') || normalizedStoreAccessError.includes('payment') || normalizedStoreAccessError.includes('subscription') || normalizedStoreAccessError.includes('plan')
+    const hasBillingRelatedError =
+      normalizedStoreAccessError.includes('bill') ||
+      normalizedStoreAccessError.includes('payment') ||
+      normalizedStoreAccessError.includes('subscription') ||
+      normalizedStoreAccessError.includes('plan')
 
     content = (
       <main className="app" style={appStyle}>
         <div className="app__card">
           <h1 className="app__heading">Workspace access blocked</h1>
-          <p className="form__hint">{storeAccessError ?? 'Your Sedifex workspace is unavailable. Please upgrade your plan or contact support to restore access.'}</p>
+          <p className="form__hint">
+            {storeAccessError ??
+              'Your Sedifex workspace is unavailable. Please upgrade your plan or contact support to restore access.'}
+          </p>
           {hasBillingRelatedError ? (
-            <p className="form__hint">Billing issues can block workspace access. Update your subscription to restore it.</p>
+            <p className="form__hint">
+              Billing issues can block workspace access. Update your subscription to restore it.
+            </p>
           ) : (
-            <p className="form__hint">This looks like an internal workspace setup issue. Please contact support to restore access.</p>
+            <p className="form__hint">
+              This looks like an internal workspace setup issue. Please contact support to restore access.
+            </p>
           )}
           <div className="flex gap-3 mt-4">
-            <Link className="button button--primary" to="/account">Go to billing</Link>
-            <a className="button button--ghost" href="https://paystack.shop/pay/pa5tmww0ml" target="_blank" rel="noreferrer">Pay yearly</a>
-            <a className="button button--ghost" href="https://paystack.shop/pay/opd2z7tow6" target="_blank" rel="noreferrer">Pay monthly</a>
+            <Link className="button button--primary" to="/account">
+              Go to billing
+            </Link>
+            <a
+              className="button button--ghost"
+              href="https://paystack.shop/pay/pa5tmww0ml"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Pay yearly
+            </a>
+            <a
+              className="button button--ghost"
+              href="https://paystack.shop/pay/opd2z7tow6"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Pay monthly
+            </a>
           </div>
         </div>
       </main>
