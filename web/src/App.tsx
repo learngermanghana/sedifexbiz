@@ -42,6 +42,7 @@ export default function App() {
     '/inventory-system-ghana',
     '/inventory-management-software-ghana',
     '/event-management-software',
+    '/wedding-planning-software',
     '/pricing',
     '/docs',
     '/how-to-use-sedifex',
