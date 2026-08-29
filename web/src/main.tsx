@@ -16,6 +16,7 @@ import PublicWebsiteEngine from './pages/PublicWebsiteEngine'
 import PublicEventContractPage from './pages/PublicEventContract'
 import CloseDay from './pages/CloseDay'
 import Customers from './pages/Customers'
+import CustomerCRM from './pages/CustomerCRM'
 import Students from './pages/Students'
 import Bookings from './pages/Bookings'
 import EventPlanningRoute from './pages/EventPlanningRoute'
@@ -136,7 +137,9 @@ const router = createBrowserRouter([
       { path: 'sell', element: <Sell /> },
       { path: 'quick-pay', element: <QuickPay /> },
       { path: 'quick-pay/print', element: <QuickPayPrint /> },
-      { path: 'customers', element: <Customers /> },
+      { path: 'customers', element: <CustomerCRM /> },
+      { path: 'customers/manage', element: <Customers /> },
+      { path: 'customers/:customerId', element: <CustomerCRM /> },
       { path: 'students', element: <Students /> },
       { path: 'bookings', element: <Bookings /> },
       { path: 'event-planning', element: <EventPlanningRoute /> },
