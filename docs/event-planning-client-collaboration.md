@@ -83,13 +83,14 @@ The secure flow is:
 ```txt
 Store shares portal
 -> Sedifex creates a random portal token
--> only a hash/portal metadata is persisted for validation
+-> token hash is stored in eventClientLinks/{tokenHash} for server-side validation
+-> stores/{storeId}/events/{eventId}.clientPortal.publicUrl stores the full client URL, including the raw bearer token, so authorized staff can copy/open the active link
 -> public client opens eventClientPortal?token=...
 -> HTTPS Function validates the active link and event binding
 -> allowed reads/writes are performed server-side
 ```
 
-Relevant top-level collection:
+Relevant top-level validation collection:
 
 ```txt
 eventClientLinks/{tokenHash}
@@ -99,7 +100,26 @@ Relevant event metadata:
 
 ```txt
 stores/{storeId}/events/{eventId}.clientPortal
+
+clientPortal.publicUrl       # full URL containing the active raw bearer token
+clientPortal.publicLinkHash  # hash used to bind/validate the active link
+clientPortal.status
+clientPortal.expiresAt
 ```
+
+### Bearer-token persistence boundary
+
+The current implementation does **not** persist only the hash. The hash is used for validation, but `clientPortal.publicUrl` also persists the recoverable active bearer token inside the staff-readable event document.
+
+Security consequences:
+
+- Any authorized store user who can read the event document can recover and use the active client portal credential from `clientPortal.publicUrl`.
+- Treat `clientPortal.publicUrl` as a secret-bearing value. Do not expose it in public APIs, client-sanitized payloads, analytics, logs, or support output that can reach unauthorized users.
+- Firestore access to event documents must remain limited to authorized store members.
+- Resharing the portal rotates/replaces the active link and should invalidate the previous credential.
+- Hashing the validation key does not make the bearer credential non-recoverable while the full tokenized URL is stored on the event document.
+
+If the implementation is later hardened so the raw token is no longer persisted, the staff **Copy client link / Open client view** experience will also need a replacement design, such as one-time display, explicit link regeneration, or encrypted/secret storage. Do not change the docs to claim hash-only persistence until the runtime behavior actually changes.
 
 Important rules:
 
@@ -484,6 +504,6 @@ When changing Event Planning/client collaboration, verify all of the following:
 - Submitted tasks do not count as verified until staff verifies them.
 - Return-to-client notes are visible to the client.
 - Portal progress copy says `tasks verified` when the calculation is verification-based.
-- Functions renderer tests pass.
+- Security documentation correctly states that `clientPortal.publicUrl` currently contains a recoverable active bearer token for authorized staff use.
 - Firestore rules continue to deny direct public event writes.
 - Production Firebase Functions deployment completes before claiming a `cloudfunctions.net` portal change is live.
