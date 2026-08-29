@@ -21,6 +21,8 @@ export {
   syncInvoiceCustomerIdentity,
   syncReceiptCustomerIdentity,
   syncStudentRegistrationCustomerIdentity,
+  syncExternalStudentRegistrationCustomerIdentity,
+  syncStoreStudentRegistrationCustomerIdentity,
   syncStudentCustomerIdentity,
   syncStoreOrderCustomerIdentity,
   syncSaleCustomerIdentity,
