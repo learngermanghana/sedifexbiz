@@ -1,4 +1,4 @@
-import { FieldValue, type DocumentReference, type Firestore } from 'firebase-admin/firestore'
+import { FieldValue, type DocumentReference, type Firestore, type QuerySnapshot } from 'firebase-admin/firestore'
 
 type CanonicalCustomerInput = {
   storeId: string
@@ -48,7 +48,7 @@ async function findExistingCustomer(
   const keyPhone = phoneKey(normalizedPhone)
   const keyEmail = normalizedEmail.toLowerCase()
 
-  const queries: Array<() => Promise<FirebaseFirestore.QuerySnapshot>> = []
+  const queries: Array<() => Promise<QuerySnapshot>> = []
   if (keyPhone) queries.push(() => customers.where('storeId', '==', storeId).where('phoneKey', '==', keyPhone).limit(1).get())
   if (keyEmail) queries.push(() => customers.where('storeId', '==', storeId).where('emailKey', '==', keyEmail).limit(1).get())
   if (normalizedPhone) queries.push(() => customers.where('storeId', '==', storeId).where('phone', '==', normalizedPhone).limit(1).get())
