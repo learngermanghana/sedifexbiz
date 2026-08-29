@@ -15,6 +15,16 @@ export {
 export { integrationCashCheckoutCreate } from './integrationCashCheckout'
 export { publicQuickPayReceipt } from './publicQuickPayReceipt'
 export { syncIntegrationOrderCustomer } from './integrationOrderCustomerSync'
+export {
+  syncStoreBookingCustomerIdentity,
+  syncRootBookingCustomerIdentity,
+  syncInvoiceCustomerIdentity,
+  syncReceiptCustomerIdentity,
+  syncStudentRegistrationCustomerIdentity,
+  syncStudentCustomerIdentity,
+  syncStoreOrderCustomerIdentity,
+  syncSaleCustomerIdentity,
+} from './customerIdentitySync'
 export { repairDataConsistency, repairDuplicateBookingOrders } from './dataConsistency'
 export { cleanPendingReportData, onSaleReportingAggregate } from './reporting'
 export { v1IntegrationAvailability } from './integrationAvailability'
