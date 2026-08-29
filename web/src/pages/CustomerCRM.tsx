@@ -12,6 +12,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import './CustomerCRM.css'
+import './CustomerCRM.mobile.css'
 
 type RecordMap = Record<string, unknown>
 
@@ -178,6 +179,31 @@ function normalizeEmail(value: unknown): string {
 function normalizePhone(value: unknown): string {
   if (typeof value !== 'string') return ''
   return value.replace(/\D/g, '')
+}
+
+function normalizeWhatsAppPhone(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  const raw = value.trim()
+  if (!raw) return ''
+
+  let digits = raw.replace(/\D/g, '')
+  if (!digits) return ''
+
+  // Convert international access-prefix notation (e.g. 00233...) to E.164 digits.
+  if (raw.startsWith('00') && digits.startsWith('00')) {
+    digits = digits.slice(2)
+  }
+
+  // Sedifex is Ghana-first, so accept the common local forms and convert them
+  // to the country-code form required by wa.me links.
+  if (digits.length === 10 && digits.startsWith('0')) {
+    digits = `233${digits.slice(1)}`
+  } else if (digits.length === 9) {
+    digits = `233${digits}`
+  }
+
+  // WhatsApp expects an E.164-style number containing digits only, with no +.
+  return /^[1-9]\d{7,14}$/.test(digits) ? digits : ''
 }
 
 function normalizeName(value: unknown): string {
@@ -510,16 +536,27 @@ export default function CustomerCRM() {
   async function sendMessage() {
     if (!selectedCustomer || !storeId || !messageBody.trim()) return
     const body = messageBody.trim()
-    const phone = normalizePhone(selectedCustomer.phone)
+    const whatsappPhone = normalizeWhatsAppPhone(selectedCustomer.phone)
     const email = selectedCustomer.email?.trim() || ''
     let externalUrl = ''
-    if (messageChannel === 'whatsapp' && phone) externalUrl = `https://wa.me/${phone}?text=${encodeURIComponent(body)}`
+
+    if (messageChannel === 'whatsapp') {
+      if (!whatsappPhone) {
+        setError('This customer phone number cannot be used for WhatsApp. Save a valid number such as 0201234567 or +233201234567.')
+        return
+      }
+      externalUrl = `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(body)}`
+    }
     if (messageChannel === 'telegram') externalUrl = `https://t.me/share/url?text=${encodeURIComponent(body)}`
     if (messageChannel === 'email' && email) externalUrl = `mailto:${email}?subject=${encodeURIComponent(`Message for ${customerName(selectedCustomer)}`)}&body=${encodeURIComponent(body)}`
     if (!externalUrl) {
       setError(`Add a ${messageChannel === 'email' ? 'customer email address' : 'customer phone number'} before using this channel.`)
       return
     }
+
+    // Open while the browser still considers this a direct user gesture. This
+    // avoids iOS/Safari treating the handoff as a delayed popup after Firestore.
+    window.open(externalUrl, '_blank', 'noopener,noreferrer')
 
     setSavingAction(true)
     setError(null)
@@ -537,10 +574,9 @@ export default function CustomerCRM() {
       const ref = await addDoc(collection(db, 'customers', selectedCustomer.id, 'messages'), payload)
       setCrmData(previous => ({ ...previous, messages: [{ id: ref.id, data: { ...payload, createdAt: new Date(), updatedAt: new Date() } }, ...previous.messages] }))
       setMessageBody('')
-      window.open(externalUrl, '_blank', 'noreferrer')
     } catch (saveError) {
       console.error('[customer-crm] Unable to log message', saveError)
-      setError('Unable to log this message in the customer profile.')
+      setError('The channel was opened, but Sedifex could not log this message in the customer profile.')
     } finally {
       setSavingAction(false)
     }
@@ -854,7 +890,7 @@ export default function CustomerCRM() {
       {error ? <div className="customer-crm__alert" role="alert">{error}</div> : null}
 
       <div className="customer-crm__layout">
-        <aside className="customer-crm__directory">
+        <aside className={`customer-crm__directory${selectedCustomer ? ' customer-crm__directory--with-selection' : ''}`}>
           <div className="customer-crm__directory-head">
             <div><span>Directory</span><strong>{customers.length} customers</strong></div>
             <button type="button" onClick={() => void loadCustomers()} disabled={loadingCustomers}>Refresh</button>
@@ -888,7 +924,7 @@ export default function CustomerCRM() {
           </div>
         </aside>
 
-        <section className="customer-crm__workspace">
+        <section className={`customer-crm__workspace${!selectedCustomer && !customerId ? ' customer-crm__workspace--empty' : ''}`}>
           {!selectedCustomer ? (
             <div className="customer-crm__welcome">
               <span>Customer 360°</span>
