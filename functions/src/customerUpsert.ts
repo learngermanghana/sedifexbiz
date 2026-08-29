@@ -102,6 +102,59 @@ async function findExistingCustomer(storeId: string, normalizedPhone: string, no
   return null
 }
 
+async function applyIdentityFields(
+  patch: Record<string, unknown>,
+  existingRef: FirebaseFirestore.DocumentReference | null,
+  input: { name: string; email: string; phone: string },
+) {
+  if (!existingRef) {
+    if (input.name) {
+      patch.name = input.name
+      patch.displayName = input.name
+    }
+    if (input.phone) {
+      patch.phone = input.phone
+      patch.phoneKey = phoneKey(input.phone)
+    }
+    if (input.email) {
+      patch.email = input.email
+      patch.emailKey = input.email.toLowerCase()
+    }
+    return
+  }
+
+  const snapshot = await existingRef.get()
+  const existingName = clean(snapshot.get('name'), 220)
+  const existingDisplayName = clean(snapshot.get('displayName'), 220)
+  const existingPhone = normalizePhone(snapshot.get('phone'))
+  const existingEmail = normalizeEmail(snapshot.get('email'))
+
+  // Automatic module linkage must never rename or replace established CRM
+  // identity data. This is especially important for public registration flows
+  // and shared parent/guardian contact details. Only fill fields that are blank.
+  if (!existingName && !existingDisplayName && input.name) {
+    patch.name = input.name
+    patch.displayName = input.name
+  } else {
+    if (!existingName && existingDisplayName) patch.name = existingDisplayName
+    if (!existingDisplayName && existingName) patch.displayName = existingName
+  }
+
+  if (existingPhone) {
+    patch.phoneKey = phoneKey(existingPhone)
+  } else if (input.phone) {
+    patch.phone = input.phone
+    patch.phoneKey = phoneKey(input.phone)
+  }
+
+  if (existingEmail) {
+    patch.emailKey = existingEmail.toLowerCase()
+  } else if (input.email) {
+    patch.email = input.email
+    patch.emailKey = input.email.toLowerCase()
+  }
+}
+
 export async function upsertStoreCustomerIdentity(input: StoreCustomerIdentityInput) {
   const storeId = clean(input.storeId, 180)
   if (!storeId) return null
@@ -137,18 +190,7 @@ export async function upsertStoreCustomerIdentity(input: StoreCustomerIdentityIn
     patch.createdAt = now
     patch.customerSource = sourceChannel
   }
-  if (name) {
-    patch.name = name
-    patch.displayName = name
-  }
-  if (phone) {
-    patch.phone = phone
-    patch.phoneKey = keyPhone
-  }
-  if (email) {
-    patch.email = email
-    patch.emailKey = keyEmail
-  }
+  await applyIdentityFields(patch, existingRef, { name, email, phone })
 
   await customerRef.set(patch, { merge: true })
   return { customerId: customerRef.id, created: !existingRef }
@@ -191,21 +233,8 @@ export async function upsertStoreCustomerFromCheckout(input: CheckoutCustomerInp
     autoCapturedFromQuickPay: true,
   }
 
-  if (!existingRef) {
-    patch.createdAt = now
-  }
-  if (name) {
-    patch.name = name
-    patch.displayName = name
-  }
-  if (phone) {
-    patch.phone = phone
-    patch.phoneKey = keyPhone
-  }
-  if (email) {
-    patch.email = email
-    patch.emailKey = keyEmail
-  }
+  if (!existingRef) patch.createdAt = now
+  await applyIdentityFields(patch, existingRef, { name, email, phone })
 
   await customerRef.set(patch, { merge: true })
   return { customerId: customerRef.id, created: !existingRef }
@@ -250,18 +279,7 @@ export async function upsertStoreCustomerFromEvent(input: EventPlanningCustomerI
     patch.createdAt = now
     patch.customerSource = 'event_planning'
   }
-  if (name) {
-    patch.name = name
-    patch.displayName = name
-  }
-  if (phone) {
-    patch.phone = phone
-    patch.phoneKey = keyPhone
-  }
-  if (email) {
-    patch.email = email
-    patch.emailKey = keyEmail
-  }
+  await applyIdentityFields(patch, existingRef, { name, email, phone })
 
   await customerRef.set(patch, { merge: true })
   return { customerId: customerRef.id, created: !existingRef }
