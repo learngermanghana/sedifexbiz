@@ -73,11 +73,6 @@ function asRecord(value: unknown): RecordData {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as RecordData : {}
 }
 
-function asNumber(value: unknown, fallback = 0) {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
-}
-
 function pickText(record: RecordData, keys: string[], fallback = '') {
   for (const key of keys) {
     const value = record[key]
@@ -221,6 +216,12 @@ function eventTitle(record: RecordData) {
 function openClientTaskCount(record: RecordData) {
   const direct = pickNumber(record, ['openChecklistTasks', 'pendingClientTasks', 'openTasks', 'pendingTasks'], Number.NaN)
   if (Number.isFinite(direct)) return Math.max(0, direct)
+
+  const checklistTaskCount = pickNumber(record, ['checklistTaskCount'], Number.NaN)
+  const checklistCompletedCount = pickNumber(record, ['checklistCompletedCount'], 0)
+  if (Number.isFinite(checklistTaskCount)) {
+    return Math.max(0, Math.floor(checklistTaskCount) - Math.max(0, Math.floor(checklistCompletedCount)))
+  }
 
   const summary = asRecord(record.checklistSummary)
   const summaryCount = pickNumber(summary, ['open', 'pending', 'remaining'], Number.NaN)
