@@ -1,8 +1,6 @@
 import React from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
-import EventDashboardPanel from '../components/EventDashboardPanel'
-import { useActiveStore } from '../hooks/useActiveStore'
-import { useStorePreferences } from '../hooks/useStorePreferences'
+import { NavLink, useLocation } from 'react-router-dom'
+import CompactBusinessDashboard from '../components/CompactBusinessDashboard'
 
 import './DashboardHub.css'
 
@@ -12,9 +10,6 @@ const tabs = [
 
 export default function DashboardHub() {
   const location = useLocation()
-  const { storeId } = useActiveStore()
-  const { preferences } = useStorePreferences(storeId)
-  const isEventBusiness = preferences.navigation.industry === 'event'
 
   return (
     <div className="dashboard-hub">
@@ -38,8 +33,7 @@ export default function DashboardHub() {
         })}
       </nav>
       <div className="dashboard-hub__content">
-        <Outlet />
-        {isEventBusiness ? <EventDashboardPanel /> : null}
+        <CompactBusinessDashboard />
       </div>
     </div>
   )
