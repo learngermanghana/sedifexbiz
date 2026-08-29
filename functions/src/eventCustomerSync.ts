@@ -76,7 +76,7 @@ export const syncEventPlanningCustomer = functions.firestore
     if (!customer) return null
     if (customer.customerId === linkedCustomerId && customer.customerId === topLevelCustomerId) return null
 
-    await defaultDb.collection('stores').doc(storeId).collection('events').doc(eventId).set({
+    await defaultDb.collection('stores').doc(storeId).collection('events').doc(eventId).update({
       customerId: customer.customerId,
       customer_id: customer.customerId,
       'integrations.clientCustomerId': customer.customerId,
@@ -87,7 +87,7 @@ export const syncEventPlanningCustomer = functions.firestore
         source: 'event_planning',
       },
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true })
+    })
 
     console.log('[event-customer-sync] Event client linked', {
       storeId,
