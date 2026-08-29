@@ -219,6 +219,11 @@ export default function EventSeatingPlanner({ storeId, eventId, eventTitle, expe
     return map
   }, [guests])
 
+  const knownTableNames = useMemo(
+    () => new Set(tables.map(table => normalizeTableName(table.name))),
+    [tables],
+  )
+
   const tableUsage = useMemo(() => {
     const map = new Map<string, number>()
     tables.forEach(table => {
@@ -232,23 +237,29 @@ export default function EventSeatingPlanner({ storeId, eventId, eventTitle, expe
   const stats = useMemo(() => {
     const confirmedGuests = guests.filter(guest => guest.rsvpStatus === 'confirmed')
     const confirmedSeats = confirmedGuests.reduce((total, guest) => total + guestSeats(guest), 0)
-    const assignedConfirmedSeats = confirmedGuests.reduce((total, guest) => total + (guest.table ? guestSeats(guest) : 0), 0)
+    const assignedConfirmedSeats = confirmedGuests.reduce((total, guest) => {
+      const assignedToKnownTable = guest.table && knownTableNames.has(normalizeTableName(guest.table))
+      return total + (assignedToKnownTable ? guestSeats(guest) : 0)
+    }, 0)
     const pendingSeats = guests.filter(guest => guest.rsvpStatus === 'pending').reduce((total, guest) => total + guestSeats(guest), 0)
     const totalCapacity = tables.reduce((total, table) => total + table.capacity, 0)
     const occupiedSeats = tables.reduce((total, table) => total + (tableUsage.get(table.id) ?? 0), 0)
     return { confirmedSeats, assignedConfirmedSeats, pendingSeats, totalCapacity, occupiedSeats }
-  }, [guests, tableUsage, tables])
+  }, [guests, knownTableNames, tableUsage, tables])
 
   const unassignedGuests = useMemo(() => {
     const queryText = search.trim().toLowerCase()
     return guests
-      .filter(guest => guest.rsvpStatus !== 'declined' && !guest.table)
-      .filter(guest => !queryText || [guest.name, guest.group, guest.plusOneName].some(value => value.toLowerCase().includes(queryText)))
+      .filter(guest => {
+        if (guest.rsvpStatus === 'declined') return false
+        return !guest.table || !knownTableNames.has(normalizeTableName(guest.table))
+      })
+      .filter(guest => !queryText || [guest.name, guest.group, guest.plusOneName, guest.table].some(value => value.toLowerCase().includes(queryText)))
       .sort((left, right) => {
         if (left.rsvpStatus !== right.rsvpStatus) return left.rsvpStatus === 'confirmed' ? -1 : 1
         return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
       })
-  }, [guests, search])
+  }, [guests, knownTableNames, search])
 
   async function commitGuestTableUpdates(updates: Array<{ id: string; table: string }>) {
     for (let start = 0; start < updates.length; start += 400) {
@@ -365,7 +376,10 @@ export default function EventSeatingPlanner({ storeId, eventId, eventTitle, expe
       return
     }
 
-    const unassignedConfirmed = guests.filter(guest => guest.rsvpStatus === 'confirmed' && !guest.table)
+    const unassignedConfirmed = guests.filter(guest => {
+      if (guest.rsvpStatus !== 'confirmed') return false
+      return !guest.table || !knownTableNames.has(normalizeTableName(guest.table))
+    })
     if (!unassignedConfirmed.length) {
       setMessage('All confirmed guests are already assigned.')
       return
@@ -448,7 +462,13 @@ export default function EventSeatingPlanner({ storeId, eventId, eventTitle, expe
       return
     }
 
-    const neededTables = Math.max(1, Math.ceil(targetSeats / quickCapacity))
+    const missingSeats = Math.max(0, targetSeats - stats.totalCapacity)
+    if (!missingSeats) {
+      setMessage(`Current seating capacity already covers the ${targetSeats.toLocaleString()}-seat target.`)
+      return
+    }
+
+    const neededTables = Math.max(1, Math.ceil(missingSeats / quickCapacity))
     const existingNames = new Set(tables.map(table => normalizeTableName(table.name)))
     const rows: Array<{ name: string; sortOrder: number }> = []
     let candidateNumber = 1
@@ -476,7 +496,7 @@ export default function EventSeatingPlanner({ storeId, eventId, eventTitle, expe
         })
         await batch.commit()
       }
-      setMessage(`${rows.length} table${rows.length === 1 ? '' : 's'} generated at ${quickCapacity} seats each.`)
+      setMessage(`${rows.length} additional table${rows.length === 1 ? '' : 's'} generated at ${quickCapacity} seats each.`)
       await loadData()
     } catch (generateError) {
       console.error('[event-seating] Unable to generate tables', generateError)
@@ -541,7 +561,7 @@ export default function EventSeatingPlanner({ storeId, eventId, eventTitle, expe
       <div className="event-seating__setup">
         <div>
           <strong>Quick table setup</strong>
-          <span>Generate enough new tables for the event target and current guest list.</span>
+          <span>Generate only the additional tables needed for the event target and current guest list.</span>
         </div>
         <label>Seats per table<select value={quickCapacity} onChange={event => setQuickCapacity(Number(event.target.value))}><option value={6}>6</option><option value={8}>8</option><option value={10}>10</option><option value={12}>12</option><option value={14}>14</option><option value={16}>16</option></select></label>
         <button type="button" className="button button--ghost" onClick={() => void generateTables()} disabled={busy}>Generate tables</button>
@@ -586,13 +606,14 @@ export default function EventSeatingPlanner({ storeId, eventId, eventTitle, expe
 
         <aside className="event-seating__unassigned">
           <div className="event-seating__section-heading"><div><h3>Unassigned guests</h3><p>Confirmed guests appear first, followed by pending RSVPs.</p></div><span>{unassignedGuests.length}</span></div>
-          <input aria-label="Search unassigned guests" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search guest or group" />
+          <input aria-label="Search unassigned guests" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search guest, group or previous table" />
           <div className="event-seating__unassigned-list">
             {unassignedGuests.length === 0 ? <div className="event-seating__empty event-seating__empty--compact"><strong>Everyone is assigned</strong><p>No confirmed or pending guest currently needs a table.</p></div> : unassignedGuests.map(guest => {
               const seats = guestSeats(guest)
+              const hasLegacyAssignment = Boolean(guest.table) && !knownTableNames.has(normalizeTableName(guest.table))
               return (
                 <div className="event-seating__unassigned-guest" key={guest.id}>
-                  <div><strong>{guest.name}</strong><span>{guest.group || 'No group'} · {seats} seat{seats === 1 ? '' : 's'}</span>{guest.plusOne ? <small>＋ {guest.plusOneName || 'Plus-one'}</small> : null}</div>
+                  <div><strong>{guest.name}</strong><span>{guest.group || 'No group'} · {seats} seat{seats === 1 ? '' : 's'}</span>{guest.plusOne ? <small>＋ {guest.plusOneName || 'Plus-one'}</small> : null}{hasLegacyAssignment ? <small>Previous table: {guest.table} · needs reassignment</small> : null}</div>
                   <span className={`event-seating__rsvp event-seating__rsvp--${guest.rsvpStatus}`}>{RSVP_LABELS[guest.rsvpStatus]}</span>
                   <select aria-label={`Assign ${guest.name} to table`} value="" onChange={event => { if (event.target.value) void assignGuest(guest, event.target.value) }}>
                     <option value="">Assign table…</option>
