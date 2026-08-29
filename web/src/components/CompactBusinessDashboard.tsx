@@ -390,22 +390,27 @@ export default function CompactBusinessDashboard() {
     }))
     .filter(item => item.date && item.date >= today && !['cancelled', 'deleted', 'completed'].includes(item.status))
 
-  const eventEntries = events
-    .map(item => ({
-      id: pickText(item, ['id'], eventTitle(item)),
-      title: eventTitle(item),
-      customer: pickText(item, ['clientName', 'customerName'], 'Client'),
-      date: eventDate(item),
-      status: normalizeStatus(item.status),
-      openTasks: openClientTaskCount(item),
-      to: `/event-planning/${pickText(item, ['id'], '')}`,
-    }))
+  const allEventEntries = events.map(item => ({
+    id: pickText(item, ['id'], eventTitle(item)),
+    title: eventTitle(item),
+    customer: pickText(item, ['clientName', 'customerName'], 'Client'),
+    date: eventDate(item),
+    status: normalizeStatus(item.status),
+    openTasks: openClientTaskCount(item),
+    to: `/event-planning/${pickText(item, ['id'], '')}`,
+  }))
+
+  const eventEntries = allEventEntries
     .filter(item => item.date && item.date >= today && !['cancelled', 'completed'].includes(item.status))
+
+  const clientTaskEntries = allEventEntries
+    .filter(item => !['cancelled', 'completed'].includes(item.status) && item.openTasks > 0)
+    .sort((a, b) => (a.date?.getTime() ?? Number.POSITIVE_INFINITY) - (b.date?.getTime() ?? Number.POSITIVE_INFINITY))
 
   const upcomingEntries = [...bookingEntries, ...eventEntries]
     .sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0))
 
-  const pendingClientTasks = events.reduce((sum, item) => sum + openClientTaskCount(item), 0)
+  const pendingClientTasks = clientTaskEntries.reduce((sum, item) => sum + item.openTasks, 0)
 
   const recentCustomerRows = [...customers]
     .sort((a, b) => (customerCreatedAt(b)?.getTime() ?? 0) - (customerCreatedAt(a)?.getTime() ?? 0))
@@ -469,7 +474,7 @@ export default function CompactBusinessDashboard() {
     ...overdueInvoices.slice(0, 2).map(item => ({ id: `invoice-${item.id}`, title: `${item.reference} is overdue`, meta: `${item.customer} · due ${formatCompactDate(item.dueDate)}`, value: item.balance > 0 ? formatMoney(item.balance) : undefined, to: '/invoices', tone: 'danger' as const })),
     ...lowStockItems.slice(0, 2).map(item => ({ id: `stock-${item.id}`, title: item.stock <= 0 ? `${item.name} is out of stock` : `${item.name} is running low`, meta: item.reorderPoint ? `Reorder point ${item.reorderPoint}` : 'Check inventory level', value: item.stock <= 0 ? 'Out' : `${item.stock} left`, to: '/products', tone: 'warning' as const })),
     ...bookings.filter(item => ['pending', 'pending_approval', 'manual_review'].includes(normalizeStatus(item.bookingStatus ?? item.status))).slice(0, 2).map(item => ({ id: `booking-${pickText(item, ['id'], Math.random().toString())}`, title: 'Booking needs confirmation', meta: customerName(item), to: '/bookings', tone: 'warning' as const })),
-    ...eventEntries.filter(item => item.openTasks > 0).slice(0, 2).map(item => ({ id: `event-${item.id}`, title: `${item.title} has open tasks`, meta: `${item.customer} · ${item.openTasks} pending`, to: item.to, tone: 'warning' as const })),
+    ...clientTaskEntries.slice(0, 2).map(item => ({ id: `event-${item.id}`, title: `${item.title} has open tasks`, meta: `${item.customer} · ${item.openTasks} pending`, to: item.to, tone: 'warning' as const })),
   ].slice(0, 3)
 
   function buildWidget(id: WidgetId): WidgetView {
@@ -543,7 +548,7 @@ export default function CompactBusinessDashboard() {
           description: 'Open checklist and client-action items across active events.',
           to: '/event-planning',
           linkLabel: 'Manage events',
-          items: eventEntries.filter(item => item.openTasks > 0).slice(0, 3).map(item => ({ id: item.id, title: item.title, meta: `${item.customer} · ${formatCompactDate(item.date)}`, value: `${item.openTasks} open`, to: item.to, tone: 'warning' })),
+          items: clientTaskEntries.slice(0, 3).map(item => ({ id: item.id, title: item.title, meta: `${item.customer} · ${formatCompactDate(item.date)}`, value: `${item.openTasks} open`, to: item.to, tone: 'warning' })),
           empty: 'No pending client tasks.',
         }
       case 'recent-leads':
@@ -602,12 +607,13 @@ export default function CompactBusinessDashboard() {
   }
 
   function moveWidget(id: WidgetId, direction: -1 | 1) {
-    setSelectedWidgetIds(current => {
-      const index = current.indexOf(id)
-      const nextIndex = index + direction
-      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current
-      return reorder(current, index, nextIndex)
-    })
+    const index = selectedWidgetIds.indexOf(id)
+    const nextIndex = index + direction
+    if (index < 0 || nextIndex < 0 || nextIndex >= selectedWidgetIds.length) return
+
+    const next = reorder(selectedWidgetIds, index, nextIndex)
+    setSelectedWidgetIds(next)
+    if (!isCustomizing) void persistLayout(next, false)
   }
 
   async function persistLayout(nextIds = selectedWidgetIds, closeWhenSaved = true) {
