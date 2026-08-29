@@ -227,6 +227,31 @@ service cloud.firestore {
       allow read, update, delete: if isSignedIn();
     }
 
+    // Customer CRM records contain cross-module contact, financial, message,
+    // note, and document metadata. Keep root customer records and all CRM
+    // subcollections inside the same store-membership boundary.
+    match /customers/{customerId} {
+      allow read: if resource.data.storeId is string
+        && hasStoreAccess(resource.data.storeId);
+
+      allow create: if request.resource.data.storeId is string
+        && hasStoreAccess(request.resource.data.storeId);
+
+      allow update: if resource.data.storeId is string
+        && request.resource.data.storeId == resource.data.storeId
+        && hasStoreAccess(resource.data.storeId);
+
+      allow delete: if resource.data.storeId is string
+        && hasStoreAccess(resource.data.storeId);
+    }
+
+    match /customers/{customerId}/{crmCollection}/{document=**} {
+      allow read, create, update, delete: if
+        exists(/databases/$(database)/documents/customers/$(customerId))
+        && get(/databases/$(database)/documents/customers/$(customerId)).data.storeId is string
+        && hasStoreAccess(get(/databases/$(database)/documents/customers/$(customerId)).data.storeId);
+    }
+
     // Store identity/link fields are trusted by linked-store event access.
     // Browser clients may maintain ordinary store settings, but they cannot
     // re-parent an existing store or rewrite ownership identifiers to gain
@@ -264,13 +289,14 @@ service cloud.firestore {
     }
 
     // Legacy fallback for non-store-scoped collections. Store-scoped,
-    // membership and secure bearer-link paths are intentionally excluded so
-    // their stricter rules cannot be bypassed by an overlapping authenticated
-    // wildcard.
+    // membership, CRM, and secure bearer-link paths are intentionally excluded
+    // so their stricter rules cannot be bypassed by an overlapping
+    // authenticated wildcard.
     match /{topCollection}/{document=**} {
       allow read, write: if isSignedIn()
         && topCollection != 'stores'
         && topCollection != 'teamMembers'
+        && topCollection != 'customers'
         && topCollection != 'eventContractLinks'
         && topCollection != 'eventClientLinks';
     }
