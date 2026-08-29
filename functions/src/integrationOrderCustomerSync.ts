@@ -1,4 +1,5 @@
 import * as functions from 'firebase-functions/v1'
+import { admin } from './firestore'
 import { upsertStoreCustomerFromCheckout } from './customerUpsert'
 
 function clean(value: unknown, max = 500) {
@@ -56,7 +57,7 @@ export const syncIntegrationOrderCustomer = functions.firestore
             customerId: result.customerId,
             source: sourceChannel,
             strategy: 'canonical_customer_v1',
-            linkedAt: functions.firestore.FieldValue?.serverTimestamp?.() ?? null,
+            linkedAt: admin.firestore.FieldValue.serverTimestamp(),
           },
         }, { merge: true })
       }
