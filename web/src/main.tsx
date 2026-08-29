@@ -54,6 +54,8 @@ import VerifyEmail from './pages/VerifyEmail'
 import InventorySystemGhana from './pages/InventorySystemGhana'
 import InventoryManagementSoftwareGhana from './pages/InventoryManagementSoftwareGhana'
 import EventManagementSoftware from './pages/EventManagementSoftware'
+import WeddingPlanningSoftware from './pages/WeddingPlanningSoftware'
+import EventManagementSoftwareGhana from './pages/EventManagementSoftwareGhana'
 import PricingPage from './pages/PricingPage'
 import DataTransfer from './pages/DataTransfer'
 import PromoLandingPage from './pages/PromoLandingPage'
@@ -188,6 +190,8 @@ const router = createBrowserRouter([
     { path: 'inventory-system-ghana', element: <InventorySystemGhana /> },
     { path: 'inventory-management-software-ghana', element: <InventoryManagementSoftwareGhana /> },
     { path: 'event-management-software', element: <EventManagementSoftware /> },
+    { path: 'wedding-planning-software', element: <WeddingPlanningSoftware /> },
+    { path: 'event-management-software-ghana', element: <EventManagementSoftwareGhana /> },
     { path: 'pricing', element: <PricingPage /> },
     { path: 'docs/integration-quickstart', element: <IntegrationQuickstartPage /> },
     { path: 'docs/student-registration-integration', element: <StudentRegistrationIntegrationPage /> },
