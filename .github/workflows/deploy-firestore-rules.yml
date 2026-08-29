@@ -47,5 +47,15 @@ jobs:
           echo "GCLOUD_PROJECT=sedifex-web" >> "$GITHUB_ENV"
           echo "FIREBASE_PROJECT_ID=sedifex-web" >> "$GITHUB_ENV"
 
+      - name: Write default Firestore deploy config
+        run: |
+          cat > firebase.default-rules.json <<'EOF'
+          {
+            "firestore": {
+              "rules": "firestore.rules"
+            }
+          }
+          EOF
+
       - name: Deploy Firestore rules
-        run: firebase deploy --only firestore:rules --project sedifex-web --force
+        run: firebase deploy --config firebase.default-rules.json --only firestore:rules --project sedifex-web --force
