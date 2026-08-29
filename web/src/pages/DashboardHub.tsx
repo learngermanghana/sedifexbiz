@@ -1,6 +1,5 @@
 import React from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
-import CompactBusinessDashboard from '../components/CompactBusinessDashboard'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import './DashboardHub.css'
 
@@ -33,7 +32,7 @@ export default function DashboardHub() {
         })}
       </nav>
       <div className="dashboard-hub__content">
-        <CompactBusinessDashboard />
+        <Outlet />
       </div>
     </div>
   )
