@@ -504,7 +504,7 @@ When changing Event Planning/client collaboration, verify all of the following:
 - Submitted tasks do not count as verified until staff verifies them.
 - Return-to-client notes are visible to the client.
 - Portal progress copy says `tasks verified` when the calculation is verification-based.
-- Run `npm --prefix functions run test:event-client`; the client collaboration renderer regression suite must pass.
+- From a clean checkout, run `npm --prefix functions run build` before `npm --prefix functions run test:event-client`; the client collaboration renderer regression suite must pass.
 - Security documentation correctly states that `clientPortal.publicUrl` currently contains a recoverable active bearer token for authorized staff use.
 - Firestore rules continue to deny direct public event writes.
 - Production Firebase Functions deployment completes before claiming a `cloudfunctions.net` portal change is live.
