@@ -1,0 +1,49 @@
+@media (max-width: 820px) {
+  /* On phones, the directory is the primary screen until a customer is chosen. */
+  .customer-crm__workspace--empty {
+    display: none;
+  }
+
+  .customer-crm__directory {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .customer-crm__directory .customer-crm__customer-list {
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* Once a customer is selected, keep the directory available without making
+     users scroll through the entire customer list before reaching the profile. */
+  .customer-crm__directory--with-selection {
+    max-height: 44vh;
+    overflow: hidden;
+  }
+
+  .customer-crm__directory--with-selection .customer-crm__customer-list {
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .customer-crm__workspace:not(.customer-crm__workspace--empty) {
+    min-height: 0;
+  }
+
+  .customer-crm__layout {
+    gap: 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .customer-crm__directory--with-selection {
+    max-height: 40vh;
+  }
+
+  .customer-crm__welcome {
+    min-height: 0;
+    padding: 28px 18px;
+  }
+}
