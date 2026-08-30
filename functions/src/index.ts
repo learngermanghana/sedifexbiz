@@ -46,6 +46,10 @@ export {
   processUnpaidBookingEmailNotifications,
 } from './bookingEmailNotifications'
 export {
+  automateBookingEmailOnWrite,
+  processBookingEmailReminders,
+} from './bookingEmailAutomation'
+export {
   automateEventCommunicationsOnWrite,
   processEventCommunications,
   runEventCommunicationsNow,

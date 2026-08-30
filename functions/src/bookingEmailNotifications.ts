@@ -3,7 +3,7 @@ import { admin, defaultDb } from './firestore'
 import { queueBrandedNotification } from './notifications'
 
 const TIME_ZONE = 'Africa/Accra'
-const UNPAID_BOOKING_EVENT = 'booking_received_-_payment_pending'
+const UNPAID_BOOKING_EVENT = 'booking.received'
 const FALLBACK_SCAN_LIMIT = 250
 const FALLBACK_LOOKBACK_HOURS = 48
 const FALLBACK_CONCURRENCY = 8
@@ -119,7 +119,7 @@ function isPaymentSettled(data: RecordMap) {
 
 function isUnpaidBooking(data: RecordMap) {
   const status = bookingStatus(data)
-  if (['cancelled', 'canceled', 'completed', 'complete'].includes(status)) return false
+  if (['cancelled', 'canceled', 'completed', 'complete', 'confirmed'].includes(status)) return false
   if (isPaymentSettled(data)) return false
 
   const rawPaymentStatus = paymentStatus(data)
