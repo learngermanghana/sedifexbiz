@@ -1,0 +1,36 @@
+name: Apply email automation v1 integration
+
+on:
+  push:
+    branches:
+      - feature/email-automation-engine-v1
+    paths:
+      - '.github/workflows/apply-email-automation-v1.yml'
+      - 'scripts/patch_email_automation_v1.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/email-automation-engine-v1
+
+      - name: Apply integration patch
+        run: python scripts/patch_email_automation_v1.py
+
+      - name: Commit integration changes
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add functions/src/notifications.ts functions/src/bookingEmailNotifications.ts functions/src/index.ts
+          git commit -m 'feat: wire transactional booking email automation'
+          git push origin HEAD:feature/email-automation-engine-v1
