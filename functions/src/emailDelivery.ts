@@ -145,6 +145,12 @@ async function resolveSettings(storeId: string) {
   const appsScriptFromName = text(integration.fromName, 180) || storeName
   const appsScriptSenderEmail = email(integration.senderEmail)
 
+  const deliveryPreferenceRaw = text(notifications.deliveryPreference, 40)
+  const deliveryPreference = ['automatic', 'sedifex', 'store_email', 'custom_webhook'].includes(deliveryPreferenceRaw)
+    ? deliveryPreferenceRaw as 'automatic' | 'sedifex' | 'store_email' | 'custom_webhook'
+    : 'automatic'
+  const fallbackToSedifex = notifications.fallbackToSedifex !== false
+
   const customEnabled = notifications.customWebhookEnabled === true
   const customUrl = customEnabled ? safeUrl(notifications.customWebhookUrl) : ''
   const centralUrl = SEDIFEX_NOTIFICATION_WEBHOOK_URL.value()?.trim()
@@ -167,6 +173,8 @@ async function resolveSettings(storeId: string) {
     customUrl,
     centralUrl: safeUrl(centralUrl),
     secret,
+    deliveryPreference,
+    fallbackToSedifex,
   }
 }
 
@@ -288,25 +296,40 @@ export async function deliverTransactionalEmail(
   input: TransactionalEmailDeliveryInput,
 ): Promise<TransactionalEmailDeliveryResult> {
   const settings = await resolveSettings(input.storeId)
-
-  if (settings.appsScript.configured) {
-    const appsScript = await sendAppsScript(input, settings)
-    if (appsScript.ok || appsScript.deliveryStatus === 'duplicate') {
-      return appsScript
-    }
-  }
-
-  const targets: Array<{ url: string; channel: 'custom_webhook' | 'sedifex_notification' }> = []
-  if (settings.customUrl) targets.push({ url: settings.customUrl, channel: 'custom_webhook' })
-  if (settings.centralUrl && settings.centralUrl !== settings.customUrl) {
-    targets.push({ url: settings.centralUrl, channel: 'sedifex_notification' })
-  }
-
+  const preference = settings.deliveryPreference
   let lastFailure: TransactionalEmailDeliveryResult | null = null
-  for (const target of targets) {
-    const result = await sendWebhook(input, settings, target.url, target.channel)
-    if (result.ok) return result
-    lastFailure = result
+  let attemptedCustomUrl = ''
+
+  const shouldTryStoreEmail = preference === 'automatic' || preference === 'store_email'
+  if (shouldTryStoreEmail && settings.appsScript.configured) {
+    const appsScript = await sendAppsScript(input, settings)
+    if (appsScript.ok || appsScript.deliveryStatus === 'duplicate') return appsScript
+    lastFailure = appsScript
+  }
+
+  if (preference === 'store_email' && !settings.fallbackToSedifex) {
+    if (lastFailure) return lastFailure
+    return { attempted: false, ok: true, status: null, channel: 'outbox_only', deliveryStatus: 'outbox', senderName: settings.storeName, senderEmail: '', replyToEmail: settings.replyToEmail, reason: 'store-email-not-configured' }
+  }
+
+  const shouldTryCustom = preference === 'automatic' || preference === 'custom_webhook'
+  if (shouldTryCustom && settings.customUrl) {
+    attemptedCustomUrl = settings.customUrl
+    const custom = await sendWebhook(input, settings, settings.customUrl, 'custom_webhook')
+    if (custom.ok) return custom
+    lastFailure = custom
+  }
+
+  if (preference === 'custom_webhook' && !settings.fallbackToSedifex) {
+    if (lastFailure) return lastFailure
+    return { attempted: false, ok: true, status: null, channel: 'outbox_only', deliveryStatus: 'outbox', senderName: settings.storeName, senderEmail: '', replyToEmail: settings.replyToEmail, reason: 'custom-webhook-not-configured' }
+  }
+
+  const shouldTrySedifex = preference === 'sedifex' || settings.fallbackToSedifex
+  if (shouldTrySedifex && settings.centralUrl && settings.centralUrl !== attemptedCustomUrl) {
+    const sedifex = await sendWebhook(input, settings, settings.centralUrl, 'sedifex_notification')
+    if (sedifex.ok) return sedifex
+    lastFailure = sedifex
   }
 
   if (lastFailure) return lastFailure
@@ -320,6 +343,6 @@ export async function deliverTransactionalEmail(
     senderName: settings.storeName,
     senderEmail: '',
     replyToEmail: settings.replyToEmail,
-    reason: 'no-live-email-sender-configured',
+    reason: preference === 'sedifex' ? 'sedifex-live-sender-not-configured' : 'no-live-email-sender-configured',
   }
 }

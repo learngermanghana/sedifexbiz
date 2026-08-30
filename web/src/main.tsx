@@ -69,6 +69,7 @@ import BookingMappingSettings from './pages/BookingMappingSettings'
 import IntegrationWebsiteSettings from './pages/IntegrationWebsiteSettings'
 import IntegrationBookingsSettings from './pages/IntegrationBookingsSettings'
 import IntegrationEmailSettings from './pages/IntegrationEmailSettings'
+import AutomationCenter from './pages/AutomationCenter'
 import BlogPage from './pages/BlogPage'
 import ReceiptView from './pages/ReceiptView'
 import CustomerDisplay from './pages/CustomerDisplay'
@@ -186,6 +187,7 @@ const router = createBrowserRouter([
       { path: 'settings/integrations/website', element: <IntegrationWebsiteSettings /> },
       { path: 'settings/integrations/bookings', element: <IntegrationBookingsSettings /> },
       { path: 'settings/integrations/email', element: <IntegrationEmailSettings /> },
+      { path: 'settings/automations', element: <AutomationCenter /> },
     ]},
     { path: 'reset-password', element: <ResetPassword /> },
     { path: 'verify-email', element: <VerifyEmail /> },

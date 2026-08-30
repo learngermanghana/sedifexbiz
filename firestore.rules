@@ -87,9 +87,9 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
-    match /storeSettings/{docId} {
+    match /storeSettings/{storeId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create, update, delete: if isStoreOwner(storeId);
     }
 
     match /publicStores/{docId} {
@@ -175,6 +175,13 @@ service cloud.firestore {
     // Audit entries are append-only from the Admin SDK Cloud Function. Store
     // members can read them, but browser clients cannot alter audit history.
     match /stores/{storeId}/eventActivity/{activityId} {
+      allow read: if hasStoreAccess(storeId);
+      allow create, update, delete: if false;
+    }
+
+    // Transactional email activity contains customer addresses and delivery metadata.
+    // Store members may read it, while browser clients cannot forge delivery history.
+    match /stores/{storeId}/notificationActivity/{activityId} {
       allow read: if hasStoreAccess(storeId);
       allow create, update, delete: if false;
     }
@@ -285,7 +292,8 @@ service cloud.firestore {
       allow read, write: if isSignedIn()
         && subCollection != 'events'
         && subCollection != 'eventActivity'
-        && subCollection != 'eventContractTemplates';
+        && subCollection != 'eventContractTemplates'
+        && subCollection != 'notificationActivity';
     }
 
     // Legacy fallback for non-store-scoped collections. Store-scoped,
@@ -297,6 +305,7 @@ service cloud.firestore {
         && topCollection != 'stores'
         && topCollection != 'teamMembers'
         && topCollection != 'customers'
+        && topCollection != 'storeSettings'
         && topCollection != 'eventContractLinks'
         && topCollection != 'eventClientLinks';
     }
