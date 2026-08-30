@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions/v1'
 import { defineString } from 'firebase-functions/params'
 import { admin, defaultDb } from './firestore'
 import { appendNotificationOutboxRow, getDefaultSpreadsheetId } from './googleSheets'
+import { deliverTransactionalEmail } from './emailDelivery'
 
 const SEDIFEX_NOTIFICATION_WEBHOOK_URL = defineString('SEDIFEX_NOTIFICATION_WEBHOOK_URL', { default: '' })
 const SEDIFEX_NOTIFICATION_SHARED_SECRET = defineString('SEDIFEX_NOTIFICATION_SHARED_SECRET', { default: '' })
@@ -13,7 +14,7 @@ type StoreBrand = { storeId: string; storeName: string; logoUrl: string | null; 
 type NotificationSettings = { customerEmailEnabled: boolean; storeAlertEnabled: boolean; adminEmails: string[]; replyToEmail: string | null; mode: 'sedifex_default' | 'custom_webhook'; customWebhookEnabled: boolean; customWebhookUrl: string | null }
 
 const DEFAULT_BRAND_COLOR = '#4f46e5'
-const REQUIRED_STORE_ALERT_EVENTS = new Set(['order.created', 'order.confirmed', 'order.pay_on_delivery', 'order.manual_payment', 'booking.created', 'booking.confirmed', 'student_registration.created', 'student_registration.paid', 'donation.created', 'donation.confirmed', 'volunteer.created', 'support_request.created', 'event_registration.created', 'event_registration.confirmed'])
+const REQUIRED_STORE_ALERT_EVENTS = new Set(['order.created', 'order.confirmed', 'order.pay_on_delivery', 'order.manual_payment', 'booking.created', 'booking.received', 'booking.confirmed', 'booking.rescheduled', 'booking.cancelled', 'booking.payment_submitted', 'booking.payment_received', 'booking.payment_confirmed', 'student_registration.created', 'student_registration.paid', 'donation.created', 'donation.confirmed', 'volunteer.created', 'support_request.created', 'event_registration.created', 'event_registration.confirmed'])
 
 function text(value: unknown, max = 500) { return typeof value === 'string' ? value.trim().slice(0, max) : '' }
 function email(value: unknown) { const cleaned = text(value, 220).toLowerCase(); return cleaned.includes('@') ? cleaned : '' }
@@ -28,6 +29,16 @@ function getDataItemName(data?: Record<string, unknown> | null) { const source =
 
 function eventCopy(eventType: string, storeName: string, itemName: string) {
   switch (eventType) {
+    case 'booking.received': return { customerTitle: 'Booking received', customerIntro: `We received your booking for ${itemName}. Keep the details below for your records. If payment is still pending, the booking will remain pending until payment is confirmed.`, adminTitle: 'New booking received', adminAction: 'Review the booking, payment status and appointment details.' }
+    case 'booking.payment_submitted': return { customerTitle: 'Payment submitted', customerIntro: `We received the payment information for your ${itemName} booking. ${storeName} will review and confirm it.`, adminTitle: 'Booking payment needs review', adminAction: 'Verify the submitted payment and confirm it in Sedifex.' }
+    case 'booking.payment_received': return { customerTitle: 'Payment received', customerIntro: `A payment has been recorded for your ${itemName} booking with ${storeName}. The amount received and remaining balance are shown below.`, adminTitle: 'Booking payment recorded', adminAction: 'Review the payment and remaining balance.' }
+    case 'booking.payment_confirmed': return { customerTitle: 'Payment receipt', customerIntro: `Your payment for ${itemName} has been confirmed by ${storeName}. Keep this email as your Sedifex payment receipt.`, adminTitle: 'Booking payment confirmed', adminAction: 'Payment is confirmed. Continue with the booking workflow.' }
+    case 'booking.rescheduled': return { customerTitle: 'Booking rescheduled', customerIntro: `Your booking for ${itemName} has been rescheduled by ${storeName}. Please review the new date and time below.`, adminTitle: 'Booking rescheduled', adminAction: 'Make sure staff and operational schedules reflect the new appointment.' }
+    case 'booking.cancelled': return { customerTitle: 'Booking cancelled', customerIntro: `Your booking for ${itemName} has been cancelled. Contact ${storeName} if you need help or want to arrange another date.`, adminTitle: 'Booking cancelled', adminAction: 'Review any outstanding payment, refund or follow-up requirement.' }
+    case 'booking.completed': return { customerTitle: 'Thank you for choosing us', customerIntro: `Thank you for choosing ${storeName} for ${itemName}. We appreciate your business and hope to serve you again.`, adminTitle: 'Booking completed', adminAction: 'No action is required unless follow-up is needed.' }
+    case 'booking.reminder_3d': return { customerTitle: 'Booking reminder - 3 days', customerIntro: `Your ${itemName} booking with ${storeName} is in 3 days. Review the appointment details and any outstanding balance below.`, adminTitle: 'Booking reminder', adminAction: 'No action is required unless the customer needs assistance.' }
+    case 'booking.reminder_2d': return { customerTitle: 'Booking reminder - 2 days', customerIntro: `Your ${itemName} booking with ${storeName} is in 2 days. Review the appointment details and any outstanding balance below.`, adminTitle: 'Booking reminder', adminAction: 'No action is required unless the customer needs assistance.' }
+    case 'booking.reminder_1d': return { customerTitle: 'Booking reminder - tomorrow', customerIntro: `Your ${itemName} booking with ${storeName} is tomorrow. Review the appointment details and any outstanding balance below.`, adminTitle: 'Booking reminder', adminAction: 'No action is required unless the customer needs assistance.' }
     case 'order.confirmed': return { customerTitle: 'Order confirmed', customerIntro: `Your order for ${itemName} has been received and confirmed. Thank you for buying from ${storeName}.`, adminTitle: 'New paid order received', adminAction: 'Prepare delivery or contact the customer if you need extra details.' }
     case 'order.pay_on_delivery': return { customerTitle: 'Order received', customerIntro: `Your order for ${itemName} has been received. Payment will be handled on delivery.`, adminTitle: 'New pay on delivery order', adminAction: 'Contact the customer and prepare delivery.' }
     case 'order.manual_payment': return { customerTitle: 'Order received', customerIntro: `Your order for ${itemName} has been received and is pending payment review.`, adminTitle: 'New manual payment order', adminAction: 'Review the payment details and follow up with the customer.' }
@@ -59,7 +70,7 @@ function detailRows(payload: NotificationPayload, itemName: string) {
   rows.push(['Payment', text(payment.status, 80) ? titleCase(text(payment.status, 80)) : null])
   rows.push(['Method', text(payment.method, 80) ? titleCase(text(payment.method, 80)) : null])
   const data = payload.data ?? {}
-  for (const key of ['bookingDate', 'bookingTime', 'preferredClassTime', 'branch', 'location', 'deliveryStatus', 'fulfillmentStatus', 'deliveredAt', 'deliveredBy', 'deliveryNote', 'deliveryReference', 'skill', 'availability', 'notes', 'needSummary']) {
+  for (const key of ['bookingDate', 'bookingTime', 'preferredClassTime', 'branch', 'location', 'totalAmount', 'amountReceived', 'amountOutstanding', 'receiptNumber', 'deliveryStatus', 'fulfillmentStatus', 'deliveredAt', 'deliveredBy', 'deliveryNote', 'deliveryReference', 'skill', 'availability', 'notes', 'needSummary']) {
     const value = text(data[key], 1000)
     if (value) rows.push([titleCase(key), value])
   }
@@ -143,15 +154,22 @@ function buildWebhookPayload(payload: Record<string, unknown>) {
 }
 
 async function postToWebhook(payload: Record<string, unknown>, settings: NotificationSettings) {
-  const centralUrl = SEDIFEX_NOTIFICATION_WEBHOOK_URL.value()?.trim() || process.env.SEDIFEX_NOTIFICATION_WEBHOOK_URL?.trim() || ''
-  const customUrl = settings.customWebhookEnabled ? settings.customWebhookUrl || '' : ''
-  const url = customUrl || centralUrl
-  if (!url) return { attempted: false, ok: false, status: null }
-  const secret = SEDIFEX_NOTIFICATION_SHARED_SECRET.value()?.trim() || process.env.SEDIFEX_NOTIFICATION_SHARED_SECRET?.trim() || ''
-  const basePayload = buildWebhookPayload(payload)
-  const webhookPayload = secret ? { ...basePayload, secret } : basePayload
-  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(secret ? { 'x-sedifex-notification-secret': secret } : {}) }, body: JSON.stringify(webhookPayload) })
-  return { attempted: true, ok: response.ok, status: response.status }
+  void settings
+  const delivery = await deliverTransactionalEmail({
+    storeId: text(payload.storeId, 180),
+    eventType: text(payload.eventType, 100),
+    reference: text(payload.reference, 220),
+    recipientType: text(payload.recipientType, 80),
+    to: email(payload.to),
+    subject: text(payload.subject, 500),
+    html: text(payload.html, 200000),
+    text: text(payload.text, 200000),
+    brand: getRecord(payload.brand),
+    customer: getRecord(payload.customer),
+    payment: getRecord(payload.payment),
+    data: getRecord(payload.data),
+  })
+  return delivery
 }
 
 async function createDelivery(args: { payload: NotificationPayload; brand: StoreBrand; settings: NotificationSettings; recipientType: 'customer' | 'store'; to: string; subject: string; html: string; text: string }) {
@@ -194,8 +212,29 @@ async function createDelivery(args: { payload: NotificationPayload; brand: Store
   }
   try {
     const webhook = await postToWebhook({ storeId: args.payload.storeId, eventType: args.payload.eventType, reference, recipientType: args.recipientType, to: args.to, subject: args.subject, html: args.html, text: args.text, brand: args.brand, customer: args.payload.customer ?? null, payment: args.payload.payment ?? null, data: args.payload.data ?? null }, args.settings)
-    if (webhook.attempted) await outboxRef.set({ status: webhook.ok ? 'sent_to_webhook' : 'webhook_failed', webhookStatus: webhook.status, sentToWebhookAt: now, sheetSyncStatus, updatedAt: now }, { merge: true })
-    if (!webhook.attempted) await outboxRef.set({ status: sheetSyncStatus, sheetSyncStatus, updatedAt: now }, { merge: true })
+    if (webhook.attempted) await outboxRef.set({
+      status: webhook.ok ? 'delivery_accepted' : 'delivery_failed',
+      webhookStatus: webhook.status,
+      deliveryChannel: webhook.channel,
+      deliveryStatus: webhook.deliveryStatus,
+      senderName: webhook.senderName || null,
+      senderEmail: webhook.senderEmail || null,
+      replyToEmail: webhook.replyToEmail || null,
+      deliveryReason: webhook.reason || null,
+      sentToWebhookAt: now,
+      sheetSyncStatus,
+      updatedAt: now,
+    }, { merge: true })
+    if (!webhook.attempted) await outboxRef.set({
+      status: 'queued_no_live_sender',
+      deliveryChannel: webhook.channel,
+      deliveryStatus: webhook.deliveryStatus,
+      senderName: webhook.senderName || null,
+      replyToEmail: webhook.replyToEmail || null,
+      deliveryReason: webhook.reason || null,
+      sheetSyncStatus,
+      updatedAt: now,
+    }, { merge: true })
     return { created: true, webhook }
   } catch (error) {
     await outboxRef.set({ status: 'webhook_error', errorMessage: error instanceof Error ? error.message : 'webhook-error', sheetSyncStatus, updatedAt: now }, { merge: true })
