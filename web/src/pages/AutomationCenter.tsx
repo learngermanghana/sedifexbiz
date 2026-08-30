@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   collection,
@@ -90,6 +90,9 @@ function statusLabel(status: string, deliveryStatus: string) {
 
 export default function AutomationCenter() {
   const { storeId } = useActiveStore()
+  const activeStoreRef = useRef(storeId)
+  activeStoreRef.current = storeId
+  const activityRequestRef = useRef(0)
   const { memberships, loading: membershipsLoading } = useMemberships()
   const membership = useMemo(
     () => memberships.find(item => item.storeId === storeId) ?? null,
@@ -113,6 +116,7 @@ export default function AutomationCenter() {
   const [activity, setActivity] = useState<ActivityRow[]>([])
 
   async function loadActivity(activeStoreId: string, quiet = false) {
+    const requestId = ++activityRequestRef.current
     if (!quiet) setRefreshing(true)
     try {
       const snapshot = await getDocs(query(
@@ -120,7 +124,7 @@ export default function AutomationCenter() {
         orderBy('createdAt', 'desc'),
         limit(50),
       ))
-      setActivity(snapshot.docs.map(document => {
+      const rows = snapshot.docs.map(document => {
         const data = document.data()
         return {
           id: document.id,
@@ -134,12 +138,17 @@ export default function AutomationCenter() {
           deliveryReason: stringValue(data.deliveryReason),
           createdAt: dateValue(data.createdAt),
         }
-      }))
+      })
+      if (requestId !== activityRequestRef.current || activeStoreRef.current !== activeStoreId) return
+      setActivity(rows)
     } catch (activityError) {
+      if (requestId !== activityRequestRef.current || activeStoreRef.current !== activeStoreId) return
       console.warn('[automation-center] Unable to load notification activity', activityError)
       if (!quiet) setError(activityError instanceof Error ? activityError.message : 'Unable to load automation activity.')
     } finally {
-      if (!quiet) setRefreshing(false)
+      if (!quiet && requestId === activityRequestRef.current && activeStoreRef.current === activeStoreId) {
+        setRefreshing(false)
+      }
     }
   }
 
@@ -153,6 +162,8 @@ export default function AutomationCenter() {
     let cancelled = false
     async function load() {
       setLoading(true)
+      setRefreshing(false)
+      setActivity([])
       setError('')
       try {
         const [settingsSnapshot, storeSnapshot] = await Promise.all([

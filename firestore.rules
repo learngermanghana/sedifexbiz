@@ -87,9 +87,9 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
-    match /storeSettings/{docId} {
+    match /storeSettings/{storeId} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow create, update, delete: if isStoreOwner(storeId);
     }
 
     match /publicStores/{docId} {
@@ -305,6 +305,7 @@ service cloud.firestore {
         && topCollection != 'stores'
         && topCollection != 'teamMembers'
         && topCollection != 'customers'
+        && topCollection != 'storeSettings'
         && topCollection != 'eventContractLinks'
         && topCollection != 'eventClientLinks';
     }

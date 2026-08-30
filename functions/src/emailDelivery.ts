@@ -298,6 +298,7 @@ export async function deliverTransactionalEmail(
   const settings = await resolveSettings(input.storeId)
   const preference = settings.deliveryPreference
   let lastFailure: TransactionalEmailDeliveryResult | null = null
+  let attemptedCustomUrl = ''
 
   const shouldTryStoreEmail = preference === 'automatic' || preference === 'store_email'
   if (shouldTryStoreEmail && settings.appsScript.configured) {
@@ -313,6 +314,7 @@ export async function deliverTransactionalEmail(
 
   const shouldTryCustom = preference === 'automatic' || preference === 'custom_webhook'
   if (shouldTryCustom && settings.customUrl) {
+    attemptedCustomUrl = settings.customUrl
     const custom = await sendWebhook(input, settings, settings.customUrl, 'custom_webhook')
     if (custom.ok) return custom
     lastFailure = custom
@@ -323,8 +325,8 @@ export async function deliverTransactionalEmail(
     return { attempted: false, ok: true, status: null, channel: 'outbox_only', deliveryStatus: 'outbox', senderName: settings.storeName, senderEmail: '', replyToEmail: settings.replyToEmail, reason: 'custom-webhook-not-configured' }
   }
 
-  const shouldTrySedifex = preference === 'sedifex' || preference === 'automatic' || settings.fallbackToSedifex
-  if (shouldTrySedifex && settings.centralUrl) {
+  const shouldTrySedifex = preference === 'sedifex' || settings.fallbackToSedifex
+  if (shouldTrySedifex && settings.centralUrl && settings.centralUrl !== attemptedCustomUrl) {
     const sedifex = await sendWebhook(input, settings, settings.centralUrl, 'sedifex_notification')
     if (sedifex.ok) return sedifex
     lastFailure = sedifex
