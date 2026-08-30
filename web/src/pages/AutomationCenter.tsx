@@ -10,7 +10,6 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  where,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
