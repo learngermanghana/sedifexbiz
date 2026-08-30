@@ -25,6 +25,7 @@ export type TransactionalEmailDeliveryInput = {
   customer?: RecordMap | null
   payment?: RecordMap | null
   data?: RecordMap | null
+  webhookPayload?: RecordMap | null
 }
 
 export type TransactionalEmailDeliveryResult = {
@@ -50,6 +51,58 @@ function email(value: unknown) {
 
 function record(value: unknown): RecordMap {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as RecordMap : {}
+}
+
+function firstText(source: RecordMap, keys: string[], max = 500) {
+  for (const key of keys) {
+    const value = text(source[key], max)
+    if (value) return value
+  }
+  return ''
+}
+
+function buildCompatibleWebhookPayload(input: TransactionalEmailDeliveryInput): RecordMap {
+  const data = record(input.data)
+  const customer = record(input.customer)
+  const payment = record(input.payment)
+  const bookingId = firstText(data, ['bookingId', 'booking_id', 'id'], 220)
+  const bookingStatus = firstText(data, ['bookingStatus', 'booking_status', 'status'], 80)
+    || (input.eventType === 'booking.confirmed' ? 'confirmed' : input.eventType === 'booking.created' || input.eventType === 'booking.received' ? 'pending_approval' : '')
+
+  return {
+    storeId: input.storeId,
+    eventType: input.eventType,
+    reference: input.reference,
+    recipientType: input.recipientType,
+    to: input.to,
+    subject: input.subject,
+    html: input.html,
+    text: input.text,
+    brand: input.brand ?? null,
+    customer: input.customer ?? null,
+    payment: input.payment ?? null,
+    data: input.data ?? null,
+    bookingId: bookingId || undefined,
+    booking_id: bookingId || undefined,
+    bookingStatus: bookingStatus || undefined,
+    booking_status: bookingStatus || undefined,
+    status: bookingStatus || undefined,
+    serviceId: firstText(data, ['serviceId', 'service_id'], 220) || undefined,
+    serviceName: firstText(data, ['serviceName', 'service_name', 'itemName', 'productName'], 240) || undefined,
+    bookingDate: firstText(data, ['bookingDate', 'booking_date', 'preferredDate', 'date'], 80) || undefined,
+    bookingTime: firstText(data, ['bookingTime', 'booking_time', 'preferredTime', 'time'], 80) || undefined,
+    notes: firstText(data, ['notes', 'message', 'details'], 2000) || undefined,
+    quantity: firstText(data, ['quantity'], 20) || undefined,
+    customerName: text(customer.name, 240) || undefined,
+    customerPhone: text(customer.phone, 80) || undefined,
+    customerEmail: email(customer.email) || undefined,
+    paymentStatus: firstText(payment, ['status'], 80) || undefined,
+    payment_status: firstText(payment, ['status'], 80) || undefined,
+    paymentMethod: firstText(payment, ['method'], 80) || undefined,
+    paymentAmount: numberValue(payment.amount) || undefined,
+    paymentReference: firstText(payment, ['reference'], 220) || undefined,
+    paymentConfirmed: input.eventType === 'booking.confirmed' || ['paid', 'confirmed', 'success', 'succeeded', 'captured', 'complete', 'completed'].includes(text(payment.status, 80).toLowerCase().replace(/[\s-]+/g, '_')),
+  }
 }
 
 function safeUrl(value: unknown) {
@@ -144,14 +197,15 @@ async function sendAppsScript(
     const sent = Math.max(0, numberValue(body.sent))
     const queuedForRetry = Math.max(0, numberValue(body.queuedForRetry))
     const duplicate = body.duplicate === true
-    const accepted = response.ok && body.ok !== false && (sent > 0 || queuedForRetry > 0 || duplicate)
+    // The current Apps Script template reports quota deferrals but does not create
+    // a durable retry for transactional recipients, so quota-only deferrals must
+    // continue to the Sedifex fallback instead of becoming terminal successes.
+    const accepted = response.ok && body.ok !== false && (sent > 0 || duplicate)
     const deliveryStatus = duplicate
       ? 'duplicate'
       : sent > 0
         ? 'sent'
-        : queuedForRetry > 0
-          ? 'queued'
-          : 'failed'
+        : 'failed'
 
     return {
       attempted: true,
@@ -162,7 +216,11 @@ async function sendAppsScript(
       senderName: settings.appsScript.fromName,
       senderEmail: settings.appsScript.senderEmail,
       replyToEmail: settings.replyToEmail,
-      reason: accepted ? undefined : text(body.error, 500) || `apps-script-http-${response.status}`,
+      reason: accepted
+        ? undefined
+        : queuedForRetry > 0
+          ? 'apps-script-quota-deferred-without-durable-retry'
+          : text(body.error, 500) || `apps-script-http-${response.status}`,
     }
   } catch (error) {
     return {
@@ -186,18 +244,7 @@ async function sendWebhook(
   channel: 'custom_webhook' | 'sedifex_notification',
 ): Promise<TransactionalEmailDeliveryResult> {
   const payload: RecordMap = {
-    storeId: input.storeId,
-    eventType: input.eventType,
-    reference: input.reference,
-    recipientType: input.recipientType,
-    to: input.to,
-    subject: input.subject,
-    html: input.html,
-    text: input.text,
-    brand: input.brand ?? null,
-    customer: input.customer ?? null,
-    payment: input.payment ?? null,
-    data: input.data ?? null,
+    ...(input.webhookPayload ? record(input.webhookPayload) : buildCompatibleWebhookPayload(input)),
     senderName: settings.storeName,
     replyToEmail: settings.replyToEmail || null,
   }
@@ -244,7 +291,7 @@ export async function deliverTransactionalEmail(
 
   if (settings.appsScript.configured) {
     const appsScript = await sendAppsScript(input, settings)
-    if (appsScript.ok || appsScript.deliveryStatus === 'queued' || appsScript.deliveryStatus === 'duplicate') {
+    if (appsScript.ok || appsScript.deliveryStatus === 'duplicate') {
       return appsScript
     }
   }

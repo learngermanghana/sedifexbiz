@@ -117,7 +117,12 @@ function bookingStatus(data: RecordMap) {
 
 function paymentStatus(data: RecordMap) {
   const payment = record(data.payment)
-  return normalizeStatus(data.paymentStatus ?? data.payment_status ?? payment.status ?? payment.paymentStatus, 'pending')
+  const raw = normalizeStatus(data.paymentStatus ?? data.payment_status ?? payment.status ?? payment.paymentStatus, 'pending')
+  if (['paid', 'payment_paid', 'paid_cash', 'confirmed', 'success', 'succeeded', 'captured', 'complete', 'completed'].includes(raw)) return 'paid'
+  if (['partially_paid', 'partial', 'payment_partial', 'deposit_paid', 'part_paid'].includes(raw)) return 'partial'
+  if (['awaiting_verification', 'manual_review', 'payment_awaiting_verification', 'pending_verification'].includes(raw)) return 'awaiting_verification'
+  if (['pending', 'payment_pending', 'unpaid', 'pending_payment', 'pending_cash'].includes(raw)) return 'pending'
+  return raw
 }
 
 function hasPaymentConfirmation(data: RecordMap) {
@@ -438,16 +443,43 @@ async function runReminderForBooking(storeId: string, bookingId: string, data: R
   return true
 }
 
+async function pagedReminderRange(
+  collection: FirebaseFirestore.CollectionReference,
+  field: 'bookingDate' | 'date',
+  today: string,
+  endDate: string,
+) {
+  const documents: FirebaseFirestore.QueryDocumentSnapshot[] = []
+  let cursor: FirebaseFirestore.QueryDocumentSnapshot | null = null
+
+  for (;;) {
+    let pageQuery: FirebaseFirestore.Query = collection
+      .where(field, '>=', today)
+      .where(field, '<=', endDate)
+      .orderBy(field)
+      .limit(STORE_BOOKING_LIMIT)
+    if (cursor) pageQuery = pageQuery.startAfter(cursor)
+
+    const snapshot = await pageQuery.get()
+    documents.push(...snapshot.docs)
+    if (snapshot.size < STORE_BOOKING_LIMIT) break
+    cursor = snapshot.docs[snapshot.docs.length - 1] || null
+    if (!cursor) break
+  }
+
+  return documents
+}
+
 async function storeReminderCandidates(storeId: string, today: string, endDate: string) {
   const collection = defaultDb.collection('stores').doc(storeId).collection('integrationBookings')
-  const [bookingDateSnapshot, legacyDateSnapshot] = await Promise.all([
-    collection.where('bookingDate', '>=', today).where('bookingDate', '<=', endDate).limit(STORE_BOOKING_LIMIT).get(),
-    collection.where('date', '>=', today).where('date', '<=', endDate).limit(STORE_BOOKING_LIMIT).get(),
+  const [bookingDateDocuments, legacyDateDocuments] = await Promise.all([
+    pagedReminderRange(collection, 'bookingDate', today, endDate),
+    pagedReminderRange(collection, 'date', today, endDate),
   ])
 
   const candidates = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>()
-  bookingDateSnapshot.docs.forEach(document => candidates.set(document.id, document))
-  legacyDateSnapshot.docs.forEach(document => candidates.set(document.id, document))
+  bookingDateDocuments.forEach(document => candidates.set(document.id, document))
+  legacyDateDocuments.forEach(document => candidates.set(document.id, document))
   return Array.from(candidates.values())
 }
 

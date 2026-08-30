@@ -168,6 +168,7 @@ async function postToWebhook(payload: Record<string, unknown>, settings: Notific
     customer: getRecord(payload.customer),
     payment: getRecord(payload.payment),
     data: getRecord(payload.data),
+    webhookPayload: buildWebhookPayload(payload),
   })
   return delivery
 }
