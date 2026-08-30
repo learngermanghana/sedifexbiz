@@ -11,7 +11,7 @@ type CustomerInfo = { name?: string | null; email?: string | null; phone?: strin
 type PaymentInfo = { status?: string | null; amount?: number | null; currency?: string | null; method?: string | null; reference?: string | null }
 type NotificationPayload = { eventType: string; storeId: string; reference?: string | null; customer?: CustomerInfo | null; payment?: PaymentInfo | null; data?: Record<string, unknown> | null; forceStoreAlert?: boolean }
 type StoreBrand = { storeId: string; storeName: string; logoUrl: string | null; brandColor: string; email: string | null; phone: string | null; publicUrl: string | null }
-type NotificationSettings = { customerEmailEnabled: boolean; storeAlertEnabled: boolean; adminEmails: string[]; replyToEmail: string | null; mode: 'sedifex_default' | 'custom_webhook'; customWebhookEnabled: boolean; customWebhookUrl: string | null }
+type NotificationSettings = { customerEmailEnabled: boolean; storeAlertEnabled: boolean; adminEmails: string[]; replyToEmail: string | null; mode: 'sedifex_default' | 'custom_webhook'; customWebhookEnabled: boolean; customWebhookUrl: string | null; deliveryPreference: 'automatic' | 'sedifex' | 'store_email' | 'custom_webhook'; fallbackToSedifex: boolean; automations: Record<string, boolean> }
 
 const DEFAULT_BRAND_COLOR = '#4f46e5'
 const REQUIRED_STORE_ALERT_EVENTS = new Set(['order.created', 'order.confirmed', 'order.pay_on_delivery', 'order.manual_payment', 'booking.created', 'booking.received', 'booking.confirmed', 'booking.rescheduled', 'booking.cancelled', 'booking.payment_submitted', 'booking.payment_received', 'booking.payment_confirmed', 'student_registration.created', 'student_registration.paid', 'donation.created', 'donation.confirmed', 'volunteer.created', 'support_request.created', 'event_registration.created', 'event_registration.confirmed'])
@@ -21,6 +21,15 @@ function email(value: unknown) { const cleaned = text(value, 220).toLowerCase();
 function numberValue(value: unknown) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null }
 function getRecord(value: unknown) { return value && typeof value === 'object' ? value as Record<string, unknown> : {} }
 function getNestedRecord(record: Record<string, unknown>, key: string) { return getRecord(record[key]) }
+function notificationDeliveryPreference(value: unknown): NotificationSettings['deliveryPreference'] {
+  const candidate = text(value, 40)
+  return ['automatic', 'sedifex', 'store_email', 'custom_webhook'].includes(candidate)
+    ? candidate as NotificationSettings['deliveryPreference']
+    : 'automatic'
+}
+function booleanSettings(value: unknown) {
+  return Object.fromEntries(Object.entries(getRecord(value)).filter(([, enabled]) => typeof enabled === 'boolean')) as Record<string, boolean>
+}
 function titleCase(value: string) { return value.replace(/_/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase()) }
 function formatMoney(payment?: PaymentInfo | null) { const amount = numberValue(payment?.amount); return amount === null ? null : `${payment?.currency || 'GHS'} ${amount.toFixed(2)}` }
 function escapeHtml(value: unknown) { return text(value, 3000).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;') }
@@ -111,11 +120,11 @@ async function ensureNotificationSettings(storeId: string, brand?: StoreBrand): 
   const existingAdminEmails = Array.isArray(existing.adminEmails) ? existing.adminEmails.map(email).filter(Boolean) : []
   const defaultAdminEmails = existingAdminEmails.length ? existingAdminEmails : [resolvedBrand.email].filter((value): value is string => Boolean(value))
   if (!existing.createdAt) {
-    await settingsRef.set({ notifications: { customerEmailEnabled: existing.customerEmailEnabled !== false, storeAlertEnabled: true, adminEmails: defaultAdminEmails, replyToEmail: email(existing.replyToEmail) || resolvedBrand.email || null, mode: text(existing.mode, 40) || 'sedifex_default', customWebhookEnabled: existing.customWebhookEnabled === true, customWebhookUrl: text(existing.customWebhookUrl, 1000) || null, createdAt: now, updatedAt: now } }, { merge: true })
+    await settingsRef.set({ notifications: { customerEmailEnabled: existing.customerEmailEnabled !== false, storeAlertEnabled: true, adminEmails: defaultAdminEmails, replyToEmail: email(existing.replyToEmail) || resolvedBrand.email || null, mode: text(existing.mode, 40) || 'sedifex_default', customWebhookEnabled: existing.customWebhookEnabled === true, customWebhookUrl: text(existing.customWebhookUrl, 1000) || null, deliveryPreference: notificationDeliveryPreference(existing.deliveryPreference), fallbackToSedifex: existing.fallbackToSedifex !== false, automations: booleanSettings(existing.automations), createdAt: now, updatedAt: now } }, { merge: true })
   } else if (!existingAdminEmails.length && resolvedBrand.email) {
     await settingsRef.set({ notifications: { adminEmails: [resolvedBrand.email], replyToEmail: email(existing.replyToEmail) || resolvedBrand.email, updatedAt: now } }, { merge: true })
   }
-  return { customerEmailEnabled: existing.customerEmailEnabled !== false, storeAlertEnabled: true, adminEmails: defaultAdminEmails, replyToEmail: email(existing.replyToEmail) || resolvedBrand.email, mode: existing.mode === 'custom_webhook' ? 'custom_webhook' : 'sedifex_default', customWebhookEnabled: existing.customWebhookEnabled === true, customWebhookUrl: text(existing.customWebhookUrl, 1000) || null }
+  return { customerEmailEnabled: existing.customerEmailEnabled !== false, storeAlertEnabled: existing.storeAlertEnabled !== false, adminEmails: defaultAdminEmails, replyToEmail: email(existing.replyToEmail) || resolvedBrand.email, mode: existing.mode === 'custom_webhook' ? 'custom_webhook' : 'sedifex_default', customWebhookEnabled: existing.customWebhookEnabled === true, customWebhookUrl: text(existing.customWebhookUrl, 1000) || null, deliveryPreference: notificationDeliveryPreference(existing.deliveryPreference), fallbackToSedifex: existing.fallbackToSedifex !== false, automations: booleanSettings(existing.automations) }
 }
 
 
@@ -178,12 +187,14 @@ async function createDelivery(args: { payload: NotificationPayload; brand: Store
   const key = `${args.payload.storeId}|${args.payload.eventType}|${reference}|${args.recipientType}|${args.to}`.replace(/\//g, '_')
   const logRef = defaultDb.collection('notification_delivery_log').doc(key)
   const outboxRef = defaultDb.collection('notification_outbox').doc()
+  const activityRef = defaultDb.collection('stores').doc(args.payload.storeId).collection('notificationActivity').doc(outboxRef.id)
   const now = admin.firestore.FieldValue.serverTimestamp()
   const created = await defaultDb.runTransaction(async transaction => {
     const existing = await transaction.get(logRef)
     if (existing.exists) return false
     transaction.set(logRef, { storeId: args.payload.storeId, eventType: args.payload.eventType, reference, recipientType: args.recipientType, to: args.to, outboxId: outboxRef.id, createdAt: now })
     transaction.set(outboxRef, { storeId: args.payload.storeId, eventType: args.payload.eventType, reference, recipientType: args.recipientType, to: args.to, subject: args.subject, html: args.html, text: args.text, brand: args.brand, customer: args.payload.customer ?? null, payment: args.payload.payment ?? null, data: args.payload.data ?? null, status: 'queued', createdAt: now, updatedAt: now })
+    transaction.set(activityRef, { storeId: args.payload.storeId, eventType: args.payload.eventType, reference, recipientType: args.recipientType, to: args.to, subject: args.subject, status: 'queued', createdAt: now, updatedAt: now })
     return true
   })
   if (!created) return { created: false, webhook: null }
@@ -213,32 +224,39 @@ async function createDelivery(args: { payload: NotificationPayload; brand: Store
   }
   try {
     const webhook = await postToWebhook({ storeId: args.payload.storeId, eventType: args.payload.eventType, reference, recipientType: args.recipientType, to: args.to, subject: args.subject, html: args.html, text: args.text, brand: args.brand, customer: args.payload.customer ?? null, payment: args.payload.payment ?? null, data: args.payload.data ?? null }, args.settings)
-    if (webhook.attempted) await outboxRef.set({
-      status: webhook.ok ? 'delivery_accepted' : 'delivery_failed',
-      webhookStatus: webhook.status,
-      deliveryChannel: webhook.channel,
-      deliveryStatus: webhook.deliveryStatus,
-      senderName: webhook.senderName || null,
-      senderEmail: webhook.senderEmail || null,
-      replyToEmail: webhook.replyToEmail || null,
-      deliveryReason: webhook.reason || null,
-      sentToWebhookAt: now,
-      sheetSyncStatus,
-      updatedAt: now,
-    }, { merge: true })
-    if (!webhook.attempted) await outboxRef.set({
-      status: 'queued_no_live_sender',
-      deliveryChannel: webhook.channel,
-      deliveryStatus: webhook.deliveryStatus,
-      senderName: webhook.senderName || null,
-      replyToEmail: webhook.replyToEmail || null,
-      deliveryReason: webhook.reason || null,
-      sheetSyncStatus,
-      updatedAt: now,
-    }, { merge: true })
+    if (webhook.attempted) {
+      const deliveryUpdate = {
+        status: webhook.ok ? 'delivery_accepted' : 'delivery_failed',
+        webhookStatus: webhook.status,
+        deliveryChannel: webhook.channel,
+        deliveryStatus: webhook.deliveryStatus,
+        senderName: webhook.senderName || null,
+        senderEmail: webhook.senderEmail || null,
+        replyToEmail: webhook.replyToEmail || null,
+        deliveryReason: webhook.reason || null,
+        sentToWebhookAt: now,
+        sheetSyncStatus,
+        updatedAt: now,
+      }
+      await Promise.all([outboxRef.set(deliveryUpdate, { merge: true }), activityRef.set(deliveryUpdate, { merge: true })])
+    }
+    if (!webhook.attempted) {
+      const deliveryUpdate = {
+        status: 'queued_no_live_sender',
+        deliveryChannel: webhook.channel,
+        deliveryStatus: webhook.deliveryStatus,
+        senderName: webhook.senderName || null,
+        replyToEmail: webhook.replyToEmail || null,
+        deliveryReason: webhook.reason || null,
+        sheetSyncStatus,
+        updatedAt: now,
+      }
+      await Promise.all([outboxRef.set(deliveryUpdate, { merge: true }), activityRef.set(deliveryUpdate, { merge: true })])
+    }
     return { created: true, webhook }
   } catch (error) {
-    await outboxRef.set({ status: 'webhook_error', errorMessage: error instanceof Error ? error.message : 'webhook-error', sheetSyncStatus, updatedAt: now }, { merge: true })
+    const deliveryUpdate = { status: 'webhook_error', errorMessage: error instanceof Error ? error.message : 'webhook-error', sheetSyncStatus, updatedAt: now }
+    await Promise.all([outboxRef.set(deliveryUpdate, { merge: true }), activityRef.set(deliveryUpdate, { merge: true })])
     return { created: true, webhook: { attempted: true, ok: false, status: null } }
   }
 }
@@ -248,6 +266,9 @@ export async function queueBrandedNotification(payload: NotificationPayload) {
   if (!storeId) return { ok: false, reason: 'missing-store-id' }
   const brand = await fetchStoreBrand(storeId)
   const settings = await ensureNotificationSettings(storeId, brand)
+  if (settings.automations[payload.eventType] === false) {
+    return { ok: true, deliveries: 0, reference: text(payload.reference ?? payload.payment?.reference, 220) || `${payload.eventType}-${Date.now()}`, skipped: true, reason: 'automation-disabled' }
+  }
   const itemName = getDataItemName(payload.data)
   const copy = eventCopy(payload.eventType, brand.storeName, itemName)
   const rows = detailRows(payload, itemName)

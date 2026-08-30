@@ -179,6 +179,13 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Transactional email activity contains customer addresses and delivery metadata.
+    // Store members may read it, while browser clients cannot forge delivery history.
+    match /stores/{storeId}/notificationActivity/{activityId} {
+      allow read: if hasStoreAccess(storeId);
+      allow create, update, delete: if false;
+    }
+
     // Secure public contract links contain bearer URLs and signing audit data.
     // They are accessed only through Admin SDK Cloud Functions. Never expose
     // these records directly to browser Firestore clients, including signed-in
@@ -285,7 +292,8 @@ service cloud.firestore {
       allow read, write: if isSignedIn()
         && subCollection != 'events'
         && subCollection != 'eventActivity'
-        && subCollection != 'eventContractTemplates';
+        && subCollection != 'eventContractTemplates'
+        && subCollection != 'notificationActivity';
     }
 
     // Legacy fallback for non-store-scoped collections. Store-scoped,
