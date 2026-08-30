@@ -116,8 +116,7 @@ export default function AutomationCenter() {
     if (!quiet) setRefreshing(true)
     try {
       const snapshot = await getDocs(query(
-        collection(db, 'notification_outbox'),
-        where('storeId', '==', activeStoreId),
+        collection(db, 'stores', activeStoreId, 'notificationActivity'),
         orderBy('createdAt', 'desc'),
         limit(50),
       ))
