@@ -11,16 +11,22 @@ export default function PublicBlogPage() {
 
   useEffect(() => {
     if (!storeId) return
+
+    setSelectedTag('all')
     const params = new URLSearchParams({ storeId })
     if (slug) params.set('slug', slug)
-    if (selectedTag !== 'all') params.set('tag', selectedTag)
+
     fetch(`/api/public-blog?${params.toString()}`)
       .then(r => r.json())
       .then(data => setPosts(Array.isArray(data.items) ? data.items : []))
       .catch(() => setPosts([]))
-  }, [storeId, slug, selectedTag])
+  }, [storeId, slug])
 
   const allTags = useMemo(() => ['all', ...new Set(posts.flatMap(post => post.tags ?? []))], [posts])
+  const visiblePosts = useMemo(
+    () => selectedTag === 'all' ? posts : posts.filter(post => (post.tags ?? []).includes(selectedTag)),
+    [posts, selectedTag],
+  )
   const detailPost = slug ? posts[0] : null
 
   useEffect(() => {
@@ -34,7 +40,7 @@ export default function PublicBlogPage() {
     <main className="page" style={{ maxWidth: 900, margin: '0 auto', padding: 16 }}>
       <h1>Store Blog</h1>
       {!slug ? <p><label>Filter by tag: <select value={selectedTag} onChange={e => setSelectedTag(e.target.value)}>{allTags.map(tag => <option key={tag} value={tag}>{tag}</option>)}</select></label></p> : null}
-      {posts.map(post => (
+      {visiblePosts.map(post => (
         <article key={post.id} className="card" style={{ marginBottom: 16, padding: 16 }}>
           <h2>{post.title}</h2>
           {post.imageUrl ? <SafeFirebaseImage src={post.imageUrl} alt={post.title} style={{ maxWidth: 320 }} /> : null}
