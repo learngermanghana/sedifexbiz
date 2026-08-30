@@ -1,0 +1,36 @@
+name: Apply PR 1652 security test
+
+on:
+  push:
+    branches:
+      - feature/automation-center
+    paths:
+      - '.github/workflows/apply-pr1652-security-test.yml'
+      - 'scripts/add_pr1652_security_test.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/automation-center
+
+      - name: Add security regression test
+        run: python scripts/add_pr1652_security_test.py
+
+      - name: Commit security regression test
+        run: |
+          if git diff --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web/tests/event-planning-security-regressions.rules.emulator.test.ts
+          git commit -m 'test: cover automation settings ownership rules'
+          git push origin HEAD:feature/automation-center
