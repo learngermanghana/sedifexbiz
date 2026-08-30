@@ -119,7 +119,7 @@ function isPaymentSettled(data: RecordMap) {
 
 function isUnpaidBooking(data: RecordMap) {
   const status = bookingStatus(data)
-  if (['cancelled', 'canceled', 'completed', 'complete'].includes(status)) return false
+  if (['cancelled', 'canceled', 'completed', 'complete', 'confirmed'].includes(status)) return false
   if (isPaymentSettled(data)) return false
 
   const rawPaymentStatus = paymentStatus(data)

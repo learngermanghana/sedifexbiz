@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions/v1'
 import { defineString } from 'firebase-functions/params'
 import { admin, defaultDb } from './firestore'
 import { appendNotificationOutboxRow, getDefaultSpreadsheetId } from './googleSheets'
+import { deliverTransactionalEmail } from './emailDelivery'
 import {
   calculateSmsCredits,
   formatSmsAddress,
@@ -467,16 +468,21 @@ function safeId(value: string) {
 }
 
 async function postEmailWebhook(payload: RecordMap, settings: NotificationSettings) {
-  const centralUrl = SEDIFEX_NOTIFICATION_WEBHOOK_URL.value()?.trim() || process.env.SEDIFEX_NOTIFICATION_WEBHOOK_URL?.trim() || ''
-  const url = settings.customWebhookEnabled ? settings.customWebhookUrl || centralUrl : centralUrl
-  if (!url) return { attempted: false, ok: false, status: null as number | null }
-  const secret = SEDIFEX_NOTIFICATION_SHARED_SECRET.value()?.trim() || process.env.SEDIFEX_NOTIFICATION_SHARED_SECRET?.trim() || ''
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(secret ? { 'x-sedifex-notification-secret': secret } : {}) },
-    body: JSON.stringify(secret ? { ...payload, secret } : payload),
+  void settings
+  return deliverTransactionalEmail({
+    storeId: text(payload.storeId, 180),
+    eventType: text(payload.eventType, 100),
+    reference: text(payload.reference, 220),
+    recipientType: text(payload.recipientType, 80),
+    to: email(payload.to),
+    subject: text(payload.subject, 500),
+    html: text(payload.html, 200000),
+    text: text(payload.text, 200000),
+    brand: record(payload.brand),
+    customer: record(payload.customer),
+    payment: record(payload.payment),
+    data: record(payload.data),
   })
-  return { attempted: true, ok: response.ok, status: response.status }
 }
 
 async function queueEventEmail(
@@ -600,8 +606,14 @@ async function queueEventEmail(
       },
     }, settings)
     await outboxRef.set({
-      status: webhook.attempted ? (webhook.ok ? 'sent_to_webhook' : 'webhook_failed') : sheetSyncStatus,
+      status: webhook.attempted ? (webhook.ok ? 'delivery_accepted' : 'delivery_failed') : 'queued_no_live_sender',
       webhookStatus: webhook.status,
+      deliveryChannel: webhook.channel,
+      deliveryStatus: webhook.deliveryStatus,
+      senderName: webhook.senderName || null,
+      senderEmail: webhook.senderEmail || null,
+      replyToEmail: webhook.replyToEmail || null,
+      deliveryReason: webhook.reason || null,
       sentToWebhookAt: webhook.attempted ? now : null,
       sheetSyncStatus,
       updatedAt: now,
