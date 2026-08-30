@@ -10,6 +10,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
@@ -212,17 +213,17 @@ export default function AutomationCenter() {
         .split(',')
         .map(value => value.trim().toLowerCase())
         .filter(Boolean)
-      await setDoc(doc(db, 'storeSettings', storeId), {
-        notifications: {
-          customerEmailEnabled,
-          adminEmails: Array.from(new Set(recipients)),
-          replyToEmail: replyToEmail.trim().toLowerCase() || null,
-          deliveryPreference,
-          fallbackToSedifex,
-          automations,
-          updatedAt: serverTimestamp(),
-        },
-      }, { merge: true })
+      const settingsRef = doc(db, 'storeSettings', storeId)
+      await setDoc(settingsRef, {}, { merge: true })
+      await updateDoc(settingsRef, {
+        'notifications.customerEmailEnabled': customerEmailEnabled,
+        'notifications.adminEmails': Array.from(new Set(recipients)),
+        'notifications.replyToEmail': replyToEmail.trim().toLowerCase() || null,
+        'notifications.deliveryPreference': deliveryPreference,
+        'notifications.fallbackToSedifex': fallbackToSedifex,
+        'notifications.automations': automations,
+        'notifications.updatedAt': serverTimestamp(),
+      })
       setMessage('Automation settings saved.')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save automation settings.')
