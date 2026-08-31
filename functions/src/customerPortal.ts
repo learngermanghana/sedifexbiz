@@ -27,6 +27,15 @@ function email(value: unknown) {
   return valueText.includes('@') ? valueText : ''
 }
 
+function escapeHtml(value: unknown) {
+  return text(value, 5000)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
 function phone(value: unknown) {
   return text(value, 80)
 }
@@ -248,7 +257,7 @@ function mapInvoice(id: string, data: RecordMap) {
     dueDate: dateToIso(data.dueDate) || firstText(data, ['dueDate']),
     createdAt: dateToIso(data.createdAt),
     updatedAt: dateToIso(data.updatedAt),
-    publicUrl: firstText(data, ['publicUrl', 'shareUrl', 'documentUrl']),
+    publicUrl: firstText(data, ['publicUrl', 'shareUrl']),
   }
 }
 
@@ -262,7 +271,7 @@ function mapReceipt(id: string, data: RecordMap) {
     paymentMethod: firstText(data, ['paymentMethod', 'payment.method', 'method']),
     status: firstText(data, ['status', 'paymentStatus']) || 'paid',
     createdAt: dateToIso(data.createdAt ?? data.updatedAt),
-    publicUrl: firstText(data, ['publicUrl', 'shareUrl', 'documentUrl']),
+    publicUrl: firstText(data, ['publicUrl', 'shareUrl']),
   }
 }
 
@@ -413,7 +422,7 @@ export const shareCustomerPortal = functions.https.onCall(async (data, context) 
       recipientType: 'customer',
       to: customerEmail,
       subject: `Your customer portal - ${text(brand.storeName, 180) || 'Sedifex'}`,
-      html: `<p>Hello ${customerDisplayName(customer)},</p><p>${text(brand.storeName, 180) || 'The business'} has shared a secure customer portal with you.</p><p>You can use it to review your bookings, invoices, payment receipts and current balance.</p><p><a href="${publicUrl}">Open your customer portal</a></p><p>This private link expires in ${LINK_LIFETIME_DAYS} days. Do not forward it to anyone you do not trust.</p>`,
+      html: `<p>Hello ${escapeHtml(customerDisplayName(customer))},</p><p>${escapeHtml(text(brand.storeName, 180) || 'The business')} has shared a secure customer portal with you.</p><p>You can use it to review your bookings, invoices, payment receipts and current balance.</p><p><a href="${publicUrl}">Open your customer portal</a></p><p>This private link expires in ${LINK_LIFETIME_DAYS} days. Do not forward it to anyone you do not trust.</p>`,
       text: `Hello ${customerDisplayName(customer)}, open your secure customer portal: ${publicUrl}`,
       customer: { name: customerDisplayName(customer), email: customerEmail, phone: phone(customer.phone) },
       data: { customerId, portalUrl: publicUrl, expiresAt: expiresAt.toDate().toISOString() },
