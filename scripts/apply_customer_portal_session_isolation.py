@@ -5,24 +5,34 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-FUNCTION_FILES = [
-    ROOT / 'functions/src/customerPortal.ts',
-    ROOT / 'functions/src/customerPortalBookingAutomation.ts',
-    ROOT / 'functions/src/customerPortalSelfService.ts',
-]
-
 OLD_CONST = "const PUBLIC_APP_BASE_URL = (process.env.SEDIFEX_PUBLIC_APP_URL || 'https://sedifex.com').replace(/\\/$/, '')"
-NEW_CONST = "const CUSTOMER_PORTAL_BASE_URL = (process.env.SEDIFEX_CUSTOMER_PORTAL_BASE_URL || 'https://pay.sedifex.com').replace(/\\/$/, '')"
+PORTAL_CONST = "const CUSTOMER_PORTAL_BASE_URL = (process.env.SEDIFEX_CUSTOMER_PORTAL_BASE_URL || 'https://pay.sedifex.com').replace(/\\/$/, '')"
 
-for path in FUNCTION_FILES:
+for relative in [
+    'functions/src/customerPortal.ts',
+    'functions/src/customerPortalBookingAutomation.ts',
+]:
+    path = ROOT / relative
     text = path.read_text()
     if OLD_CONST not in text:
         raise SystemExit(f'Expected public app base constant not found in {path}')
-    text = text.replace(OLD_CONST, NEW_CONST, 1)
+    text = text.replace(OLD_CONST, PORTAL_CONST, 1)
     text = text.replace('${PUBLIC_APP_BASE_URL}/customer-portal/', '${CUSTOMER_PORTAL_BASE_URL}/customer-portal/')
     if 'PUBLIC_APP_BASE_URL' in text:
         raise SystemExit(f'Unexpected PUBLIC_APP_BASE_URL remains in {path}')
     path.write_text(text)
+
+self_service = ROOT / 'functions/src/customerPortalSelfService.ts'
+text = self_service.read_text()
+if OLD_CONST not in text:
+    raise SystemExit('Expected public app base constant not found in customerPortalSelfService.ts')
+text = text.replace(OLD_CONST, OLD_CONST + '\n' + PORTAL_CONST, 1)
+text = text.replace('${PUBLIC_APP_BASE_URL}/customer-portal/', '${CUSTOMER_PORTAL_BASE_URL}/customer-portal/')
+if '${CUSTOMER_PORTAL_BASE_URL}/customer-portal/' not in text:
+    raise SystemExit('Customer portal return URL was not isolated in customerPortalSelfService.ts')
+if '${PUBLIC_APP_BASE_URL}/bookings/' not in text:
+    raise SystemExit('Admin booking detail URL should continue using PUBLIC_APP_BASE_URL')
+self_service.write_text(text)
 
 share_card = ROOT / 'web/src/components/CustomerPortalShareCard.tsx'
 text = share_card.read_text()
@@ -65,4 +75,36 @@ if 'Test customer portal session isolation' not in ci:
 web_ci.write_text(ci)
 
 test_path = ROOT / 'web/tests/customer-portal-session-isolation.test.mjs'
-test_path.write_text("""import assert from 'node:assert/strict'\nimport fs from 'node:fs'\n\nconst vercel = JSON.parse(fs.readFileSync('../vercel.json', 'utf8'))\nconst redirects = vercel.redirects ?? []\nfor (const host of ['sedifex.com', 'www.sedifex.com']) {\n  const match = redirects.find(item => item.source === '/customer-portal/:path*'\n    && item.destination === 'https://pay.sedifex.com/customer-portal/:path*'\n    && item.has?.some(condition => condition.type === 'host' && condition.value === host))\n  assert.ok(match, `Missing customer portal redirect for ${host}`)\n}\n\nfor (const path of [\n  '../functions/src/customerPortal.ts',\n  '../functions/src/customerPortalBookingAutomation.ts',\n  '../functions/src/customerPortalSelfService.ts',\n]) {\n  const source = fs.readFileSync(path, 'utf8')\n  assert.match(source, /SEDIFEX_CUSTOMER_PORTAL_BASE_URL/)\n  assert.match(source, /https:\/\/pay\\.sedifex\\.com/)\n  assert.doesNotMatch(source, /PUBLIC_APP_BASE_URL/)\n}\n\nconst shareCard = fs.readFileSync('src/components/CustomerPortalShareCard.tsx', 'utf8')\nassert.match(shareCard, /sessionIsolatedPortalUrl/)\nassert.match(shareCard, /pay\\.sedifex\\.com/)\nconsole.log('Customer portal session isolation regression checks passed.')\n""")
+test_path.write_text(r"""import assert from 'node:assert/strict'
+import fs from 'node:fs'
+
+const vercel = JSON.parse(fs.readFileSync('../vercel.json', 'utf8'))
+const redirects = vercel.redirects ?? []
+for (const host of ['sedifex.com', 'www.sedifex.com']) {
+  const match = redirects.find(item => item.source === '/customer-portal/:path*'
+    && item.destination === 'https://pay.sedifex.com/customer-portal/:path*'
+    && item.has?.some(condition => condition.type === 'host' && condition.value === host))
+  assert.ok(match, `Missing customer portal redirect for ${host}`)
+}
+
+for (const path of [
+  '../functions/src/customerPortal.ts',
+  '../functions/src/customerPortalBookingAutomation.ts',
+]) {
+  const source = fs.readFileSync(path, 'utf8')
+  assert.match(source, /SEDIFEX_CUSTOMER_PORTAL_BASE_URL/)
+  assert.match(source, /https:\/\/pay\.sedifex\.com/)
+  assert.doesNotMatch(source, /PUBLIC_APP_BASE_URL/)
+}
+
+const selfService = fs.readFileSync('../functions/src/customerPortalSelfService.ts', 'utf8')
+assert.match(selfService, /SEDIFEX_CUSTOMER_PORTAL_BASE_URL/)
+assert.match(selfService, /https:\/\/pay\.sedifex\.com/)
+assert.match(selfService, /\$\{CUSTOMER_PORTAL_BASE_URL\}\/customer-portal\//)
+assert.match(selfService, /\$\{PUBLIC_APP_BASE_URL\}\/bookings\//)
+
+const shareCard = fs.readFileSync('src/components/CustomerPortalShareCard.tsx', 'utf8')
+assert.match(shareCard, /sessionIsolatedPortalUrl/)
+assert.match(shareCard, /pay\.sedifex\.com/)
+console.log('Customer portal session isolation regression checks passed.')
+""")
