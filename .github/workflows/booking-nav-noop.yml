@@ -1,0 +1,12 @@
+name: Booking nav noop
+on:
+  push:
+    branches:
+      - fix/booking-detail-navigation
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
