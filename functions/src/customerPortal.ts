@@ -279,13 +279,17 @@ function mapReceipt(id: string, data: RecordMap) {
 function mapBookingPayment(id: string, data: RecordMap) {
   const payment = record(data.payment)
   const status = firstText(data, ['paymentStatus', 'payment.status']) || (payment.confirmed === true ? 'paid' : 'pending')
-  const amountReceived = firstNumber(data, ['amountReceived', 'amountPaid', 'paidAmount', 'depositAmount', 'payment.amountReceived', 'payment.amountPaid', 'payment.depositAmount'])
+  const explicitReceived = firstNumber(data, ['amountReceived', 'amountPaid', 'paidAmount', 'payment.amountReceived', 'payment.amountPaid'])
+  const depositAmount = firstNumber(data, ['depositAmount', 'payment.depositAmount'])
   const total = firstNumber(data, ['totalAmount', 'paymentAmount', 'amount', 'total', 'grandTotal', 'payment.amount'])
-  const amountPaid = amountReceived !== null
-    ? Math.max(0, amountReceived)
-    : payment.confirmed === true || paidLike(status)
-      ? total
-      : null
+  const paid = payment.confirmed === true || paidLike(status)
+  const amountPaid = explicitReceived !== null
+    ? Math.max(0, explicitReceived)
+    : paid
+      ? (depositAmount !== null && depositAmount > 0 ? Math.max(0, depositAmount) : total)
+      : depositAmount !== null && depositAmount > 0
+        ? Math.max(0, depositAmount)
+        : null
   const hasRecordedPayment = payment.confirmed === true || paidLike(status) || (amountPaid !== null && amountPaid > 0)
   if (!hasRecordedPayment) return null
 
