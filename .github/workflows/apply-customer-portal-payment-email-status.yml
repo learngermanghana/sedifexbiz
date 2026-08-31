@@ -1,0 +1,34 @@
+name: Apply customer portal payment and email status fix
+
+on:
+  push:
+    branches:
+      - fix/customer-portal-payment-email-status
+    paths:
+      - '.github/workflows/apply-customer-portal-payment-email-status.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/customer-portal-payment-email-status
+
+      - name: Apply patch
+        run: python scripts/patch_customer_portal_payment_email_status.py
+
+      - name: Remove temporary helpers
+        run: rm scripts/patch_customer_portal_payment_email_status.py .github/workflows/apply-customer-portal-payment-email-status.yml
+
+      - name: Commit product changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: show booking payments and portal email status'
+          git push origin HEAD:fix/customer-portal-payment-email-status
