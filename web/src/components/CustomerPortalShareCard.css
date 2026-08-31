@@ -1,0 +1,57 @@
+.customer-portal-share {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, .8fr);
+  gap: 18px;
+  margin: 16px 0 18px;
+  padding: 18px;
+  border: 1px solid #dbe6df;
+  border-radius: 16px;
+  background: #f7fbf8;
+}
+
+.customer-portal-share__copy { min-width: 0; }
+.customer-portal-share__copy > span { display: block; color: #347254; font-size: .74rem; font-weight: 850; text-transform: uppercase; letter-spacing: .04em; }
+.customer-portal-share__copy h3 { margin: 5px 0 7px; font-size: 1rem; }
+.customer-portal-share__copy p { margin: 0; color: #5f6d65; line-height: 1.5; }
+.customer-portal-share__copy small { display: block; margin-top: 8px; color: #607068; font-weight: 700; }
+
+.customer-portal-share__actions {
+  display: flex;
+  align-content: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.customer-portal-share__actions button,
+.customer-portal-share__actions a {
+  min-height: 40px;
+  border: 1px solid #315f48;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: #315f48;
+  color: #fff;
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+.customer-portal-share__actions button.is-secondary,
+.customer-portal-share__actions a {
+  background: #fff;
+  color: #315f48;
+}
+.customer-portal-share__actions button.is-danger {
+  border-color: #c94c4c;
+  background: #fff;
+  color: #ad3434;
+}
+.customer-portal-share__actions button:disabled { opacity: .6; cursor: not-allowed; }
+.customer-portal-share__status { grid-column: 1 / -1; margin: 0; padding: 9px 11px; border-radius: 9px; background: #eef2f0; color: #55625c; font-size: .78rem; font-weight: 700; }
+.customer-portal-share__status.is-success { background: #eaf6ee; color: #286040; }
+.customer-portal-share__status.is-error { background: #fff0f0; color: #a13636; }
+
+@media (max-width: 760px) {
+  .customer-portal-share { grid-template-columns: 1fr; }
+  .customer-portal-share__actions { justify-content: flex-start; }
+}
