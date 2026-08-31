@@ -20,6 +20,8 @@ for (const field of ['title', 'category', 'defaultOwner', 'dueOffsetDays', 'prio
 }
 assert.match(manager, /taskOffsetDays\(eventDate, task\.dueDate\)/)
 assert.match(manager, /dateFromOffset\(eventDate, item\.dueOffsetDays\)/)
+assert.match(manager, /formatLocalCalendarDate\(event\)/)
+assert.doesNotMatch(manager, /event\.toISOString\(\)\.slice\(0, 10\)/)
 assert.match(manager, /defaultOwner: task\.owner\.trim\(\)/)
 assert.match(manager, /owner: item\.defaultOwner/)
 
@@ -28,18 +30,29 @@ assert.match(manager, /templateId: template\.id/)
 assert.match(manager, /templateName: template\.name/)
 assert.match(manager, /status: 'todo'/)
 assert.doesNotMatch(manager, /status: task\.status/)
-assert.match(manager, /nextCompletedCount = applyMode === 'replace' \? 0/)
+assert.match(manager, /nextCompletedCount = mode === 'replace' \? 0/)
 assert.match(manager, /progress: nextProgress/)
-assert.match(manager, /sortOrder: index \+ chunkIndex \+ 1/)
+assert.match(manager, /sortOrder: index \+ 1/)
 
-// Merge skips normalized duplicate titles; replace explicitly deletes current tasks.
+// Merge skips normalized duplicate titles.
 assert.match(manager, /existingTitles = new Set\(tasks\.map\(task => normalizeTitle\(task\.title\)\)\)/)
 assert.match(manager, /selectedTemplate\.items\.filter\(item => !existingTitles\.has\(normalizeTitle\(item\.title\)\)\)/)
-assert.match(manager, /commitDeleteChunks/)
-assert.match(manager, /commitAddChunks/)
 assert.match(manager, /Add missing tasks/)
-assert.match(manager, /Replace current checklist/)
 assert.match(manager, /Duplicate task names were skipped/)
+
+// Replacement is destructive only inside one Firestore atomic batch. Oversized
+// replacements are refused rather than deleting old tasks in committed chunks.
+assert.match(manager, /const MAX_ATOMIC_WRITES = 500/)
+assert.match(manager, /const requiredWrites = \(applyMode === 'replace' \? tasks\.length : 0\) \+ itemsToAdd\.length \+ 1/)
+assert.match(manager, /if \(requiredWrites > MAX_ATOMIC_WRITES\)/)
+assert.match(manager, /existingTasks\.forEach\(task => batch\.delete/)
+assert.match(manager, /items\.forEach\(\(item, index\) => setTemplateTask\(batch/)
+assert.match(manager, /batch\.update\(eventRef/)
+assert.match(manager, /await batch\.commit\(\)/)
+assert.doesNotMatch(manager, /commitDeleteChunks/)
+assert.doesNotMatch(manager, /commitAddChunks/)
+assert.match(manager, /Your existing checklist was left unchanged/)
+assert.match(manager, /Replace current checklist/)
 
 // Template deletion does not mutate any event that already received copied tasks.
 assert.match(manager, /deleteDoc\(doc\(templatesRef, selectedTemplate\.id\)\)/)
