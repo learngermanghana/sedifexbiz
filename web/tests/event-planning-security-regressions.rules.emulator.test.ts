@@ -243,4 +243,26 @@ describeOrSkip('Event planning P1 security regressions', () => {
       await destroyContext(owner)
     }
   })
+
+  test('customer portal bearer-link records are never exposed to browser Firestore clients', async () => {
+    const owner = await createOwner()
+    try {
+      const linkRef = doc(owner.db, 'customerPortalLinks', 'browser-must-not-access-customer-portal-link')
+      await expectPermissionDenied(
+        setDoc(linkRef, {
+          storeId: owner.storeId,
+          customerId: 'customer-1',
+          status: 'active',
+        }),
+        'store owner must not be able to forge a customer portal bearer-link record directly',
+      )
+      await expectPermissionDenied(
+        getDoc(linkRef),
+        'store owner must not be able to read customer portal bearer-link records directly',
+      )
+    } finally {
+      await destroyContext(owner)
+    }
+  })
+
 })

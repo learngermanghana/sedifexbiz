@@ -49,6 +49,7 @@ export {
   automateBookingEmailOnWrite,
   processBookingEmailReminders,
 } from './bookingEmailAutomation'
+export { automateCustomerPortalOnBookingWrite } from './customerPortalBookingAutomation'
 export {
   automateEventCommunicationsOnWrite,
   processEventCommunications,
@@ -66,6 +67,11 @@ export {
   shareEventClientPortal,
   eventClientPortal,
 } from './eventClientCollaboration'
+export {
+  shareCustomerPortal,
+  revokeCustomerPortal,
+  getCustomerPortal,
+} from './customerPortal'
 export {
   mutateEventProgram,
   prepareEventProgramRevision,
