@@ -46,14 +46,28 @@ type ReceiptRow = {
   publicUrl: string
 }
 
+type PaymentRow = {
+  id: string
+  kind: 'receipt' | 'payment_confirmation'
+  title: string
+  reference: string
+  currency: string
+  amountPaid: number | null
+  paymentMethod: string
+  status: string
+  createdAt: string | null
+  publicUrl: string
+}
+
 type PortalData = {
   ok: boolean
   expiresAt: string
   customer: { name: string; email: string; phone: string }
   brand: { storeName: string; email: string; phone: string; logoUrl: string; brandColor: string; address: string; town: string; country: string }
-  summary: { upcomingBookings: number; invoices: number; receipts: number; outstanding: number; currency: string }
+  summary: { upcomingBookings: number; invoices: number; payments?: number; receipts: number; outstanding: number; currency: string }
   bookings: BookingRow[]
   invoices: InvoiceRow[]
+  payments?: PaymentRow[]
   receipts: ReceiptRow[]
 }
 
@@ -128,6 +142,18 @@ export default function PublicCustomerPortal() {
 
   const brandColor = safeBrandColor(data.brand.brandColor)
   const contactHref = data.brand.phone ? `tel:${data.brand.phone}` : data.brand.email ? `mailto:${data.brand.email}` : ''
+  const paymentRows: PaymentRow[] = data.payments ?? data.receipts.map(receipt => ({
+    id: receipt.id,
+    kind: 'receipt' as const,
+    title: receipt.receiptNumber,
+    reference: receipt.reference,
+    currency: receipt.currency,
+    amountPaid: receipt.amountPaid,
+    paymentMethod: receipt.paymentMethod,
+    status: receipt.status,
+    createdAt: receipt.createdAt,
+    publicUrl: receipt.publicUrl,
+  }))
 
   return (
     <main className="customer-portal" style={{ '--customer-portal-accent': brandColor } as React.CSSProperties}>
@@ -147,7 +173,7 @@ export default function PublicCustomerPortal() {
       <section className="customer-portal__summary" aria-label="Account summary">
         <article><span>Upcoming bookings</span><strong>{data.summary.upcomingBookings}</strong></article>
         <article><span>Invoices</span><strong>{data.summary.invoices}</strong></article>
-        <article><span>Receipts</span><strong>{data.summary.receipts}</strong></article>
+        <article><span>Payments</span><strong>{data.summary.payments ?? paymentRows.length}</strong></article>
         <article><span>Outstanding</span><strong>{formatMoney(data.summary.outstanding, data.summary.currency)}</strong></article>
       </section>
 
@@ -190,18 +216,18 @@ export default function PublicCustomerPortal() {
         ) : null}
 
         {activeSection === 'payments' ? (
-          data.receipts.length ? <div className="customer-portal__records">{data.receipts.map(receipt => (
-            <article className="customer-portal__record" key={receipt.id}>
-              <div className="customer-portal__record-head"><div><small>Receipt</small><h3>{receipt.receiptNumber}</h3></div><span>{statusLabel(receipt.status)}</span></div>
+          paymentRows.length ? <div className="customer-portal__records">{paymentRows.map(payment => (
+            <article className="customer-portal__record" key={`${payment.kind}-${payment.id}`}>
+              <div className="customer-portal__record-head"><div><small>{payment.kind === 'receipt' ? 'Receipt' : 'Payment confirmation'}</small><h3>{payment.title}</h3></div><span>{statusLabel(payment.status)}</span></div>
               <dl>
-                <div><dt>Amount</dt><dd>{formatMoney(receipt.amountPaid, receipt.currency)}</dd></div>
-                <div><dt>Method</dt><dd>{receipt.paymentMethod || '—'}</dd></div>
-                <div><dt>Date</dt><dd>{formatDate(receipt.createdAt)}</dd></div>
-                {receipt.reference ? <div><dt>Reference</dt><dd>{receipt.reference}</dd></div> : null}
+                <div><dt>Amount</dt><dd>{formatMoney(payment.amountPaid, payment.currency)}</dd></div>
+                <div><dt>Method</dt><dd>{payment.paymentMethod || '—'}</dd></div>
+                <div><dt>Date</dt><dd>{formatDate(payment.createdAt)}</dd></div>
+                {payment.reference ? <div><dt>Reference</dt><dd>{payment.reference}</dd></div> : null}
               </dl>
-              {receipt.publicUrl ? <a className="customer-portal__document-link" href={receipt.publicUrl} target="_blank" rel="noreferrer">View receipt</a> : null}
+              {payment.kind === 'receipt' && payment.publicUrl ? <a className="customer-portal__document-link" href={payment.publicUrl} target="_blank" rel="noreferrer">View receipt</a> : null}
             </article>
-          ))}</div> : <div className="customer-portal__empty">No payment receipts are linked to this customer yet.</div>
+          ))}</div> : <div className="customer-portal__empty">No payments or receipts are linked to this customer yet.</div>
         ) : null}
       </section>
 

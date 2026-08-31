@@ -276,6 +276,33 @@ function mapReceipt(id: string, data: RecordMap) {
   }
 }
 
+function mapBookingPayment(id: string, data: RecordMap) {
+  const payment = record(data.payment)
+  const status = firstText(data, ['paymentStatus', 'payment.status']) || (payment.confirmed === true ? 'paid' : 'pending')
+  const amountReceived = firstNumber(data, ['amountReceived', 'amountPaid', 'paidAmount', 'depositAmount', 'payment.amountReceived', 'payment.amountPaid', 'payment.depositAmount'])
+  const total = firstNumber(data, ['totalAmount', 'paymentAmount', 'amount', 'total', 'grandTotal', 'payment.amount'])
+  const amountPaid = amountReceived !== null
+    ? Math.max(0, amountReceived)
+    : payment.confirmed === true || paidLike(status)
+      ? total
+      : null
+  const hasRecordedPayment = payment.confirmed === true || paidLike(status) || (amountPaid !== null && amountPaid > 0)
+  if (!hasRecordedPayment) return null
+
+  return {
+    id: `booking-payment-${id}`,
+    kind: 'payment_confirmation' as const,
+    title: firstText(data, ['serviceName', 'booking.serviceName', 'metadata.serviceName', 'itemName']) || 'Booking payment',
+    reference: firstText(data, ['paymentReference', 'payment.reference', 'reference', 'bookingId']) || id,
+    currency: firstText(data, ['currency', 'payment.currency']) || 'GHS',
+    amountPaid,
+    paymentMethod: firstText(data, ['paymentMethod', 'payment.method', 'method']),
+    status,
+    createdAt: dateToIso(data.paymentConfirmedAt ?? data.payment_confirmed_at ?? data.updatedAt ?? data.createdAt),
+    publicUrl: '',
+  }
+}
+
 async function loadPortalData(storeId: string, customerId: string, customer: RecordMap, brand: RecordMap) {
   const storeRef = defaultDb.collection('stores').doc(storeId)
   const [bookings, invoices, receipts] = await Promise.all([
@@ -293,6 +320,15 @@ async function loadPortalData(storeId: string, customerId: string, customer: Rec
   const receiptRows = receipts
     .map(item => mapReceipt(item.id, item.data))
     .sort((left, right) => (right.createdAt || '').localeCompare(left.createdAt || ''))
+  const receiptReferences = new Set(receiptRows.map(item => item.reference.trim().toLowerCase()).filter(Boolean))
+  const bookingPaymentRows = bookings
+    .map(item => mapBookingPayment(item.id, item.data))
+    .filter((item): item is NonNullable<ReturnType<typeof mapBookingPayment>> => Boolean(item))
+    .filter(item => !item.reference || !receiptReferences.has(item.reference.trim().toLowerCase()))
+  const paymentRows = [
+    ...receiptRows.map(item => ({ ...item, kind: 'receipt' as const, title: item.receiptNumber })),
+    ...bookingPaymentRows,
+  ].sort((left, right) => (right.createdAt || '').localeCompare(left.createdAt || ''))
 
   const customerDebt = record(customer.debt)
   const outstandingCents = numberValue(customerDebt.outstandingCents)
@@ -322,12 +358,14 @@ async function loadPortalData(storeId: string, customerId: string, customer: Rec
     summary: {
       upcomingBookings: bookingRows.filter(item => !['cancelled', 'canceled', 'completed', 'complete'].includes(item.status.toLowerCase())).length,
       invoices: invoiceRows.length,
+      payments: paymentRows.length,
       receipts: receiptRows.length,
       outstanding: outstandingCents !== null ? Math.max(0, outstandingCents / 100) : invoiceBalance,
       currency: invoiceRows.find(item => item.currency)?.currency || bookingRows.find(item => item.currency)?.currency || 'GHS',
     },
     bookings: bookingRows,
     invoices: invoiceRows,
+    payments: paymentRows,
     receipts: receiptRows,
   }
 }
@@ -441,6 +479,8 @@ export const shareCustomerPortal = functions.https.onCall(async (data, context) 
 
   let deliveries = 0
   let deliveryStatus = 'not-requested'
+  let deliveryChannel = 'none'
+  let deliveryReason = ''
   const customerEmail = email(customer.email)
   if (sendEmail && customerEmail) {
     const result = await deliverTransactionalEmail({
@@ -457,7 +497,40 @@ export const shareCustomerPortal = functions.https.onCall(async (data, context) 
     })
     deliveries = result.ok && result.channel !== 'outbox_only' ? 1 : 0
     deliveryStatus = result.deliveryStatus
+    deliveryChannel = result.channel
+    deliveryReason = result.reason || ''
   }
+
+  const communicationStatus = !sendEmail
+    ? 'link_created_only'
+    : !customerEmail
+      ? 'needs_customer_email'
+      : deliveries > 0
+        ? (deliveryStatus === 'queued' ? 'queued' : 'sent')
+        : deliveryStatus === 'outbox'
+          ? 'queued_no_live_sender'
+          : 'failed'
+  await customerRef.collection('messages').doc(`sedifex-portal-manual-${hash}`).set({
+    storeId,
+    customerId,
+    customerName: customerDisplayName(customer),
+    channel: sendEmail ? 'email' : 'portal_link',
+    direction: 'outbound',
+    source: 'sedifex_manual_portal_share',
+    eventType: 'customer.portal_shared',
+    subject: 'Your customer portal',
+    body: sendEmail
+      ? `Sedifex attempted to share the secure customer portal with ${customerEmail || 'the customer'}. Delivery: ${communicationStatus} via ${deliveryChannel}.`
+      : 'Sedifex created a secure customer portal link without sending an email.',
+    recipient: customerEmail || null,
+    status: communicationStatus,
+    deliveryChannel,
+    deliveryStatus,
+    deliveryReason: deliveryReason || null,
+    portalUrl: publicUrl,
+    createdAt: now,
+    updatedAt: now,
+  }, { merge: true })
 
   return {
     ok: true,
@@ -465,6 +538,8 @@ export const shareCustomerPortal = functions.https.onCall(async (data, context) 
     expiresAt: expiresAt.toDate().toISOString(),
     deliveries,
     deliveryStatus,
+    deliveryChannel,
+    deliveryReason,
   }
 })
 
