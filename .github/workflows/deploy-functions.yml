@@ -1,5 +1,6 @@
 name: Deploy Firebase Functions
 
+# Deploys the exact main-branch Functions state after production hotfixes.
 on:
   push:
     branches:
