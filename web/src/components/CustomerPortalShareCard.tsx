@@ -73,16 +73,24 @@ export default function CustomerPortalShareCard({ storeId, customerId, customerN
     try {
       const share = httpsCallable<
         { storeId: string; customerId: string; sendEmail: boolean },
-        { ok: boolean; portalUrl: string; expiresAt: string; deliveries: number; deliveryStatus: string }
+        { ok: boolean; portalUrl: string; expiresAt: string; deliveries: number; deliveryStatus: string; deliveryChannel?: string; deliveryReason?: string }
       >(functions, 'shareCustomerPortal')
       const response = await share({ storeId, customerId, sendEmail })
       setPortalUrl(response.data.portalUrl)
       const parsedExpiry = new Date(response.data.expiresAt)
       setExpiresAt(Number.isNaN(parsedExpiry.getTime()) ? null : parsedExpiry)
       if (sendEmail && customerEmail) {
-        setMessage(response.data.deliveries > 0
-          ? `Portal created and emailed to ${customerEmail}.`
-          : 'Portal created, but email delivery was not confirmed. Copy the link and send it manually.')
+        if (response.data.deliveries > 0) {
+          const via = response.data.deliveryChannel && response.data.deliveryChannel !== 'none'
+            ? ` via ${response.data.deliveryChannel.replace(/_/g, ' ')}`
+            : ''
+          setMessage(`Portal created and email accepted for ${customerEmail}${via}.`)
+        } else if (response.data.deliveryStatus === 'outbox') {
+          setMessage('Portal created, but no live email sender is configured. Copy the link and send it manually.')
+        } else {
+          const reason = response.data.deliveryReason ? ` (${response.data.deliveryReason})` : ''
+          setMessage(`Portal created, but email delivery failed${reason}. Copy the link and send it manually.`)
+        }
       } else {
         setMessage('Customer portal link created. Copy it and share it with the customer.')
       }
