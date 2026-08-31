@@ -231,3 +231,84 @@
     flex-direction: column;
   }
 }
+
+
+.booking-editor-page__portal-request {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid #f59e0b;
+  border-radius: 14px;
+  background: #fffbeb;
+}
+
+.booking-editor-page__portal-request--approved {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.booking-editor-page__portal-request--rejected {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.booking-editor-page__portal-request-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.booking-editor-page__portal-request-heading div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.booking-editor-page__portal-request-heading small {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.booking-editor-page__portal-request-details {
+  display: grid;
+  gap: 0.4rem;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.booking-editor-page__portal-request-review {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.booking-editor-page__portal-request-note {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.booking-editor-page__portal-request-note textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.booking-editor-page__portal-request-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .booking-editor-page__portal-request-heading,
+  .booking-editor-page__portal-request-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .booking-editor-page__portal-request-actions button {
+    width: 100%;
+  }
+}
