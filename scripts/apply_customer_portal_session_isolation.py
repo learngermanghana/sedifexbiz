@@ -65,15 +65,6 @@ existing = [item for item in vercel.get('redirects', []) if not (item.get('sourc
 vercel['redirects'] = portal_redirects + existing
 vercel_path.write_text(json.dumps(vercel, indent=2) + '\n')
 
-web_ci = ROOT / '.github/workflows/web-ci.yml'
-ci = web_ci.read_text()
-if "      - 'vercel.json'\n" not in ci:
-    ci = ci.replace("      - 'firebase.event-planning-ci.json'\n", "      - 'firebase.event-planning-ci.json'\n      - 'vercel.json'\n", 1)
-step = "\n      - name: Test customer portal session isolation\n        run: node tests/customer-portal-session-isolation.test.mjs\n        working-directory: web\n"
-if 'Test customer portal session isolation' not in ci:
-    ci = ci.replace("\n      - name: Test event task progress\n", step + "\n      - name: Test event task progress\n", 1)
-web_ci.write_text(ci)
-
 test_path = ROOT / 'web/tests/customer-portal-session-isolation.test.mjs'
 test_path.write_text(r"""import assert from 'node:assert/strict'
 import fs from 'node:fs'
