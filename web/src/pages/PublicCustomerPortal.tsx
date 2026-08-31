@@ -326,10 +326,13 @@ export default function PublicCustomerPortal() {
         {activeSection === 'bookings' ? (
           data.bookings.length ? <div className="customer-portal__records">{data.bookings.map(booking => {
             const normalizedBookingStatus = booking.status.toLowerCase().replace(/[\s-]+/g, '_')
+            const normalizedPaymentStatus = booking.paymentStatus.toLowerCase().replace(/[\s-]+/g, '_')
             const isClosed = ['cancelled', 'canceled', 'completed', 'complete'].includes(normalizedBookingStatus)
+            const isPaid = ['paid', 'confirmed', 'success', 'succeeded', 'captured', 'complete', 'completed', 'paid_cash'].includes(normalizedPaymentStatus)
+            const displayOutstanding = isPaid ? 0 : booking.amountOutstanding
             const request = requestByBooking.get(booking.id)
             const pendingRequest = request?.status === 'pending'
-            const canPay = !isClosed && typeof booking.amountOutstanding === 'number' && booking.amountOutstanding > 0
+            const canPay = !isClosed && !isPaid && typeof displayOutstanding === 'number' && displayOutstanding > 0
             const isEditingAction = actionBookingId === booking.id && Boolean(actionType)
             return (
               <article className="customer-portal__record" key={booking.id}>
@@ -340,7 +343,7 @@ export default function PublicCustomerPortal() {
                   {booking.location ? <div><dt>Location</dt><dd>{booking.location}</dd></div> : null}
                   <div><dt>Payment</dt><dd>{statusLabel(booking.paymentStatus)}</dd></div>
                   <div><dt>Total</dt><dd>{formatMoney(booking.total, booking.currency)}</dd></div>
-                  <div><dt>Balance</dt><dd>{formatMoney(booking.amountOutstanding, booking.currency)}</dd></div>
+                  <div><dt>Balance</dt><dd>{formatMoney(displayOutstanding, booking.currency)}</dd></div>
                 </dl>
 
                 {request ? (
@@ -357,7 +360,7 @@ export default function PublicCustomerPortal() {
                   <div className="customer-portal__record-actions">
                     {canPay ? (
                       <button type="button" className="customer-portal__action-button customer-portal__action-button--primary" disabled={Boolean(payingBookingId)} onClick={() => void payBookingBalance(booking)}>
-                        {payingBookingId === booking.id ? 'Opening secure payment…' : `Pay balance · ${formatMoney(booking.amountOutstanding, booking.currency)}`}
+                        {payingBookingId === booking.id ? 'Opening secure payment…' : `Pay balance · ${formatMoney(displayOutstanding, booking.currency)}`}
                       </button>
                     ) : null}
                     {!pendingRequest ? (

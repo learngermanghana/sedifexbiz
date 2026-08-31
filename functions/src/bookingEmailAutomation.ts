@@ -314,6 +314,24 @@ async function queueBookingEmail(
   })
 }
 
+
+export async function queueBookingPortalDecisionEmail(
+  storeId: string,
+  bookingId: string,
+  eventType: 'booking.rescheduled' | 'booking.cancelled',
+  data: RecordMap,
+) {
+  return queueBookingEmail(
+    storeId,
+    bookingId,
+    eventType,
+    data,
+    eventType === 'booking.rescheduled'
+      ? { forceStoreAlert: true, referenceSuffix: `${bookingDate(data)}-${bookingTime(data)}` }
+      : { forceStoreAlert: true },
+  )
+}
+
 function meaningfulScheduleChanged(before: RecordMap, after: RecordMap) {
   if (!Object.keys(before).length) return false
   return bookingDate(before) !== bookingDate(after) || bookingTime(before) !== bookingTime(after)

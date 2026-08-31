@@ -3,6 +3,7 @@ import { randomBytes } from 'crypto'
 import { admin, defaultDb } from './firestore'
 import { hashPublicContractToken } from './eventContractSigningCore'
 import { deliverTransactionalEmail } from './emailDelivery'
+import { queueBookingPortalDecisionEmail } from './bookingEmailAutomation'
 
 type RecordMap = Record<string, unknown>
 type RequestType = 'reschedule' | 'cancel'
@@ -19,6 +20,7 @@ type PortalLink = {
 
 type PortalRequest = {
   id: string
+  customerId?: string | null
   type: RequestType
   status: RequestStatus
   requestedDate?: string | null
@@ -441,6 +443,7 @@ export const submitCustomerPortalBookingRequest = functions.https.onCall(async d
   const now = admin.firestore.Timestamp.now()
   const request: PortalRequest = {
     id: `cpr_${Date.now()}_${randomBytes(6).toString('hex')}`,
+    customerId: loaded.link.customerId,
     type: action,
     status: 'pending',
     requestedDate: action === 'reschedule' ? requestedDate : null,
@@ -480,12 +483,22 @@ export const submitCustomerPortalBookingRequest = functions.https.onCall(async d
   try {
     const root = await rootRef.get()
     if (root.exists) {
-      await rootRef.set({
-        customerPortalRequest: request,
-        customerPortalRequestStatus: 'pending',
-        customerPortalRequestUpdatedAt: now,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true })
+      const rootData = root.data() as RecordMap
+      const rootStoreId = firstText(rootData, ['storeId', 'store_id', 'merchantId'], 180)
+      if (rootStoreId === loaded.link.storeId) {
+        await rootRef.set({
+          customerPortalRequest: request,
+          customerPortalRequestStatus: 'pending',
+          customerPortalRequestUpdatedAt: now,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true })
+      } else {
+        functions.logger.warn('Skipped customer portal root mirror because store ownership did not match', {
+          bookingId: loaded.bookingId,
+          expectedStoreId: loaded.link.storeId,
+          rootStoreId: rootStoreId || null,
+        })
+      }
     }
   } catch (error) {
     functions.logger.warn('Unable to mirror customer portal request to root booking', { bookingId: loaded.bookingId, error })
@@ -543,10 +556,11 @@ export const reviewCustomerPortalBookingRequest = functions.https.onCall(async (
     if (['cancelled', 'canceled', 'completed', 'complete'].includes(bookingStatus(booking)) && decision === 'approve') {
       throw new functions.https.HttpsError('failed-precondition', 'This booking can no longer be changed.')
     }
-    const customerId = explicitBookingCustomerId(booking)
+    const customerId = text(requestData.customerId, 220) || explicitBookingCustomerId(booking)
     const nextStatus: RequestStatus = decision === 'approve' ? 'approved' : 'rejected'
     const reviewedRequest: PortalRequest = {
       id: text(requestData.id, 220),
+      customerId: customerId || null,
       type: requestType,
       status: nextStatus,
       requestedDate: text(requestData.requestedDate, 40) || null,
@@ -558,6 +572,27 @@ export const reviewCustomerPortalBookingRequest = functions.https.onCall(async (
       reviewedAt,
       reviewedBy: context.auth?.uid || null,
       decisionNote: decisionNote || null,
+    }
+
+    const oldSlotId = firstText(booking, ['slotId', 'slot_id'], 220)
+    const quantity = Math.max(1, Math.floor(numberValue(booking.quantity) ?? 1))
+    if (decision === 'approve' && oldSlotId && (requestType === 'reschedule' || requestType === 'cancel')) {
+      const slotRef = defaultDb.collection('stores').doc(storeId).collection('integrationAvailabilitySlots').doc(oldSlotId)
+      const slotSnapshot = await transaction.get(slotRef)
+      if (slotSnapshot.exists) {
+        const slotData = slotSnapshot.data() as RecordMap
+        const seatsBooked = Math.max(0, Math.floor(numberValue(slotData.seatsBooked) ?? 0))
+        transaction.update(slotRef, {
+          seatsBooked: Math.max(0, seatsBooked - quantity),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        })
+      } else {
+        functions.logger.warn('Customer portal review could not find the booking availability slot to release', {
+          storeId,
+          bookingId,
+          slotId: oldSlotId,
+        })
+      }
     }
 
     const update: Record<string, unknown> = {
@@ -575,6 +610,9 @@ export const reviewCustomerPortalBookingRequest = functions.https.onCall(async (
         date: nextDate,
         bookingTime: nextTime,
         time: nextTime,
+        slotId: null,
+        slot_id: null,
+        ...(oldSlotId ? { previousSlotId: oldSlotId, availabilitySlotReleasedAt: reviewedAt } : {}),
         booking: {
           ...record(booking.booking),
           preferredDate: nextDate,
@@ -590,6 +628,9 @@ export const reviewCustomerPortalBookingRequest = functions.https.onCall(async (
         bookingStatus: 'cancelled',
         booking_status: 'cancelled',
         status: 'cancelled',
+        slotId: null,
+        slot_id: null,
+        ...(oldSlotId ? { previousSlotId: oldSlotId, availabilitySlotReleasedAt: reviewedAt } : {}),
         booking: {
           ...record(booking.booking),
           status: 'cancelled',
@@ -621,36 +662,49 @@ export const reviewCustomerPortalBookingRequest = functions.https.onCall(async (
   try {
     const root = await rootRef.get()
     if (root.exists) {
-      const mirror: Record<string, unknown> = {
-        customerPortalRequest: reviewedRequest,
-        customerPortalRequestStatus: reviewedRequest.status,
-        customerPortalRequestUpdatedAt: reviewedAt,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }
-      if (decision === 'approve' && reviewedRequest.type === 'reschedule') {
-        Object.assign(mirror, {
-          bookingDate: reviewedRequest.requestedDate,
-          date: reviewedRequest.requestedDate,
-          bookingTime: reviewedRequest.requestedTime,
-          time: reviewedRequest.requestedTime,
-          booking: {
-            ...record(root.data()?.booking),
-            preferredDate: reviewedRequest.requestedDate,
-            preferredTime: reviewedRequest.requestedTime,
-          },
-          syncStatus: 'pending',
-          syncReason: 'booking_rescheduled',
-          syncRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+      const rootData = root.data() as RecordMap
+      const rootStoreId = firstText(rootData, ['storeId', 'store_id', 'merchantId'], 180)
+      if (rootStoreId === storeId) {
+        const mirror: Record<string, unknown> = {
+          customerPortalRequest: reviewedRequest,
+          customerPortalRequestStatus: reviewedRequest.status,
+          customerPortalRequestUpdatedAt: reviewedAt,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }
+        if (decision === 'approve' && reviewedRequest.type === 'reschedule') {
+          Object.assign(mirror, {
+            bookingDate: reviewedRequest.requestedDate,
+            date: reviewedRequest.requestedDate,
+            bookingTime: reviewedRequest.requestedTime,
+            time: reviewedRequest.requestedTime,
+            slotId: null,
+            slot_id: null,
+            booking: {
+              ...record(rootData.booking),
+              preferredDate: reviewedRequest.requestedDate,
+              preferredTime: reviewedRequest.requestedTime,
+            },
+            syncStatus: 'pending',
+            syncReason: 'booking_rescheduled',
+            syncRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+          })
+        }
+        if (decision === 'approve' && reviewedRequest.type === 'cancel') {
+          Object.assign(mirror, {
+            bookingStatus: 'cancelled', booking_status: 'cancelled', status: 'cancelled', cancelledAt: reviewedAt,
+            slotId: null, slot_id: null,
+            booking: { ...record(rootData.booking), status: 'cancelled', bookingStatus: 'cancelled', booking_status: 'cancelled' },
+            syncStatus: 'pending', syncReason: 'booking_cancelled', syncRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
+          })
+        }
+        await rootRef.set(mirror, { merge: true })
+      } else {
+        functions.logger.warn('Skipped reviewed customer portal root mirror because store ownership did not match', {
+          bookingId,
+          expectedStoreId: storeId,
+          rootStoreId: rootStoreId || null,
         })
       }
-      if (decision === 'approve' && reviewedRequest.type === 'cancel') {
-        Object.assign(mirror, {
-          bookingStatus: 'cancelled', booking_status: 'cancelled', status: 'cancelled', cancelledAt: reviewedAt,
-          booking: { ...record(root.data()?.booking), status: 'cancelled', bookingStatus: 'cancelled', booking_status: 'cancelled' },
-          syncStatus: 'pending', syncReason: 'booking_cancelled', syncRequestedAt: admin.firestore.FieldValue.serverTimestamp(),
-        })
-      }
-      await rootRef.set(mirror, { merge: true })
     }
   } catch (error) {
     functions.logger.warn('Unable to mirror reviewed customer portal request to root booking', { bookingId, error })
@@ -677,7 +731,25 @@ export const reviewCustomerPortalBookingRequest = functions.https.onCall(async (
     })
   }
 
-  if (reviewedRequest.status === 'rejected' && customerId) {
+  if (reviewedRequest.status === 'approved') {
+    try {
+      await queueBookingPortalDecisionEmail(
+        storeId,
+        bookingId,
+        reviewedRequest.type === 'cancel' ? 'booking.cancelled' : 'booking.rescheduled',
+        bookingAfter,
+      )
+    } catch (error) {
+      // The normal booking onWrite automation is an independent fallback. Keep
+      // the approved booking state even if this eager notification attempt fails.
+      functions.logger.error('Customer portal approval notification failed', {
+        storeId,
+        bookingId,
+        requestId: reviewedRequest.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  } else if (customerId) {
     await notifyCustomerOfRejection({ storeId, store, customer, bookingId, booking: bookingAfter, request: reviewedRequest })
   }
 
