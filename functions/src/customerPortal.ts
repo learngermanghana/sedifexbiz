@@ -181,6 +181,17 @@ async function loadCustomerForStore(storeId: string, customerId: string) {
 }
 
 async function scanCollection(ref: FirebaseFirestore.CollectionReference, customerId: string, customer: RecordMap) {
+  const directSnapshots = await Promise.all([
+    ref.where('customerId', '==', customerId).limit(200).get(),
+    ref.where('customer_id', '==', customerId).limit(200).get(),
+  ])
+  const direct = new Map<string, { id: string; data: RecordMap }>()
+  directSnapshots.forEach(snapshot => snapshot.docs.forEach(item => direct.set(item.id, { id: item.id, data: item.data() as RecordMap })))
+  if (direct.size) return Array.from(direct.values())
+
+  // Legacy fallback for older rows created before canonical customer IDs were
+  // backfilled. This is deliberately bounded; current booking/invoice/receipt
+  // writers attach customerId and customer_id automatically.
   const snapshot = await ref.limit(COLLECTION_SCAN_LIMIT).get()
   return snapshot.docs
     .map(item => ({ id: item.id, data: item.data() as RecordMap }))
@@ -215,14 +226,25 @@ function mapBooking(id: string, data: RecordMap) {
 }
 
 function mapInvoice(id: string, data: RecordMap) {
+  const status = firstText(data, ['status']) || 'draft'
+  const total = firstNumber(data, ['total', 'grandTotal', 'amount'])
+  const amountPaid = firstNumber(data, ['amountPaid', 'paidAmount'])
+  const directBalance = firstNumber(data, ['balance', 'amountOutstanding'])
+  const balance = directBalance !== null
+    ? Math.max(0, directBalance)
+    : ['paid', 'cancelled', 'canceled', 'void'].includes(status.toLowerCase())
+      ? 0
+      : total !== null && amountPaid !== null
+        ? Math.max(0, total - amountPaid)
+        : null
   return {
     id,
     invoiceNumber: firstText(data, ['invoiceNumber', 'number', 'reference']) || id,
-    status: firstText(data, ['status']) || 'draft',
+    status,
     currency: firstText(data, ['currency']) || 'GHS',
-    total: firstNumber(data, ['total', 'grandTotal', 'amount']),
-    amountPaid: firstNumber(data, ['amountPaid', 'paidAmount']),
-    balance: firstNumber(data, ['balance', 'amountOutstanding']),
+    total,
+    amountPaid,
+    balance,
     dueDate: dateToIso(data.dueDate) || firstText(data, ['dueDate']),
     createdAt: dateToIso(data.createdAt),
     updatedAt: dateToIso(data.updatedAt),
