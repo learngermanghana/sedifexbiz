@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Timestamp, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where, type DocumentData, type DocumentReference } from 'firebase/firestore'
-import { db } from '../firebase'
+import { httpsCallable } from 'firebase/functions'
+import { db, functions } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
 import { useToast } from '../components/ToastProvider'
 import { playSound } from '../utils/sound'
@@ -26,6 +27,30 @@ type BookingFormState = {
   paymentMethod: string
   paymentReference: string
   paymentStatus: string
+}
+
+type CustomerPortalRequestState = {
+  bookingId: string
+  id: string
+  type: 'reschedule' | 'cancel'
+  status: 'pending' | 'approved' | 'rejected'
+  requestedDate: string
+  requestedTime: string
+  note: string
+  previousDate: string
+  previousTime: string
+  submittedAt: string | null
+  reviewedAt: string | null
+  reviewedBy: string
+  decisionNote: string
+}
+
+type PortalRequestDecisionResponse = {
+  ok: boolean
+  request: CustomerPortalRequestState
+  bookingDate: string
+  bookingTime: string
+  bookingStatus: string
 }
 
 const DEFAULT_FORM: BookingFormState = {
@@ -68,6 +93,29 @@ function firstStringValue(...values: unknown[]): string {
     if (str) return str
   }
   return ''
+}
+
+function normalizeCustomerPortalRequest(value: unknown, bookingId: string): CustomerPortalRequestState | null {
+  const request = recordValue(value)
+  const id = firstStringValue(request.id)
+  if (!id) return null
+  const rawType = firstStringValue(request.type).toLowerCase()
+  const rawStatus = firstStringValue(request.status).toLowerCase()
+  return {
+    bookingId,
+    id,
+    type: rawType === 'cancel' ? 'cancel' : 'reschedule',
+    status: rawStatus === 'approved' ? 'approved' : rawStatus === 'rejected' ? 'rejected' : 'pending',
+    requestedDate: firstStringValue(request.requestedDate),
+    requestedTime: firstStringValue(request.requestedTime),
+    note: firstStringValue(request.note),
+    previousDate: firstStringValue(request.previousDate),
+    previousTime: firstStringValue(request.previousTime),
+    submittedAt: stringValue(request.submittedAt) || null,
+    reviewedAt: stringValue(request.reviewedAt) || null,
+    reviewedBy: firstStringValue(request.reviewedBy),
+    decisionNote: firstStringValue(request.decisionNote),
+  }
 }
 
 function normalizePaymentStatusValue(value: unknown, fallback = 'pending'): string {
@@ -247,12 +295,17 @@ export default function BookingEditor() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [existingPaymentConfirmedAt, setExistingPaymentConfirmedAt] = useState<unknown>(null)
   const [paymentStatusReviewed, setPaymentStatusReviewed] = useState(false)
+  const [portalRequest, setPortalRequest] = useState<CustomerPortalRequestState | null>(null)
+  const [portalDecisionNote, setPortalDecisionNote] = useState('')
+  const [reviewingPortalRequest, setReviewingPortalRequest] = useState(false)
   const { publish } = useToast()
 
   useEffect(() => {
     if (!storeId || isCreateMode) {
       setExistingPaymentConfirmedAt(null)
       setPaymentStatusReviewed(false)
+      setPortalRequest(null)
+      setPortalDecisionNote('')
       setLoading(false)
       return
     }
@@ -288,6 +341,8 @@ export default function BookingEditor() {
         setForm(normalizeBookingForm(data))
         setExistingPaymentConfirmedAt(data.paymentConfirmedAt ?? data.payment_confirmed_at ?? null)
         setPaymentStatusReviewed(false)
+        setPortalRequest(normalizeCustomerPortalRequest(data.customerPortalRequest, bookingId))
+        setPortalDecisionNote('')
       } catch (error) {
         console.error('[booking-editor] Failed to load booking', error)
         if (!cancelled) {
@@ -580,6 +635,49 @@ export default function BookingEditor() {
     }
   }
 
+  async function handlePortalRequestDecision(decision: 'approve' | 'reject') {
+    if (!storeId || isCreateMode || !portalRequest || portalRequest.status !== 'pending') return
+    setReviewingPortalRequest(true)
+    setErrorMessage(null)
+    setSuccessMessage(null)
+    try {
+      const reviewRequest = httpsCallable<{
+        storeId: string
+        bookingId: string
+        decision: 'approve' | 'reject'
+        note: string
+      }, PortalRequestDecisionResponse>(functions, 'reviewCustomerPortalBookingRequest')
+      const response = await reviewRequest({ storeId, bookingId, decision, note: portalDecisionNote })
+      setPortalRequest(response.data.request)
+      if (decision === 'approve' && response.data.request.type === 'reschedule') {
+        setForm(previous => ({
+          ...previous,
+          bookingDate: response.data.bookingDate || previous.bookingDate,
+          bookingTime: response.data.bookingTime || previous.bookingTime,
+        }))
+      }
+      if (decision === 'approve' && response.data.request.type === 'cancel') {
+        setForm(previous => ({ ...previous, status: 'cancelled' }))
+      }
+      const message = decision === 'approve'
+        ? 'Customer request approved. Sedifex updated the booking and will handle the customer notification.'
+        : 'Customer request rejected. Sedifex has recorded the decision and notified the customer when email is available.'
+      setSuccessMessage(message)
+      publish({ tone: 'success', message })
+      void playSound('success')
+    } catch (error) {
+      console.error('[booking-editor] Failed to review customer portal request', error)
+      const message = error && typeof error === 'object' && 'message' in error
+        ? String((error as { message?: unknown }).message || '').replace(/^FirebaseError:\s*/i, '')
+        : 'Unable to review this customer request right now.'
+      setErrorMessage(message || 'Unable to review this customer request right now.')
+      publish({ tone: 'error', message: message || 'Unable to review this customer request right now.' })
+      void playSound('error')
+    } finally {
+      setReviewingPortalRequest(false)
+    }
+  }
+
   async function handleDeleteBooking() {
     if (!storeId || isCreateMode) {
       setErrorMessage('Select an existing booking before deleting.')
@@ -644,6 +742,35 @@ export default function BookingEditor() {
               void handleSave()
             }}
           >
+            {portalRequest ? (
+              <section className={`booking-editor-page__portal-request booking-editor-page__portal-request--${portalRequest.status}`}>
+                <div className="booking-editor-page__portal-request-heading">
+                  <div>
+                    <small>Customer portal request</small>
+                    <strong>{portalRequest.type === 'cancel' ? 'Cancellation requested' : 'Reschedule requested'}</strong>
+                  </div>
+                  <span className={`booking-editor-page__status-badge booking-editor-page__status-badge--${portalRequest.status === 'pending' ? 'pending' : portalRequest.status === 'approved' ? 'confirmed' : 'cancelled'}`}>
+                    {portalRequest.status === 'pending' ? 'Needs review' : portalRequest.status === 'approved' ? 'Approved' : 'Rejected'}
+                  </span>
+                </div>
+                <div className="booking-editor-page__portal-request-details">
+                  {portalRequest.type === 'reschedule' ? <span><strong>Requested:</strong> {portalRequest.requestedDate || '—'}{portalRequest.requestedTime ? ` · ${portalRequest.requestedTime}` : ''}</span> : <span><strong>Request:</strong> Cancel this booking</span>}
+                  {portalRequest.previousDate ? <span><strong>Current:</strong> {portalRequest.previousDate}{portalRequest.previousTime ? ` · ${portalRequest.previousTime}` : ''}</span> : null}
+                  {portalRequest.note ? <span><strong>Customer note:</strong> {portalRequest.note}</span> : null}
+                  {portalRequest.decisionNote ? <span><strong>Business note:</strong> {portalRequest.decisionNote}</span> : null}
+                </div>
+                {portalRequest.status === 'pending' ? (
+                  <div className="booking-editor-page__portal-request-review">
+                    <label className="booking-editor-page__portal-request-note"><span>Reply / decision note (optional)</span><textarea rows={3} maxLength={1200} value={portalDecisionNote} onChange={event => setPortalDecisionNote(event.target.value)} placeholder="Add a short reason or alternative for the customer" /></label>
+                    <div className="booking-editor-page__portal-request-actions">
+                      <button type="button" className="button" disabled={reviewingPortalRequest} onClick={() => void handlePortalRequestDecision('reject')}>Reject request</button>
+                      <button type="button" className="button button--primary" disabled={reviewingPortalRequest} onClick={() => void handlePortalRequestDecision('approve')}>{reviewingPortalRequest ? 'Saving decision…' : 'Approve request'}</button>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
             <label><span>Customer name</span><input value={form.fullName} onChange={event => setForm(prev => ({ ...prev, fullName: event.target.value }))} required /></label>
             <label><span>Phone</span><input value={form.phone} onChange={event => setForm(prev => ({ ...prev, phone: event.target.value }))} /></label>
             <label><span>Email</span><input type="email" value={form.email} onChange={event => setForm(prev => ({ ...prev, email: event.target.value }))} /></label>

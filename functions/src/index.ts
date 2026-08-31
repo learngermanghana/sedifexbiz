@@ -73,6 +73,12 @@ export {
   getCustomerPortal,
 } from './customerPortal'
 export {
+  getCustomerPortalSelfServiceState,
+  submitCustomerPortalBookingRequest,
+  reviewCustomerPortalBookingRequest,
+  createCustomerPortalPaymentCheckout,
+} from './customerPortalSelfService'
+export {
   mutateEventProgram,
   prepareEventProgramRevision,
   resolveEventProgramChangeRequest,

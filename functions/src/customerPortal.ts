@@ -212,12 +212,15 @@ function mapBooking(id: string, data: RecordMap) {
   const payment = record(data.payment)
   const total = firstNumber(data, ['totalAmount', 'amount', 'total', 'grandTotal', 'payment.total'])
   const received = firstNumber(data, ['amountReceived', 'amountPaid', 'paidAmount', 'payment.amountReceived', 'payment.amountPaid'])
+  const paymentStatus = firstText(data, ['paymentStatus', 'payment.status']) || 'pending'
   const directOutstanding = firstNumber(data, ['amountOutstanding', 'balance', 'outstandingAmount', 'payment.amountOutstanding', 'payment.balance'])
-  const outstanding = directOutstanding !== null
-    ? Math.max(0, directOutstanding)
-    : total !== null && received !== null
-      ? Math.max(0, total - received)
-      : paidLike(data.paymentStatus ?? payment.status) ? 0 : null
+  const outstanding = paidLike(paymentStatus)
+    ? 0
+    : directOutstanding !== null
+      ? Math.max(0, directOutstanding)
+      : total !== null && received !== null
+        ? Math.max(0, total - received)
+        : null
   return {
     id,
     reference: firstText(data, ['reference', 'bookingId', 'paymentReference', 'payment.reference']) || id,
@@ -226,7 +229,7 @@ function mapBooking(id: string, data: RecordMap) {
     bookingTime: firstText(data, ['bookingTime', 'time', 'booking.preferredTime', 'metadata.bookingTime']),
     location: firstText(data, ['location', 'branch', 'venue', 'booking.location']),
     status: firstText(data, ['status', 'bookingStatus']) || 'pending',
-    paymentStatus: firstText(data, ['paymentStatus', 'payment.status']) || 'pending',
+    paymentStatus,
     currency: firstText(data, ['currency', 'payment.currency']) || 'GHS',
     total,
     amountReceived: received,

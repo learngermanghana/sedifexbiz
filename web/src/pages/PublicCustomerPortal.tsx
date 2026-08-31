@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { httpsCallable } from 'firebase/functions'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { functions } from '../firebase'
 import './PublicCustomerPortal.css'
 
@@ -59,6 +59,27 @@ type PaymentRow = {
   publicUrl: string
 }
 
+type PortalBookingRequest = {
+  bookingId: string
+  id: string
+  type: 'reschedule' | 'cancel'
+  status: 'pending' | 'approved' | 'rejected'
+  requestedDate: string
+  requestedTime: string
+  note: string
+  previousDate: string
+  previousTime: string
+  submittedAt: string | null
+  reviewedAt: string | null
+  reviewedBy: string
+  decisionNote: string
+}
+
+type SelfServiceState = {
+  ok: boolean
+  requests: PortalBookingRequest[]
+}
+
 type PortalData = {
   ok: boolean
   expiresAt: string
@@ -70,6 +91,10 @@ type PortalData = {
   payments?: PaymentRow[]
   receipts: ReceiptRow[]
 }
+
+type SubmitRequestResponse = { ok: boolean; request: PortalBookingRequest }
+type PaymentCheckoutResponse = { ok: boolean; checkoutUrl: string; reference: string; amount: number; currency: string }
+type BookingAction = 'reschedule' | 'cancel'
 
 function formatMoney(value: number | null | undefined, currency = 'GHS') {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
@@ -95,12 +120,34 @@ function safeBrandColor(value: string) {
   return /^#[0-9a-f]{6}$/i.test(value) ? value : '#4f46e5'
 }
 
+function actionErrorMessage(error: unknown) {
+  const raw = error && typeof error === 'object' && 'message' in error
+    ? String((error as { message?: unknown }).message || '')
+    : ''
+  return raw
+    .replace(/^FirebaseError:\s*/i, '')
+    .replace(/^functions\/[a-z-]+:\s*/i, '')
+    || 'Unable to complete this request right now.'
+}
+
 export default function PublicCustomerPortal() {
   const { token = '' } = useParams<{ token?: string }>()
+  const [searchParams] = useSearchParams()
   const [data, setData] = useState<PortalData | null>(null)
+  const [selfService, setSelfService] = useState<SelfServiceState>({ ok: true, requests: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeSection, setActiveSection] = useState<'bookings' | 'invoices' | 'payments'>('bookings')
+  const [actionBookingId, setActionBookingId] = useState('')
+  const [actionType, setActionType] = useState<BookingAction | ''>('')
+  const [requestedDate, setRequestedDate] = useState('')
+  const [requestedTime, setRequestedTime] = useState('')
+  const [actionNote, setActionNote] = useState('')
+  const [actionBusy, setActionBusy] = useState(false)
+  const [payingBookingId, setPayingBookingId] = useState('')
+  const [actionMessage, setActionMessage] = useState('')
+  const [actionError, setActionError] = useState('')
+  const paymentReturning = searchParams.get('payment') === 'returning'
 
   useEffect(() => {
     let active = true
@@ -113,12 +160,17 @@ export default function PublicCustomerPortal() {
         if (!active) return
         setData(response.data)
         document.title = `${response.data.brand.storeName} — Customer portal`
+
+        try {
+          const getSelfService = httpsCallable<{ token: string }, SelfServiceState>(functions, 'getCustomerPortalSelfServiceState')
+          const selfServiceResponse = await getSelfService({ token })
+          if (active) setSelfService(selfServiceResponse.data)
+        } catch (selfServiceError) {
+          console.warn('[customer-portal] Self-service state unavailable', selfServiceError)
+        }
       } catch (loadError) {
         if (!active) return
-        const raw = loadError && typeof loadError === 'object' && 'message' in loadError
-          ? String((loadError as { message?: unknown }).message || '')
-          : ''
-        setError(raw.replace(/^FirebaseError:\s*/i, '') || 'This customer portal is unavailable.')
+        setError(actionErrorMessage(loadError) || 'This customer portal is unavailable.')
       } finally {
         if (active) setLoading(false)
       }
@@ -131,6 +183,84 @@ export default function PublicCustomerPortal() {
     if (!data) return ''
     return [data.brand.address, data.brand.town, data.brand.country].filter(Boolean).join(', ')
   }, [data])
+
+  const requestByBooking = useMemo(() => {
+    const map = new Map<string, PortalBookingRequest>()
+    selfService.requests.forEach(request => map.set(request.bookingId, request))
+    return map
+  }, [selfService.requests])
+
+  function openBookingAction(booking: BookingRow, type: BookingAction) {
+    setActionBookingId(booking.id)
+    setActionType(type)
+    setRequestedDate(type === 'reschedule' ? booking.bookingDate : '')
+    setRequestedTime(type === 'reschedule' ? booking.bookingTime : '')
+    setActionNote('')
+    setActionMessage('')
+    setActionError('')
+  }
+
+  function closeBookingAction() {
+    setActionBookingId('')
+    setActionType('')
+    setRequestedDate('')
+    setRequestedTime('')
+    setActionNote('')
+  }
+
+  async function submitBookingRequest(booking: BookingRow) {
+    if (!actionType) return
+    if (actionType === 'reschedule' && (!requestedDate || !requestedTime)) {
+      setActionError('Choose the new date and time you would like to request.')
+      return
+    }
+    setActionBusy(true)
+    setActionError('')
+    setActionMessage('')
+    try {
+      const submitRequest = httpsCallable<{
+        token: string
+        bookingId: string
+        action: BookingAction
+        requestedDate: string
+        requestedTime: string
+        note: string
+      }, SubmitRequestResponse>(functions, 'submitCustomerPortalBookingRequest')
+      const response = await submitRequest({
+        token,
+        bookingId: booking.id,
+        action: actionType,
+        requestedDate: actionType === 'reschedule' ? requestedDate : '',
+        requestedTime: actionType === 'reschedule' ? requestedTime : '',
+        note: actionNote,
+      })
+      setSelfService(previous => ({
+        ...previous,
+        requests: [...previous.requests.filter(item => item.bookingId !== booking.id), response.data.request],
+      }))
+      setActionMessage('Your request was sent to the business. Sedifex will show the decision here when it is reviewed.')
+      closeBookingAction()
+    } catch (requestError) {
+      setActionError(actionErrorMessage(requestError))
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function payBookingBalance(booking: BookingRow) {
+    setPayingBookingId(booking.id)
+    setActionError('')
+    setActionMessage('')
+    try {
+      const createCheckout = httpsCallable<{ token: string; bookingId: string }, PaymentCheckoutResponse>(functions, 'createCustomerPortalPaymentCheckout')
+      const response = await createCheckout({ token, bookingId: booking.id })
+      if (!response.data.checkoutUrl) throw new Error('Secure checkout is unavailable.')
+      window.location.assign(response.data.checkoutUrl)
+    } catch (paymentError) {
+      setActionError(actionErrorMessage(paymentError))
+      setPayingBookingId('')
+    }
+  }
 
   if (loading) {
     return <main className="customer-portal customer-portal--state"><div className="customer-portal__state-card"><strong>Loading your portal…</strong><p>Connecting securely to the business.</p></div></main>
@@ -177,6 +307,15 @@ export default function PublicCustomerPortal() {
         <article><span>Outstanding</span><strong>{formatMoney(data.summary.outstanding, data.summary.currency)}</strong></article>
       </section>
 
+      {paymentReturning ? (
+        <div className="customer-portal__notice customer-portal__notice--payment" role="status">
+          <strong>Payment returned to Sedifex.</strong>
+          <span>We are verifying the transaction. Your balance and payment history update automatically after confirmation. Refresh this page shortly if the payment is not visible yet.</span>
+        </div>
+      ) : null}
+      {actionMessage ? <div className="customer-portal__notice customer-portal__notice--success" role="status">{actionMessage}</div> : null}
+      {actionError ? <div className="customer-portal__notice customer-portal__notice--error" role="alert">{actionError}</div> : null}
+
       <nav className="customer-portal__tabs" aria-label="Portal sections">
         <button type="button" className={activeSection === 'bookings' ? 'is-active' : ''} onClick={() => setActiveSection('bookings')}>Bookings</button>
         <button type="button" className={activeSection === 'invoices' ? 'is-active' : ''} onClick={() => setActiveSection('invoices')}>Invoices</button>
@@ -185,19 +324,76 @@ export default function PublicCustomerPortal() {
 
       <section className="customer-portal__content">
         {activeSection === 'bookings' ? (
-          data.bookings.length ? <div className="customer-portal__records">{data.bookings.map(booking => (
-            <article className="customer-portal__record" key={booking.id}>
-              <div className="customer-portal__record-head"><div><small>Booking</small><h3>{booking.serviceName}</h3></div><span>{statusLabel(booking.status)}</span></div>
-              <dl>
-                <div><dt>Date</dt><dd>{booking.bookingDate || '—'}{booking.bookingTime ? ` · ${booking.bookingTime}` : ''}</dd></div>
-                <div><dt>Reference</dt><dd>{booking.reference}</dd></div>
-                {booking.location ? <div><dt>Location</dt><dd>{booking.location}</dd></div> : null}
-                <div><dt>Payment</dt><dd>{statusLabel(booking.paymentStatus)}</dd></div>
-                <div><dt>Total</dt><dd>{formatMoney(booking.total, booking.currency)}</dd></div>
-                <div><dt>Balance</dt><dd>{formatMoney(booking.amountOutstanding, booking.currency)}</dd></div>
-              </dl>
-            </article>
-          ))}</div> : <div className="customer-portal__empty">No bookings are linked to this customer yet.</div>
+          data.bookings.length ? <div className="customer-portal__records">{data.bookings.map(booking => {
+            const normalizedBookingStatus = booking.status.toLowerCase().replace(/[\s-]+/g, '_')
+            const normalizedPaymentStatus = booking.paymentStatus.toLowerCase().replace(/[\s-]+/g, '_')
+            const isClosed = ['cancelled', 'canceled', 'completed', 'complete'].includes(normalizedBookingStatus)
+            const isPaid = ['paid', 'confirmed', 'success', 'succeeded', 'captured', 'complete', 'completed', 'paid_cash'].includes(normalizedPaymentStatus)
+            const displayOutstanding = isPaid ? 0 : booking.amountOutstanding
+            const request = requestByBooking.get(booking.id)
+            const pendingRequest = request?.status === 'pending'
+            const canPay = !isClosed && !isPaid && typeof displayOutstanding === 'number' && displayOutstanding > 0
+            const isEditingAction = actionBookingId === booking.id && Boolean(actionType)
+            return (
+              <article className="customer-portal__record" key={booking.id}>
+                <div className="customer-portal__record-head"><div><small>Booking</small><h3>{booking.serviceName}</h3></div><span>{statusLabel(booking.status)}</span></div>
+                <dl>
+                  <div><dt>Date</dt><dd>{booking.bookingDate || '—'}{booking.bookingTime ? ` · ${booking.bookingTime}` : ''}</dd></div>
+                  <div><dt>Reference</dt><dd>{booking.reference}</dd></div>
+                  {booking.location ? <div><dt>Location</dt><dd>{booking.location}</dd></div> : null}
+                  <div><dt>Payment</dt><dd>{statusLabel(booking.paymentStatus)}</dd></div>
+                  <div><dt>Total</dt><dd>{formatMoney(booking.total, booking.currency)}</dd></div>
+                  <div><dt>Balance</dt><dd>{formatMoney(displayOutstanding, booking.currency)}</dd></div>
+                </dl>
+
+                {request ? (
+                  <div className={`customer-portal__request-state customer-portal__request-state--${request.status}`}>
+                    <div><strong>{request.type === 'cancel' ? 'Cancellation request' : 'Reschedule request'}</strong><span>{statusLabel(request.status)}</span></div>
+                    {request.type === 'reschedule' ? <p>Requested: {request.requestedDate || '—'}{request.requestedTime ? ` · ${request.requestedTime}` : ''}</p> : null}
+                    {request.note ? <p>Your note: {request.note}</p> : null}
+                    {request.decisionNote ? <p>Business note: {request.decisionNote}</p> : null}
+                    {request.submittedAt ? <small>Sent {formatDate(request.submittedAt)}</small> : null}
+                  </div>
+                ) : null}
+
+                {!isClosed ? (
+                  <div className="customer-portal__record-actions">
+                    {canPay ? (
+                      <button type="button" className="customer-portal__action-button customer-portal__action-button--primary" disabled={Boolean(payingBookingId)} onClick={() => void payBookingBalance(booking)}>
+                        {payingBookingId === booking.id ? 'Opening secure payment…' : `Pay balance · ${formatMoney(displayOutstanding, booking.currency)}`}
+                      </button>
+                    ) : null}
+                    {!pendingRequest ? (
+                      <>
+                        <button type="button" className="customer-portal__action-button" onClick={() => openBookingAction(booking, 'reschedule')}>Request new time</button>
+                        <button type="button" className="customer-portal__action-button" onClick={() => openBookingAction(booking, 'cancel')}>Request cancellation</button>
+                      </>
+                    ) : <span className="customer-portal__request-waiting">Waiting for the business to review your request.</span>}
+                  </div>
+                ) : null}
+
+                {isEditingAction ? (
+                  <div className="customer-portal__action-form">
+                    <div className="customer-portal__action-form-head">
+                      <strong>{actionType === 'reschedule' ? 'Request a new date and time' : 'Request cancellation'}</strong>
+                      <button type="button" onClick={closeBookingAction}>Close</button>
+                    </div>
+                    {actionType === 'reschedule' ? (
+                      <div className="customer-portal__action-form-grid">
+                        <label><span>New date</span><input type="date" value={requestedDate} onChange={event => setRequestedDate(event.target.value)} /></label>
+                        <label><span>New time</span><input type="time" value={requestedTime} onChange={event => setRequestedTime(event.target.value)} /></label>
+                      </div>
+                    ) : <p>The booking will stay unchanged until the business approves this request.</p>}
+                    <label className="customer-portal__action-note"><span>{actionType === 'cancel' ? 'Reason or note (optional)' : 'Note to the business (optional)'}</span><textarea rows={3} value={actionNote} onChange={event => setActionNote(event.target.value)} maxLength={1200} /></label>
+                    <div className="customer-portal__action-form-actions">
+                      <button type="button" onClick={closeBookingAction} disabled={actionBusy}>Keep current booking</button>
+                      <button type="button" className="customer-portal__action-button--primary" onClick={() => void submitBookingRequest(booking)} disabled={actionBusy}>{actionBusy ? 'Sending…' : 'Send request'}</button>
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            )
+          })}</div> : <div className="customer-portal__empty">No bookings are linked to this customer yet.</div>
         ) : null}
 
         {activeSection === 'invoices' ? (
