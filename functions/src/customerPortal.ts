@@ -17,7 +17,7 @@ type CustomerPortalLink = {
 
 const LINK_LIFETIME_DAYS = 180
 const COLLECTION_SCAN_LIMIT = 250
-const PUBLIC_APP_BASE_URL = (process.env.SEDIFEX_PUBLIC_APP_URL || 'https://sedifex.com').replace(/\/$/, '')
+const CUSTOMER_PORTAL_BASE_URL = (process.env.SEDIFEX_CUSTOMER_PORTAL_BASE_URL || 'https://pay.sedifex.com').replace(/\/$/, '')
 
 function text(value: unknown, max = 5000) {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
@@ -439,7 +439,7 @@ export const shareCustomerPortal = functions.https.onCall(async (data, context) 
   const token = createToken()
   const hash = hashPublicContractToken(token)
   const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + LINK_LIFETIME_DAYS * 86400000)
-  const publicUrl = `${PUBLIC_APP_BASE_URL}/customer-portal/${encodeURIComponent(token)}`
+  const publicUrl = `${CUSTOMER_PORTAL_BASE_URL}/customer-portal/${encodeURIComponent(token)}`
   const brand = brandSnapshot(store)
   const now = admin.firestore.FieldValue.serverTimestamp()
   const linkRef = defaultDb.collection('eventClientLinks').doc(hash)

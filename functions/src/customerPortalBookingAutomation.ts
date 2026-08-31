@@ -17,7 +17,7 @@ type PortalState = {
 }
 
 const LINK_LIFETIME_DAYS = 180
-const PUBLIC_APP_BASE_URL = (process.env.SEDIFEX_PUBLIC_APP_URL || 'https://sedifex.com').replace(/\/$/, '')
+const CUSTOMER_PORTAL_BASE_URL = (process.env.SEDIFEX_CUSTOMER_PORTAL_BASE_URL || 'https://pay.sedifex.com').replace(/\/$/, '')
 
 function text(value: unknown, max = 5000) {
   if (typeof value === 'string') return value.trim().slice(0, max)
@@ -109,7 +109,7 @@ async function ensurePortalForBooking(storeId: string, customerId: string, store
   const customerRef = defaultDb.collection('customers').doc(customerId)
   const token = createToken()
   const hash = hashPublicContractToken(token)
-  const candidateUrl = `${PUBLIC_APP_BASE_URL}/customer-portal/${encodeURIComponent(token)}`
+  const candidateUrl = `${CUSTOMER_PORTAL_BASE_URL}/customer-portal/${encodeURIComponent(token)}`
   const candidateExpiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + LINK_LIFETIME_DAYS * 86400000)
   const brand = storeBrand(store)
   const now = admin.firestore.FieldValue.serverTimestamp()
