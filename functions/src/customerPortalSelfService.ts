@@ -529,12 +529,9 @@ export const reviewCustomerPortalBookingRequest = functions.https.onCall(async (
   const store = await assertStoreAccess(storeId, context.auth.uid)
   const bookingRef = defaultDb.collection('stores').doc(storeId).collection('integrationBookings').doc(bookingId)
   const reviewedAt = admin.firestore.Timestamp.now()
-  let reviewedRequest: PortalRequest | null = null
-  let customerId = ''
   let customer: RecordMap = {}
-  let bookingAfter: RecordMap = {}
 
-  await defaultDb.runTransaction(async transaction => {
+  const reviewResult = await defaultDb.runTransaction(async transaction => {
     const bookingSnapshot = await transaction.get(bookingRef)
     if (!bookingSnapshot.exists) throw new functions.https.HttpsError('not-found', 'Booking not found')
     const booking = bookingSnapshot.data() as RecordMap
@@ -546,9 +543,9 @@ export const reviewCustomerPortalBookingRequest = functions.https.onCall(async (
     if (['cancelled', 'canceled', 'completed', 'complete'].includes(bookingStatus(booking)) && decision === 'approve') {
       throw new functions.https.HttpsError('failed-precondition', 'This booking can no longer be changed.')
     }
-    customerId = explicitBookingCustomerId(booking)
+    const customerId = explicitBookingCustomerId(booking)
     const nextStatus: RequestStatus = decision === 'approve' ? 'approved' : 'rejected'
-    reviewedRequest = {
+    const reviewedRequest: PortalRequest = {
       id: text(requestData.id, 220),
       type: requestType,
       status: nextStatus,
@@ -606,10 +603,12 @@ export const reviewCustomerPortalBookingRequest = functions.https.onCall(async (
       })
     }
     transaction.set(bookingRef, update, { merge: true })
-    bookingAfter = { ...booking, ...update }
+    const bookingAfter = { ...booking, ...update }
+    return { reviewedRequest, customerId, bookingAfter }
   })
 
-  if (!reviewedRequest) throw new functions.https.HttpsError('internal', 'Unable to review this request')
+  const { reviewedRequest, bookingAfter } = reviewResult
+  let { customerId } = reviewResult
   if (customerId) {
     const customerSnapshot = await defaultDb.collection('customers').doc(customerId).get()
     if (customerSnapshot.exists && text(customerSnapshot.data()?.storeId, 180) === storeId) customer = customerSnapshot.data() as RecordMap
