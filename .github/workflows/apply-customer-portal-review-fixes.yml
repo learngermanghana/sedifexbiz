@@ -1,0 +1,27 @@
+name: Apply customer portal review fixes
+
+on:
+  push:
+    branches:
+      - feature/customer-portal-self-service
+    paths:
+      - '.github/workflows/apply-customer-portal-review-fixes.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/customer-portal-self-service
+      - run: python scripts/harden_customer_portal_self_service.py
+      - run: rm scripts/harden_customer_portal_self_service.py .github/workflows/apply-customer-portal-review-fixes.yml
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: harden customer portal self-service reviews'
+          git push origin HEAD:feature/customer-portal-self-service
