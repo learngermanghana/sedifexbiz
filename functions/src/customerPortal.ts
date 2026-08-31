@@ -7,6 +7,7 @@ import { deliverTransactionalEmail } from './emailDelivery'
 type RecordMap = Record<string, unknown>
 
 type CustomerPortalLink = {
+  linkKind?: 'customer_portal'
   storeId: string
   customerId: string
   status: 'active' | 'revoked'
@@ -339,10 +340,18 @@ async function loadLink(rawToken: string) {
   const token = text(rawToken, 300)
   if (!token) throw new Error('INVALID_LINK')
   const hash = hashPublicContractToken(token)
-  const linkRef = defaultDb.collection('customerPortalLinks').doc(hash)
-  const linkSnapshot = await linkRef.get()
-  if (!linkSnapshot.exists) throw new Error('INVALID_LINK')
+  const linkRef = defaultDb.collection('eventClientLinks').doc(hash)
+  let linkSnapshot = await linkRef.get()
+  let legacyRef: FirebaseFirestore.DocumentReference | null = null
+  let legacy = false
+  if (!linkSnapshot.exists) {
+    legacyRef = defaultDb.collection('customerPortalLinks').doc(hash)
+    linkSnapshot = await legacyRef.get()
+    if (!linkSnapshot.exists) throw new Error('INVALID_LINK')
+    legacy = true
+  }
   const link = linkSnapshot.data() as unknown as CustomerPortalLink
+  if (!legacy && link.linkKind !== 'customer_portal') throw new Error('INVALID_LINK')
   if (link.status !== 'active') throw new Error('LINK_REVOKED')
   if (!link.expiresAt?.toMillis || link.expiresAt.toMillis() < Date.now()) throw new Error('LINK_EXPIRED')
 
@@ -353,7 +362,24 @@ async function loadLink(rawToken: string) {
   if (text(customer.storeId, 180) !== link.storeId) throw new Error('INVALID_LINK')
   const portal = record(customer.portal)
   if (text(portal.publicLinkHash, 100) !== hash || text(portal.status, 40) !== 'active') throw new Error('LINK_REVOKED')
-  return { token, hash, linkRef, link, customerRef, customer }
+
+  if (legacy && legacyRef) {
+    const now = admin.firestore.FieldValue.serverTimestamp()
+    await defaultDb.runTransaction(async transaction => {
+      transaction.set(linkRef, {
+        ...link,
+        linkKind: 'customer_portal',
+        migratedAt: now,
+        updatedAt: now,
+      }, { merge: true })
+      transaction.delete(legacyRef as FirebaseFirestore.DocumentReference)
+      transaction.update(customerRef, {
+        'portal.linkCollection': 'eventClientLinks',
+        updatedAt: now,
+      })
+    })
+  }
+  return { token, hash, linkRef, link: { ...link, linkKind: 'customer_portal' as const }, customerRef, customer }
 }
 
 export const shareCustomerPortal = functions.https.onCall(async (data, context) => {
@@ -371,7 +397,7 @@ export const shareCustomerPortal = functions.https.onCall(async (data, context) 
   const publicUrl = `${PUBLIC_APP_BASE_URL}/customer-portal/${encodeURIComponent(token)}`
   const brand = brandSnapshot(store)
   const now = admin.firestore.FieldValue.serverTimestamp()
-  const linkRef = defaultDb.collection('customerPortalLinks').doc(hash)
+  const linkRef = defaultDb.collection('eventClientLinks').doc(hash)
 
   await defaultDb.runTransaction(async transaction => {
     const current = await transaction.get(customerRef)
@@ -381,7 +407,7 @@ export const shareCustomerPortal = functions.https.onCall(async (data, context) 
     const currentPortal = record(currentData.portal)
     const currentHash = text(currentPortal.publicLinkHash, 100)
     if (currentHash && currentHash !== hash) {
-      transaction.set(defaultDb.collection('customerPortalLinks').doc(currentHash), {
+      transaction.set(defaultDb.collection('eventClientLinks').doc(currentHash), {
         status: 'revoked',
         revokedAt: now,
         updatedAt: now,
@@ -389,6 +415,7 @@ export const shareCustomerPortal = functions.https.onCall(async (data, context) 
     }
 
     transaction.set(linkRef, {
+      linkKind: 'customer_portal',
       storeId,
       customerId,
       status: 'active',
@@ -402,6 +429,7 @@ export const shareCustomerPortal = functions.https.onCall(async (data, context) 
       portal: {
         status: 'active',
         publicLinkHash: hash,
+        linkCollection: 'eventClientLinks',
         publicUrl,
         expiresAt,
         sharedAt: now,
@@ -453,7 +481,7 @@ export const revokeCustomerPortal = functions.https.onCall(async (data, context)
 
   await defaultDb.runTransaction(async transaction => {
     if (hash) {
-      transaction.set(defaultDb.collection('customerPortalLinks').doc(hash), {
+      transaction.set(defaultDb.collection('eventClientLinks').doc(hash), {
         status: 'revoked',
         revokedAt: now,
         updatedAt: now,

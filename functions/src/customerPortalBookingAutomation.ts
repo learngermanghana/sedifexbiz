@@ -98,7 +98,7 @@ function activePortal(portal: RecordMap) {
   const publicUrl = text(portal.publicUrl, 1400)
   const hash = text(portal.publicLinkHash, 100)
   const expiresAtMs = timestampMillis(portal.expiresAt)
-  return text(portal.status, 40) === 'active' && Boolean(publicUrl && hash) && expiresAtMs > Date.now()
+  return text(portal.status, 40) === 'active' && text(portal.linkCollection, 80) === 'eventClientLinks' && Boolean(publicUrl && hash) && expiresAtMs > Date.now()
 }
 
 function createToken() {
@@ -138,14 +138,15 @@ async function ensurePortalForBooking(storeId: string, customerId: string, store
 
     const previousHash = text(currentPortal.publicLinkHash, 100)
     if (previousHash) {
-      transaction.set(defaultDb.collection('customerPortalLinks').doc(previousHash), {
+      transaction.set(defaultDb.collection('eventClientLinks').doc(previousHash), {
         status: 'revoked',
         revokedAt: now,
         updatedAt: now,
       }, { merge: true })
     }
 
-    transaction.set(defaultDb.collection('customerPortalLinks').doc(hash), {
+    transaction.set(defaultDb.collection('eventClientLinks').doc(hash), {
+      linkKind: 'customer_portal',
       storeId,
       customerId,
       status: 'active',
@@ -160,6 +161,7 @@ async function ensurePortalForBooking(storeId: string, customerId: string, store
       portal: {
         status: 'active',
         publicLinkHash: hash,
+        linkCollection: 'eventClientLinks',
         publicUrl: candidateUrl,
         expiresAt: candidateExpiresAt,
         sharedAt: now,
