@@ -4,49 +4,48 @@ from pathlib import Path
 path = Path('web/src/pages/BookingEditor.tsx')
 text = path.read_text()
 old = "navigate(`/bookings/${encodeURIComponent(targetId)}`)"
-new = "navigate(`/bookings/${encodeURIComponent(targetId)}`, { replace: !bookingId })"
+new = "navigate(`/bookings/${encodeURIComponent(targetId)}`, { replace: isCreateMode })"
 if old not in text:
     raise SystemExit('BookingEditor target not found')
 path.write_text(text.replace(old, new, 1))
 
-# 2) Preserve event-business destination when the schedule is empty.
+# 2) Preserve the previous event/non-event destination when the schedule is empty,
+# while retaining booking-only/event-only routing when entries exist.
 path = Path('web/src/components/CompactBusinessDashboard.tsx')
 text = path.read_text()
-old = """          const scheduleFooterHref = bookingEntries.length === 0
-            ? '/upcoming-events'
+old = """          to: upcomingEntries.length === 1
+            ? upcomingEntries[0].to
             : eventEntries.length === 0
               ? '/bookings'
-              : industry === 'events'
-                ? '/upcoming-events'
-                : '/bookings'
-          const scheduleFooterLabel = bookingEntries.length === 0
-            ? 'View events'
+              : bookingEntries.length === 0
+                ? '/event-planning'
+                : '/upcoming-events',
+          linkLabel: upcomingEntries.length === 1
+            ? (upcomingEntries[0].to.startsWith('/bookings/') ? 'Open booking' : 'Open event')
             : eventEntries.length === 0
               ? 'View bookings'
-              : industry === 'events'
+              : bookingEntries.length === 0
                 ? 'View events'
-                : 'View bookings'
+                : 'View schedule',
 """
-new = """          const hasBookings = bookingEntries.length > 0
-          const hasEvents = eventEntries.length > 0
-          const scheduleFooterHref = !hasBookings && !hasEvents
-            ? (industry === 'events' ? '/upcoming-events' : '/bookings')
-            : !hasBookings
-              ? '/upcoming-events'
-              : !hasEvents
+new = """          to: upcomingEntries.length === 1
+            ? upcomingEntries[0].to
+            : upcomingEntries.length === 0
+              ? (industry === 'event' ? '/event-planning' : '/upcoming-events')
+              : eventEntries.length === 0
                 ? '/bookings'
-                : industry === 'events'
-                  ? '/upcoming-events'
-                  : '/bookings'
-          const scheduleFooterLabel = !hasBookings && !hasEvents
-            ? (industry === 'events' ? 'View events' : 'View bookings')
-            : !hasBookings
-              ? 'View events'
-              : !hasEvents
+                : bookingEntries.length === 0
+                  ? '/event-planning'
+                  : '/upcoming-events',
+          linkLabel: upcomingEntries.length === 1
+            ? (upcomingEntries[0].to.startsWith('/bookings/') ? 'Open booking' : 'Open event')
+            : upcomingEntries.length === 0
+              ? (industry === 'event' ? 'View events' : 'View schedule')
+              : eventEntries.length === 0
                 ? 'View bookings'
-                : industry === 'events'
+                : bookingEntries.length === 0
                   ? 'View events'
-                  : 'View bookings'
+                  : 'View schedule',
 """
 if old not in text:
     raise SystemExit('CompactBusinessDashboard target not found')
