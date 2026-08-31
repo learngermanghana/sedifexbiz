@@ -59,7 +59,7 @@ type Props = {
 }
 
 const MAX_TEMPLATE_ITEMS = 200
-const BATCH_CHUNK_SIZE = 350
+const MAX_ATOMIC_WRITES = 500
 
 function text(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
@@ -84,6 +84,13 @@ function parseLocalDate(value: string) {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+function formatLocalCalendarDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function taskOffsetDays(eventDate: string, taskDueDate: string) {
   const event = parseLocalDate(eventDate)
   const due = parseLocalDate(taskDueDate)
@@ -96,7 +103,7 @@ function dateFromOffset(eventDate: string, offsetDays: number | null) {
   const event = parseLocalDate(eventDate)
   if (!event) return ''
   event.setDate(event.getDate() + offsetDays)
-  return event.toISOString().slice(0, 10)
+  return formatLocalCalendarDate(event)
 }
 
 function mapTemplateItem(value: unknown, index: number): TemplateItem | null {
@@ -120,50 +127,77 @@ function mapTemplateItem(value: unknown, index: number): TemplateItem | null {
 function mapTemplate(id: string, data: Record<string, unknown>): ChecklistTemplate | null {
   const name = text(data.name)
   if (!name) return null
-  const rawItems = Array.isArray(data.items) ? data.items : []
+  const rawItems = Array.isArray(data.items) ? data.items.slice(0, MAX_TEMPLATE_ITEMS) : []
   const items = rawItems.map(mapTemplateItem).filter((item): item is TemplateItem => Boolean(item))
   return {
     id,
     name,
     eventType: text(data.eventType) || 'Any event',
-    taskCount: Math.max(items.length, Math.floor(numberValue(data.taskCount, items.length))),
+    taskCount: items.length,
     items,
     usageCount: Math.max(0, Math.floor(numberValue(data.usageCount))),
   }
 }
 
-async function commitDeleteChunks(storeId: string, eventId: string, taskIds: string[]) {
-  for (let index = 0; index < taskIds.length; index += BATCH_CHUNK_SIZE) {
-    const batch = writeBatch(db)
-    taskIds.slice(index, index + BATCH_CHUNK_SIZE).forEach(taskId => {
-      batch.delete(doc(db, 'stores', storeId, 'events', eventId, 'tasks', taskId))
-    })
-    await batch.commit()
-  }
+function setTemplateTask(
+  batch: ReturnType<typeof writeBatch>,
+  storeId: string,
+  eventId: string,
+  template: ChecklistTemplate,
+  item: TemplateItem,
+  index: number,
+  eventDate: string,
+) {
+  const taskRef = doc(collection(db, 'stores', storeId, 'events', eventId, 'tasks'))
+  batch.set(taskRef, {
+    title: item.title,
+    category: item.category,
+    owner: item.defaultOwner,
+    dueDate: dateFromOffset(eventDate, item.dueOffsetDays),
+    priority: item.priority,
+    status: 'todo',
+    notes: item.notes,
+    sortOrder: index + 1,
+    templateId: template.id,
+    templateName: template.name,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
 }
 
-async function commitAddChunks(storeId: string, eventId: string, template: ChecklistTemplate, items: TemplateItem[], eventDate: string) {
-  for (let index = 0; index < items.length; index += BATCH_CHUNK_SIZE) {
-    const batch = writeBatch(db)
-    items.slice(index, index + BATCH_CHUNK_SIZE).forEach((item, chunkIndex) => {
-      const taskRef = doc(collection(db, 'stores', storeId, 'events', eventId, 'tasks'))
-      batch.set(taskRef, {
-        title: item.title,
-        category: item.category,
-        owner: item.defaultOwner,
-        dueDate: dateFromOffset(eventDate, item.dueOffsetDays),
-        priority: item.priority,
-        status: 'todo',
-        notes: item.notes,
-        sortOrder: index + chunkIndex + 1,
-        templateId: template.id,
-        templateName: template.name,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
-    })
-    await batch.commit()
+async function commitTemplateApply(params: {
+  storeId: string
+  eventId: string
+  template: ChecklistTemplate
+  items: TemplateItem[]
+  eventDate: string
+  mode: ApplyMode
+  existingTasks: ChecklistTaskLike[]
+}) {
+  const { storeId, eventId, template, items, eventDate, mode, existingTasks } = params
+  const eventRef = doc(db, 'stores', storeId, 'events', eventId)
+  const batch = writeBatch(db)
+
+  if (mode === 'replace') {
+    existingTasks.forEach(task => batch.delete(doc(db, 'stores', storeId, 'events', eventId, 'tasks', task.id)))
   }
+
+  items.forEach((item, index) => setTemplateTask(batch, storeId, eventId, template, item, index, eventDate))
+
+  const nextTaskCount = mode === 'replace' ? items.length : existingTasks.length + items.length
+  const nextCompletedCount = mode === 'replace' ? 0 : existingTasks.filter(task => task.status === 'done').length
+  const nextProgress = nextTaskCount ? Math.round(nextCompletedCount / nextTaskCount * 100) : 0
+
+  batch.update(eventRef, {
+    checklistSeeded: true,
+    readinessSource: 'checklist',
+    progress: nextProgress,
+    checklistTaskCount: nextTaskCount,
+    checklistCompletedCount: nextCompletedCount,
+    updatedAt: serverTimestamp(),
+  })
+
+  await batch.commit()
 }
 
 export default function EventChecklistTemplateManager({
@@ -183,10 +217,6 @@ export default function EventChecklistTemplateManager({
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
-  // Store templates under the secured event-planning namespace. The parent
-  // "__templates" event document does not need to exist; Firestore supports
-  // subcollections under a missing parent document and the existing event
-  // subcollection rule still enforces store membership.
   const templatesRef = useMemo(
     () => collection(db, 'stores', storeId, 'events', '__templates', 'checklists'),
     [storeId],
@@ -297,6 +327,12 @@ export default function EventChecklistTemplateManager({
       return
     }
 
+    const requiredWrites = (applyMode === 'replace' ? tasks.length : 0) + itemsToAdd.length + 1
+    if (requiredWrites > MAX_ATOMIC_WRITES) {
+      onError(`This checklist is too large to replace safely in one atomic operation. Keep the current checklist and use “Add missing tasks”, or reduce it before replacing.`)
+      return
+    }
+
     if (applyMode === 'replace' && tasks.length) {
       const confirmed = window.confirm(`Replace all ${tasks.length} current checklist tasks with “${selectedTemplate.name}”? Completed statuses will not be carried over.`)
       if (!confirmed) return
@@ -304,35 +340,41 @@ export default function EventChecklistTemplateManager({
 
     setBusy(true)
     try {
-      if (applyMode === 'replace' && tasks.length) {
-        await commitDeleteChunks(storeId, eventId, tasks.map(task => task.id))
-      }
-      await commitAddChunks(storeId, eventId, selectedTemplate, itemsToAdd, eventDate)
-
-      const nextTaskCount = applyMode === 'replace' ? itemsToAdd.length : tasks.length + itemsToAdd.length
-      const nextCompletedCount = applyMode === 'replace' ? 0 : tasks.filter(task => task.status === 'done').length
-      const nextProgress = nextTaskCount ? Math.round(nextCompletedCount / nextTaskCount * 100) : 0
-      await updateDoc(doc(db, 'stores', storeId, 'events', eventId), {
-        checklistSeeded: true,
-        readinessSource: 'checklist',
-        progress: nextProgress,
-        checklistTaskCount: nextTaskCount,
-        checklistCompletedCount: nextCompletedCount,
-        updatedAt: serverTimestamp(),
+      await commitTemplateApply({
+        storeId,
+        eventId,
+        template: selectedTemplate,
+        items: itemsToAdd,
+        eventDate,
+        mode: applyMode,
+        existingTasks: tasks,
       })
+    } catch (applyError) {
+      console.error('[event-checklist-templates] Unable to apply template atomically', applyError)
+      onError('The checklist template could not be applied. Your existing checklist was left unchanged.')
+      setBusy(false)
+      return
+    }
+
+    try {
       await updateDoc(doc(templatesRef, selectedTemplate.id), {
         usageCount: increment(1),
         lastUsedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
+    } catch (usageError) {
+      console.warn('[event-checklist-templates] Checklist applied but usage metadata could not be updated', usageError)
+    }
+
+    try {
       await onApplied()
       await loadTemplates()
       onSuccess(applyMode === 'replace'
         ? `Checklist replaced with ${itemsToAdd.length} tasks from “${selectedTemplate.name}”.`
         : `${itemsToAdd.length} tasks from “${selectedTemplate.name}” added. Duplicate task names were skipped.`)
-    } catch (applyError) {
-      console.error('[event-checklist-templates] Unable to apply template', applyError)
-      onError('The checklist template could not be applied completely. Refresh the checklist before trying again.')
+    } catch (refreshError) {
+      console.warn('[event-checklist-templates] Checklist applied but UI refresh failed', refreshError)
+      onError('The checklist was updated successfully, but the page could not refresh. Reload the event to see the changes.')
     } finally {
       setBusy(false)
     }
