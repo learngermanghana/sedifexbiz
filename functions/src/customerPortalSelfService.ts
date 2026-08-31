@@ -35,6 +35,7 @@ type PortalRequest = {
 }
 
 const PUBLIC_APP_BASE_URL = (process.env.SEDIFEX_PUBLIC_APP_URL || 'https://sedifex.com').replace(/\/$/, '')
+const CUSTOMER_PORTAL_BASE_URL = (process.env.SEDIFEX_CUSTOMER_PORTAL_BASE_URL || 'https://pay.sedifex.com').replace(/\/$/, '')
 const CHECKOUT_CREATE_URL = process.env.SEDIFEX_CHECKOUT_CREATE_URL
   || 'https://us-central1-sedifex-web.cloudfunctions.net/integrationCheckoutCreate'
 const CONTRACT_VERSION = process.env.INTEGRATION_CONTRACT_VERSION || '2026-04-13'
@@ -781,7 +782,7 @@ export const createCustomerPortalPaymentCheckout = functions.https.onCall(async 
   const phone = text(loaded.customer.phone, 80) || firstText(loaded.booking, ['customerPhone', 'phone', 'customer.phone'], 80)
   const service = bookingServiceName(loaded.booking)
   const currency = firstText(loaded.booking, ['currency', 'payment.currency'], 20) || 'GHS'
-  const returnUrl = `${PUBLIC_APP_BASE_URL}/customer-portal/${encodeURIComponent(loaded.token)}?payment=returning&reference=${encodeURIComponent(reference)}`
+  const returnUrl = `${CUSTOMER_PORTAL_BASE_URL}/customer-portal/${encodeURIComponent(loaded.token)}?payment=returning&reference=${encodeURIComponent(reference)}`
   const checkoutBody = {
     storeId: loaded.link.storeId,
     merchantId: loaded.link.storeId,

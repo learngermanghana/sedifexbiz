@@ -6,5 +6,29 @@
       "source": "/((?!api/|assets/|.*\\..*).*)",
       "destination": "/index.html"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/customer-portal/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "sedifex.com"
+        }
+      ],
+      "destination": "https://pay.sedifex.com/customer-portal/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/customer-portal/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.sedifex.com"
+        }
+      ],
+      "destination": "https://pay.sedifex.com/customer-portal/:path*",
+      "permanent": false
+    }
   ]
 }

@@ -34,6 +34,21 @@ function errorMessage(error: unknown) {
   return String((error as { message?: unknown }).message || '').replace(/^FirebaseError:\s*/i, '') || 'Customer portal action failed.'
 }
 
+function sessionIsolatedPortalUrl(value: string) {
+  if (!value) return ''
+  try {
+    const url = new URL(value)
+    if ((url.hostname === 'sedifex.com' || url.hostname === 'www.sedifex.com') && url.pathname.startsWith('/customer-portal/')) {
+      url.hostname = 'pay.sedifex.com'
+      url.protocol = 'https:'
+      return url.toString()
+    }
+  } catch {
+    // Keep non-standard/legacy values untouched.
+  }
+  return value
+}
+
 export default function CustomerPortalShareCard({ storeId, customerId, customerName, customerEmail }: Props) {
   const [portalUrl, setPortalUrl] = useState('')
   const [expiresAt, setExpiresAt] = useState<Date | null>(null)
@@ -54,7 +69,7 @@ export default function CustomerPortalShareCard({ storeId, customerId, customerN
         const portal = data?.portal && typeof data.portal === 'object' && !Array.isArray(data.portal)
           ? data.portal as PortalState
           : {}
-        setPortalUrl(portal.status === 'active' ? text(portal.publicUrl) : '')
+        setPortalUrl(portal.status === 'active' ? sessionIsolatedPortalUrl(text(portal.publicUrl)) : '')
         setExpiresAt(portal.status === 'active' ? toDate(portal.expiresAt) : null)
       } catch (loadError) {
         if (active) setError(errorMessage(loadError))
@@ -76,7 +91,7 @@ export default function CustomerPortalShareCard({ storeId, customerId, customerN
         { ok: boolean; portalUrl: string; expiresAt: string; deliveries: number; deliveryStatus: string; deliveryChannel?: string; deliveryReason?: string }
       >(functions, 'shareCustomerPortal')
       const response = await share({ storeId, customerId, sendEmail })
-      setPortalUrl(response.data.portalUrl)
+      setPortalUrl(sessionIsolatedPortalUrl(response.data.portalUrl))
       const parsedExpiry = new Date(response.data.expiresAt)
       setExpiresAt(Number.isNaN(parsedExpiry.getTime()) ? null : parsedExpiry)
       if (sendEmail && customerEmail) {
