@@ -25,3 +25,4 @@ jobs:
           git add -A
           git commit -m 'fix: address booking navigation review comments'
           git push origin HEAD:fix/booking-detail-navigation
+      # rerun after matching the exact dashboard code
