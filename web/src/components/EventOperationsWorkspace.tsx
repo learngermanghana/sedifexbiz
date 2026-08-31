@@ -14,6 +14,7 @@ import { httpsCallable } from 'firebase/functions'
 import { db, functions } from '../firebase'
 import { fingerprintEventProgram } from '../utils/eventProgramFingerprint'
 import EventChecklistShareCard from './EventChecklistShareCard'
+import EventChecklistTemplateManager from './EventChecklistTemplateManager'
 import EventPostEventEvaluation from './EventPostEventEvaluation'
 import EventTypeExtras from './EventTypeExtras'
 
@@ -391,6 +392,15 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
     await onChanged?.()
   }, [eventRef, onChanged])
 
+  const refreshChecklistTasks = useCallback(async () => {
+    const snapshot = await getDocs(tasksRef)
+    const next = snapshot.docs
+      .map(item => mapTask(item.id, item.data()))
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title))
+    setTasks(next)
+    await onChanged?.()
+  }, [onChanged, tasksRef])
+
   function resetTaskForm() {
     setEditingTaskId(null)
     setTaskForm({ title: '', category: 'General', owner: '', dueDate: '', priority: 'normal', status: 'todo', notes: '' })
@@ -689,6 +699,18 @@ export default function EventOperationsWorkspace({ storeId, eventId, eventTitle,
             </div>
             <div className="event-planning__readiness" style={{ marginTop: 12 }}><i><b style={{ width: `${readiness}%` }} /></i></div>
           </div>
+
+          <EventChecklistTemplateManager
+            storeId={storeId}
+            eventId={eventId}
+            eventTitle={eventTitle}
+            eventType={meta.eventType}
+            eventDate={meta.eventDate}
+            tasks={tasks}
+            onApplied={refreshChecklistTasks}
+            onSuccess={setSuccess}
+            onError={setError}
+          />
 
           <form onSubmit={saveTask} className="event-planning__workspace-preview" style={{ marginTop: 14 }}>
             <h3>{editingTaskId ? 'Edit checklist task' : 'Add checklist task'}</h3>
