@@ -44,5 +44,15 @@ jobs:
       - name: Validate Firebase auth
         run: firebase projects:list --json
 
+      - name: Write default Firestore deploy config
+        run: |
+          cat > firebase.default-rules.json <<'EOF'
+          {
+            "firestore": {
+              "rules": "firestore.rules"
+            }
+          }
+          EOF
+
       - name: Deploy Firestore rules
-        run: firebase deploy --only firestore:rules --project sedifex-web --non-interactive
+        run: firebase deploy --config firebase.default-rules.json --only firestore:rules --project sedifex-web --force
