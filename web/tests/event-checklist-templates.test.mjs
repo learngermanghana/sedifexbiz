@@ -4,7 +4,7 @@ import fs from 'node:fs'
 const manager = fs.readFileSync('src/components/EventChecklistTemplateManager.tsx', 'utf8')
 const workspace = fs.readFileSync('src/components/EventOperationsWorkspace.tsx', 'utf8')
 
-assert.match(manager, /events', storeId, 'events', '__templates', 'checklists'/)
+assert.match(manager, /'stores', storeId, 'events', '__templates', 'checklists'/)
 assert.match(manager, /dueOffsetDays/)
 assert.match(manager, /taskOffsetDays\(eventDate, task\.dueDate\)/)
 assert.match(manager, /dateFromOffset\(eventDate, item\.dueOffsetDays\)/)
