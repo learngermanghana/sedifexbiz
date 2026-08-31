@@ -50,7 +50,7 @@ jobs:
         working-directory: web
 
       - name: Test reusable event checklist templates
-        run: node tests/event-checklist-templates.test.mjs
+        run: node tests/event-checklist-templates.test.mjs && node tests/event-checklist-template-dates.test.mjs
         working-directory: web
 
       - name: Test Event Workspace PDF builder
