@@ -49,6 +49,7 @@ export {
   automateBookingEmailOnWrite,
   processBookingEmailReminders,
 } from './bookingEmailAutomation'
+export { automateCustomerPortalOnBookingWrite } from './customerPortalBookingAutomation'
 export {
   automateEventCommunicationsOnWrite,
   processEventCommunications,
