@@ -183,7 +183,14 @@ export default function EventChecklistTemplateManager({
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
-  const templatesRef = useMemo(() => collection(db, 'stores', storeId, 'eventChecklistTemplates'), [storeId])
+  // Store templates under the secured event-planning namespace. The parent
+  // "__templates" event document does not need to exist; Firestore supports
+  // subcollections under a missing parent document and the existing event
+  // subcollection rule still enforces store membership.
+  const templatesRef = useMemo(
+    () => collection(db, 'stores', storeId, 'events', '__templates', 'checklists'),
+    [storeId],
+  )
   const selectedTemplate = useMemo(
     () => templates.find(template => template.id === selectedTemplateId) || null,
     [selectedTemplateId, templates],
@@ -301,9 +308,16 @@ export default function EventChecklistTemplateManager({
         await commitDeleteChunks(storeId, eventId, tasks.map(task => task.id))
       }
       await commitAddChunks(storeId, eventId, selectedTemplate, itemsToAdd, eventDate)
+
+      const nextTaskCount = applyMode === 'replace' ? itemsToAdd.length : tasks.length + itemsToAdd.length
+      const nextCompletedCount = applyMode === 'replace' ? 0 : tasks.filter(task => task.status === 'done').length
+      const nextProgress = nextTaskCount ? Math.round(nextCompletedCount / nextTaskCount * 100) : 0
       await updateDoc(doc(db, 'stores', storeId, 'events', eventId), {
         checklistSeeded: true,
         readinessSource: 'checklist',
+        progress: nextProgress,
+        checklistTaskCount: nextTaskCount,
+        checklistCompletedCount: nextCompletedCount,
         updatedAt: serverTimestamp(),
       })
       await updateDoc(doc(templatesRef, selectedTemplate.id), {
