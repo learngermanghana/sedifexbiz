@@ -1,7 +1,12 @@
 name: Apply customer portal session isolation
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - fix/customer-portal-session-isolation
+    paths:
+      - 'scripts/apply_customer_portal_session_isolation.py'
+      - '.github/workflows/apply-customer-portal-session-isolation.yml'
 
 permissions:
   contents: write
