@@ -1,0 +1,33 @@
+name: Apply Vercel node type dependency fix
+
+on:
+  push:
+    branches:
+      - fix/vercel-node-types
+    paths:
+      - '.github/workflows/apply-vercel-node-types.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/vercel-node-types
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm install --save-dev @vercel/node
+        working-directory: web
+      - run: rm .github/workflows/apply-vercel-node-types.yml
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: include Vercel Node types for API builds'
+          git push origin HEAD:fix/vercel-node-types
