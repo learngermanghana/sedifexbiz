@@ -67,6 +67,11 @@ export {
   eventClientPortal,
 } from './eventClientCollaboration'
 export {
+  shareCustomerPortal,
+  revokeCustomerPortal,
+  getCustomerPortal,
+} from './customerPortal'
+export {
   mutateEventProgram,
   prepareEventProgramRevision,
   resolveEventProgramChangeRequest,

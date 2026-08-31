@@ -194,6 +194,13 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    // Customer portal links are bearer credentials. Public clients access the
+    // portal through a callable function; browser Firestore clients must never
+    // enumerate or forge these records.
+    match /customerPortalLinks/{linkId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /engagement_threads/{threadId} {
       allow read: if true;
       allow create, update: if isEngagementThreadWrite() || isSignedIn();
@@ -298,7 +305,8 @@ service cloud.firestore {
         && topCollection != 'teamMembers'
         && topCollection != 'customers'
         && topCollection != 'eventContractLinks'
-        && topCollection != 'eventClientLinks';
+        && topCollection != 'eventClientLinks'
+        && topCollection != 'customerPortalLinks';
     }
   }
 }

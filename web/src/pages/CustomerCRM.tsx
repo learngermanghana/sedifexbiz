@@ -11,6 +11,7 @@ import {
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
+import CustomerPortalShareCard from '../components/CustomerPortalShareCard'
 import './CustomerCRM.css'
 import './CustomerCRM.mobile.css'
 
@@ -946,6 +947,15 @@ export default function CustomerCRM() {
                 </div>
                 <Link className="customer-crm__secondary" to="/customers/manage">Edit customer</Link>
               </div>
+
+              {storeId ? (
+                <CustomerPortalShareCard
+                  storeId={storeId}
+                  customerId={selectedCustomer.id}
+                  customerName={customerName(selectedCustomer)}
+                  customerEmail={selectedCustomer.email}
+                />
+              ) : null}
 
               <section className="customer-crm__stats" aria-label="Customer CRM summary">
                 <StatCard label="Sales" value={formatMoney(totals.salesTotal)} hint={`${crmData.sales.length} linked transaction${crmData.sales.length === 1 ? '' : 's'}`} />
