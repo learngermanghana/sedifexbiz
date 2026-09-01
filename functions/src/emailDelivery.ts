@@ -1,6 +1,6 @@
 import { defineString } from 'firebase-functions/params'
 import { defaultDb } from './firestore'
-import { loadAutomationSettings } from './automationSettings'
+import { isEmailAutomationEnabled, loadAutomationSettings } from './automationSettings'
 
 const SEDIFEX_NOTIFICATION_WEBHOOK_URL = defineString('SEDIFEX_NOTIFICATION_WEBHOOK_URL', { default: '' })
 const SEDIFEX_NOTIFICATION_SHARED_SECRET = defineString('SEDIFEX_NOTIFICATION_SHARED_SECRET', { default: '' })
@@ -169,6 +169,7 @@ async function resolveSettings(storeId: string) {
     customUrl,
     centralUrl: safeUrl(centralUrl),
     secret,
+    automation,
     deliveryPreference: automation.deliveryPreference,
     fallbackToSedifex: automation.fallbackToSedifex,
   }
@@ -303,6 +304,10 @@ export async function deliverTransactionalEmail(
   input: TransactionalEmailDeliveryInput,
 ): Promise<TransactionalEmailDeliveryResult> {
   const settings = await resolveSettings(input.storeId)
+  if (!isEmailAutomationEnabled(settings.automation, input.eventType)) {
+    return noSenderResult(settings, 'automation-disabled')
+  }
+
   const preference = settings.deliveryPreference
   let lastFailure: TransactionalEmailDeliveryResult | null = null
   let attemptedCustomUrl = ''
