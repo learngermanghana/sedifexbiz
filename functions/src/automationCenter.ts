@@ -3,13 +3,22 @@ import { admin, defaultDb } from './firestore'
 import { resolveStoreSmsGateway } from './smsGateway'
 import {
   automationSettingsRef,
-  defaultAutomationSettings,
+  isSmsAutomationEnabledForStage,
   loadAutomationSettings,
   sanitizeAutomationSettings,
   type AutomationSettings,
+  type SmsAutomationStage,
 } from './automationSettings'
 
 type RecordMap = Record<string, unknown>
+
+const SMS_STAGES = new Set<SmsAutomationStage>([
+  'payment_confirmation',
+  'reminder_3d',
+  'reminder_2d',
+  'reminder_1d',
+  'thank_you',
+])
 
 function text(value: unknown, max = 1000) {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
@@ -17,6 +26,10 @@ function text(value: unknown, max = 1000) {
 
 function record(value: unknown): RecordMap {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as RecordMap : {}
+}
+
+function normalized(value: unknown) {
+  return text(value, 100).toLowerCase().replace(/[\s-]+/g, '_')
 }
 
 async function assertOwnerAccess(storeId: string, context: functions.https.CallableContext) {
@@ -85,6 +98,24 @@ function responseSettings(settings: AutomationSettings) {
   }
 }
 
+async function purgeDisabledSmsQueues(storeId: string, settings: AutomationSettings) {
+  const snapshot = await defaultDb.collection('bookingSmsQueue').where('storeId', '==', storeId).get()
+  const refs = snapshot.docs.filter(document => {
+    const data = document.data() as RecordMap
+    const stage = normalized(data.stage) as SmsAutomationStage
+    if (!SMS_STAGES.has(stage)) return false
+    if (normalized(data.status) === 'sending') return false
+    return !isSmsAutomationEnabledForStage(settings, stage)
+  }).map(document => document.ref)
+
+  for (let offset = 0; offset < refs.length; offset += 450) {
+    const batch = defaultDb.batch()
+    refs.slice(offset, offset + 450).forEach(ref => batch.delete(ref))
+    await batch.commit()
+  }
+  return refs.length
+}
+
 export const getAutomationCenterState = functions.https.onCall(async (data, context) => {
   const storeId = text(data?.storeId, 180)
   if (!storeId) throw new functions.https.HttpsError('invalid-argument', 'storeId is required')
@@ -105,7 +136,7 @@ export const saveAutomationCenterSettings = functions.https.onCall(async (data, 
     throw new functions.https.HttpsError('invalid-argument', 'settings are required')
   }
 
-  const settings = sanitizeAutomationSettings(rawSettings || defaultAutomationSettings())
+  const settings = sanitizeAutomationSettings(rawSettings)
   const now = admin.firestore.FieldValue.serverTimestamp()
   await automationSettingsRef(storeId).set({
     ...responseSettings(settings),
@@ -113,6 +144,9 @@ export const saveAutomationCenterSettings = functions.https.onCall(async (data, 
     updatedBy: context.auth?.uid || null,
   }, { merge: true })
 
-  const readiness = await channelReadiness(storeId, store)
-  return { ok: true, settings: responseSettings(settings), readiness }
+  const [readiness, clearedSmsQueues] = await Promise.all([
+    channelReadiness(storeId, store),
+    purgeDisabledSmsQueues(storeId, settings),
+  ])
+  return { ok: true, settings: responseSettings(settings), readiness, clearedSmsQueues }
 })
