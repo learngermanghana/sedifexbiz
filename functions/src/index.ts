@@ -43,6 +43,10 @@ export {
 } from './bookingSmsStoreAlerts'
 export { normalizeBookingSmsDeliveryStatus } from './bookingSmsDeliveryStatus'
 export {
+  queueBookingSmsDeliveryCheck,
+  processBookingSmsDeliveryChecks,
+} from './bookingSmsDeliveryReports'
+export {
   notifyUnpaidBookingCreated,
   processUnpaidBookingEmailNotifications,
 } from './bookingEmailNotifications'
