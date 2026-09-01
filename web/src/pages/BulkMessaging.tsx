@@ -383,6 +383,8 @@ export default function BulkMessaging() {
   const [isSending, setIsSending] = useState(false)
   const [creditBalance, setCreditBalance] = useState<number>(0)
   const [creditLoading, setCreditLoading] = useState(true)
+  const [creditLoadError, setCreditLoadError] = useState(false)
+  const [creditRetryKey, setCreditRetryKey] = useState(0)
   const [storeSmsStatus, setStoreSmsStatus] = useState<StoreSmsStatus>({ approved: false, hubtelId: null, businessName: '', contactEmail: '', contactPhone: '' })
   const [buyingPackageId, setBuyingPackageId] = useState<string | null>(null)
   const [buyStatus, setBuyStatus] = useState<StatusMessage | null>(null)
@@ -420,6 +422,7 @@ export default function BulkMessaging() {
       setSelectedIds(new Set())
       setCreditBalance(0)
       setCreditLoading(false)
+      setCreditLoadError(false)
       return () => {
         cancelled = true
       }
@@ -501,6 +504,7 @@ export default function BulkMessaging() {
     if (!storeId) return undefined
 
     setCreditLoading(true)
+    setCreditLoadError(false)
 
     const unsubscribe = onSnapshot(
       doc(db, 'stores', storeId),
@@ -527,17 +531,18 @@ export default function BulkMessaging() {
           contactEmail: current.contactEmail || contactEmail,
           contactPhone: current.contactPhone || contactPhone,
         }))
+        setCreditLoadError(false)
         setCreditLoading(false)
       },
       error => {
         console.error('[bulk-messaging] Failed to load bulk messaging credits', error)
-        setCreditBalance(0)
+        setCreditLoadError(true)
         setCreditLoading(false)
       },
     )
 
     return () => unsubscribe()
-  }, [storeId, workspaceName])
+  }, [storeId, workspaceName, creditRetryKey])
 
   const allContacts = useMemo(
     () => uniqueByPhoneOrId([...customers, ...students, ...registrations, ...donors, ...volunteers]),
@@ -597,7 +602,7 @@ export default function BulkMessaging() {
   const messageCreditsPerRecipient = messageSegments * CREDITS_PER_SMS
   const messageCostEstimate = messageSegments * SMS_PRICE_ESTIMATE_GHS
   const creditsNeeded = selectableCustomers.length * messageSegments * CREDITS_PER_SMS
-  const hasEnoughCredits = creditBalance >= creditsNeeded
+  const hasEnoughCredits = !creditLoadError && creditBalance >= creditsNeeded
   const estimatedSmsBalance = Math.floor(Math.max(creditBalance, 0) / CREDITS_PER_SMS)
 
   const allVisibleSelected =
@@ -606,6 +611,8 @@ export default function BulkMessaging() {
   const canSend =
     Boolean(storeId) &&
     storeSmsStatus.approved &&
+    !creditLoading &&
+    !creditLoadError &&
     message.trim().length > 0 &&
     message.trim().length <= MESSAGE_LIMIT &&
     selectableCustomers.length > 0 &&
@@ -738,6 +745,14 @@ export default function BulkMessaging() {
       setStatus({
         tone: 'info',
         message: 'Checking SMS credits. Please wait a moment and try again.',
+      })
+      return
+    }
+
+    if (creditLoadError) {
+      setStatus({
+        tone: 'error',
+        message: 'We could not verify your SMS credit balance. Retry the balance check before sending.',
       })
       return
     }
@@ -893,7 +908,7 @@ export default function BulkMessaging() {
       </div>
 
       <section
-        className={`bulk-messaging-page__balance${!creditLoading && creditBalance <= 0 ? ' is-empty' : ''}`}
+        className={`bulk-messaging-page__balance${!creditLoading && !creditLoadError && creditBalance <= 0 ? ' is-empty' : ''}`}
         aria-live="polite"
       >
         <div className="bulk-messaging-page__balance-copy">
@@ -901,6 +916,8 @@ export default function BulkMessaging() {
           <div className="bulk-messaging-page__balance-value">
             {creditLoading ? (
               <span className="bulk-messaging-page__balance-loading">Checking…</span>
+            ) : creditLoadError ? (
+              <span className="bulk-messaging-page__balance-loading">Unavailable</span>
             ) : (
               <>
                 <strong>{formatNumber(Math.max(0, Math.floor(creditBalance)))}</strong>
@@ -911,24 +928,40 @@ export default function BulkMessaging() {
           <p className="bulk-messaging-page__balance-meta">
             {creditLoading
               ? 'Checking the credits available to this workspace.'
-              : creditBalance > 0
-                ? `About ${formatNumber(estimatedSmsBalance)} one-segment SMS available at 12 credits per SMS.`
-                : 'No SMS credits available. Buy a package to start sending.'}
+              : creditLoadError
+                ? 'We could not load this workspace’s SMS balance. Retry to verify the available credits.'
+                : creditBalance > 0
+                  ? `About ${formatNumber(estimatedSmsBalance)} one-segment SMS available at 12 credits per SMS.`
+                  : 'No SMS credits available. Buy a package to start sending.'}
           </p>
         </div>
         <div className="bulk-messaging-page__balance-actions">
           <span className="bulk-messaging-page__balance-status">
-            {storeSmsStatus.approved && storeSmsStatus.hubtelId
-              ? `Sender: ${storeSmsStatus.hubtelId}`
-              : 'SMS approval required'}
+            {creditLoadError
+              ? 'SMS status unavailable'
+              : storeSmsStatus.approved && storeSmsStatus.hubtelId
+                ? `Sender: ${storeSmsStatus.hubtelId}`
+                : 'SMS approval required'}
           </span>
           <button
             type="button"
             className="button button--primary button--small"
-            onClick={() => setActiveTab('buy')}
-            disabled={!storeId}
+            onClick={() => {
+              if (creditLoadError) {
+                setCreditRetryKey(value => value + 1)
+                return
+              }
+              setActiveTab('buy')
+            }}
+            disabled={!storeId || creditLoading}
           >
-            {creditBalance > 0 ? 'Top up credits' : 'Buy credits'}
+            {creditLoading
+              ? 'Checking…'
+              : creditLoadError
+                ? 'Retry balance'
+                : creditBalance > 0
+                  ? 'Top up credits'
+                  : 'Buy credits'}
           </button>
         </div>
       </section>
@@ -1064,9 +1097,11 @@ export default function BulkMessaging() {
                 {isSending ? 'Sending...' : 'Send SMS'}
               </button>
               <div className="bulk-messaging-page__actions-meta">
-                {hasEnoughCredits
-                  ? 'Only selected contacts with phone numbers will receive this broadcast.'
-                  : 'Purchase SMS credits to unlock sending.'}
+                {creditLoadError
+                  ? 'SMS sending is unavailable until the credit balance can be verified.'
+                  : hasEnoughCredits
+                    ? 'Only selected contacts with phone numbers will receive this broadcast.'
+                    : 'Purchase SMS credits to unlock sending.'}
               </div>
             </div>
           </form>
