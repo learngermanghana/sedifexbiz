@@ -41,7 +41,6 @@ export {
   notifyStoreBookingSmsQueueState,
   processBookingSmsStoreAlertChecks,
 } from './bookingSmsStoreAlerts'
-export { normalizeBookingSmsDeliveryStatus } from './bookingSmsDeliveryStatus'
 export {
   queueBookingSmsDeliveryCheck,
   processBookingSmsDeliveryChecks,
