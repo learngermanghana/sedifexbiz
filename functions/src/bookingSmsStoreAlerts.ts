@@ -197,9 +197,9 @@ function alertCopy(kind: AlertKind, stage: Stage, booking: RecordMap, reason = '
   const customer = customerName(booking) || 'the client'
   if (kind === 'sent') {
     return {
-      title: `${label} SMS sent`,
-      message: `${label} SMS sent to ${customer} for ${appointment(booking)}.`,
-      severity: 'success',
+      title: `${label} SMS accepted by Hubtel`,
+      message: `${label} SMS to ${customer} for ${appointment(booking)} was accepted by Hubtel for processing. Handset delivery is not yet confirmed.`,
+      severity: 'info',
     }
   }
   if (kind === 'insufficient_credits') {
@@ -260,6 +260,8 @@ async function recordStoreAlert(args: {
   booking: RecordMap
   reason?: string
   emailStore?: boolean
+  provider?: string
+  providerMessageId?: string
 }) {
   const appointmentDate = args.appointmentDate || bookingDate(args.booking)
   const id = alertId(args.bookingId, args.stage, args.kind, appointmentDate)
@@ -275,6 +277,7 @@ async function recordStoreAlert(args: {
     .doc(id)
 
   const existing = await notificationRef.get()
+  const providerAccepted = args.kind === 'sent'
   const base = {
     category: 'booking_sms',
     source: 'booking_sms_automation',
@@ -282,8 +285,8 @@ async function recordStoreAlert(args: {
     bookingId: args.bookingId,
     stage: args.stage,
     stageLabel: stageLabel(args.stage),
-    status: args.kind === 'sent' ? 'sent' : args.kind === 'unknown' ? 'unknown' : 'failed',
-    kind: args.kind,
+    status: providerAccepted ? 'accepted' : args.kind === 'unknown' ? 'unknown' : 'failed',
+    kind: providerAccepted ? 'accepted' : args.kind,
     severity: copy.severity,
     title: copy.title,
     message: copy.message,
@@ -295,6 +298,13 @@ async function recordStoreAlert(args: {
     appointmentDate: appointmentDate || null,
     branch: branchName(args.booking) || null,
     reason: text(args.reason, 500) || null,
+    ...(providerAccepted ? {
+      provider: text(args.provider, 60) || 'hubtel',
+      providerMessageId: text(args.providerMessageId, 180) || null,
+      providerDeliveryStatus: 'accepted',
+      deliveryConfirmed: false,
+      deliveryNote: 'Hubtel accepted the SMS request. Handset delivery has not been confirmed.',
+    } : {}),
     updatedAt: now,
   }
 
@@ -351,6 +361,8 @@ export const notifyStoreBookingSmsSent = functions.firestore
       kind: 'sent',
       appointmentDate: first([data.appointmentDate], 40),
       booking: loaded.bookingData,
+      provider: first([data.provider], 60),
+      providerMessageId: first([data.providerMessageId], 180),
     })
     return null
   })
