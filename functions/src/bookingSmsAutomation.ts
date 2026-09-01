@@ -9,6 +9,13 @@ import {
   type SmsRateTable,
   type StoreSmsGatewayConfig,
 } from './smsGateway'
+import {
+  automationSettingsRef,
+  isSmsAutomationEnabledForStage,
+  loadAutomationSettings,
+  parseAutomationSettings,
+  type AutomationSettings,
+} from './automationSettings'
 
 const TIME_ZONE = 'Africa/Accra'
 const REMINDER_HOUR = 9
@@ -221,14 +228,16 @@ async function syncQueues(storeId: string, bookingId: string, before: RecordMap,
   const paid = verifiedPaid(after)
   const current = bookingDate(after)
   const previous = bookingDate(before)
+  const automation = await loadAutomationSettings(storeId)
+  const enabled = (stage: Stage) => isSmsAutomationEnabledForStage(automation, stage)
   const ops: Promise<unknown>[] = []
   const payment = queueRef(storeId, bookingId, 'payment_confirmation')
   const thanks = queueRef(storeId, bookingId, 'thank_you')
 
-  ops.push(paid && status !== 'cancelled' && !sent(after, 'payment_confirmation')
+  ops.push(enabled('payment_confirmation') && paid && status !== 'cancelled' && !sent(after, 'payment_confirmation')
     ? payment.set(queueData(storeId, bookingId, 'payment_confirmation', today), { merge: true })
     : payment.delete())
-  ops.push(status === 'completed' && !sent(after, 'thank_you')
+  ops.push(enabled('thank_you') && status === 'completed' && !sent(after, 'thank_you')
     ? thanks.set(queueData(storeId, bookingId, 'thank_you', today), { merge: true })
     : thanks.delete())
 
@@ -237,7 +246,7 @@ async function syncQueues(storeId: string, bookingId: string, before: RecordMap,
     for (const [stage, days] of [['reminder_3d', 3], ['reminder_2d', 2], ['reminder_1d', 1]] as [Stage, number][]) {
       const due = shiftDate(current, -days)
       const ref = queueRef(storeId, bookingId, stage, current)
-      ops.push(due && due >= today && !sent(after, stage)
+      ops.push(enabled(stage) && due && due >= today && !sent(after, stage)
         ? ref.set(queueData(storeId, bookingId, stage, due, current), { merge: true })
         : ref.delete())
     }
@@ -309,16 +318,19 @@ async function staleSending(item: QueueItem) {
 }
 async function claim(item: QueueItem, message: string, phone: string, rates: SmsRateTable): Promise<Claim> {
   const storeRef = defaultDb.collection('stores').doc(item.storeId)
+  const settingsRef = automationSettingsRef(item.storeId)
   const cost = calculateSmsCredits(phone, message, rates)
   const claimId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   let result: Claim = { ok: false, reason: 'queue-missing' }
   await defaultDb.runTransaction(async (tx: FirebaseFirestore.Transaction) => {
-    const [queue, store] = await Promise.all([tx.get(item.ref), tx.get(storeRef)])
+    const [queue, store, automationSnapshot] = await Promise.all([tx.get(item.ref), tx.get(storeRef), tx.get(settingsRef)])
     if (!queue.exists) { result = { ok: false, reason: 'queue-missing' }; return }
     if (!store.exists) { result = { ok: false, reason: 'store-not-found' }; return }
     const q = queue.data() as RecordMap
     const qStatus = norm(q.status, 'pending')
     if (qStatus === 'sending' || qStatus === 'unknown') { result = { ok: false, reason: 'in-flight' }; return }
+    const automation = parseAutomationSettings(automationSnapshot.data())
+    if (!isSmsAutomationEnabledForStage(automation, item.stage)) { result = { ok: false, reason: 'automation-disabled' }; return }
     const retry = asDate(q.nextRetryAt)
     if (qStatus === 'failed' && retry && retry.getTime() > Date.now()) { result = { ok: false, reason: 'backoff' }; return }
     const storeData = store.data() as RecordMap
@@ -406,6 +418,13 @@ async function finalizeFailure(item: QueueItem, booking: BookingCtx, claimResult
 async function processDoc(doc: FirebaseFirestore.QueryDocumentSnapshot, today: string, hour: number, rates: SmsRateTable) {
   const item = await loadItem(doc)
   if (!item) return 'invalid'
+  if (norm(item.data.status) !== 'sending') {
+    const automation = await loadAutomationSettings(item.storeId)
+    if (!isSmsAutomationEnabledForStage(automation, item.stage)) {
+      await item.ref.delete()
+      return 'automation-disabled'
+    }
+  }
   if (await staleSending(item)) return 'in-flight'
   const retry = asDate(item.data.nextRetryAt)
   if (norm(item.data.status) === 'failed' && retry && retry.getTime() > Date.now()) return 'backoff'
@@ -418,7 +437,10 @@ async function processDoc(doc: FirebaseFirestore.QueryDocumentSnapshot, today: s
   if (!resolveStoreSmsGateway(booking.storeData)) return 'sms-not-configured'
   const message = messageFor(item.stage, booking.data, booking.storeData)
   const claimed = await claim(item, message, phone, rates)
-  if (!claimed.ok) return claimed.reason
+  if (!claimed.ok) {
+    if (claimed.reason === 'automation-disabled') await item.ref.delete()
+    return claimed.reason
+  }
   let provider: unknown
   try { provider = await sendSmsViaHubtel({ gateway: claimed.gateway, to: phone, body: message }) }
   catch (e) { await finalizeFailure(item, booking, claimed, message, phone, e instanceof Error ? e.message : 'booking-sms-send-failed'); return 'failed' }
@@ -444,6 +466,14 @@ async function parallel<T>(items: T[], worker: (item: T) => Promise<void>) {
 async function discoverExistingReminders(today: string) {
   const dates = [1, 2, 3].map(days => shiftDate(today, days))
   const roots = await defaultDb.collection('integrationBookings').where('bookingDate', 'in', dates).limit(QUERY_LIMIT).get()
+  const settingsCache = new Map<string, Promise<AutomationSettings>>()
+  const settingsFor = (storeId: string) => {
+    const existing = settingsCache.get(storeId)
+    if (existing) return existing
+    const loading = loadAutomationSettings(storeId)
+    settingsCache.set(storeId, loading)
+    return loading
+  }
   await parallel(roots.docs, async root => {
     const rootData = root.data() as RecordMap
     const storeId = first([rootData.storeId, rootData.store_id], 180)
@@ -455,7 +485,8 @@ async function discoverExistingReminders(today: string) {
     const date = bookingDate(data); const days = date ? dayDiff(today, date) : null
     if (bookingStatus(data) !== 'confirmed' || !verifiedPaid(data) || !days || ![1, 2, 3].includes(days)) return
     const stage = `reminder_${days}d` as Stage
-    if (sent(data, stage)) return
+    const automation = await settingsFor(storeId)
+    if (!isSmsAutomationEnabledForStage(automation, stage) || sent(data, stage)) return
     await queueRef(storeId, root.id, stage, date).set(queueData(storeId, root.id, stage, today, date), { merge: true })
   })
 }
