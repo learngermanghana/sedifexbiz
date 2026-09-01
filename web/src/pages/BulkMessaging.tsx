@@ -598,6 +598,7 @@ export default function BulkMessaging() {
   const messageCostEstimate = messageSegments * SMS_PRICE_ESTIMATE_GHS
   const creditsNeeded = selectableCustomers.length * messageSegments * CREDITS_PER_SMS
   const hasEnoughCredits = creditBalance >= creditsNeeded
+  const estimatedSmsBalance = Math.floor(Math.max(creditBalance, 0) / CREDITS_PER_SMS)
 
   const allVisibleSelected =
     filteredCustomers.length > 0 && filteredCustomers.every(customer => selectedIds.has(customer.id))
@@ -891,6 +892,47 @@ export default function BulkMessaging() {
         </button>
       </div>
 
+      <section
+        className={`bulk-messaging-page__balance${!creditLoading && creditBalance <= 0 ? ' is-empty' : ''}`}
+        aria-live="polite"
+      >
+        <div className="bulk-messaging-page__balance-copy">
+          <span className="bulk-messaging-page__balance-label">SMS credit balance</span>
+          <div className="bulk-messaging-page__balance-value">
+            {creditLoading ? (
+              <span className="bulk-messaging-page__balance-loading">Checking…</span>
+            ) : (
+              <>
+                <strong>{formatNumber(Math.max(0, Math.floor(creditBalance)))}</strong>
+                <span>credits</span>
+              </>
+            )}
+          </div>
+          <p className="bulk-messaging-page__balance-meta">
+            {creditLoading
+              ? 'Checking the credits available to this workspace.'
+              : creditBalance > 0
+                ? `About ${formatNumber(estimatedSmsBalance)} one-segment SMS available at 12 credits per SMS.`
+                : 'No SMS credits available. Buy a package to start sending.'}
+          </p>
+        </div>
+        <div className="bulk-messaging-page__balance-actions">
+          <span className="bulk-messaging-page__balance-status">
+            {storeSmsStatus.approved && storeSmsStatus.hubtelId
+              ? `Sender: ${storeSmsStatus.hubtelId}`
+              : 'SMS approval required'}
+          </span>
+          <button
+            type="button"
+            className="button button--primary button--small"
+            onClick={() => setActiveTab('buy')}
+            disabled={!storeId}
+          >
+            {creditBalance > 0 ? 'Top up credits' : 'Buy credits'}
+          </button>
+        </div>
+      </section>
+
       {activeTab === 'send' && !storeSmsStatus.approved ? (
         <section className="card bulk-messaging-page__approval" role="tabpanel">
           <div>
@@ -1151,16 +1193,20 @@ export default function BulkMessaging() {
                     {creditPackage.label}
                   </span>
                   <span className="bulk-messaging-page__buy-credits-amount">
-                    {formatNumber(creditPackage.credits)} credits
+                    <strong>{formatNumber(creditPackage.credits)}</strong>
+                    <small>credits</small>
                   </span>
                   <span className="bulk-messaging-page__buy-credits-sms">
-                    ~{formatNumber(Math.round(creditPackage.credits / CREDITS_PER_SMS))} SMS
+                    ≈ {formatNumber(Math.round(creditPackage.credits / CREDITS_PER_SMS))} one-segment SMS
                   </span>
-                  <span className="bulk-messaging-page__buy-credits-price">
-                    GHS {creditPackage.price}
-                  </span>
-                  <span className="bulk-messaging-page__buy-credits-cta">
-                    {isBusy ? 'Starting checkout…' : storeSmsStatus.approved ? 'Buy now' : 'Approval required'}
+                  <span className="bulk-messaging-page__buy-credits-footer">
+                    <span className="bulk-messaging-page__buy-credits-price">
+                      <strong>GHS {creditPackage.price}</strong>
+                      <small>one-time top-up</small>
+                    </span>
+                    <span className="bulk-messaging-page__buy-credits-cta">
+                      {isBusy ? 'Starting checkout…' : storeSmsStatus.approved ? 'Buy now' : 'Approval required'}
+                    </span>
                   </span>
                 </button>
               )
