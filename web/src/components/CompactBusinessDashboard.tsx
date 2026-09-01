@@ -55,7 +55,7 @@ const WIDGET_LABELS: Record<WidgetId, { label: string; description: string }> = 
   upcoming: { label: 'Upcoming appointments/events', description: 'The next scheduled bookings, classes or events.' },
   'outstanding-invoices': { label: 'Outstanding invoices', description: 'Invoices that still have an unpaid balance.' },
   'low-stock': { label: 'Low-stock products', description: 'Products at or below their reorder point.' },
-  'payments-due': { label: 'Payments due', description: 'Outstanding invoice balances and upcoming due dates.' },
+  'payments-due': { label: 'Customer balances', description: 'Recorded customer balances and due dates from CRM.' },
   'pending-client-tasks': { label: 'Pending client tasks', description: 'Open event tasks and client actions.' },
   'recent-leads': { label: 'Recent leads', description: 'Newest lead or customer activity in CRM.' },
   'staff-activity': { label: 'Staff activity', description: 'Recent staff changes and team activity.' },
@@ -314,10 +314,10 @@ export default function CompactBusinessDashboard() {
     const ids: WidgetId[] = ['needs-attention', 'staff-activity']
     if (industry === 'shop' || enabledModules.has('sell') || enabledModules.has('marketplace-orders')) ids.push('todays-sales')
     if (enabledModules.has('bookings') || enabledModules.has('upcoming-events') || enabledModules.has('events')) ids.push('upcoming')
-    if (enabledModules.has('invoices')) ids.push('outstanding-invoices', 'payments-due')
+    if (enabledModules.has('invoices')) ids.push('outstanding-invoices')
     if (enabledModules.has('products')) ids.push('low-stock')
     if (industry === 'event' || enabledModules.has('events')) ids.push('pending-client-tasks')
-    if (enabledModules.has('customers')) ids.push('recent-leads')
+    if (enabledModules.has('customers')) ids.push('payments-due', 'recent-leads')
     return Array.from(new Set(ids))
   }, [enabledModules, industry])
 
@@ -379,6 +379,23 @@ export default function CompactBusinessDashboard() {
   const outstandingBalance = outstandingInvoices.reduce((sum, item) => sum + item.balance, 0)
   const overdueInvoices = outstandingInvoices.filter(item => item.dueDate && item.dueDate < today)
 
+  const customerDebtRows = customers
+    .map(item => {
+      const debt = asRecord(item.debt)
+      const outstandingCents = Math.max(0, pickNumber(debt, ['outstandingCents'], 0))
+      return {
+        id: pickText(item, ['id'], customerName(item)),
+        customer: customerName(item),
+        balance: outstandingCents / 100,
+        dueDate: toDate(debt.dueDate),
+      }
+    })
+    .filter(item => item.balance > 0)
+    .sort((a, b) => (a.dueDate?.getTime() ?? Number.POSITIVE_INFINITY) - (b.dueDate?.getTime() ?? Number.POSITIVE_INFINITY))
+
+  const customerOutstandingBalance = customerDebtRows.reduce((sum, item) => sum + item.balance, 0)
+  const overdueCustomerDebts = customerDebtRows.filter(item => item.dueDate && item.dueDate < today)
+
   const bookingEntries = bookings
     .map(item => ({
       id: pickText(item, ['id'], pickText(item, ['reference', 'bookingId'], 'booking')),
@@ -433,16 +450,18 @@ export default function CompactBusinessDashboard() {
   })
 
   const activeEvents = events.filter(item => !['completed', 'cancelled'].includes(normalizeStatus(item.status))).length
-  const attentionCount = lowStockItems.length + overdueInvoices.length
+  const attentionCount = lowStockItems.length + overdueInvoices.length + overdueCustomerDebts.length
     + bookings.filter(item => ['pending', 'pending_approval', 'manual_review'].includes(normalizeStatus(item.bookingStatus ?? item.status))).length
     + pendingClientTasks
+
+  const customerBalanceHint = `${customerDebtRows.length} customer${customerDebtRows.length === 1 ? '' : 's'} owing`
 
   const topKpis: KpiView[] = (() => {
     if (industry === 'event') {
       return [
         { id: 'active-events', label: 'Active events', value: String(activeEvents), hint: 'Events still in progress' },
         { id: 'upcoming-events', label: 'Upcoming events', value: String(eventEntries.length), hint: 'Future active events' },
-        { id: 'payments-due', label: 'Payments due', value: formatMoney(outstandingBalance), hint: `${outstandingInvoices.length} outstanding invoice${outstandingInvoices.length === 1 ? '' : 's'}` },
+        { id: 'payments-due', label: 'Customer balance', value: formatMoney(customerOutstandingBalance), hint: customerBalanceHint },
         { id: 'client-tasks', label: 'Client tasks', value: String(pendingClientTasks), hint: 'Open event/client actions' },
       ]
     }
@@ -450,7 +469,7 @@ export default function CompactBusinessDashboard() {
       return [
         { id: 'bookings-today', label: industry === 'school' ? 'Classes/bookings today' : 'Bookings today', value: String(todayBookings.length), hint: 'New booking records today' },
         { id: 'upcoming', label: 'Upcoming', value: String(bookingEntries.length), hint: industry === 'school' ? 'Future classes/bookings' : 'Future bookings' },
-        { id: 'payments-due', label: 'Payments due', value: formatMoney(outstandingBalance), hint: `${outstandingInvoices.length} outstanding` },
+        { id: 'payments-due', label: 'Customer balance', value: formatMoney(customerOutstandingBalance), hint: customerBalanceHint },
         { id: 'new-leads', label: industry === 'school' ? 'New contacts' : 'New leads', value: String(newLeadCount), hint: 'Added in the last 7 days' },
       ]
     }
@@ -458,7 +477,7 @@ export default function CompactBusinessDashboard() {
       return [
         { id: 'contacts', label: 'Contacts', value: String(customers.length), hint: 'Saved CRM records' },
         { id: 'upcoming', label: 'Upcoming activity', value: String(bookingEntries.length), hint: 'Future campaigns/bookings' },
-        { id: 'payments-due', label: 'Payments due', value: formatMoney(outstandingBalance), hint: `${outstandingInvoices.length} outstanding` },
+        { id: 'payments-due', label: 'Customer balance', value: formatMoney(customerOutstandingBalance), hint: customerBalanceHint },
         { id: 'attention', label: 'Needs attention', value: String(attentionCount), hint: 'Items requiring follow-up' },
       ]
     }
@@ -466,11 +485,12 @@ export default function CompactBusinessDashboard() {
       { id: 'sales-today', label: "Today's sales", value: formatMoney(todaySalesTotal), hint: `${todaySales.length} POS sale${todaySales.length === 1 ? '' : 's'}` },
       { id: 'orders-today', label: 'Orders today', value: String(todayOrders.length), hint: 'Website and marketplace orders' },
       { id: 'low-stock', label: 'Low stock', value: String(lowStockItems.length), hint: 'Products needing attention' },
-      { id: 'payments-due', label: 'Payments due', value: formatMoney(outstandingBalance), hint: `${outstandingInvoices.length} outstanding` },
+      { id: 'payments-due', label: 'Customer balance', value: formatMoney(customerOutstandingBalance), hint: customerBalanceHint },
     ]
   })()
 
   const needsAttentionItems: WidgetItem[] = [
+    ...overdueCustomerDebts.slice(0, 2).map(item => ({ id: `customer-debt-${item.id}`, title: `${item.customer} has an overdue balance`, meta: `Due ${formatCompactDate(item.dueDate)}`, value: formatMoney(item.balance), to: `/customers/${item.id}`, tone: 'danger' as const })),
     ...overdueInvoices.slice(0, 2).map(item => ({ id: `invoice-${item.id}`, title: `${item.reference} is overdue`, meta: `${item.customer} · due ${formatCompactDate(item.dueDate)}`, value: item.balance > 0 ? formatMoney(item.balance) : undefined, to: '/invoices', tone: 'danger' as const })),
     ...lowStockItems.slice(0, 2).map(item => ({ id: `stock-${item.id}`, title: item.stock <= 0 ? `${item.name} is out of stock` : `${item.name} is running low`, meta: item.reorderPoint ? `Reorder point ${item.reorderPoint}` : 'Check inventory level', value: item.stock <= 0 ? 'Out' : `${item.stock} left`, to: '/products', tone: 'warning' as const })),
     ...bookings.filter(item => ['pending', 'pending_approval', 'manual_review'].includes(normalizeStatus(item.bookingStatus ?? item.status))).slice(0, 2).map(item => ({ id: `booking-${pickText(item, ['id'], Math.random().toString())}`, title: 'Booking needs confirmation', meta: customerName(item), to: '/bookings', tone: 'warning' as const })),
@@ -530,14 +550,14 @@ export default function CompactBusinessDashboard() {
       case 'payments-due':
         return {
           id,
-          title: 'Payments due',
+          title: 'Customer balances',
           eyebrow: 'Cash flow',
-          summary: formatMoney(outstandingBalance),
-          description: `${overdueInvoices.length} overdue · ${outstandingInvoices.length} outstanding in total.`,
-          to: '/invoices',
-          linkLabel: 'Review payments',
-          items: outstandingInvoices.slice(0, 3).map(item => ({ id: `payment-${item.id}`, title: item.customer, meta: `${item.reference} · ${item.dueDate ? `due ${formatCompactDate(item.dueDate)}` : 'no due date'}`, value: item.balance > 0 ? formatMoney(item.balance) : 'Open', to: '/invoices', tone: item.dueDate && item.dueDate < today ? 'danger' : undefined })),
-          empty: 'No payments are currently due.',
+          summary: formatMoney(customerOutstandingBalance),
+          description: `${overdueCustomerDebts.length} overdue · ${customerDebtRows.length} customer${customerDebtRows.length === 1 ? '' : 's'} owing.`,
+          to: '/customers',
+          linkLabel: 'Review customers',
+          items: customerDebtRows.slice(0, 3).map(item => ({ id: `payment-${item.id}`, title: item.customer, meta: item.dueDate ? `due ${formatCompactDate(item.dueDate)}` : 'No due date', value: formatMoney(item.balance), to: `/customers/${item.id}`, tone: item.dueDate && item.dueDate < today ? 'danger' : undefined })),
+          empty: 'No customers have a recorded outstanding balance.',
         }
       case 'pending-client-tasks':
         return {
@@ -583,7 +603,7 @@ export default function CompactBusinessDashboard() {
           eyebrow: 'Priority',
           summary: String(attentionCount),
           description: 'Sedifex combines urgent signals here so you do not need every widget visible.',
-          to: overdueInvoices.length ? '/invoices' : lowStockItems.length ? '/products' : industry === 'event' ? '/event-planning' : '/bookings',
+          to: overdueCustomerDebts.length ? '/customers' : overdueInvoices.length ? '/invoices' : lowStockItems.length ? '/products' : industry === 'event' ? '/event-planning' : '/bookings',
           linkLabel: 'Review',
           items: needsAttentionItems,
           empty: 'Nothing urgent needs attention right now.',
