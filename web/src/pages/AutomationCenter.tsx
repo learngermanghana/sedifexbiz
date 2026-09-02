@@ -29,10 +29,10 @@ type Rule = {
 }
 
 const RULES: Rule[] = [
-  { eventType: 'booking.received', label: 'Booking received', detail: 'Tell the customer that a booking request has been received.', group: 'Booking', smsSupported: false },
-  { eventType: 'booking.confirmed', label: 'Booking confirmed', detail: 'Send confirmation after the booking is approved.', group: 'Booking', smsSupported: false },
-  { eventType: 'booking.rescheduled', label: 'Booking rescheduled', detail: 'Send the updated date and time after a schedule change.', group: 'Booking', smsSupported: false },
-  { eventType: 'booking.cancelled', label: 'Booking cancelled', detail: 'Tell the customer when a booking is cancelled.', group: 'Booking', smsSupported: false },
+  { eventType: 'booking.received', label: 'Booking received', detail: 'Tell the customer that a booking request has been received.', group: 'Booking', smsSupported: true },
+  { eventType: 'booking.confirmed', label: 'Booking confirmed', detail: 'Send confirmation after the booking is approved.', group: 'Booking', smsSupported: true },
+  { eventType: 'booking.rescheduled', label: 'Booking rescheduled', detail: 'Send the updated date and time after a schedule change.', group: 'Booking', smsSupported: true },
+  { eventType: 'booking.cancelled', label: 'Booking cancelled', detail: 'Tell the customer when a booking is cancelled.', group: 'Booking', smsSupported: true },
   { eventType: 'booking.payment_submitted', label: 'Payment submitted', detail: 'Acknowledge payment details that are awaiting verification.', group: 'Payments', smsSupported: false },
   { eventType: 'booking.payment_received', label: 'Partial payment received', detail: 'Confirm a recorded part-payment and remaining balance.', group: 'Payments', smsSupported: false },
   { eventType: 'booking.payment_confirmed', label: 'Payment confirmed', detail: 'Confirm a verified payment or completed payment collection.', group: 'Payments', smsSupported: true },
