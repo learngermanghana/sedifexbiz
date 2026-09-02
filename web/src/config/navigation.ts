@@ -131,7 +131,7 @@ export function resolveNavigation(input: NavigationResolverInput): NavItem[] {
     if (!item.rolesAllowed.includes(role)) return false
     if (item.industries && !item.industries.includes(workspaceProfile.industry)) return false
     if (item.hideFromPrimaryNav) return false
-    if (!['account', 'automations'].includes(item.id) && !enabledModules.has(item.id)) return false
+    if (item.id !== 'account' && !enabledModules.has(item.id)) return false
     return hasPermissions(item.requiredPermissions, grantedPermissions)
   }).map(item => {
     const customLabel = workspaceProfile.customLabels?.[item.target]?.trim()
