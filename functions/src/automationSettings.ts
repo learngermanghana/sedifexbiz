@@ -52,6 +52,12 @@ export const AUTOMATION_SMS_EVENTS = Object.values(SMS_STAGE_TO_EVENT)
 
 const EMAIL_EVENT_SET = new Set<string>(AUTOMATION_EMAIL_EVENTS)
 const SMS_EVENT_SET = new Set<string>(AUTOMATION_SMS_EVENTS)
+const OPT_IN_SMS_EVENT_SET = new Set<string>([
+  'booking.received',
+  'booking.confirmed',
+  'booking.rescheduled',
+  'booking.cancelled',
+])
 
 function record(value: unknown): RecordMap {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as RecordMap : {}
@@ -68,7 +74,7 @@ export function defaultAutomationSettings(): AutomationSettings {
   for (const eventType of AUTOMATION_EMAIL_EVENTS) {
     channels[eventType] = {
       email: true,
-      sms: SMS_EVENT_SET.has(eventType),
+      sms: SMS_EVENT_SET.has(eventType) && !OPT_IN_SMS_EVENT_SET.has(eventType),
     }
   }
   return {
