@@ -1,7 +1,16 @@
 import { defaultDb } from './firestore'
 
 export type DeliveryPreference = 'automatic' | 'sedifex' | 'store_email' | 'custom_webhook'
-export type SmsAutomationStage = 'payment_confirmation' | 'reminder_3d' | 'reminder_2d' | 'reminder_1d' | 'thank_you'
+export type SmsAutomationStage =
+  | 'booking_received'
+  | 'booking_confirmed'
+  | 'booking_rescheduled'
+  | 'booking_cancelled'
+  | 'payment_confirmation'
+  | 'reminder_3d'
+  | 'reminder_2d'
+  | 'reminder_1d'
+  | 'thank_you'
 export type AutomationChannelRule = { email: boolean; sms: boolean }
 export type AutomationSettings = {
   emailEnabled: boolean
@@ -28,6 +37,10 @@ export const AUTOMATION_EMAIL_EVENTS = [
 ] as const
 
 export const SMS_STAGE_TO_EVENT: Record<SmsAutomationStage, string> = {
+  booking_received: 'booking.received',
+  booking_confirmed: 'booking.confirmed',
+  booking_rescheduled: 'booking.rescheduled',
+  booking_cancelled: 'booking.cancelled',
   payment_confirmation: 'booking.payment_confirmed',
   reminder_3d: 'booking.reminder_3d',
   reminder_2d: 'booking.reminder_2d',
