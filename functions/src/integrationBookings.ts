@@ -231,7 +231,8 @@ export const v1IntegrationBookings = functions.https.onRequest(async (req, res):
     const attributes = asObject(body.attributes)
     const preferredBranch = clean(body.preferredBranch, 240) || branchLocationName || clean(attributes.preferred_branch, 240)
     const paymentMethod = clean(body.paymentMethod, 120)
-    const paymentStatus = clean(body.paymentStatus ?? body.payment_status, 80) || 'pending'
+    // Payment settlement is server-controlled. Provider verification/webhooks must update this later.
+    const paymentStatus = 'pending'
     const paymentCollectionMode = clean(body.paymentCollectionMode ?? body.paymentOption, 120)
     const depositAmount = toNumber(body.depositAmount, 0)
     const amountOutstanding = toNumber(body.amountOutstanding, toNumber(body.paymentAmount, 0))
@@ -322,7 +323,7 @@ export const v1IntegrationBookings = functions.https.onRequest(async (req, res):
         amount: paymentAmount,
         depositAmount,
         amountOutstanding,
-        confirmed: paymentStatus === 'paid',
+        confirmed: false,
       },
       attributes,
       bookingStatus: 'pending_approval',
