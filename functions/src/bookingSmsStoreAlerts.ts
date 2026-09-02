@@ -13,11 +13,30 @@ const TIME_ZONE = 'Africa/Accra'
 const QUERY_LIMIT = 250
 const CONCURRENCY = 8
 
-type Stage = 'payment_confirmation' | 'reminder_3d' | 'reminder_2d' | 'reminder_1d' | 'thank_you'
+type Stage =
+  | 'booking_received'
+  | 'booking_confirmed'
+  | 'booking_rescheduled'
+  | 'booking_cancelled'
+  | 'payment_confirmation'
+  | 'reminder_3d'
+  | 'reminder_2d'
+  | 'reminder_1d'
+  | 'thank_you'
 type AlertKind = 'sent' | 'failed' | 'unknown' | 'insufficient_credits' | 'sender_not_configured'
 type RecordMap = Record<string, unknown>
 
-const stages: Stage[] = ['payment_confirmation', 'reminder_3d', 'reminder_2d', 'reminder_1d', 'thank_you']
+const stages: Stage[] = [
+  'booking_received',
+  'booking_confirmed',
+  'booking_rescheduled',
+  'booking_cancelled',
+  'payment_confirmation',
+  'reminder_3d',
+  'reminder_2d',
+  'reminder_1d',
+  'thank_you',
+]
 
 function text(value: unknown, max = 500) {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
@@ -159,6 +178,10 @@ function appointment(data: RecordMap) {
 }
 
 function stageLabel(stage: Stage) {
+  if (stage === 'booking_received') return 'Booking received'
+  if (stage === 'booking_confirmed') return 'Booking confirmation'
+  if (stage === 'booking_rescheduled') return 'Booking reschedule'
+  if (stage === 'booking_cancelled') return 'Booking cancellation'
   if (stage === 'payment_confirmation') return 'Payment confirmation'
   if (stage === 'reminder_3d') return '3-day reminder'
   if (stage === 'reminder_2d') return '2-day reminder'
@@ -172,6 +195,10 @@ function messageFor(stage: Stage, booking: RecordMap, store: RecordMap) {
   const service = serviceName(booking)
   const branch = branchName(booking)
   const suffix = branch ? `, ${branch}` : ''
+  if (stage === 'booking_received') return `Hi ${name}, ${business} received your ${service} booking for ${appointment(booking)}${suffix}. We'll confirm it shortly.`
+  if (stage === 'booking_confirmed') return `Hi ${name}, your ${service} booking with ${business} is confirmed for ${appointment(booking)}${suffix}.`
+  if (stage === 'booking_rescheduled') return `Hi ${name}, ${business} rescheduled your ${service} booking to ${appointment(booking)}${suffix}.`
+  if (stage === 'booking_cancelled') return `Hi ${name}, your ${service} booking with ${business} for ${appointment(booking)}${suffix} has been cancelled.`
   if (stage === 'payment_confirmation') return `Hi ${name}, payment received by ${business}. ${service}: ${appointment(booking)}${suffix}. Thank you.`
   if (stage === 'reminder_3d') return `Hi ${name}, reminder from ${business}: your ${service} appointment is in 3 days, ${appointment(booking)}${suffix}.`
   if (stage === 'reminder_2d') return `Hi ${name}, reminder from ${business}: your ${service} appointment is in 2 days, ${appointment(booking)}${suffix}.`
@@ -181,8 +208,13 @@ function messageFor(stage: Stage, booking: RecordMap, store: RecordMap) {
 
 function queueEligible(stage: Stage, appointmentDate: string, booking: RecordMap) {
   const status = bookingStatus(booking)
-  if (status === 'cancelled' || status === 'canceled') return false
+  const cancelled = status === 'cancelled' || status === 'canceled'
   if (!customerPhone(booking)) return false
+  if (stage === 'booking_received') return !cancelled && status !== 'completed' && status !== 'confirmed'
+  if (stage === 'booking_confirmed') return status === 'confirmed'
+  if (stage === 'booking_rescheduled') return !cancelled && status !== 'completed'
+  if (stage === 'booking_cancelled') return cancelled
+  if (cancelled) return false
   if (stage === 'payment_confirmation') return verifiedPaid(booking)
   if (stage === 'thank_you') return status === 'completed'
   return status === 'confirmed' && verifiedPaid(booking) && Boolean(appointmentDate && bookingDate(booking) === appointmentDate)

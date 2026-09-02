@@ -194,6 +194,26 @@ service cloud.firestore {
       allow read, create, update, delete: if false;
     }
 
+    // SMS queues and lifecycle event ledgers control billable outbound sends.
+    // They are server-owned and must never be forged, deleted, or marked sent
+    // by a browser client. Store-facing status is exposed through the normal
+    // store notification/history collections instead.
+    match /bookingSmsQueue/{docId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /bookingSmsDeliveryQueue/{docId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /bookingLifecycleSmsQueue/{docId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /bookingLifecycleSmsEvents/{docId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /engagement_threads/{threadId} {
       allow read: if true;
       allow create, update: if isEngagementThreadWrite() || isSignedIn();
@@ -289,16 +309,20 @@ service cloud.firestore {
     }
 
     // Legacy fallback for non-store-scoped collections. Store-scoped,
-    // membership, CRM, and secure bearer-link paths are intentionally excluded
-    // so their stricter rules cannot be bypassed by an overlapping
-    // authenticated wildcard.
+    // membership, CRM, secure bearer-link paths, and server-owned SMS queues
+    // are intentionally excluded so their stricter rules cannot be bypassed by
+    // an overlapping authenticated wildcard.
     match /{topCollection}/{document=**} {
       allow read, write: if isSignedIn()
         && topCollection != 'stores'
         && topCollection != 'teamMembers'
         && topCollection != 'customers'
         && topCollection != 'eventContractLinks'
-        && topCollection != 'eventClientLinks';
+        && topCollection != 'eventClientLinks'
+        && topCollection != 'bookingSmsQueue'
+        && topCollection != 'bookingSmsDeliveryQueue'
+        && topCollection != 'bookingLifecycleSmsQueue'
+        && topCollection != 'bookingLifecycleSmsEvents';
     }
   }
 }

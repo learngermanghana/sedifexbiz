@@ -210,6 +210,35 @@ describeOrSkip('Event planning P1 security regressions', () => {
     }
   })
 
+  test('server-owned SMS queues and lifecycle ledgers cannot be forged by signed-in browser clients', async () => {
+    const owner = await createOwner()
+    try {
+      for (const collectionName of [
+        'bookingSmsQueue',
+        'bookingSmsDeliveryQueue',
+        'bookingLifecycleSmsQueue',
+        'bookingLifecycleSmsEvents',
+      ]) {
+        const queueRef = doc(owner.db, collectionName, `browser-forge-${collectionName}`)
+        await expectPermissionDenied(
+          setDoc(queueRef, {
+            storeId: owner.storeId,
+            bookingId: 'booking-1',
+            stage: 'booking_confirmed',
+            status: 'sent',
+          }),
+          `${collectionName} must reject browser writes`,
+        )
+        await expectPermissionDenied(
+          getDoc(queueRef),
+          `${collectionName} must reject browser reads`,
+        )
+      }
+    } finally {
+      await destroyContext(owner)
+    }
+  })
+
   test('event contract templates are isolated to members of the owning store', async () => {
     const owner = await createOwner()
     const otherOwner = await createOwner()

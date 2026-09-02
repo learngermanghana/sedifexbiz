@@ -13,6 +13,10 @@ import {
 type RecordMap = Record<string, unknown>
 
 const SMS_STAGES = new Set<SmsAutomationStage>([
+  'booking_received',
+  'booking_confirmed',
+  'booking_rescheduled',
+  'booking_cancelled',
   'payment_confirmation',
   'reminder_3d',
   'reminder_2d',
@@ -98,22 +102,44 @@ function responseSettings(settings: AutomationSettings) {
   }
 }
 
-async function purgeDisabledSmsQueues(storeId: string, settings: AutomationSettings) {
-  const snapshot = await defaultDb.collection('bookingSmsQueue').where('storeId', '==', storeId).get()
-  const refs = snapshot.docs.filter(document => {
-    const data = document.data() as RecordMap
-    const stage = normalized(data.stage) as SmsAutomationStage
-    if (!SMS_STAGES.has(stage)) return false
-    if (normalized(data.status) === 'sending') return false
-    return !isSmsAutomationEnabledForStage(settings, stage)
-  }).map(document => document.ref)
+function queueStageDisabled(document: FirebaseFirestore.QueryDocumentSnapshot, settings: AutomationSettings) {
+  const data = document.data() as RecordMap
+  const stage = normalized(data.stage) as SmsAutomationStage
+  if (!SMS_STAGES.has(stage)) return false
+  if (normalized(data.status) === 'sending') return false
+  return !isSmsAutomationEnabledForStage(settings, stage)
+}
 
-  for (let offset = 0; offset < refs.length; offset += 450) {
+async function purgeDisabledSmsQueues(storeId: string, settings: AutomationSettings) {
+  const [reminderSnapshot, lifecycleSnapshot] = await Promise.all([
+    defaultDb.collection('bookingSmsQueue').where('storeId', '==', storeId).get(),
+    defaultDb.collection('bookingLifecycleSmsQueue').where('storeId', '==', storeId).get(),
+  ])
+
+  const reminderRefs = reminderSnapshot.docs.filter(document => queueStageDisabled(document, settings)).map(document => document.ref)
+  const lifecycleDocs = lifecycleSnapshot.docs.filter(document => queueStageDisabled(document, settings))
+  const total = reminderRefs.length + lifecycleDocs.length
+
+  for (let offset = 0; offset < reminderRefs.length; offset += 450) {
     const batch = defaultDb.batch()
-    refs.slice(offset, offset + 450).forEach(ref => batch.delete(ref))
+    reminderRefs.slice(offset, offset + 450).forEach(ref => batch.delete(ref))
     await batch.commit()
   }
-  return refs.length
+
+  for (let offset = 0; offset < lifecycleDocs.length; offset += 200) {
+    const batch = defaultDb.batch()
+    lifecycleDocs.slice(offset, offset + 200).forEach(document => {
+      batch.delete(document.ref)
+      batch.set(defaultDb.collection('bookingLifecycleSmsEvents').doc(document.id), {
+        status: 'disabled',
+        disabledAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true })
+    })
+    await batch.commit()
+  }
+
+  return total
 }
 
 export const getAutomationCenterState = functions.https.onCall(async (data, context) => {

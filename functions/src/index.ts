@@ -37,6 +37,10 @@ export {
   queueBookingSmsOnWrite,
 } from './bookingSmsAutomation'
 export {
+  processBookingLifecycleSmsNotifications,
+  queueBookingLifecycleSmsOnWrite,
+} from './bookingLifecycleSmsAutomation'
+export {
   notifyStoreBookingSmsSent,
   notifyStoreBookingSmsQueueState,
   processBookingSmsStoreAlertChecks,
