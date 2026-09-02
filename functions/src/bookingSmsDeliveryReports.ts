@@ -42,6 +42,10 @@ function normalizeStatus(value: unknown) {
 }
 
 function stageLabel(stage: string) {
+  if (stage === 'booking_received') return 'Booking received'
+  if (stage === 'booking_confirmed') return 'Booking confirmation'
+  if (stage === 'booking_rescheduled') return 'Booking reschedule'
+  if (stage === 'booking_cancelled') return 'Booking cancellation'
   if (stage === 'payment_confirmation') return 'Payment confirmation'
   if (stage === 'reminder_3d') return '3-day reminder'
   if (stage === 'reminder_2d') return '2-day reminder'
