@@ -16,6 +16,28 @@ describe('resolveNavigation', () => {
     expect(items.map(item => item.id)).not.toContain('sell')
   })
 
+  it('keeps Automations hidden until the owner enables it', () => {
+    const hidden = resolveNavigation({
+      role: 'owner',
+      workspaceProfile: {
+        industry: 'shop',
+        labelPolicy: 'shared',
+        enabledModules: ['dashboard', 'products'],
+      },
+    })
+    expect(hidden.map(item => item.id)).not.toContain('automations')
+
+    const enabled = resolveNavigation({
+      role: 'owner',
+      workspaceProfile: {
+        industry: 'shop',
+        labelPolicy: 'shared',
+        enabledModules: ['dashboard', 'products', 'automations'],
+      },
+    })
+    expect(enabled.map(item => item.id)).toContain('automations')
+  })
+
   it('applies industry preset aliases, module toggles, custom items, role and permissions', () => {
     const items = resolveNavigation({
       role: 'staff',
@@ -131,6 +153,7 @@ describe('resolveNavigation', () => {
     for (const industry of ['shop', 'travel', 'ngo', 'school'] as const) {
       expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('reports')
       expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('integrations')
+      expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('automations')
       expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('website-builder')
       expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('bulk-email')
       expect(INDUSTRY_ENABLED_MODULE_PRESETS[industry]).not.toContain('bulk-messaging')

@@ -29,7 +29,7 @@ const PAGE_GROUPS: PageGroup[] = [
   { title: 'Daily work', ids: ['dashboard', 'reports', 'products', 'sell', 'marketplace-orders', 'customers', 'bookings'] },
   { title: 'Documents, payments & expenses', ids: ['quick-pay', 'invoices', 'receipts', 'expenses', 'settlement', 'donor-management', 'funds-ledger'] },
   { title: 'Bookings, registration & cases', ids: ['upcoming-events', 'student-registration', 'volunteers', 'support-requests'] },
-  { title: 'Website & marketing', ids: ['integrations', 'website-builder', 'blog', 'bulk-messaging', 'bulk-email'] },
+  { title: 'Website & marketing', ids: ['integrations', 'automations', 'website-builder', 'blog', 'bulk-messaging', 'bulk-email'] },
   { title: 'Account', ids: ['account'] },
 ]
 
