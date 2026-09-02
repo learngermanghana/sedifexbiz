@@ -70,6 +70,7 @@ import BookingMappingSettings from './pages/BookingMappingSettings'
 import IntegrationWebsiteSettings from './pages/IntegrationWebsiteSettings'
 import IntegrationBookingsSettings from './pages/IntegrationBookingsSettings'
 import IntegrationEmailSettings from './pages/IntegrationEmailSettings'
+import AutomationCenter from './pages/AutomationCenter'
 import BlogPage from './pages/BlogPage'
 import ReceiptView from './pages/ReceiptView'
 import CustomerDisplay from './pages/CustomerDisplay'
@@ -184,6 +185,7 @@ const router = createBrowserRouter([
       { path: 'merchant-feed', element: <Navigate to="/sell" replace /> },
       { path: 'support', element: <Support /> },
       { path: 'blog', element: <BlogPage /> },
+      { path: 'settings/automations', element: <AutomationCenter /> },
       { path: 'settings/integrations/booking-mapping', element: <BookingMappingSettings /> },
       { path: 'settings/integrations/website', element: <IntegrationWebsiteSettings /> },
       { path: 'settings/integrations/bookings', element: <IntegrationBookingsSettings /> },

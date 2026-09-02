@@ -1,5 +1,6 @@
 import { defineString } from 'firebase-functions/params'
 import { defaultDb } from './firestore'
+import { isEmailAutomationEnabled, loadAutomationSettings } from './automationSettings'
 
 const SEDIFEX_NOTIFICATION_WEBHOOK_URL = defineString('SEDIFEX_NOTIFICATION_WEBHOOK_URL', { default: '' })
 const SEDIFEX_NOTIFICATION_SHARED_SECRET = defineString('SEDIFEX_NOTIFICATION_SHARED_SECRET', { default: '' })
@@ -120,9 +121,10 @@ function numberValue(value: unknown) {
 }
 
 async function resolveSettings(storeId: string) {
-  const [storeSnapshot, settingsSnapshot] = await Promise.all([
+  const [storeSnapshot, settingsSnapshot, automation] = await Promise.all([
     defaultDb.collection('stores').doc(storeId).get(),
     defaultDb.collection('storeSettings').doc(storeId).get(),
+    loadAutomationSettings(storeId),
   ])
 
   const store = record(storeSnapshot.data())
@@ -167,6 +169,9 @@ async function resolveSettings(storeId: string) {
     customUrl,
     centralUrl: safeUrl(centralUrl),
     secret,
+    automation,
+    deliveryPreference: automation.deliveryPreference,
+    fallbackToSedifex: automation.fallbackToSedifex,
   }
 }
 
@@ -197,9 +202,6 @@ async function sendAppsScript(
     const sent = Math.max(0, numberValue(body.sent))
     const queuedForRetry = Math.max(0, numberValue(body.queuedForRetry))
     const duplicate = body.duplicate === true
-    // The current Apps Script template reports quota deferrals but does not create
-    // a durable retry for transactional recipients, so quota-only deferrals must
-    // continue to the Sedifex fallback instead of becoming terminal successes.
     const accepted = response.ok && body.ok !== false && (sent > 0 || duplicate)
     const deliveryStatus = duplicate
       ? 'duplicate'
@@ -284,33 +286,7 @@ async function sendWebhook(
   }
 }
 
-export async function deliverTransactionalEmail(
-  input: TransactionalEmailDeliveryInput,
-): Promise<TransactionalEmailDeliveryResult> {
-  const settings = await resolveSettings(input.storeId)
-
-  if (settings.appsScript.configured) {
-    const appsScript = await sendAppsScript(input, settings)
-    if (appsScript.ok || appsScript.deliveryStatus === 'duplicate') {
-      return appsScript
-    }
-  }
-
-  const targets: Array<{ url: string; channel: 'custom_webhook' | 'sedifex_notification' }> = []
-  if (settings.customUrl) targets.push({ url: settings.customUrl, channel: 'custom_webhook' })
-  if (settings.centralUrl && settings.centralUrl !== settings.customUrl) {
-    targets.push({ url: settings.centralUrl, channel: 'sedifex_notification' })
-  }
-
-  let lastFailure: TransactionalEmailDeliveryResult | null = null
-  for (const target of targets) {
-    const result = await sendWebhook(input, settings, target.url, target.channel)
-    if (result.ok) return result
-    lastFailure = result
-  }
-
-  if (lastFailure) return lastFailure
-
+function noSenderResult(settings: Awaited<ReturnType<typeof resolveSettings>>, reason: string): TransactionalEmailDeliveryResult {
   return {
     attempted: false,
     ok: true,
@@ -320,6 +296,55 @@ export async function deliverTransactionalEmail(
     senderName: settings.storeName,
     senderEmail: '',
     replyToEmail: settings.replyToEmail,
-    reason: 'no-live-email-sender-configured',
+    reason,
   }
+}
+
+export async function deliverTransactionalEmail(
+  input: TransactionalEmailDeliveryInput,
+): Promise<TransactionalEmailDeliveryResult> {
+  const settings = await resolveSettings(input.storeId)
+  if (!isEmailAutomationEnabled(settings.automation, input.eventType)) {
+    return noSenderResult(settings, 'automation-disabled')
+  }
+
+  const preference = settings.deliveryPreference
+  let lastFailure: TransactionalEmailDeliveryResult | null = null
+  let attemptedCustomUrl = ''
+
+  const shouldTryStoreEmail = preference === 'automatic' || preference === 'store_email'
+  if (shouldTryStoreEmail && settings.appsScript.configured) {
+    const appsScript = await sendAppsScript(input, settings)
+    if (appsScript.ok || appsScript.deliveryStatus === 'duplicate') return appsScript
+    lastFailure = appsScript
+  }
+
+  if (preference === 'store_email' && !settings.fallbackToSedifex) {
+    return lastFailure || noSenderResult(settings, 'store-email-not-configured')
+  }
+
+  const shouldTryCustom = preference === 'automatic' || preference === 'custom_webhook'
+  if (shouldTryCustom && settings.customUrl) {
+    attemptedCustomUrl = settings.customUrl
+    const custom = await sendWebhook(input, settings, settings.customUrl, 'custom_webhook')
+    if (custom.ok) return custom
+    lastFailure = custom
+  }
+
+  if (preference === 'custom_webhook' && !settings.fallbackToSedifex) {
+    return lastFailure || noSenderResult(settings, 'custom-webhook-not-configured')
+  }
+
+  const shouldTrySedifex = preference === 'sedifex' || settings.fallbackToSedifex
+  if (shouldTrySedifex && settings.centralUrl && settings.centralUrl !== attemptedCustomUrl) {
+    const sedifex = await sendWebhook(input, settings, settings.centralUrl, 'sedifex_notification')
+    if (sedifex.ok) return sedifex
+    lastFailure = sedifex
+  }
+
+  if (lastFailure) return lastFailure
+  return noSenderResult(
+    settings,
+    preference === 'sedifex' ? 'sedifex-live-sender-not-configured' : 'no-live-email-sender-configured',
+  )
 }

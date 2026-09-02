@@ -37,6 +37,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'support-requests', label: 'Support requests', type: 'module', target: '/support-requests', rolesAllowed: ['owner', 'staff'], industries: ['ngo'], sortOrder: 57 },
   { id: 'settlement', label: 'Payments / Settlement', type: 'module', target: '/settlement', rolesAllowed: ['owner'], sortOrder: 58 },
   { id: 'integrations', label: 'Integrations', type: 'module', target: '/settings/integrations/website', rolesAllowed: ['owner'], sortOrder: 59 },
+  { id: 'automations', label: 'Automations', type: 'module', target: '/settings/automations', rolesAllowed: ['owner'], sortOrder: 59.5 },
   { id: 'blog', label: 'Blog', type: 'module', target: '/blog', rolesAllowed: ['owner', 'staff'], sortOrder: 60 },
   { id: 'website-builder', label: 'Website Builder', type: 'module', target: '/website-builder', rolesAllowed: ['owner', 'staff'], sortOrder: 61 },
   { id: 'promo', label: 'Promo', type: 'module', target: '/promo', parentTarget: '/website-builder', hideFromPrimaryNav: true, rolesAllowed: ['owner', 'staff'], sortOrder: 61.1 },
@@ -130,7 +131,7 @@ export function resolveNavigation(input: NavigationResolverInput): NavItem[] {
     if (!item.rolesAllowed.includes(role)) return false
     if (item.industries && !item.industries.includes(workspaceProfile.industry)) return false
     if (item.hideFromPrimaryNav) return false
-    if (item.id !== 'account' && !enabledModules.has(item.id)) return false
+    if (!['account', 'automations'].includes(item.id) && !enabledModules.has(item.id)) return false
     return hasPermissions(item.requiredPermissions, grantedPermissions)
   }).map(item => {
     const customLabel = workspaceProfile.customLabels?.[item.target]?.trim()

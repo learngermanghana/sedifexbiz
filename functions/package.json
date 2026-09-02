@@ -8,6 +8,7 @@
   "scripts": {
     "build": "rimraf lib && tsc",
     "test": "node test/bookingNormalization.test.js && node test/smsGateway.test.js",
+    "test:automation-settings": "node test/automationSettings.test.js",
     "test:event-audit": "node test/eventAudit.test.js",
     "test:event-contract": "node test/eventContractSigning.test.js",
     "test:event-client": "node test/eventClientCollaboration.test.js",

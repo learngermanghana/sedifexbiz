@@ -53,6 +53,10 @@ export {
   automateBookingEmailOnWrite,
   processBookingEmailReminders,
 } from './bookingEmailAutomation'
+export {
+  getAutomationCenterState,
+  saveAutomationCenterSettings,
+} from './automationCenter'
 export { automateCustomerPortalOnBookingWrite } from './customerPortalBookingAutomation'
 export {
   automateEventCommunicationsOnWrite,
