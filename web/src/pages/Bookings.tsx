@@ -73,7 +73,7 @@ function pickTimestamp(
 
 const normalizeStatus = (value: unknown, fallback = "pending") =>
   typeof value === "string" && value.trim()
-    ? value.trim().toLowerCase()
+    ? value.trim().toLowerCase().replace(/[\s-]+/g, "_")
     : fallback;
 
 const normalizePaymentStatus = (value: unknown) => {
@@ -97,8 +97,10 @@ const statusLabel = (status: string) =>
     pending_approval: "Needs approval",
     pending: "Needs approval",
     confirmed: "Confirmed",
+    rescheduled: "Rescheduled",
     completed: "Completed",
     cancelled: "Cancelled",
+    canceled: "Cancelled",
     deleted: "Cancelled",
     manual_review: "Manual review",
   })[status] ?? "Pending approval";
@@ -292,8 +294,22 @@ export default function Bookings() {
             "paymentOption",
             "payment_option",
           ]),
-        bookingStatus: normalizeStatus(data.bookingStatus ?? data.status),
-        status: normalizeStatus(data.status),
+        bookingStatus: normalizeStatus(
+          data.bookingStatus ??
+            data.booking_status ??
+            booking.bookingStatus ??
+            booking.booking_status ??
+            booking.status ??
+            data.status,
+        ),
+        status: normalizeStatus(
+          data.status ??
+            data.bookingStatus ??
+            data.booking_status ??
+            booking.status ??
+            booking.bookingStatus ??
+            booking.booking_status,
+        ),
         syncStatus: normalizeStatus(
           data.syncStatus ?? data.sync_status,
           "not_ready",
@@ -328,9 +344,11 @@ export default function Bookings() {
         ),
         reference:
           pickString(data, ["reference"]) ?? pickString(payment, ["reference"]),
-        bookingId: pickString(data, ["bookingId"]),
+        bookingId:
+          pickString(data, ["bookingId", "booking_id"]) ??
+          pickString(booking, ["bookingId", "booking_id", "id"]),
         paymentReference:
-          pickString(data, ["paymentReference"]) ??
+          pickString(data, ["paymentReference", "payment_reference"]) ??
           pickString(payment, ["reference"]),
         duplicateMerged: false,
         sourcePath,
@@ -772,7 +790,9 @@ export default function Bookings() {
                         </span>
                         <small>
                           {b.paymentStatus === "paid" &&
-                          b.bookingStatus !== "confirmed"
+                          ["pending", "pending_approval", "manual_review"].includes(
+                            b.bookingStatus,
+                          )
                             ? "Paid - waiting for store confirmation"
                             : ""}
                         </small>
@@ -788,7 +808,7 @@ export default function Bookings() {
                         <div className="bookings-page__row-actions">
                           <Link
                             className="btn btn-secondary"
-                            to={`/bookings/${b.id}`}
+                            to={`/bookings/${b.bookingId || b.id}`}
                           >
                             Open
                           </Link>
@@ -818,7 +838,7 @@ export default function Bookings() {
                     {b.bookingDate || "Date not set"} {b.bookingTime || ""}
                   </p>
                   <p>
-                    {statusLabel(b.status)} • {paymentLabel(b.paymentStatus)}
+                    {statusLabel(b.bookingStatus)} • {paymentLabel(b.paymentStatus)}
                   </p>
                   <label className="bookings-card__select">
                     <input
@@ -837,7 +857,7 @@ export default function Bookings() {
                   <div className="bookings-page__row-actions">
                     <Link
                       className="btn btn-secondary"
-                      to={`/bookings/${b.id}`}
+                      to={`/bookings/${b.bookingId || b.id}`}
                     >
                       Open
                     </Link>
