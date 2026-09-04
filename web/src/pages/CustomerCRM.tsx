@@ -264,6 +264,13 @@ function uniqueRows(rows: DataRow[], keyPaths: string[] = ['reference', 'booking
   return Array.from(byKey.values())
 }
 
+function bookingHref(row: DataRow): string {
+  const canonicalBookingId = firstText(row.data, ['bookingId', 'booking_id'])
+  if (canonicalBookingId) return `/bookings/${encodeURIComponent(canonicalBookingId)}`
+  if (row.source === 'store' || row.source === 'root') return `/bookings/${encodeURIComponent(row.id)}`
+  return '/reports/bookings'
+}
+
 function isBookingLike(data: RecordMap): boolean {
   const recordType = (firstText(data, ['recordType', 'orderType', 'order_type']) || '').toLowerCase()
   const accountingType = (firstText(data, ['accountingType', 'accounting_type', 'metadata.accountingType']) || '').toLowerCase()
@@ -501,7 +508,7 @@ export default function CustomerCRM() {
     crmData.bookings.forEach(row => {
       const service = firstText(row.data, ['serviceName', 'booking.serviceName', 'metadata.serviceName', 'items.0.name']) || 'Service booking'
       const bookingDate = firstText(row.data, ['bookingDate', 'date', 'booking.preferredDate', 'metadata.bookingDate'])
-      rows.push({ id: `booking-${row.id}`, kind: 'Booking', title: service, detail: bookingDate ? `Booked for ${bookingDate}` : 'Booking activity', date: recordDate(row.data), href: '/bookings' })
+      rows.push({ id: `booking-${row.id}`, kind: 'Booking', title: service, detail: bookingDate ? `Booked for ${bookingDate}` : 'Booking activity', date: recordDate(row.data), href: bookingHref(row) })
     })
     crmData.invoices.forEach(row => {
       const invoiceNumber = firstText(row.data, ['invoiceNumber']) || row.id
@@ -667,6 +674,7 @@ export default function CustomerCRM() {
           <article className="customer-crm__record" key={`${row.source}-${row.id}`}>
             <div><strong>{firstText(row.data, ['serviceName', 'booking.serviceName', 'metadata.serviceName']) || 'Service booking'}</strong><span>{firstText(row.data, ['bookingDate', 'date', 'booking.preferredDate']) || formatDate(readPath(row.data, 'createdAt'))}</span></div>
             <div><span>{statusText(firstText(row.data, ['bookingStatus', 'status']))}</span><span>{statusText(firstText(row.data, ['paymentStatus', 'payment.status']), 'Payment not recorded')}</span></div>
+            <Link to={bookingHref(row)}>Open booking →</Link>
           </article>
         ))}
         <Link className="customer-crm__section-link" to="/bookings">Open all bookings</Link>

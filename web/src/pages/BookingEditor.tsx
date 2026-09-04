@@ -623,7 +623,7 @@ export default function BookingEditor() {
       setSuccessMessage(saveMessage)
       publish({ tone: 'success', message: saveMessage })
       void playSound('success')
-      navigate('/bookings')
+      navigate(`/bookings/${encodeURIComponent(targetId)}`, { replace: isCreateMode })
     } catch (error) {
       console.error('[booking-editor] Failed to save booking', error)
       const failureMessage = 'Unable to save booking right now.'

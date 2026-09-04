@@ -518,8 +518,24 @@ export default function CompactBusinessDashboard() {
           eyebrow: 'Schedule',
           summary: String(upcomingEntries.length),
           description: 'Future bookings, classes and events in one compact list.',
-          to: industry === 'event' ? '/event-planning' : '/upcoming-events',
-          linkLabel: 'View schedule',
+          to: upcomingEntries.length === 1
+            ? upcomingEntries[0].to
+            : upcomingEntries.length === 0
+              ? (industry === 'event' ? '/event-planning' : '/upcoming-events')
+              : eventEntries.length === 0
+                ? '/bookings'
+                : bookingEntries.length === 0
+                  ? '/event-planning'
+                  : '/upcoming-events',
+          linkLabel: upcomingEntries.length === 1
+            ? (upcomingEntries[0].to.startsWith('/bookings/') ? 'Open booking' : 'Open event')
+            : upcomingEntries.length === 0
+              ? (industry === 'event' ? 'View events' : 'View schedule')
+              : eventEntries.length === 0
+                ? 'View bookings'
+                : bookingEntries.length === 0
+                  ? 'View events'
+                  : 'View schedule',
           items: upcomingEntries.slice(0, 3).map(item => ({ id: `${item.to}-${item.id}`, title: item.title, meta: `${item.customer} · ${formatCompactDate(item.date)}`, to: item.to })),
           empty: 'Nothing upcoming right now.',
         }
