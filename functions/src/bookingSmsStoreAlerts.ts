@@ -463,7 +463,7 @@ async function inspectBlockedQueue(doc: FirebaseFirestore.QueryDocumentSnapshot,
       kind: 'sender_not_configured',
       appointmentDate,
       booking: loaded.bookingData,
-      emailStore: true,
+      emailStore: false,
     })
     return
   }
