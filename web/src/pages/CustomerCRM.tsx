@@ -89,6 +89,8 @@ const EMPTY_DATA: CrmData = {
   documents: [],
 }
 
+const CUSTOMER_ACTIVITY_LIMIT = 100
+
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'sales', label: 'Sales' },
@@ -405,15 +407,15 @@ export default function CustomerCRM() {
         notesSnapshot,
         documentsSnapshot,
       ] = await Promise.all([
-        getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId), limit(1000))),
-        getDocs(collection(db, 'stores', storeId, 'integrationBookings')),
-        getDocs(query(collection(db, 'integrationBookings'), where('storeId', '==', storeId), limit(500))),
-        getDocs(collection(db, 'stores', storeId, 'integrationOrders')),
-        getDocs(query(collection(db, 'integrationOrders'), where('storeId', '==', storeId), limit(500))),
-        getDocs(collection(db, 'stores', storeId, 'invoices')),
-        getDocs(collection(db, 'stores', storeId, 'receipts')),
-        getDocs(collection(db, 'stores', storeId, 'events')),
-        getDocs(query(collection(db, 'students'), where('storeId', '==', storeId), limit(500))),
+        getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'stores', storeId, 'integrationBookings'), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'integrationBookings'), where('storeId', '==', storeId), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'stores', storeId, 'integrationOrders'), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'integrationOrders'), where('storeId', '==', storeId), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'stores', storeId, 'invoices'), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'stores', storeId, 'receipts'), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'stores', storeId, 'events'), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'students'), where('storeId', '==', storeId), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
         getDocs(collection(db, 'customers', selectedCustomer.id, 'messages')),
         getDocs(collection(db, 'customers', selectedCustomer.id, 'notes')),
         getDocs(collection(db, 'customers', selectedCustomer.id, 'documents')),
