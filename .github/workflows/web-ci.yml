@@ -40,9 +40,11 @@ jobs:
 
       - name: Install web dependencies
         # package-lock.json currently predates the Microsoft/Azure packages in
-        # package.json, so CI installs from the declared manifest without
-        # mutating or depending on the stale lockfile.
-        run: npm install --no-package-lock --no-audit --no-fund
+        # package.json. Remove it in the disposable runner so npm cannot build
+        # a dependency tree from stale lock metadata; do not mutate the repo.
+        run: |
+          rm -f package-lock.json
+          npm install --no-package-lock --no-audit --no-fund
         working-directory: web
 
       - name: Test sales history regressions
