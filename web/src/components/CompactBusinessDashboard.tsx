@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react'
-import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, Timestamp, where } from 'firebase/firestore'
+import { collection, doc, limit, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
@@ -310,14 +310,14 @@ export default function CompactBusinessDashboard() {
 
     const todayStart = Timestamp.fromDate(startOfToday())
     const unsubscribers = [
-      onSnapshot(query(collection(db, 'sales'), where('storeId', '==', storeId), where('createdAt', '>=', todayStart), orderBy('createdAt', 'desc'), limit(DASHBOARD_QUERY_LIMITS.sales)), snapshot => setSales(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setSales([])),
+      onSnapshot(query(collection(db, 'sales'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.sales)), snapshot => setSales(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setSales([])),
       onSnapshot(query(collection(db, 'integrationOrders'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.orders)), snapshot => setOrders(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setOrders([])),
       onSnapshot(query(collection(db, 'integrationBookings'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.bookings)), snapshot => setBookings(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setBookings([])),
       onSnapshot(query(collection(db, 'products'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.products)), snapshot => setProducts(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setProducts([])),
       onSnapshot(query(collection(db, 'customers'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.customers)), snapshot => setCustomers(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setCustomers([])),
       onSnapshot(query(collection(db, 'stores', storeId, 'invoices'), limit(DASHBOARD_QUERY_LIMITS.invoices)), snapshot => setInvoices(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setInvoices([])),
       onSnapshot(query(collection(db, 'stores', storeId, 'events'), limit(DASHBOARD_QUERY_LIMITS.events)), snapshot => setEvents(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setEvents([])),
-      onSnapshot(query(collection(db, 'staffAudit'), where('storeId', '==', storeId), orderBy('createdAt', 'desc'), limit(DASHBOARD_QUERY_LIMITS.staffAudits)), snapshot => setStaffAudits(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setStaffAudits([])),
+      onSnapshot(query(collection(db, 'staffAudit'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.staffAudits)), snapshot => setStaffAudits(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setStaffAudits([])),
       onSnapshot(query(collection(db, 'teamMembers'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.teamMembers)), snapshot => setTeamMembers(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setTeamMembers([])),
     ]
 
