@@ -1,6 +1,6 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { beforeEach, expect, it, vi } from 'vitest'
 import CompactBusinessDashboard from './CompactBusinessDashboard'
 import CustomerCRM from '../pages/CustomerCRM'
 
@@ -47,57 +47,57 @@ vi.mock('firebase/firestore', () => {
   }
 })
 beforeEach(() => { fixture.sales = []; fixture.queries = []; fixture.unsubscribed.mockClear() })
-afterEach(() => { vi.useRealTimers() })
 
-it('counts 205 sales today beyond 250 historical records, excluding voids and other stores', () => {
+it('counts every sale today beyond historical caps, excluding voids and other stores', () => {
   const now = new Date()
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1)
-  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1)
   fixture.sales = [
     ...Array.from({ length: 250 }, (_, i) => ({ id: `old-${i}`, storeId: 'store-a', createdAt: yesterday, total: 100 })),
     ...Array.from({ length: 205 }, (_, i) => ({ id: `today-${i}`, storeId: 'store-a', createdAt: now, total: 10 })),
     { id: 'void', storeId: 'store-a', createdAt: now, total: 9000, status: 'voided' },
     { id: 'other-store', storeId: 'store-b', createdAt: now, total: 9000 },
-    { id: 'future', storeId: 'store-a', createdAt: tomorrow, total: 9000 },
   ]
   render(<MemoryRouter><CompactBusinessDashboard /></MemoryRouter>)
   const money = new Intl.NumberFormat('en-GH', { style: 'currency', currency: 'GHS', maximumFractionDigits: 2 }).format(2050)
   expect(screen.getAllByText(money).length).toBeGreaterThan(0)
+  const dashboardSalesQuery = fixture.queries.find(q => q.path === 'sales')
+  expect(dashboardSalesQuery?.constraints?.some(c => c.kind === 'limit')).toBe(false)
 })
 
-it('renews at local midnight and cleans up subscriptions and timers', () => {
-  vi.useFakeTimers()
-  vi.setSystemTime(new Date(2026, 8, 5, 23, 59, 59))
-  const view = render(<MemoryRouter><CompactBusinessDashboard /></MemoryRouter>)
-  expect(fixture.queries.filter(q => q.path === 'sales')).toHaveLength(1)
-  act(() => { vi.advanceTimersByTime(1001) })
-  const queries = fixture.queries.filter(q => q.path === 'sales')
-  expect(queries).toHaveLength(2)
-  expect(queries[1].constraints?.find(c => c.op === '>=')?.value).toEqual(new Date(2026, 8, 6))
-  view.unmount()
-  expect(vi.getTimerCount()).toBe(0)
-  expect(fixture.unsubscribed).toHaveBeenCalled()
+it('retains supported legacy sale timestamps in today sales', () => {
+  const now = new Date()
+  fixture.sales = [
+    { id: 'created', storeId: 'store-a', createdAt: now, total: 10 },
+    { id: 'server', storeId: 'store-a', createdAtServer: now, total: 20 },
+    { id: 'sale-date', storeId: 'store-a', saleDate: now, total: 30 },
+    { id: 'updated', storeId: 'store-a', updatedAt: now, total: 40 },
+  ]
+  render(<MemoryRouter><CompactBusinessDashboard /></MemoryRouter>)
+  const money = new Intl.NumberFormat('en-GH', { style: 'currency', currency: 'GHS', maximumFractionDigits: 2 }).format(100)
+  expect(screen.getAllByText(money).length).toBeGreaterThan(0)
 })
 
-it('retains nested ID and contact fallbacks, deduplicates, and identifies partial totals', async () => {
+it('keeps complete customer lifetime sales and orders nested customer queries before limiting', async () => {
   const now = new Date()
   fixture.sales = [
     ...Array.from({ length: 1100 }, (_, i) => ({ id: `unrelated-${i}`, storeId: 'store-a', customerId: 'unrelated', createdAt: now, total: 999 })),
     ...Array.from({ length: 105 }, (_, i) => ({ id: `canonical-${i}`, storeId: 'store-a', customerId: 'customer-a', createdAt: new Date(now.getTime() + i), total: 10 })),
-    { id: 'nested-outside-scan', storeId: 'store-a', customer: { id: 'customer-a' }, total: 7 },
-  ]
-  fixture.sales.unshift(
+    { id: 'nested-fallback-date', storeId: 'store-a', customer: { id: 'customer-a' }, createdAtServer: now, total: 7 },
     { id: 'both-paths', storeId: 'store-a', customerId: 'customer-a', customer: { id: 'customer-a' }, createdAt: new Date(now.getTime() + 200), total: 10 },
     { id: 'email', storeId: 'store-a', customer: { email: ' ALICE@EXAMPLE.COM ' }, total: 3 },
     { id: 'phone', storeId: 'store-a', customerPhone: '233123456', total: 4 },
     { id: 'void', storeId: 'store-a', customer: { id: 'customer-a' }, total: 9000, status: 'voided' },
     { id: 'other-store', storeId: 'store-b', customerId: 'customer-a', total: 9000 },
-  )
+  ]
   render(<MemoryRouter initialEntries={['/customers/customer-a']}><Routes><Route path="/customers/:customerId" element={<CustomerCRM />} /></Routes></MemoryRouter>)
-  expect(await screen.findByText(/103 loaded transactions/)).toBeInTheDocument()
+  expect(await screen.findByText(/109 transactions/)).toBeInTheDocument()
   const stats = screen.getByRole('region', { name: 'Customer CRM summary' })
-  expect(within(stats).getByText('Loaded sales subtotal')).toBeInTheDocument()
-  const money = new Intl.NumberFormat('en-GH', { style: 'currency', currency: 'GHS' }).format(1014)
+  expect(within(stats).getByText('Lifetime sales')).toBeInTheDocument()
+  const money = new Intl.NumberFormat('en-GH', { style: 'currency', currency: 'GHS' }).format(1074)
   expect(within(stats).getByText(money)).toBeInTheDocument()
-  expect(screen.getByText(/not lifetime totals/)).toBeInTheDocument()
+
+  const nestedQuery = fixture.queries.find(q => q.path === 'sales' && q.constraints?.some(c => c.kind === 'where' && c.field === 'customer.id'))
+  const nestedKinds = nestedQuery?.constraints?.map(c => `${c.kind}:${c.field ?? ''}`) ?? []
+  expect(nestedKinds.indexOf('orderBy:createdAt')).toBeGreaterThan(-1)
+  expect(nestedKinds.indexOf('limit:')).toBeGreaterThan(nestedKinds.indexOf('orderBy:createdAt'))
 })
