@@ -491,12 +491,18 @@ async function discoverExistingReminders(today: string) {
   })
 }
 
+// Booking write triggers normally populate the queue. Keep the legacy recovery
+// scan hourly rather than repeating the same three-day read every five minutes.
+function shouldDiscoverExistingReminders(now: Date) {
+  return now.getMinutes() < 5
+}
+
 export const processBookingSmsNotifications = functions.pubsub
   .schedule('every 5 minutes')
   .timeZone(TIME_ZONE)
   .onRun(async () => {
     const now = new Date(); const today = dateKey(now); const hour = localHour(now)
-    await discoverExistingReminders(today)
+    if (shouldDiscoverExistingReminders(now)) await discoverExistingReminders(today)
     const snapshot = await defaultDb.collection('bookingSmsQueue').where('dueDateKey', '<=', today).limit(QUERY_LIMIT).get()
     const rates = await loadSmsRateTable()
     const results: Record<string, number> = {}
