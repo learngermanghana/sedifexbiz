@@ -105,6 +105,7 @@ Set these in your Vercel project:
   - set `imageAlt = product.name` when `imageUrl` exists and `imageAlt` is missing
 - Run `npm --prefix functions run backfill-public-products -- [storeId]` to copy `products` documents into `publicProducts` for public-catalog reads (optional `storeId` limits the backfill scope).
 - Run `npm --prefix functions run backfill-product-normalization -- [--store-id=STORE_ID]` to normalize every `products` document (name/category/image/barcode/default fields) through an admin script instead of waiting for page-open backfills.
+- Preview legacy CRM identity repairs with `npm --prefix functions run backfill-customer-identity -- --store-id=STORE_ID`. Review the per-collection summary, then repeat with `--apply`; optional `--page-size=N` and `--max-pages=N` flags keep production runs bounded, and idempotent writes make retries safe.
 
 ## Quick start (local dev)
 1) Install Node 20+.
