@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react'
-import { collection, doc, limit, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
+import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import { db } from '../firebase'
 import { useActiveStore } from '../hooks/useActiveStore'
@@ -51,7 +51,6 @@ const MAX_WIDGETS = 6
 // Dashboard widgets only render a handful of records. Capping their live queries
 // prevents every visit from re-reading a store's complete operational history.
 const DASHBOARD_QUERY_LIMITS = {
-  sales: 200,
   orders: 100,
   bookings: 100,
   products: 250,
@@ -308,9 +307,7 @@ export default function CompactBusinessDashboard() {
       return undefined
     }
 
-    const todayStart = Timestamp.fromDate(startOfToday())
     const unsubscribers = [
-      onSnapshot(query(collection(db, 'sales'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.sales)), snapshot => setSales(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setSales([])),
       onSnapshot(query(collection(db, 'integrationOrders'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.orders)), snapshot => setOrders(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setOrders([])),
       onSnapshot(query(collection(db, 'integrationBookings'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.bookings)), snapshot => setBookings(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setBookings([])),
       onSnapshot(query(collection(db, 'products'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.products)), snapshot => setProducts(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setProducts([])),
@@ -322,6 +319,35 @@ export default function CompactBusinessDashboard() {
     ]
 
     return () => unsubscribers.forEach(unsubscribe => unsubscribe())
+  }, [storeId])
+
+  useEffect(() => {
+    setSales([])
+    if (!storeId) return undefined
+
+    let unsubscribe: (() => void) | undefined
+    let rollover: ReturnType<typeof setTimeout>
+    const subscribeToToday = () => {
+      unsubscribe?.()
+      const start = startOfToday()
+      const end = new Date(start)
+      end.setDate(end.getDate() + 1)
+      // Bound reads by the reporting day, not an arbitrary number of sales.
+      // A busy day must include every transaction in the revenue KPI.
+      unsubscribe = onSnapshot(query(
+        collection(db, 'sales'),
+        where('storeId', '==', storeId),
+        where('createdAt', '>=', start),
+        where('createdAt', '<', end),
+        orderBy('createdAt', 'desc'),
+      ), snapshot => setSales(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setSales([]))
+      rollover = setTimeout(subscribeToToday, Math.max(1, end.getTime() - Date.now()))
+    }
+    subscribeToToday()
+    return () => {
+      unsubscribe?.()
+      clearTimeout(rollover)
+    }
   }, [storeId])
 
   const availableWidgetIds = useMemo(() => {

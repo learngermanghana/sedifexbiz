@@ -4,6 +4,7 @@ import {
   collection,
   getDocs,
   limit,
+  orderBy,
   query,
   serverTimestamp,
   where,
@@ -90,6 +91,8 @@ const EMPTY_DATA: CrmData = {
 }
 
 const CUSTOMER_ACTIVITY_LIMIT = 100
+// Retain contact/name matching for legacy sales, including records without dates.
+const LEGACY_SALES_SCAN_LIMIT = 1000
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -103,10 +106,6 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'notes', label: 'Notes' },
   { id: 'documents', label: 'Documents' },
 ]
-
-function asRecord(value: unknown): RecordMap {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as RecordMap) : {}
-}
 
 function readPath(data: RecordMap, path: string): unknown {
   let current: unknown = data
@@ -395,6 +394,8 @@ export default function CustomerCRM() {
     try {
       const [
         salesSnapshot,
+        nestedSalesSnapshot,
+        legacySalesSnapshot,
         storeBookingsSnapshot,
         rootBookingsSnapshot,
         storeOrdersSnapshot,
@@ -407,7 +408,9 @@ export default function CustomerCRM() {
         notesSnapshot,
         documentsSnapshot,
       ] = await Promise.all([
-        getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId), where('customerId', '==', selectedCustomer.id), orderBy('createdAt', 'desc'), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId), where('customer.id', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId), limit(LEGACY_SALES_SCAN_LIMIT))),
         getDocs(query(collection(db, 'stores', storeId, 'integrationBookings'), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
         getDocs(query(collection(db, 'integrationBookings'), where('storeId', '==', storeId), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
         getDocs(query(collection(db, 'stores', storeId, 'integrationOrders'), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
@@ -421,10 +424,16 @@ export default function CustomerCRM() {
         getDocs(collection(db, 'customers', selectedCustomer.id, 'documents')),
       ])
 
-      const sales = snapshotRows(salesSnapshot).filter(row => {
+      // Deduplicate by document ID: a sale can be returned by all three paths.
+      const saleRows = new Map([
+        ...snapshotRows(legacySalesSnapshot),
+        ...snapshotRows(nestedSalesSnapshot),
+        ...snapshotRows(salesSnapshot),
+      ].map(row => [row.id, row]))
+      const sales = [...saleRows.values()].filter(row => {
         const status = (firstText(row.data, ['status']) || '').toLowerCase()
         return status !== 'voided' && customerMatchesRow(selectedCustomer, row.data)
-      })
+      }).sort((a, b) => (recordDate(b.data, ['createdAt'])?.getTime() ?? 0) - (recordDate(a.data, ['createdAt'])?.getTime() ?? 0))
       const bookingRows = [
         ...snapshotRows(storeBookingsSnapshot, 'store'),
         ...snapshotRows(rootBookingsSnapshot, 'root'),
@@ -645,7 +654,7 @@ export default function CustomerCRM() {
   }
 
   function renderSales() {
-    if (!crmData.sales.length) return <EmptySection>No sales have been linked to this customer.</EmptySection>
+    if (!crmData.sales.length) return <EmptySection>No matching sales were found in the loaded history. Older sales may not be included.</EmptySection>
     return (
       <div className="customer-crm__records">
         {crmData.sales.map(row => {
@@ -960,13 +969,15 @@ export default function CustomerCRM() {
               ) : null}
 
               <section className="customer-crm__stats" aria-label="Customer CRM summary">
-                <StatCard label="Sales" value={formatMoney(totals.salesTotal)} hint={`${crmData.sales.length} linked transaction${crmData.sales.length === 1 ? '' : 's'}`} />
+                <StatCard label="Loaded sales subtotal" value={formatMoney(totals.salesTotal)} hint={`${crmData.sales.length} loaded transaction${crmData.sales.length === 1 ? '' : 's'} · May exclude older sales`} />
                 <StatCard label="Bookings" value={crmData.bookings.length} hint="Service activity" />
                 <StatCard label="Invoices" value={crmData.invoices.length} hint={`${totals.openInvoiceCount} open`} />
                 <StatCard label="Event projects" value={crmData.events.length} hint="Planning workspaces" />
                 <StatCard label="Outstanding" value={formatMoney(totals.outstanding)} hint="Recorded CRM debt" />
                 <StatCard label="Courses" value={crmData.courses.length} hint="Student / course records" />
               </section>
+
+              <p>Sales amounts and payments reflect the loaded history, not lifetime totals. Older or unlinked sales may be missing.</p>
 
               <div className="customer-crm__tabs" role="tablist" aria-label="Customer profile sections">
                 {TABS.map(tab => (
