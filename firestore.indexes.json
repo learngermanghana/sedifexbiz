@@ -129,6 +129,14 @@
       ]
     },
     {
+      "collectionGroup": "staffAudit",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "integrationApiKeys",
       "queryScope": "COLLECTION",
       "fields": [

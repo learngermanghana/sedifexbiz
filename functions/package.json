@@ -21,6 +21,7 @@
     "backfill-public-services": "node scripts/backfillPublicProducts.js",
     "backfill-public-catalog": "node scripts/backfillPublicProducts.js",
     "backfill-product-normalization": "node scripts/backfillProductNormalization.js",
+    "backfill-customer-identity": "node scripts/backfillCustomerIdentity.js",
     "backfill-reporting-aggregates": "node scripts/backfillReportingAggregates.js"
   },
   "dependencies": {

@@ -308,6 +308,7 @@ export default function CompactBusinessDashboard() {
       return undefined
     }
 
+    const todayStart = Timestamp.fromDate(startOfToday())
     const unsubscribers = [
       onSnapshot(query(collection(db, 'sales'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.sales)), snapshot => setSales(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setSales([])),
       onSnapshot(query(collection(db, 'integrationOrders'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.orders)), snapshot => setOrders(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setOrders([])),
@@ -813,7 +814,7 @@ export default function CompactBusinessDashboard() {
                 const details = WIDGET_LABELS[id]
                 return (
                   <label key={id} className={`compact-dashboard__picker-option${selected ? ' is-selected' : ''}`}>
-                    <input type="checkbox" checked={selected} onChange={() => toggleWidget(id)} />
+                    <input type="checkbox" checked={selected} onChange={() => toggleWidget(id)} aria-label={details.label} />
                     <span><strong>{details.label}</strong><small>{details.description}</small></span>
                   </label>
                 )
