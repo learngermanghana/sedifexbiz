@@ -48,18 +48,7 @@ type KpiView = {
 }
 
 const MAX_WIDGETS = 6
-// Dashboard widgets only render a handful of records. Capping their live queries
-// prevents every visit from re-reading a store's complete operational history.
-const DASHBOARD_QUERY_LIMITS = {
-  orders: 100,
-  bookings: 100,
-  products: 250,
-  customers: 100,
-  invoices: 100,
-  events: 100,
-  staffAudits: 50,
-  teamMembers: 100,
-} as const
+const STAFF_AUDIT_LIMIT = 50
 
 const WIDGET_LABELS: Record<WidgetId, { label: string; description: string }> = {
   'needs-attention': { label: 'Needs attention', description: 'Urgent payments, stock, bookings and event follow-up.' },
@@ -307,47 +296,23 @@ export default function CompactBusinessDashboard() {
       return undefined
     }
 
+    // These widgets calculate counts/totals after applying business criteria in
+    // the client, so the listeners must preserve the complete candidate set.
+    // Only staff audit activity is deliberately bounded because the UI renders
+    // recent activity only; that query is explicitly ordered before limiting.
     const unsubscribers = [
-      onSnapshot(query(collection(db, 'integrationOrders'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.orders)), snapshot => setOrders(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setOrders([])),
-      onSnapshot(query(collection(db, 'integrationBookings'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.bookings)), snapshot => setBookings(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setBookings([])),
-      onSnapshot(query(collection(db, 'products'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.products)), snapshot => setProducts(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setProducts([])),
-      onSnapshot(query(collection(db, 'customers'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.customers)), snapshot => setCustomers(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setCustomers([])),
-      onSnapshot(query(collection(db, 'stores', storeId, 'invoices'), limit(DASHBOARD_QUERY_LIMITS.invoices)), snapshot => setInvoices(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setInvoices([])),
-      onSnapshot(query(collection(db, 'stores', storeId, 'events'), limit(DASHBOARD_QUERY_LIMITS.events)), snapshot => setEvents(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setEvents([])),
-      onSnapshot(query(collection(db, 'staffAudit'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.staffAudits)), snapshot => setStaffAudits(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setStaffAudits([])),
-      onSnapshot(query(collection(db, 'teamMembers'), where('storeId', '==', storeId), limit(DASHBOARD_QUERY_LIMITS.teamMembers)), snapshot => setTeamMembers(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setTeamMembers([])),
+      onSnapshot(query(collection(db, 'sales'), where('storeId', '==', storeId)), snapshot => setSales(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setSales([])),
+      onSnapshot(query(collection(db, 'integrationOrders'), where('storeId', '==', storeId)), snapshot => setOrders(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setOrders([])),
+      onSnapshot(query(collection(db, 'integrationBookings'), where('storeId', '==', storeId)), snapshot => setBookings(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setBookings([])),
+      onSnapshot(query(collection(db, 'products'), where('storeId', '==', storeId)), snapshot => setProducts(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setProducts([])),
+      onSnapshot(query(collection(db, 'customers'), where('storeId', '==', storeId)), snapshot => setCustomers(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setCustomers([])),
+      onSnapshot(collection(db, 'stores', storeId, 'invoices'), snapshot => setInvoices(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setInvoices([])),
+      onSnapshot(collection(db, 'stores', storeId, 'events'), snapshot => setEvents(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setEvents([])),
+      onSnapshot(query(collection(db, 'staffAudit'), where('storeId', '==', storeId), orderBy('createdAt', 'desc'), limit(STAFF_AUDIT_LIMIT)), snapshot => setStaffAudits(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setStaffAudits([])),
+      onSnapshot(query(collection(db, 'teamMembers'), where('storeId', '==', storeId)), snapshot => setTeamMembers(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setTeamMembers([])),
     ]
 
     return () => unsubscribers.forEach(unsubscribe => unsubscribe())
-  }, [storeId])
-
-  useEffect(() => {
-    setSales([])
-    if (!storeId) return undefined
-
-    let unsubscribe: (() => void) | undefined
-    let rollover: ReturnType<typeof setTimeout>
-    const subscribeToToday = () => {
-      unsubscribe?.()
-      const start = startOfToday()
-      const end = new Date(start)
-      end.setDate(end.getDate() + 1)
-      // Bound reads by the reporting day, not an arbitrary number of sales.
-      // A busy day must include every transaction in the revenue KPI.
-      unsubscribe = onSnapshot(query(
-        collection(db, 'sales'),
-        where('storeId', '==', storeId),
-        where('createdAt', '>=', start),
-        where('createdAt', '<', end),
-        orderBy('createdAt', 'desc'),
-      ), snapshot => setSales(snapshot.docs.map(item => ({ id: item.id, ...item.data() }))), () => setSales([]))
-      rollover = setTimeout(subscribeToToday, Math.max(1, end.getTime() - Date.now()))
-    }
-    subscribeToToday()
-    return () => {
-      unsubscribe?.()
-      clearTimeout(rollover)
-    }
   }, [storeId])
 
   const availableWidgetIds = useMemo(() => {
