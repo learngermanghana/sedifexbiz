@@ -29,6 +29,11 @@ jobs:
         with:
           node-version: 22
 
+      # npm 10.9.8 bundled with the current Node 22 runner has an Arborist
+      # edgesOut crash while resolving this manifest. npm 11.6.x fixes it.
+      - name: Pin npm for dependency resolution
+        run: npm install --global npm@11.6.0
+
       - name: Setup Java for Firebase emulators
         uses: actions/setup-java@v4
         with:
@@ -40,8 +45,8 @@ jobs:
 
       - name: Install web dependencies
         # package-lock.json currently predates the Microsoft/Azure packages in
-        # package.json. Remove it in the disposable runner so npm cannot build
-        # a dependency tree from stale lock metadata; do not mutate the repo.
+        # package.json. Remove it in the disposable runner so npm installs from
+        # the current manifest without mutating the repository lockfile.
         run: |
           rm -f package-lock.json
           npm install --no-package-lock --no-audit --no-fund
