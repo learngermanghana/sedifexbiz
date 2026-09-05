@@ -91,8 +91,6 @@ const EMPTY_DATA: CrmData = {
 }
 
 const CUSTOMER_ACTIVITY_LIMIT = 100
-// Retain contact/name matching for legacy sales, including records without dates.
-const LEGACY_SALES_SCAN_LIMIT = 1000
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -191,20 +189,16 @@ function normalizeWhatsAppPhone(value: unknown): string {
   let digits = raw.replace(/\D/g, '')
   if (!digits) return ''
 
-  // Convert international access-prefix notation (e.g. 00233...) to E.164 digits.
   if (raw.startsWith('00') && digits.startsWith('00')) {
     digits = digits.slice(2)
   }
 
-  // Sedifex is Ghana-first, so accept the common local forms and convert them
-  // to the country-code form required by wa.me links.
   if (digits.length === 10 && digits.startsWith('0')) {
     digits = `233${digits.slice(1)}`
   } else if (digits.length === 9) {
     digits = `233${digits}`
   }
 
-  // WhatsApp expects an E.164-style number containing digits only, with no +.
   return /^[1-9]\d{7,14}$/.test(digits) ? digits : ''
 }
 
@@ -395,7 +389,7 @@ export default function CustomerCRM() {
       const [
         salesSnapshot,
         nestedSalesSnapshot,
-        legacySalesSnapshot,
+        completeStoreSalesSnapshot,
         storeBookingsSnapshot,
         rootBookingsSnapshot,
         storeOrdersSnapshot,
@@ -409,8 +403,11 @@ export default function CustomerCRM() {
         documentsSnapshot,
       ] = await Promise.all([
         getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId), where('customerId', '==', selectedCustomer.id), orderBy('createdAt', 'desc'), limit(CUSTOMER_ACTIVITY_LIMIT))),
-        getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId), where('customer.id', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
-        getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId), limit(LEGACY_SALES_SCAN_LIMIT))),
+        getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId), where('customer.id', '==', selectedCustomer.id), orderBy('createdAt', 'desc'), limit(CUSTOMER_ACTIVITY_LIMIT))),
+        // Full store scan is intentional until the identity backfill has linked every
+        // legacy sale. It prevents the lifetime total/history from silently dropping
+        // old contact-matched or fallback-timestamp records.
+        getDocs(query(collection(db, 'sales'), where('storeId', '==', storeId))),
         getDocs(query(collection(db, 'stores', storeId, 'integrationBookings'), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
         getDocs(query(collection(db, 'integrationBookings'), where('storeId', '==', storeId), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
         getDocs(query(collection(db, 'stores', storeId, 'integrationOrders'), where('customerId', '==', selectedCustomer.id), limit(CUSTOMER_ACTIVITY_LIMIT))),
@@ -424,16 +421,15 @@ export default function CustomerCRM() {
         getDocs(collection(db, 'customers', selectedCustomer.id, 'documents')),
       ])
 
-      // Deduplicate by document ID: a sale can be returned by all three paths.
       const saleRows = new Map([
-        ...snapshotRows(legacySalesSnapshot),
+        ...snapshotRows(completeStoreSalesSnapshot),
         ...snapshotRows(nestedSalesSnapshot),
         ...snapshotRows(salesSnapshot),
       ].map(row => [row.id, row]))
       const sales = [...saleRows.values()].filter(row => {
         const status = (firstText(row.data, ['status']) || '').toLowerCase()
         return status !== 'voided' && customerMatchesRow(selectedCustomer, row.data)
-      }).sort((a, b) => (recordDate(b.data, ['createdAt'])?.getTime() ?? 0) - (recordDate(a.data, ['createdAt'])?.getTime() ?? 0))
+      }).sort((a, b) => (recordDate(b.data, ['createdAt', 'createdAtServer', 'saleDate', 'updatedAt'])?.getTime() ?? 0) - (recordDate(a.data, ['createdAt', 'createdAtServer', 'saleDate', 'updatedAt'])?.getTime() ?? 0))
       const bookingRows = [
         ...snapshotRows(storeBookingsSnapshot, 'store'),
         ...snapshotRows(rootBookingsSnapshot, 'root'),
@@ -505,7 +501,7 @@ export default function CustomerCRM() {
         kind: 'Sale',
         title: total !== null ? formatMoney(total) : 'Sale recorded',
         detail: firstText(row.data, ['payment.method']) ? `Payment: ${firstText(row.data, ['payment.method'])}` : 'POS / sales activity',
-        date: recordDate(row.data, ['createdAt', 'updatedAt']),
+        date: recordDate(row.data, ['createdAt', 'createdAtServer', 'saleDate', 'updatedAt']),
         href: '/reports/pos-sales',
       })
     })
@@ -566,8 +562,6 @@ export default function CustomerCRM() {
       return
     }
 
-    // Open while the browser still considers this a direct user gesture. This
-    // avoids iOS/Safari treating the handoff as a delayed popup after Firestore.
     window.open(externalUrl, '_blank', 'noopener,noreferrer')
 
     setSavingAction(true)
@@ -654,14 +648,14 @@ export default function CustomerCRM() {
   }
 
   function renderSales() {
-    if (!crmData.sales.length) return <EmptySection>No matching sales were found in the loaded history. Older sales may not be included.</EmptySection>
+    if (!crmData.sales.length) return <EmptySection>No sales have been linked to this customer.</EmptySection>
     return (
       <div className="customer-crm__records">
         {crmData.sales.map(row => {
           const items = Array.isArray(row.data.items) ? row.data.items : []
           return (
             <article className="customer-crm__record" key={row.id}>
-              <div><strong>{formatMoney(firstNumber(row.data, ['total', 'amount']))}</strong><span>{formatDate(readPath(row.data, 'createdAt'), true)}</span></div>
+              <div><strong>{formatMoney(firstNumber(row.data, ['total', 'amount']))}</strong><span>{formatDate(recordDate(row.data, ['createdAt', 'createdAtServer', 'saleDate', 'updatedAt']), true)}</span></div>
               <div><span>{firstText(row.data, ['payment.method']) || 'Payment method not recorded'}</span><span>{items.length ? `${items.length} item${items.length === 1 ? '' : 's'}` : 'Items not recorded'}</span></div>
             </article>
           )
@@ -743,7 +737,7 @@ export default function CustomerCRM() {
         {salePayments.map(row => (
           <article className="customer-crm__record" key={`sale-payment-${row.id}`}>
             <div><strong>POS payment</strong><span>{formatMoney(firstNumber(row.data, ['payment.amountPaid', 'total']))}</span></div>
-            <div><span>{firstText(row.data, ['payment.method']) || 'Payment method not recorded'}</span><span>{formatDate(readPath(row.data, 'createdAt'), true)}</span></div>
+            <div><span>{firstText(row.data, ['payment.method']) || 'Payment method not recorded'}</span><span>{formatDate(recordDate(row.data, ['createdAt', 'createdAtServer', 'saleDate', 'updatedAt']), true)}</span></div>
           </article>
         ))}
         <Link className="customer-crm__section-link" to="/receipts">Open receipts</Link>
@@ -969,15 +963,13 @@ export default function CustomerCRM() {
               ) : null}
 
               <section className="customer-crm__stats" aria-label="Customer CRM summary">
-                <StatCard label="Loaded sales subtotal" value={formatMoney(totals.salesTotal)} hint={`${crmData.sales.length} loaded transaction${crmData.sales.length === 1 ? '' : 's'} · May exclude older sales`} />
+                <StatCard label="Lifetime sales" value={formatMoney(totals.salesTotal)} hint={`${crmData.sales.length} transaction${crmData.sales.length === 1 ? '' : 's'}`} />
                 <StatCard label="Bookings" value={crmData.bookings.length} hint="Service activity" />
                 <StatCard label="Invoices" value={crmData.invoices.length} hint={`${totals.openInvoiceCount} open`} />
                 <StatCard label="Event projects" value={crmData.events.length} hint="Planning workspaces" />
                 <StatCard label="Outstanding" value={formatMoney(totals.outstanding)} hint="Recorded CRM debt" />
                 <StatCard label="Courses" value={crmData.courses.length} hint="Student / course records" />
               </section>
-
-              <p>Sales amounts and payments reflect the loaded history, not lifetime totals. Older or unlinked sales may be missing.</p>
 
               <div className="customer-crm__tabs" role="tablist" aria-label="Customer profile sections">
                 {TABS.map(tab => (
