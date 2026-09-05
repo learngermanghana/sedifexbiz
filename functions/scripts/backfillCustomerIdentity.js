@@ -90,16 +90,22 @@ function parseArgs(argv) {
     apply: values.get('apply') === 'true',
     pageSize,
     maxPages: Math.max(Number(values.get('max-pages')) || Number.POSITIVE_INFINITY, 1),
+    collection: text(values.get('collection')),
+    startAfter: text(values.get('start-after')),
   }
 }
 
 async function processCollection({ db, ref, queryForPage, index, options, label }) {
-  const totals = { scanned: 0, linked: 0, alreadyLinked: 0, unmatched: 0, ambiguous: 0 }
-  let cursor = null
+  const totals = { scanned: 0, linked: 0, alreadyLinked: 0, unmatched: 0, ambiguous: 0, nextCursor: '', complete: false }
+  let cursor = options.collection === label ? options.startAfter || null : null
   let page = 0
   while (page < options.maxPages) {
     const snapshot = await queryForPage(ref, cursor, options.pageSize).get()
-    if (snapshot.empty) break
+    if (snapshot.empty) {
+      totals.complete = true
+      totals.nextCursor = ''
+      break
+    }
     const batch = db.batch()
     let writes = 0
     for (const document of snapshot.docs) {
@@ -130,17 +136,26 @@ async function processCollection({ db, ref, queryForPage, index, options, label 
       }
     }
     if (writes) await batch.commit()
-    cursor = snapshot.docs[snapshot.docs.length - 1]
+    cursor = snapshot.docs[snapshot.docs.length - 1].id
+    totals.nextCursor = cursor
     page += 1
-    console.log(`${options.apply ? 'Applied' : 'Dry-run'} ${label} page ${page}; cursor=${cursor.id}`)
-    if (snapshot.size < options.pageSize) break
+    console.log(`${options.apply ? 'Applied' : 'Dry-run'} ${label} page ${page}; cursor=${cursor}`)
+    if (snapshot.size < options.pageSize) {
+      totals.complete = true
+      totals.nextCursor = ''
+      break
+    }
+  }
+  if (!totals.complete && totals.nextCursor) {
+    console.log(`Resume ${label} with --collection=${JSON.stringify(label)} --start-after=${JSON.stringify(totals.nextCursor)}`)
   }
   return totals
 }
 
 async function run(argv = process.argv.slice(2)) {
   const options = parseArgs(argv)
-  if (!options.storeId) throw new Error('Usage: npm run backfill-customer-identity -- --store-id=STORE_ID [--apply] [--page-size=250] [--max-pages=N]')
+  if (!options.storeId) throw new Error('Usage: npm run backfill-customer-identity -- --store-id=STORE_ID [--apply] [--page-size=250] [--max-pages=N] [--collection=COLLECTION] [--start-after=DOC_ID]')
+  if (options.startAfter && !options.collection) throw new Error('--start-after requires --collection so the cursor is applied to the correct collection.')
   if (!admin.apps.length) admin.initializeApp()
   const db = admin.firestore()
   const customersSnapshot = await db.collection('customers').where('storeId', '==', options.storeId).get()
@@ -159,12 +174,23 @@ async function run(argv = process.argv.slice(2)) {
     return query
   }
 
-  for (const name of ROOT_COLLECTIONS) {
-    results[name] = await processCollection({ db, ref: db.collection(name), queryForPage: rootQuery, index, options, label: name })
+  const targets = [
+    ...ROOT_COLLECTIONS.map(name => ({ name, label: name, ref: db.collection(name), queryForPage: rootQuery })),
+    ...STORE_COLLECTIONS.map(name => ({ name, label: `stores/${options.storeId}/${name}`, ref: db.collection('stores').doc(options.storeId).collection(name), queryForPage: storeQuery })),
+  ]
+  const selectedTargets = options.collection
+    ? targets.filter(target => target.label === options.collection || target.name === options.collection)
+    : targets
+  if (!selectedTargets.length) {
+    throw new Error(`Unknown --collection=${options.collection}. Use one of: ${targets.map(target => target.label).join(', ')}`)
   }
-  for (const name of STORE_COLLECTIONS) {
-    const label = `stores/${options.storeId}/${name}`
-    results[label] = await processCollection({ db, ref: db.collection('stores').doc(options.storeId).collection(name), queryForPage: storeQuery, index, options, label })
+  if (options.startAfter && selectedTargets.length !== 1) {
+    throw new Error('--start-after must resolve to exactly one collection. Use the full stores/STORE_ID/... label for store subcollections when needed.')
+  }
+
+  for (const target of selectedTargets) {
+    const scopedOptions = { ...options, collection: target.label }
+    results[target.label] = await processCollection({ db, ref: target.ref, queryForPage: target.queryForPage, index, options: scopedOptions, label: target.label })
   }
   console.log(JSON.stringify({ storeId: options.storeId, applied: options.apply, results }, null, 2))
 }

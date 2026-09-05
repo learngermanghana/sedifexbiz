@@ -1,6 +1,6 @@
 name: Deploy Firebase Functions
 
-# Deploys the exact main-branch Functions and Firestore security state after production hotfixes.
+# Deploys the exact main-branch Functions and Firestore security/index state after production hotfixes.
 on:
   push:
     branches:
@@ -8,6 +8,7 @@ on:
     paths:
       - 'functions/**'
       - 'firestore.rules'
+      - 'firestore.indexes.json'
       - 'firebase.json'
       - '.firebaserc'
       - '.github/workflows/deploy-functions.yml'
@@ -92,3 +93,6 @@ jobs:
 
       - name: Deploy Firestore rules
         run: firebase deploy --only firestore:rules --project sedifex-web --force
+
+      - name: Deploy Firestore indexes
+        run: firebase deploy --only firestore:indexes --project sedifex-web --force

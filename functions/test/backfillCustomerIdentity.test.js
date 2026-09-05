@@ -14,8 +14,10 @@ assert.deepEqual(resolveCustomerId({ customer: { phone: '020 000 0002' } }, inde
 assert.deepEqual(resolveCustomerId({ email: 'shared@example.com' }, index), { customerId: '', strategy: 'ambiguous' })
 assert.deepEqual(resolveCustomerId({ email: 'missing@example.com' }, index), { customerId: '', strategy: 'unmatched' })
 assert.deepEqual(parseArgs(['--store-id=store-1', '--page-size=999', '--max-pages=2']), {
-  storeId: 'store-1', apply: false, pageSize: 400, maxPages: 2,
+  storeId: 'store-1', apply: false, pageSize: 400, maxPages: 2, collection: '', startAfter: '',
 })
-assert.equal(parseArgs(['--store-id=store-1', '--apply']).apply, true)
+assert.deepEqual(parseArgs(['--store-id=store-1', '--apply', '--collection=sales', '--start-after=sale-123']), {
+  storeId: 'store-1', apply: true, pageSize: 250, maxPages: Number.POSITIVE_INFINITY, collection: 'sales', startAfter: 'sale-123',
+})
 
 console.log('customer identity backfill tests passed')
