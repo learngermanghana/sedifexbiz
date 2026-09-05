@@ -45,6 +45,10 @@ jobs:
         run: npm install --no-package-lock --no-audit --no-fund
         working-directory: web
 
+      - name: Test sales history regressions
+        run: npm exec vitest run src/components/salesHistoryRegression.test.tsx
+        working-directory: web
+
       - name: Test event task progress
         run: npm exec vitest run src/utils/eventPlanningProgress.test.ts
         working-directory: web
