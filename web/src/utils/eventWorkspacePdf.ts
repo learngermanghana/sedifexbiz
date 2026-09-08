@@ -6,6 +6,7 @@ import {
   type EventPdfEntry,
   type EventPdfSection,
 } from './eventPdfDocument'
+import { getEventProductionTemplate } from './eventProductionTemplates'
 
 export type EventPdfSectionKey =
   | 'summary'
@@ -333,26 +334,15 @@ function sectionTimeline(data: LoadedData): EventPdfSection {
 
 function sectionProductionTimeline(data: LoadedData): EventPdfSection {
   const setup = record(data.event.productionSetup)
+  const template = getEventProductionTemplate(text(data.event.eventType) || text(setup.templateEventType) || 'Other')
   const entries: EventPdfEntry[] = []
-  const setupFields: Array<[string, unknown]> = [
-    ['Project / event', setup.projectLabel],
-    ['Confirmed guests', setup.confirmedGuests],
-    ['Event theme', setup.eventTheme],
-    ['Event colours', setup.eventColours],
-    ['Strictly by invitation', titleCase(setup.strictlyByInvitation)],
-    ['Assigned / placed seating', titleCase(setup.placedSeating)],
-    ['Bridal party size', setup.bridalPartySize],
-    ['Reserved tables', setup.reservedTables],
-    ['Guests setup for ceremony', setup.ceremonySetupGuests],
-    ['Guests setup for reception', setup.receptionSetupGuests],
-    ['Phase 1 - Bride dress-up location', setup.bridePrepLocation],
-    ['Phase 2 - Groom dress-up location', setup.groomPrepLocation],
-    ['Phase 3 - Ceremony location', setup.ceremonyLocation],
-    ['Phase 4 - Reception location', setup.receptionLocation],
-  ]
-  setupFields.forEach(([label, value]) => {
-    const rendered = typeof value === 'number' ? String(value) : text(value)
-    if (rendered) entries.push(labelled(label, rendered))
+
+  template.fields.forEach(field => {
+    const rawValue = setup[field.key]
+    let rendered = typeof rawValue === 'number' && Number.isFinite(rawValue) ? String(rawValue) : text(rawValue)
+    if (!rendered) return
+    if (field.type === 'select') rendered = field.options?.find(option => option.value === rendered)?.label || rendered
+    entries.push(labelled(field.label, rendered))
   })
 
   const rows = [...data.productionTimeline].sort((a, b) => numberValue(a.data.sortOrder) - numberValue(b.data.sortOrder) || text(a.data.time).localeCompare(text(b.data.time)) || text(a.data.phase).localeCompare(text(b.data.phase)))
@@ -367,7 +357,7 @@ function sectionProductionTimeline(data: LoadedData): EventPdfSection {
     if (text(item.remarks)) entries.push(entry(`Remarks: ${text(item.remarks)}`, 'muted'))
   })
   if (!entries.length) entries.push(entry('No production setup or production timeline records yet.'))
-  return { title: 'Production timeline', entries, pageBreakBefore: true }
+  return { title: `${template.eventType} production timeline`, entries, pageBreakBefore: true }
 }
 
 function sectionProgram(data: LoadedData): EventPdfSection {
