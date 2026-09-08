@@ -217,7 +217,7 @@ function queueEligible(stage: Stage, appointmentDate: string, booking: RecordMap
   if (cancelled) return false
   if (stage === 'payment_confirmation') return verifiedPaid(booking)
   if (stage === 'thank_you') return status === 'completed'
-  return status === 'confirmed' && verifiedPaid(booking) && Boolean(appointmentDate && bookingDate(booking) === appointmentDate)
+  return ['confirmed', 'rescheduled'].includes(status) && verifiedPaid(booking) && Boolean(appointmentDate && bookingDate(booking) === appointmentDate)
 }
 
 function alertId(bookingId: string, stage: Stage, kind: AlertKind, appointmentDate = '') {
@@ -463,7 +463,7 @@ async function inspectBlockedQueue(doc: FirebaseFirestore.QueryDocumentSnapshot,
       kind: 'sender_not_configured',
       appointmentDate,
       booking: loaded.bookingData,
-      emailStore: true,
+      emailStore: false,
     })
     return
   }

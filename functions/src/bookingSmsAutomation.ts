@@ -107,6 +107,9 @@ function bookingStatus(data: RecordMap) {
   const booking = rec(data.booking)
   return norm(data.bookingStatus ?? data.booking_status ?? data.status ?? booking.status, 'pending')
 }
+function reminderActiveStatus(status: string) {
+  return status === 'confirmed' || status === 'rescheduled'
+}
 function paymentStatus(data: RecordMap) {
   const payment = rec(data.payment)
   return norm(data.paymentStatus ?? data.payment_status ?? payment.status ?? payment.paymentStatus, 'pending')
@@ -242,7 +245,7 @@ async function syncQueues(storeId: string, bookingId: string, before: RecordMap,
     : thanks.delete())
 
   if (previous && previous !== current) ops.push(deleteReminderQueues(storeId, bookingId, previous))
-  if (status === 'confirmed' && paid && current) {
+  if (reminderActiveStatus(status) && paid && current) {
     for (const [stage, days] of [['reminder_3d', 3], ['reminder_2d', 2], ['reminder_1d', 1]] as [Stage, number][]) {
       const due = shiftDate(current, -days)
       const ref = queueRef(storeId, bookingId, stage, current)
@@ -303,7 +306,7 @@ function eligible(item: QueueItem, booking: BookingCtx, today: string) {
   if (item.stage === 'thank_you') return status === 'completed'
   const days = reminderDays(item.stage)
   const current = bookingDate(booking.data)
-  return status === 'confirmed' && verifiedPaid(booking.data) && Boolean(days && current && current === item.appointmentDate && dayDiff(today, current) === days)
+  return reminderActiveStatus(status) && verifiedPaid(booking.data) && Boolean(days && current && current === item.appointmentDate && dayDiff(today, current) === days)
 }
 async function staleSending(item: QueueItem) {
   if (norm(item.data.status) !== 'sending') return false
@@ -360,7 +363,7 @@ function successPatch(item: QueueItem, booking: BookingCtx, today: string) {
     patch.smsPaymentConfirmationPending = false
     const date = bookingDate(booking.data)
     const days = date ? dayDiff(today, date) : null
-    if (bookingStatus(booking.data) === 'confirmed' && days && [1, 2, 3].includes(days)) {
+    if (reminderActiveStatus(bookingStatus(booking.data)) && days && [1, 2, 3].includes(days)) {
       const [x, y] = marker(`reminder_${days}d` as Stage)
       patch[x] = admin.firestore.FieldValue.serverTimestamp(); patch[y] = admin.firestore.FieldValue.serverTimestamp()
     }
@@ -393,7 +396,7 @@ async function finalizeSuccess(item: QueueItem, booking: BookingCtx, claimResult
   ])
   if (item.stage === 'payment_confirmation') {
     const date = bookingDate(booking.data); const days = date ? dayDiff(today, date) : null
-    if (bookingStatus(booking.data) === 'confirmed' && days && [1, 2, 3].includes(days)) await queueRef(item.storeId, item.bookingId, `reminder_${days}d` as Stage, date).delete()
+    if (reminderActiveStatus(bookingStatus(booking.data)) && days && [1, 2, 3].includes(days)) await queueRef(item.storeId, item.bookingId, `reminder_${days}d` as Stage, date).delete()
   }
   await item.ref.delete()
   await runLog(item, booking, message, phone, claimResult.credits, 0, 'sent')
@@ -483,7 +486,7 @@ async function discoverExistingReminders(today: string) {
     if (!snap.exists) return
     const data = snap.data() as RecordMap
     const date = bookingDate(data); const days = date ? dayDiff(today, date) : null
-    if (bookingStatus(data) !== 'confirmed' || !verifiedPaid(data) || !days || ![1, 2, 3].includes(days)) return
+    if (!reminderActiveStatus(bookingStatus(data)) || !verifiedPaid(data) || !days || ![1, 2, 3].includes(days)) return
     const stage = `reminder_${days}d` as Stage
     const automation = await settingsFor(storeId)
     if (!isSmsAutomationEnabledForStage(automation, stage) || sent(data, stage)) return

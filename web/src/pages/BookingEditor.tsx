@@ -415,11 +415,6 @@ export default function BookingEditor() {
     const normalizedPaymentStatus = normalizePaymentStatusValue(form.paymentStatus, 'pending')
     const requiresPaymentReview = ['confirmed', 'completed'].includes(normalizedStatus)
 
-    if (requiresPaymentReview && !paymentStatusReviewed) {
-      setErrorMessage('Review and select Payment status before saving a confirmed or completed appointment.')
-      return
-    }
-
     if (requiresPaymentReview && normalizedPaymentStatus === 'pending') {
       const statusLabel = normalizedStatus === 'completed' ? 'Completed' : 'Confirmed'
       const continueWithPendingPayment = window.confirm(
@@ -838,9 +833,6 @@ export default function BookingEditor() {
                     </button>
                   )}
                 </div>
-              )}
-              {paymentReviewRequired && !paymentStatusReviewed && (
-                <p className="booking-editor-page__status-review">Payment status must be reviewed before saving a confirmed or completed appointment.</p>
               )}
               {pendingPaymentConflict && (
                 <p className="booking-editor-page__status-warning">Payment is still pending. Sedifex will ask for confirmation before saving this appointment.</p>
