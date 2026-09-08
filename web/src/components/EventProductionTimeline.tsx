@@ -10,6 +10,11 @@ import {
   updateDoc,
 } from 'firebase/firestore'
 import { db } from '../firebase'
+import {
+  getEventProductionTemplate,
+  type EventProductionTemplate,
+  type ProductionField,
+} from '../utils/eventProductionTemplates'
 
 type Props = {
   storeId: string
@@ -17,22 +22,7 @@ type Props = {
   eventTitle: string
 }
 
-type ProductionSetup = {
-  projectLabel: string
-  confirmedGuests: string
-  eventTheme: string
-  eventColours: string
-  strictlyByInvitation: string
-  placedSeating: string
-  bridalPartySize: string
-  reservedTables: string
-  ceremonySetupGuests: string
-  receptionSetupGuests: string
-  bridePrepLocation: string
-  groomPrepLocation: string
-  ceremonyLocation: string
-  receptionLocation: string
-}
+type ProductionSetup = Record<string, string>
 
 type TimelineRow = {
   id: string
@@ -44,23 +34,6 @@ type TimelineRow = {
   progressStatus: string
   remarks: string
   sortOrder: number
-}
-
-const EMPTY_SETUP: ProductionSetup = {
-  projectLabel: '',
-  confirmedGuests: '',
-  eventTheme: '',
-  eventColours: '',
-  strictlyByInvitation: '',
-  placedSeating: '',
-  bridalPartySize: '',
-  reservedTables: '',
-  ceremonySetupGuests: '',
-  receptionSetupGuests: '',
-  bridePrepLocation: '',
-  groomPrepLocation: '',
-  ceremonyLocation: '',
-  receptionLocation: '',
 }
 
 const EMPTY_ROW = {
@@ -93,24 +66,20 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
-function setupFrom(value: unknown, fallbackColours = ''): ProductionSetup {
+function stringValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return text(value)
+}
+
+function setupFrom(value: unknown, fallbackColours: string, template: EventProductionTemplate): ProductionSetup {
   const source = record(value)
-  return {
-    projectLabel: text(source.projectLabel),
-    confirmedGuests: text(source.confirmedGuests) || (typeof source.confirmedGuests === 'number' ? String(source.confirmedGuests) : ''),
-    eventTheme: text(source.eventTheme),
-    eventColours: text(source.eventColours) || fallbackColours,
-    strictlyByInvitation: text(source.strictlyByInvitation),
-    placedSeating: text(source.placedSeating),
-    bridalPartySize: text(source.bridalPartySize) || (typeof source.bridalPartySize === 'number' ? String(source.bridalPartySize) : ''),
-    reservedTables: text(source.reservedTables) || (typeof source.reservedTables === 'number' ? String(source.reservedTables) : ''),
-    ceremonySetupGuests: text(source.ceremonySetupGuests) || (typeof source.ceremonySetupGuests === 'number' ? String(source.ceremonySetupGuests) : ''),
-    receptionSetupGuests: text(source.receptionSetupGuests) || (typeof source.receptionSetupGuests === 'number' ? String(source.receptionSetupGuests) : ''),
-    bridePrepLocation: text(source.bridePrepLocation),
-    groomPrepLocation: text(source.groomPrepLocation),
-    ceremonyLocation: text(source.ceremonyLocation),
-    receptionLocation: text(source.receptionLocation),
-  }
+  const setup: ProductionSetup = {}
+  template.fields.forEach(field => {
+    let current = stringValue(source[field.key])
+    if (!current && field.key === 'eventColours') current = fallbackColours
+    setup[field.key] = current
+  })
+  return setup
 }
 
 function mapRow(id: string, data: Record<string, unknown>): TimelineRow {
@@ -132,33 +101,28 @@ function escapeHtml(value: string) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/\"/g, '&quot;')
     .replace(/'/g, '&#039;')
 }
 
-function setupRows(setup: ProductionSetup) {
-  return [
-    ['Project / event', setup.projectLabel],
-    ['Confirmed guests', setup.confirmedGuests],
-    ['Event theme', setup.eventTheme],
-    ['Event colours', setup.eventColours],
-    ['Strictly by invitation', setup.strictlyByInvitation ? setup.strictlyByInvitation.toUpperCase() : ''],
-    ['Assigned / placed seating', setup.placedSeating ? setup.placedSeating.toUpperCase() : ''],
-    ['Bridal party size', setup.bridalPartySize],
-    ['Reserved tables', setup.reservedTables],
-    ['Guests being set up for - ceremony', setup.ceremonySetupGuests],
-    ['Guests being set up for - reception', setup.receptionSetupGuests],
-    ['Phase 1 - Bride dress-up location', setup.bridePrepLocation],
-    ['Phase 2 - Groom dress-up location', setup.groomPrepLocation],
-    ['Phase 3 - Ceremony location', setup.ceremonyLocation],
-    ['Phase 4 - Reception location', setup.receptionLocation],
-  ].filter(([, value]) => Boolean(value))
+function fieldDisplayValue(field: ProductionField, rawValue: string) {
+  if (!rawValue) return ''
+  if (field.type === 'select') return field.options?.find(option => option.value === rawValue)?.label || rawValue
+  return rawValue
+}
+
+function setupRows(setup: ProductionSetup, template: EventProductionTemplate) {
+  return template.fields
+    .map(field => [field.label, fieldDisplayValue(field, setup[field.key] || '')] as [string, string])
+    .filter(([, value]) => Boolean(value))
 }
 
 export default function EventProductionTimeline({ storeId, eventId, eventTitle }: Props) {
   const eventRef = useMemo(() => doc(db, 'stores', storeId, 'events', eventId), [storeId, eventId])
   const timelineRef = useMemo(() => collection(eventRef, 'productionTimeline'), [eventRef])
-  const [setup, setSetup] = useState<ProductionSetup>(EMPTY_SETUP)
+  const [eventType, setEventType] = useState('Other')
+  const template = useMemo(() => getEventProductionTemplate(eventType), [eventType])
+  const [setup, setSetup] = useState<ProductionSetup>({})
   const [rows, setRows] = useState<TimelineRow[]>([])
   const [rowForm, setRowForm] = useState(EMPTY_ROW)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -177,8 +141,11 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
       ])
       if (!eventSnapshot.exists()) throw new Error('EVENT_NOT_FOUND')
       const eventData = eventSnapshot.data() as Record<string, unknown>
+      const detectedEventType = text(eventData.eventType) || 'Other'
+      const detectedTemplate = getEventProductionTemplate(detectedEventType)
       const brief = record(eventData.clientBrief)
-      setSetup(setupFrom(eventData.productionSetup, text(brief.themeColours)))
+      setEventType(detectedEventType)
+      setSetup(setupFrom(eventData.productionSetup, text(brief.themeColours), detectedTemplate))
       setRows(timelineSnapshot.docs
         .map(item => mapRow(item.id, item.data()))
         .sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time) || a.phase.localeCompare(b.phase)))
@@ -192,25 +159,29 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
 
   useEffect(() => { void load() }, [load])
 
+  function setSetupValue(key: string, value: string) {
+    setSetup(previous => ({ ...previous, [key]: value }))
+  }
+
   async function saveSetup(event: React.FormEvent) {
     event.preventDefault()
     setSaving(true)
     setMessage('')
     setError('')
     try {
+      const values = Object.fromEntries(
+        template.fields.map(field => [field.key, (setup[field.key] || '').trim()]),
+      )
       await updateDoc(eventRef, {
         productionSetup: {
-          ...setup,
-          confirmedGuests: setup.confirmedGuests.trim(),
-          bridalPartySize: setup.bridalPartySize.trim(),
-          reservedTables: setup.reservedTables.trim(),
-          ceremonySetupGuests: setup.ceremonySetupGuests.trim(),
-          receptionSetupGuests: setup.receptionSetupGuests.trim(),
+          ...values,
+          templateEventType: template.eventType,
+          templateVersion: 1,
           updatedAt: serverTimestamp(),
         },
         updatedAt: serverTimestamp(),
       })
-      setMessage('Production setup saved.')
+      setMessage(`${template.eventType} production setup saved.`)
     } catch (saveError) {
       console.error('[event-production] Unable to save production setup', saveError)
       setError('Production setup could not be saved.')
@@ -295,13 +266,34 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
       setError('Pop-ups are blocked. Allow pop-ups to print the production timeline.')
       return
     }
-    const setupHtml = setupRows(setup).map(([label, value]) => `<div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>`).join('')
+    const setupHtml = setupRows(setup, template).map(([label, value]) => `<div><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></div>`).join('')
     const rowsHtml = rows.map(row => `<tr><td>${escapeHtml(row.phase || '—')}</td><td>${escapeHtml(row.time || '—')}</td><td>${escapeHtml(row.activity)}</td><td>${escapeHtml(row.coordinator || '—')}</td><td>${escapeHtml(row.contactNumber || '—')}</td><td>${escapeHtml(PROGRESS_LABELS[row.progressStatus] || row.progressStatus || 'Planned')}${row.remarks ? `<br/><small>${escapeHtml(row.remarks)}</small>` : ''}</td></tr>`).join('')
-    popup.document.write(`<!doctype html><html><head><title>${escapeHtml(eventTitle)} - Event Production Timeline</title><style>body{font-family:Arial,sans-serif;padding:28px;color:#17211d}h1{margin:0}.sub{color:#64748b;margin:5px 0 20px}.setup{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;border:1px solid #d9e0dc}.setup div{padding:8px 10px;border-bottom:1px solid #d9e0dc}.setup strong{display:block;font-size:11px;text-transform:uppercase;color:#64748b}.setup span{display:block;margin-top:3px}table{width:100%;border-collapse:collapse;margin-top:22px;font-size:12px}th,td{border:1px solid #cbd5cf;padding:8px;text-align:left;vertical-align:top}th{background:#f1f5f2}small{color:#64748b}@media print{body{padding:0}.setup{break-inside:avoid}}</style></head><body><h1>${escapeHtml(eventTitle)}</h1><p class="sub">Event Production Timeline · Private and confidential</p><div class="setup">${setupHtml || '<div><span>No production setup details recorded.</span></div>'}</div><table><thead><tr><th>Event phase</th><th>Time</th><th>Duty / activity</th><th>Executor / coordinator</th><th>Contact number</th><th>Progress / remarks</th></tr></thead><tbody>${rowsHtml || '<tr><td colspan="6">No production timeline items yet.</td></tr>'}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`)
+    popup.document.write(`<!doctype html><html><head><title>${escapeHtml(eventTitle)} - Event Production Timeline</title><style>body{font-family:Arial,sans-serif;padding:28px;color:#17211d}h1{margin:0}.sub{color:#64748b;margin:5px 0 20px}.setup{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;border:1px solid #d9e0dc}.setup div{padding:8px 10px;border-bottom:1px solid #d9e0dc}.setup strong{display:block;font-size:11px;text-transform:uppercase;color:#64748b}.setup span{display:block;margin-top:3px}table{width:100%;border-collapse:collapse;margin-top:22px;font-size:12px}th,td{border:1px solid #cbd5cf;padding:8px;text-align:left;vertical-align:top}th{background:#f1f5f2}small{color:#64748b}@media print{body{padding:0}.setup{break-inside:avoid}}</style></head><body><h1>${escapeHtml(eventTitle)}</h1><p class="sub">${escapeHtml(template.title)} · Private and confidential</p><div class="setup">${setupHtml || '<div><span>No production setup details recorded.</span></div>'}</div><table><thead><tr><th>Event phase</th><th>Time</th><th>Duty / activity</th><th>Executor / coordinator</th><th>Contact number</th><th>Progress / remarks</th></tr></thead><tbody>${rowsHtml || '<tr><td colspan="6">No production timeline items yet.</td></tr>'}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`)
     popup.document.close()
   }
 
+  function renderField(field: ProductionField) {
+    const value = setup[field.key] || ''
+    const className = field.wide ? 'event-planning__field--wide' : undefined
+    if (field.type === 'select') {
+      return (
+        <label key={field.key} className={className}>{field.label}
+          <select value={value} onChange={e => setSetupValue(field.key, e.target.value)}>
+            <option value="">Not set</option>
+            {(field.options || []).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+      )
+    }
+    if (field.type === 'textarea') {
+      return <label key={field.key} className={className}>{field.label}<textarea rows={3} value={value} onChange={e => setSetupValue(field.key, e.target.value)} placeholder={field.placeholder} /></label>
+    }
+    return <label key={field.key} className={className}>{field.label}<input type={field.type === 'number' ? 'number' : 'text'} min={field.type === 'number' ? '0' : undefined} value={value} onChange={e => setSetupValue(field.key, e.target.value)} placeholder={field.placeholder} /></label>
+  }
+
   if (loading) return <div className="event-planning__loading"><span className="event-planning__spinner" /><p>Loading production timeline…</p></div>
+
+  const exactTemplateMatch = template.eventType === eventType
 
   return (
     <div>
@@ -310,28 +302,20 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
 
       <section className="event-planning__workspace-preview" style={{ marginTop: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div><h3>Event production setup</h3><p>Record the event-level production details, phase locations and guest setup numbers.</p></div>
+          <div>
+            <p style={{ margin: '0 0 4px', fontSize: '.75rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.06em' }}>Detected event type: {eventType}</p>
+            <h3>{template.title}</h3>
+            <p>{template.description}</p>
+            {!exactTemplateMatch ? <p style={{ marginTop: 6, fontSize: '.78rem', color: '#64748b' }}>Using the closest Sedifex template: {template.eventType}.</p> : null}
+          </div>
           <button type="button" className="button button--ghost" onClick={printTimeline}>Print production timeline</button>
         </div>
       </section>
 
       <form onSubmit={saveSetup} className="event-planning__workspace-preview" style={{ marginTop: 14 }}>
-        <h3>Production details</h3>
+        <h3>Production details · {template.eventType}</h3>
         <div className="event-planning__form-grid" style={{ marginTop: 12 }}>
-          <label>Project / event<input value={setup.projectLabel} onChange={e => setSetup(previous => ({ ...previous, projectLabel: e.target.value }))} placeholder="e.g. Engagement & reception" /></label>
-          <label>Confirmed guests<input type="number" min="0" value={setup.confirmedGuests} onChange={e => setSetup(previous => ({ ...previous, confirmedGuests: e.target.value }))} /></label>
-          <label>Event theme<input value={setup.eventTheme} onChange={e => setSetup(previous => ({ ...previous, eventTheme: e.target.value }))} placeholder="Theme or concept" /></label>
-          <label>Event colours<input value={setup.eventColours} onChange={e => setSetup(previous => ({ ...previous, eventColours: e.target.value }))} placeholder="Navy, burgundy, ivory…" /></label>
-          <label>Strictly by invitation?<select value={setup.strictlyByInvitation} onChange={e => setSetup(previous => ({ ...previous, strictlyByInvitation: e.target.value }))}><option value="">Not set</option><option value="yes">Yes</option><option value="no">No</option></select></label>
-          <label>Assigned / placed seating?<select value={setup.placedSeating} onChange={e => setSetup(previous => ({ ...previous, placedSeating: e.target.value }))}><option value="">Not set</option><option value="yes">Yes</option><option value="no">No</option></select></label>
-          <label>Bridal party size<input type="number" min="0" value={setup.bridalPartySize} onChange={e => setSetup(previous => ({ ...previous, bridalPartySize: e.target.value }))} /></label>
-          <label>Reserved tables<input type="number" min="0" value={setup.reservedTables} onChange={e => setSetup(previous => ({ ...previous, reservedTables: e.target.value }))} /></label>
-          <label>Guests setup for ceremony<input type="number" min="0" value={setup.ceremonySetupGuests} onChange={e => setSetup(previous => ({ ...previous, ceremonySetupGuests: e.target.value }))} /></label>
-          <label>Guests setup for reception<input type="number" min="0" value={setup.receptionSetupGuests} onChange={e => setSetup(previous => ({ ...previous, receptionSetupGuests: e.target.value }))} /></label>
-          <label>Phase 1 · Bride dress-up location<input value={setup.bridePrepLocation} onChange={e => setSetup(previous => ({ ...previous, bridePrepLocation: e.target.value }))} /></label>
-          <label>Phase 2 · Groom dress-up location<input value={setup.groomPrepLocation} onChange={e => setSetup(previous => ({ ...previous, groomPrepLocation: e.target.value }))} /></label>
-          <label>Phase 3 · Ceremony location<input value={setup.ceremonyLocation} onChange={e => setSetup(previous => ({ ...previous, ceremonyLocation: e.target.value }))} /></label>
-          <label>Phase 4 · Reception location<input value={setup.receptionLocation} onChange={e => setSetup(previous => ({ ...previous, receptionLocation: e.target.value }))} /></label>
+          {template.fields.map(renderField)}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}><button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save production setup'}</button></div>
       </form>
@@ -339,9 +323,9 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
       <form onSubmit={saveRow} className="event-planning__workspace-preview" style={{ marginTop: 14 }}>
         <h3>{editingId ? 'Edit production timeline item' : 'Add production timeline item'}</h3>
         <div className="event-planning__form-grid" style={{ marginTop: 12 }}>
-          <label>Event phase<input value={rowForm.phase} onChange={e => setRowForm(previous => ({ ...previous, phase: e.target.value }))} placeholder="1, 2, 3, 4, 1 & 2…" /></label>
+          <label>Event phase<input value={rowForm.phase} onChange={e => setRowForm(previous => ({ ...previous, phase: e.target.value }))} placeholder={template.phasePlaceholder} /></label>
           <label>Time<input required type="time" value={rowForm.time} onChange={e => setRowForm(previous => ({ ...previous, time: e.target.value }))} /></label>
-          <label className="event-planning__field--wide">Duty / activity<input required value={rowForm.activity} onChange={e => setRowForm(previous => ({ ...previous, activity: e.target.value }))} placeholder="e.g. Sound & DJ, coordinators arrive, buffet setup" /></label>
+          <label className="event-planning__field--wide">Duty / activity<input required value={rowForm.activity} onChange={e => setRowForm(previous => ({ ...previous, activity: e.target.value }))} placeholder="e.g. Sound check, registration opens, vendor setup" /></label>
           <label>Executor / coordinator<input value={rowForm.coordinator} onChange={e => setRowForm(previous => ({ ...previous, coordinator: e.target.value }))} placeholder="Person or team in charge" /></label>
           <label>Contact number<input value={rowForm.contactNumber} onChange={e => setRowForm(previous => ({ ...previous, contactNumber: e.target.value }))} placeholder="Phone number" /></label>
           <label>Progress<select value={rowForm.progressStatus} onChange={e => setRowForm(previous => ({ ...previous, progressStatus: e.target.value }))}>{Object.entries(PROGRESS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
