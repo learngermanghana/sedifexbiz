@@ -61,7 +61,7 @@ jobs:
         working-directory: web
 
       - name: Test smart production operations
-        run: npm exec vitest run src/utils/eventProductionTemplates.test.ts src/utils/eventProductionOperations.test.ts
+        run: npm exec vitest run src/utils/eventProductionTemplates.test.ts src/utils/eventProductionOperations.test.ts src/utils/eventProductionOperations.cost-regression.test.ts
         working-directory: web
 
       - name: Test reusable event checklist templates
