@@ -50,14 +50,10 @@ type TimelineRow = {
   sortOrder: number
 }
 
-const EMPTY_BASICS: EventBasics = {
-  eventDate: '',
-  startTime: '',
-  venue: '',
-  guestCount: 0,
-}
+type RowForm = Omit<TimelineRow, 'id' | 'sortOrder'>
 
-const EMPTY_ROW = {
+const EMPTY_BASICS: EventBasics = { eventDate: '', startTime: '', venue: '', guestCount: 0 }
+const EMPTY_ROW: RowForm = {
   phase: '',
   time: '',
   activity: '',
@@ -117,6 +113,10 @@ function mapRow(id: string, data: Record<string, unknown>): TimelineRow {
   }
 }
 
+function sortRows(rows: TimelineRow[]) {
+  return [...rows].sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time) || a.phase.localeCompare(b.phase))
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')
@@ -154,11 +154,12 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
   const [basics, setBasics] = useState<EventBasics>(EMPTY_BASICS)
   const [setup, setSetup] = useState<ProductionSetup>({})
   const [rows, setRows] = useState<TimelineRow[]>([])
-  const [rowForm, setRowForm] = useState(EMPTY_ROW)
+  const [rowForm, setRowForm] = useState<RowForm>(EMPTY_ROW)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [eventDayMode, setEventDayMode] = useState(false)
+  const [eventDayClock, setEventDayClock] = useState(() => new Date())
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -166,10 +167,7 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
     setLoading(true)
     setError('')
     try {
-      const [eventSnapshot, timelineSnapshot] = await Promise.all([
-        getDoc(eventRef),
-        getDocs(timelineRef),
-      ])
+      const [eventSnapshot, timelineSnapshot] = await Promise.all([getDoc(eventRef), getDocs(timelineRef)])
       if (!eventSnapshot.exists()) throw new Error('EVENT_NOT_FOUND')
       const eventData = eventSnapshot.data() as Record<string, unknown>
       const detectedEventType = text(eventData.eventType) || 'Other'
@@ -183,9 +181,7 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
         guestCount: Math.max(0, Math.floor(numberValue(eventData.guestCount))),
       })
       setSetup(setupFrom(eventData.productionSetup, text(brief.themeColours), detectedTemplate))
-      setRows(timelineSnapshot.docs
-        .map(item => mapRow(item.id, item.data()))
-        .sort((a, b) => a.sortOrder - b.sortOrder || a.time.localeCompare(b.time) || a.phase.localeCompare(b.phase)))
+      setRows(sortRows(timelineSnapshot.docs.map(item => mapRow(item.id, item.data()))))
     } catch (loadError) {
       console.error('[event-production] Unable to load production timeline', loadError)
       setError('The production timeline could not be loaded.')
@@ -195,6 +191,13 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
   }, [eventRef, timelineRef])
 
   useEffect(() => { void load() }, [load])
+
+  useEffect(() => {
+    if (!eventDayMode) return
+    setEventDayClock(new Date())
+    const intervalId = window.setInterval(() => setEventDayClock(new Date()), 15_000)
+    return () => window.clearInterval(intervalId)
+  }, [eventDayMode])
 
   const readiness = useMemo(() => calculateProductionReadiness({
     eventDate: basics.eventDate,
@@ -207,9 +210,12 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
     suggestedTimelineLength: preset.length,
   }), [basics, preset.length, rows, setup, template.fields])
 
-  const activeRows = useMemo(() => rows.filter(row => row.progressStatus !== 'done'), [rows])
-  const nextItem = useMemo(() => nextProductionItem(activeRows.length ? activeRows : rows), [activeRows, rows])
+  const nextItem = useMemo(
+    () => nextProductionItem(rows, eventDayClock, basics.eventDate, basics.startTime),
+    [basics.eventDate, basics.startTime, eventDayClock, rows],
+  )
   const issueRows = useMemo(() => rows.filter(row => row.progressStatus === 'issue'), [rows])
+  const completedRows = useMemo(() => rows.filter(row => row.progressStatus === 'done').length, [rows])
 
   function setSetupValue(key: string, value: string) {
     setSetup(previous => ({ ...previous, [key]: value }))
@@ -254,9 +260,10 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
     setError('')
     try {
       const batch = writeBatch(db)
-      preset.forEach((item, index) => {
+      const seededRows = preset.map((item, index): TimelineRow => {
         const itemRef = doc(timelineRef)
-        batch.set(itemRef, {
+        const row: TimelineRow = {
+          id: itemRef.id,
           phase: item.phase,
           time: clockFromOffset(basics.startTime, item.offsetMinutes),
           activity: item.activity,
@@ -265,10 +272,21 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
           progressStatus: 'planned',
           remarks: item.remarks || '',
           sortOrder: index + 1,
+        }
+        batch.set(itemRef, {
+          phase: row.phase,
+          time: row.time,
+          activity: row.activity,
+          coordinator: row.coordinator,
+          contactNumber: row.contactNumber,
+          progressStatus: row.progressStatus,
+          remarks: row.remarks,
+          sortOrder: row.sortOrder,
           presetEventType: template.eventType,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         })
+        return row
       })
       batch.update(eventRef, {
         'productionSetup.runSheetPresetEventType': template.eventType,
@@ -276,8 +294,8 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
         updatedAt: serverTimestamp(),
       })
       await batch.commit()
+      setRows(seededRows)
       setMessage(`${template.eventType} run-sheet preset added. Assign coordinators and adjust the times to match the final programme.`)
-      await load()
     } catch (seedError) {
       console.error('[event-production] Unable to seed suggested run sheet', seedError)
       setError('The suggested run sheet could not be added.')
@@ -300,7 +318,8 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
     setSaving(true)
     setMessage('')
     setError('')
-    const payload = {
+    const sortOrder = editingId ? rows.find(item => item.id === editingId)?.sortOrder ?? rows.length + 1 : rows.length + 1
+    const localRow: Omit<TimelineRow, 'id'> = {
       phase: rowForm.phase.trim(),
       time: rowForm.time,
       activity: rowForm.activity.trim(),
@@ -308,19 +327,20 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
       contactNumber: rowForm.contactNumber.trim(),
       progressStatus: rowForm.progressStatus,
       remarks: rowForm.remarks.trim(),
-      sortOrder: editingId ? rows.find(item => item.id === editingId)?.sortOrder ?? rows.length + 1 : rows.length + 1,
-      updatedAt: serverTimestamp(),
+      sortOrder,
     }
+    const payload = { ...localRow, updatedAt: serverTimestamp() }
     try {
       if (editingId) {
         await updateDoc(doc(timelineRef, editingId), payload)
+        setRows(previous => sortRows(previous.map(item => item.id === editingId ? { id: item.id, ...localRow } : item)))
         setMessage('Production timeline item updated.')
       } else {
-        await addDoc(timelineRef, { ...payload, createdAt: serverTimestamp() })
+        const itemRef = await addDoc(timelineRef, { ...payload, createdAt: serverTimestamp() })
+        setRows(previous => sortRows([...previous, { id: itemRef.id, ...localRow }]))
         setMessage('Production timeline item added.')
       }
       resetRow()
-      await load()
     } catch (saveError) {
       console.error('[event-production] Unable to save production timeline item', saveError)
       setError('The production timeline item could not be saved.')
@@ -360,9 +380,9 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
     setError('')
     try {
       await deleteDoc(doc(timelineRef, row.id))
+      setRows(previous => previous.filter(item => item.id !== row.id))
       setMessage('Production timeline item deleted.')
       if (editingId === row.id) resetRow()
-      await load()
     } catch (deleteError) {
       console.error('[event-production] Unable to delete production timeline item', deleteError)
       setError('The production timeline item could not be deleted.')
@@ -419,7 +439,7 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginTop: 14 }}>
             <div className="event-planning__notes" style={{ marginTop: 0 }}><strong>{readiness.score}%</strong><p>Production readiness</p></div>
-            <div className="event-planning__notes" style={{ marginTop: 0 }}><strong>{rows.filter(row => row.progressStatus === 'done').length}/{rows.length}</strong><p>Run-sheet items complete</p></div>
+            <div className="event-planning__notes" style={{ marginTop: 0 }}><strong>{completedRows}/{rows.length}</strong><p>Run-sheet items complete</p></div>
             <div className="event-planning__notes" style={{ marginTop: 0 }}><strong>{issueRows.length}</strong><p>Issues needing attention</p></div>
           </div>
         </section>
@@ -435,6 +455,11 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
               <button type="button" className="button button--ghost" onClick={() => void updateRowStatus(nextItem, 'issue')}>Flag issue</button>
               {nextItem.contactNumber ? <a className="button button--ghost" href={`tel:${nextItem.contactNumber}`}>Call contact</a> : null}
             </div>
+          </section>
+        ) : rows.length ? (
+          <section className="event-planning__workspace-preview" style={{ marginTop: 14 }}>
+            <h3>Run sheet complete</h3>
+            <p>All production timeline items are marked done.</p>
           </section>
         ) : null}
 
@@ -475,7 +500,7 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
             {!exactTemplateMatch ? <p style={{ marginTop: 6, fontSize: '.78rem', color: '#64748b' }}>Using the closest Sedifex template: {template.eventType}.</p> : null}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="button button--primary" onClick={() => setEventDayMode(true)}>Event Day Mode</button>
+            <button type="button" className="button button--primary" onClick={() => { setEventDayClock(new Date()); setEventDayMode(true) }}>Event Day Mode</button>
             <button type="button" className="button button--ghost" onClick={printTimeline}>Print production timeline</button>
           </div>
         </div>
@@ -492,9 +517,7 @@ export default function EventProductionTimeline({ storeId, eventId, eventTitle }
 
       <form onSubmit={saveSetup} className="event-planning__workspace-preview" style={{ marginTop: 14 }}>
         <h3>Production details · {template.eventType}</h3>
-        <div className="event-planning__form-grid" style={{ marginTop: 12 }}>
-          {template.fields.map(renderField)}
-        </div>
+        <div className="event-planning__form-grid" style={{ marginTop: 12 }}>{template.fields.map(renderField)}</div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}><button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Saving…' : 'Save production setup'}</button></div>
       </form>
 

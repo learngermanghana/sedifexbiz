@@ -54,13 +54,40 @@ describe('event production operations', () => {
     expect(ready.missing).toEqual([])
   })
 
-  test('selects the next run-sheet item from the current time', () => {
+  test('selects a different next item as wall time crosses a boundary', () => {
     const rows = [
-      { time: '09:00', progressStatus: 'planned' },
-      { time: '12:00', progressStatus: 'planned' },
-      { time: '15:00', progressStatus: 'planned' },
+      { time: '09:00', progressStatus: 'done', sortOrder: 1 },
+      { time: '12:00', progressStatus: 'planned', sortOrder: 2 },
+      { time: '15:00', progressStatus: 'planned', sortOrder: 3 },
     ]
-    const now = new Date(2026, 8, 8, 11, 30)
-    expect(nextProductionItem(rows, now)?.time).toBe('12:00')
+    expect(nextProductionItem(rows, new Date(2026, 8, 8, 11, 50), '2026-09-08', '09:00')?.time).toBe('12:00')
+    expect(nextProductionItem(rows, new Date(2026, 8, 8, 12, 30), '2026-09-08', '09:00')?.time).toBe('15:00')
+  })
+
+  test('does not resurface completed rows when the run sheet is finished', () => {
+    const rows = [
+      { time: '09:00', progressStatus: 'done', sortOrder: 1 },
+      { time: '12:00', progressStatus: 'done', sortOrder: 2 },
+    ]
+    expect(nextProductionItem(rows, new Date(2026, 8, 8, 13, 0), '2026-09-08', '09:00')).toBeNull()
+  })
+
+  test('preserves run-sheet ordering across midnight', () => {
+    const rows = [
+      { time: '22:00', progressStatus: 'done', sortOrder: 1 },
+      { time: '00:00', progressStatus: 'planned', sortOrder: 2 },
+      { time: '01:30', progressStatus: 'planned', sortOrder: 3 },
+    ]
+    expect(nextProductionItem(rows, new Date(2026, 8, 8, 23, 0), '2026-09-08', '22:00')?.time).toBe('00:00')
+    expect(nextProductionItem(rows, new Date(2026, 8, 9, 0, 30), '2026-09-08', '22:00')?.time).toBe('01:30')
+  })
+
+  test('anchors pre-midnight setup to the previous day for early-morning events', () => {
+    const rows = [
+      { time: '22:00', progressStatus: 'planned', sortOrder: 1 },
+      { time: '00:30', progressStatus: 'planned', sortOrder: 2 },
+      { time: '01:00', progressStatus: 'planned', sortOrder: 3 },
+    ]
+    expect(nextProductionItem(rows, new Date(2026, 8, 7, 23, 0), '2026-09-08', '01:00')?.time).toBe('00:30')
   })
 })

@@ -12,6 +12,7 @@ export type ProductionTimelineLike = {
   coordinator?: string
   contactNumber?: string
   progressStatus?: string
+  sortOrder?: number
 }
 
 export type ProductionReadinessInput = {
@@ -218,14 +219,61 @@ export function calculateProductionReadiness(input: ProductionReadinessInput): P
   return { score: Math.max(0, Math.min(100, Math.round(basicScore + setupScore + timelineScore + ownershipScore))), missing }
 }
 
-export function nextProductionItem<T extends ProductionTimelineLike>(rows: T[], now = new Date()): T | null {
+function parseClock(value: string) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value)
+  if (!match) return null
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null
+  return hours * 60 + minutes
+}
+
+function dayDifferenceFromEvent(eventDate: string, now: Date) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(eventDate)
+  if (!match) return 0
+  const eventDay = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  const nowDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+  return Math.round((nowDay - eventDay) / 86_400_000)
+}
+
+function inferFirstTimelineDay(firstMinutes: number, eventStartTime: string) {
+  const eventStart = parseClock(eventStartTime)
+  if (eventStart === null) return 0
+  return [-1, 0, 1].reduce((best, candidate) => {
+    const bestDistance = Math.abs(best * 1440 + firstMinutes - eventStart)
+    const candidateDistance = Math.abs(candidate * 1440 + firstMinutes - eventStart)
+    return candidateDistance < bestDistance ? candidate : best
+  }, 0)
+}
+
+export function nextProductionItem<T extends ProductionTimelineLike>(
+  rows: T[],
+  now = new Date(),
+  eventDate = '',
+  eventStartTime = '',
+): T | null {
   if (!rows.length) return null
-  const currentMinutes = now.getHours() * 60 + now.getMinutes()
-  const withMinutes = rows
-    .map(row => {
-      const match = /^(\d{1,2}):(\d{2})$/.exec(row.time)
-      return { row, minutes: match ? Number(match[1]) * 60 + Number(match[2]) : Number.POSITIVE_INFINITY }
-    })
-    .sort((a, b) => a.minutes - b.minutes)
-  return (withMinutes.find(item => item.minutes >= currentMinutes) || withMinutes[withMinutes.length - 1])?.row || null
+
+  const ordered = rows
+    .map((row, index) => ({ row, index, sortOrder: Number.isFinite(row.sortOrder) ? Number(row.sortOrder) : index + 1 }))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.index - b.index)
+
+  const firstValid = ordered.find(item => parseClock(item.row.time) !== null)
+  if (!firstValid) return ordered.find(item => item.row.progressStatus !== 'done')?.row || null
+
+  let day = inferFirstTimelineDay(parseClock(firstValid.row.time) as number, eventStartTime)
+  let previousClock: number | null = null
+  const positioned = ordered.map(item => {
+    const clock = parseClock(item.row.time)
+    if (clock === null) return { ...item, absoluteMinutes: Number.POSITIVE_INFINITY }
+    if (previousClock !== null && clock < previousClock) day += 1
+    previousClock = clock
+    return { ...item, absoluteMinutes: day * 1440 + clock }
+  })
+
+  const active = positioned.filter(item => item.row.progressStatus !== 'done')
+  if (!active.length) return null
+
+  const currentAbsoluteMinutes = dayDifferenceFromEvent(eventDate, now) * 1440 + now.getHours() * 60 + now.getMinutes()
+  return (active.find(item => item.absoluteMinutes >= currentAbsoluteMinutes) || active[active.length - 1])?.row || null
 }
