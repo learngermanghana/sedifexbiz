@@ -60,6 +60,10 @@ jobs:
         run: npm exec vitest run src/utils/eventPlanningProgress.test.ts
         working-directory: web
 
+      - name: Test smart production operations
+        run: npm exec vitest run src/utils/eventProductionTemplates.test.ts src/utils/eventProductionOperations.test.ts
+        working-directory: web
+
       - name: Test reusable event checklist templates
         run: for test in tests/event-checklist-template*.test.mjs; do node "$test"; done
         working-directory: web
